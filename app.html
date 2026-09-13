@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geek Influencer OS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">G</div>
+        <div class="brand-name">Geek OS</div>
+      </div>
+
+      <div class="role-switch">
+        <label>Viewing as</label>
+        <select id="roleSelect"></select>
+      </div>
+
+      <nav id="nav" class="nav"></nav>
+
+      <div class="sidebar-foot">
+        <button class="ai-launch" id="aiLaunch">✨ AI Assistant</button>
+        <div class="org-box">
+          <div class="org-info"><div class="org-name" id="orgLabel">Your Agency</div><div class="who" id="whoLabel"></div></div>
+          <button class="sign-out" id="signOutBtn" title="Sign out">⎋</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main">
+      <header class="topbar">
+        <button class="menu-btn" id="menuBtn">☰</button>
+        <button class="search-trigger" id="searchTrigger">
+          <span>🔍 Search or run a command…</span>
+          <kbd>⌘K</kbd>
+        </button>
+        <div class="topbar-right">
+          <button class="icon-btn" id="themeBtn" title="Toggle theme">🌙</button>
+          <button class="icon-btn bell" id="bellBtn" title="Notifications">🔔<span class="badge" id="notifCount">3</span></button>
+          <div class="me" id="me"></div>
+        </div>
+      </header>
+
+      <main class="content" id="content"></main>
+    </div>
+  </div>
+
+  <!-- Command palette -->
+  <div class="palette-overlay" id="paletteOverlay">
+    <div class="palette">
+      <input type="text" id="paletteInput" placeholder="Jump to a module or run a command…" autocomplete="off">
+      <ul id="paletteResults"></ul>
+    </div>
+  </div>
+
+  <!-- AI drawer -->
+  <div class="drawer-overlay" id="aiOverlay">
+    <aside class="drawer" id="aiDrawer">
+      <div class="drawer-head">
+        <div><strong id="aiTitle">AI Assistant</strong><div class="muted" id="aiSub">Contextual agent</div></div>
+        <button class="icon-btn" id="aiClose">✕</button>
+      </div>
+      <div class="ai-body" id="aiBody"></div>
+    </aside>
+  </div>
+
+  <!-- Notifications drawer -->
+  <div class="drawer-overlay" id="notifOverlay">
+    <aside class="drawer" id="notifDrawer">
+      <div class="drawer-head">
+        <div><strong>Notifications</strong><div class="muted">Role-filtered activity</div></div>
+        <button class="icon-btn" id="notifClose">✕</button>
+      </div>
+      <div class="ai-body" id="notifBody"></div>
+    </aside>
+  </div>
+
+  <!-- Auth gate (renders over everything until signed in) -->
+  <div class="auth-root" id="authRoot"></div>
+
+  <script src="data.js"></script>
+  <script src="auth.js"></script>
+  <script src="login.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

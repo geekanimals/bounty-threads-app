@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Node (none used yet, but just in case)
+node_modules/
+npm-debug.log*
+
+# Local env / secrets — never commit these
+.env
+.env.*
+*.secret
