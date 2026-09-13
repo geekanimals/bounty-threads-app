@@ -335,10 +335,15 @@ function barterCardHtml(c){
   const stage = BARTER_STAGES.includes(c.stage) ? c.stage : "Requested";
   const idx = BARTER_STAGES.indexOf(stage);
   const next = idx < BARTER_STAGES.length-1 ? BARTER_STAGES[idx+1] : null;
-  const sub = [c.creator, c.value?("₹"+fmtNum(c.value)):null].filter(Boolean).join(" · ");
+  const sub = [c.creator, c.quantity?("×"+c.quantity):null, c.value?("₹"+fmtNum(c.value)):null].filter(Boolean).join(" · ");
   return `<div class="kan-card"><div class="kc-name">${esc(c.product||c.creator||"Barter item")}</div>
     <div class="kc-sub">${esc(sub)||"—"}</div>
-    ${next?`<button class="mini-btn" data-advance="${esc(c.id)}" data-next="${esc(next)}" style="margin-top:8px">Move to ${esc(next)} →</button>`:""}</div>`;
+    ${c.deliverables?`<div class="kc-sub">📦 ${esc(c.deliverables)}</div>`:""}
+    ${c.deadline?`<div class="kc-sub">⏰ ${esc(c.deadline)}</div>`:""}
+    ${c.product_link?`<a class="kc-sub" href="${esc(safeUrl(c.product_link))}" target="_blank" rel="noopener">Product ↗</a>`:""}
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+      ${next?`<button class="mini-btn" data-advance="${esc(c.id)}" data-next="${esc(next)}">→ ${esc(next)}</button>`:""}
+      <button class="mini-btn ghost" data-editbarter="${esc(c.id)}">Edit</button></div></div>`;
 }
 
 async function loadBarter(){
@@ -352,9 +357,8 @@ async function loadBarter(){
   items.forEach(it=>{ const s = BARTER_STAGES.includes(it.stage)?it.stage:"Requested"; byStage[s].push(it); });
   wrap.innerHTML = BARTER_STAGES.map(s=>`<div class="kan-col"><h4>${s}<span>${byStage[s].length}</span></h4>
     ${byStage[s].map(barterCardHtml).join("") || `<div class="muted" style="font-size:12px;padding:6px 2px">—</div>`}</div>`).join("");
-  wrap.querySelectorAll("button[data-advance]").forEach(b=>{
-    b.onclick = ()=> advanceBarter(b.dataset.advance, b.dataset.next);
-  });
+  wrap.querySelectorAll("button[data-advance]").forEach(b=> b.onclick = ()=> advanceBarter(b.dataset.advance, b.dataset.next));
+  wrap.querySelectorAll("[data-editbarter]").forEach(b=> b.onclick = ()=>{ const it=items.find(x=>x.id===b.dataset.editbarter); if(it) openBarterModal(it); });
 }
 
 async function advanceBarter(id, nextStage){
@@ -363,54 +367,148 @@ async function advanceBarter(id, nextStage){
   if(!error) loadBarter();
 }
 
-function openBarterModal(){
-  let m = document.getElementById("barterModal");
-  if(!m){
-    m = el("div","modal-overlay"); m.id="barterModal";
-    m.innerHTML = `<div class="modal">
-      <div class="modal-head"><strong>New Barter Item</strong><button class="icon-btn" id="bmClose">✕</button></div>
-      <form id="barterForm" class="modal-form">
-        <div class="mf-row"><label>Product<input name="product" required placeholder="Nykaa Lip Kit"></label>
-        <label>Creator<input name="creator" placeholder="Aarav Mehta"></label></div>
-        <div class="mf-row"><label>Campaign<input name="campaign" placeholder="Summer Glow"></label>
-        <label>Stage<select name="stage">${BARTER_STAGES.map(s=>`<option>${s}</option>`).join("")}</select></label></div>
-        <div class="mf-row"><label>Value (₹)<input name="value" type="number" min="0" placeholder="5000"></label>
-        <label>Est. Reach<input name="reach" type="number" min="0" placeholder="120000"></label></div>
-        <div class="auth-err" id="bmErr"></div>
-        <button class="btn" type="submit">Add to Pipeline</button>
-      </form></div>`;
-    document.body.appendChild(m);
-  }
-  m.classList.add("open");
+function openBarterModal(existing){
+  const ed = existing || {};
+  const opt = (arr,val)=>arr.map(o=>`<option${o===val?' selected':''}>${o}</option>`).join("");
+  let m = document.getElementById("barterModal"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id="barterModal";
+  m.innerHTML = `<div class="modal modal-lg"><div class="modal-head"><strong>${existing?'Edit Barter Item':'New Barter Item'}</strong><button class="icon-btn" id="bmClose">✕</button></div>
+    <form id="barterForm" class="modal-form">
+      <div class="mf-row"><label>Product<input name="product" required value="${esc(ed.product||'')}" placeholder="Nykaa Lip Kit"></label>
+      <label>Product link<input name="product_link" value="${esc(ed.product_link||'')}" placeholder="https://nykaa.com/…"></label></div>
+      <div class="mf-row"><label>Creator<input name="creator" value="${esc(ed.creator||'')}" placeholder="Aarav Mehta"></label>
+      <label>Campaign<input name="campaign" value="${esc(ed.campaign||'')}" placeholder="Summer Glow"></label></div>
+      <div class="mf-row"><label>Product value (₹)<input name="value" type="number" min="0" value="${ed.value!=null?esc(ed.value):''}" placeholder="5000"></label>
+      <label>Quantity<input name="quantity" type="number" min="1" value="${ed.quantity!=null?esc(ed.quantity):''}" placeholder="1"></label></div>
+      <label>Deliverables<textarea name="deliverables" rows="2" placeholder="e.g. 1 Reel + 2 Stories tagging @brand, post within 7 days">${esc(ed.deliverables||'')}</textarea></label>
+      <div class="mf-row"><label>Stage<select name="stage">${opt(BARTER_STAGES, ed.stage)}</select></label>
+      <label>Content deadline<input name="deadline" type="date" value="${esc(ed.deadline||'')}"></label></div>
+      <div class="mf-row"><label>Est. reach<input name="reach" type="number" min="0" value="${ed.reach!=null?esc(ed.reach):''}" placeholder="120000"></label>
+      <label>Shipping address<input name="address" value="${esc(ed.address||'')}" placeholder="Creator's address"></label></div>
+      <div class="auth-err" id="bmErr"></div>
+      <button class="btn" type="submit">${existing?'Save changes':'Add to Pipeline'}</button></form></div>`;
+  document.body.appendChild(m); m.classList.add("open");
   m.onclick = e=>{ if(e.target.id==="barterModal") m.classList.remove("open"); };
   document.getElementById("bmClose").onclick = ()=> m.classList.remove("open");
-  const form = document.getElementById("barterForm");
-  form.onsubmit = async e=>{
+  document.getElementById("barterForm").onsubmit = async e=>{
     e.preventDefault();
-    const f = new FormData(form), err = document.getElementById("bmErr");
-    const btn = form.querySelector("button[type=submit]");
-    err.textContent=""; btn.disabled=true; btn.textContent="Saving…";
-    const row = { product:f.get("product"), creator:f.get("creator"), campaign:f.get("campaign"),
-      stage:f.get("stage")||"Requested", value:parseFloat(f.get("value"))||null, reach:parseFloat(f.get("reach"))||null };
-    if(window.Auth && Auth.profile){ row.org_name = Auth.profile.org; row.org_id = Auth.profile.org_id; }
+    const f = new FormData(e.target), err = document.getElementById("bmErr");
+    const btn = e.target.querySelector("button[type=submit]"); err.textContent=""; btn.disabled=true; btn.textContent="Saving…";
+    const row = { product:f.get("product"), product_link:f.get("product_link"), creator:f.get("creator"), campaign:f.get("campaign"),
+      value:parseFloat(f.get("value"))||null, quantity:parseInt(f.get("quantity"))||null, deliverables:f.get("deliverables"),
+      stage:f.get("stage")||"Requested", deadline:f.get("deadline")||null, reach:parseFloat(f.get("reach"))||null, address:f.get("address") };
     try{
-      if(!window.sb) throw new Error("Database not connected yet.");
-      const { error } = await sb.from("barter_items").insert(row);
+      if(!window.sb) throw new Error("Database not connected.");
+      let error;
+      if(existing){ ({error}=await sb.from("barter_items").update(row).eq("id", existing.id)); }
+      else { if(window.Auth&&Auth.profile){ row.org_name=Auth.profile.org; row.org_id=Auth.profile.org_id; } ({error}=await sb.from("barter_items").insert(row)); }
       if(error) throw error;
-      m.classList.remove("open");
-      await loadBarter();
-    }catch(ex){
-      err.textContent = ex.message || "Couldn't save.";
-      btn.disabled=false; btn.textContent="Add to Pipeline";
-    }
+      m.classList.remove("open"); await loadBarter();
+    }catch(ex){ err.textContent=ex.message||"Couldn't save."; btn.disabled=false; btn.textContent=existing?'Save changes':'Add to Pipeline'; }
   };
 }
 
 function renderCreators(){
-  let html = pageHead("Creators","Discovery & roster — AI-matched to your campaigns.",`<span id="addCreatorBtn">+ Add Creator</span>`);
+  let html = `<div class="page-head"><div><h1>Creators</h1><p>Discovery & roster — AI-matched to your campaigns.</p></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn ghost" id="importCreatorBtn">⬆ Import CSV</button>
+      <button class="btn" id="addCreatorBtn">+ Add Creator</button></div></div>`;
+  html += `<input type="file" id="creatorCsvInput" accept=".csv,text/csv" hidden>`;
+  html += `<div id="csvImportNote" class="muted" style="margin:0 0 10px;font-size:12px">
+    CSV columns: <code>name, handle, email, city, tier, followers, engagement, category, rating</code> — only <b>name</b> is required.
+    <a href="#" id="csvSample">Download sample</a></div>`;
   html += `<div class="card"><table><thead><tr><th>Creator</th><th>City</th><th>Tier</th><th>Followers</th><th>Engagement</th><th>Category</th><th>Rating</th></tr></thead>
     <tbody id="creatorRows"><tr><td colspan="7" class="muted" style="padding:24px">Loading creators…</td></tr></tbody></table></div>`;
   return html;
+}
+
+// Minimal RFC-4180-ish CSV parser (handles quoted fields, embedded commas & newlines).
+function parseCsv(text){
+  const rows = []; let row = [], field = "", i = 0, inQ = false;
+  text = text.replace(/^﻿/, ""); // strip BOM
+  while(i < text.length){
+    const c = text[i];
+    if(inQ){
+      if(c === '"'){ if(text[i+1] === '"'){ field += '"'; i += 2; continue; } inQ = false; i++; continue; }
+      field += c; i++; continue;
+    }
+    if(c === '"'){ inQ = true; i++; continue; }
+    if(c === ','){ row.push(field); field = ""; i++; continue; }
+    if(c === '\r'){ i++; continue; }
+    if(c === '\n'){ row.push(field); rows.push(row); row = []; field = ""; i++; continue; }
+    field += c; i++;
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(x => (x||"").trim() !== ""));
+}
+
+// Map flexible CSV header names to our creator columns.
+const CSV_ALIASES = {
+  name:["name","full name","creator","creator name"], handle:["handle","username","instagram","ig","insta"],
+  email:["email","e-mail","mail"], city:["city","location"], tier:["tier"],
+  followers:["followers","follower count","reach"], eng:["engagement","eng","engagement rate","er"],
+  cat:["category","cat","niche","vertical"], rating:["rating","stars","score"]
+};
+function csvHeaderMap(headers){
+  const norm = headers.map(h => (h||"").trim().toLowerCase());
+  const map = {};
+  for(const [key, aliases] of Object.entries(CSV_ALIASES)){
+    const idx = norm.findIndex(h => aliases.includes(h));
+    if(idx !== -1) map[key] = idx;
+  }
+  return map;
+}
+
+async function importCreatorsCsv(file){
+  const note = document.getElementById("csvImportNote");
+  const say = (msg, err)=>{ if(note){ note.innerHTML = `<span style="color:${err?'var(--danger,#c0392b)':'var(--accent,#2d7)'}">${esc(msg)}</span>`; } };
+  try{
+    if(!window.sb) throw new Error("Database not connected.");
+    const org_id = (window.Auth && Auth.profile && Auth.profile.org_id) || null;
+    const org_name = (window.Auth && Auth.profile && Auth.profile.org) || null;
+    const text = await file.text();
+    const rows = parseCsv(text);
+    if(rows.length < 2) throw new Error("CSV looks empty — need a header row plus at least one creator.");
+    const map = csvHeaderMap(rows[0]);
+    if(map.name === undefined) throw new Error("Couldn't find a 'name' column in the CSV header.");
+    const get = (r, k)=> map[k] !== undefined ? (r[map[k]]||"").trim() : "";
+    const records = [];
+    for(let r = 1; r < rows.length; r++){
+      const name = get(rows[r], "name");
+      if(!name) continue;
+      const rec = { name, handle:get(rows[r],"handle"), email:(get(rows[r],"email")||"").toLowerCase(),
+        city:get(rows[r],"city"), tier:get(rows[r],"tier")||"Micro", followers:get(rows[r],"followers"),
+        eng:get(rows[r],"eng"), cat:get(rows[r],"cat"), rating:parseFloat(get(rows[r],"rating"))||null };
+      if(org_id){ rec.org_id = org_id; rec.org_name = org_name; }
+      records.push(rec);
+    }
+    if(!records.length) throw new Error("No rows with a name found.");
+    say(`Importing ${records.length} creator${records.length>1?'s':''}…`);
+    // Insert in chunks so a big roster doesn't hit payload limits.
+    let inserted = 0;
+    for(let i = 0; i < records.length; i += 200){
+      const chunk = records.slice(i, i+200);
+      const { error } = await window.sb.from("creators").insert(chunk);
+      if(error) throw error;
+      inserted += chunk.length;
+    }
+    const withEmail = records.filter(r => r.email).length;
+    say(`✓ Imported ${inserted} creators${withEmail?` (${withEmail} have emails — use “Invite to app” to send sign-in requests)`:""}.`);
+    await loadCreators();
+  }catch(ex){
+    say(ex.message || "Import failed.", true);
+  }
+}
+
+function csvSampleDownload(){
+  const sample = "name,handle,email,city,tier,followers,engagement,category,rating\n" +
+    "Aarav Mehta,@aaravmehta,aarav@example.com,Mumbai,Macro,842K,4.2%,Fashion,4.8\n" +
+    "Ishita Rao,@ishitarao,ishita@example.com,Bengaluru,Micro,128K,6.1%,Beauty,4.9\n";
+  const blob = new Blob([sample], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = "creators-sample.csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
 
 function creatorRowsHtml(list){
@@ -489,13 +587,16 @@ function renderCampaigns(){
 function campaignCardsHtml(list){
   if(!list.length) return `<div class="card"><div class="ai-suggest"><span class="spark">📣</span><div class="s-body"><b>No campaigns yet</b><p>Click "+ New Campaign" to launch your first one 👆</p></div></div></div>`;
   return list.map(c=>{
-    const st = {Live:"good","In Production":"brand",Sourcing:"warn",Approval:"warn",Draft:"warn"}[c.status]||"brand";
+    const st = {Live:"good","In Production":"brand",Sourcing:"warn",Approval:"warn",Draft:"warn",Completed:"good"}[c.status]||"brand";
     const prog = Math.max(0, Math.min(100, parseInt(c.progress)||0));
     const creators = parseInt(c.creators)||0;
     return `<div class="card"><h3>${esc(c.name)}<span class="tag ${st}">${esc(c.status)||"Draft"}</span></h3>
-      <div class="muted">${esc(c.brand)||"—"} · ${esc(c.type)||"—"}</div>
-      <div class="bar"><span style="width:${prog}%"></span></div>
-      <div class="muted" style="margin-top:8px">${prog}% complete · ${creators} creators</div></div>`;
+      <div class="muted">${esc(c.brand)||"—"} · ${esc(c.type)||"—"}${c.objective?` · ${esc(c.objective)}`:""}</div>
+      ${c.deliverables?`<div class="muted" style="margin-top:6px;font-size:13px">📦 ${esc(c.deliverables)}</div>`:""}
+      ${c.budget?`<div class="muted" style="font-size:13px">💰 ₹${fmtNum(c.budget)}</div>`:""}
+      ${(c.start_date||c.end_date)?`<div class="muted" style="font-size:13px">🗓 ${esc(c.start_date)||"—"} → ${esc(c.end_date)||"—"}</div>`:""}
+      <div class="bar" style="margin-top:8px"><span style="width:${prog}%"></span></div>
+      <div class="camp-foot"><span class="muted">${prog}% · ${creators} creators</span><button class="mini-btn ghost" data-editcamp="${esc(c.id)}">Edit</button></div></div>`;
   }).join("");
 }
 
@@ -509,51 +610,55 @@ async function loadCampaigns(){
   const { data, error } = await cq;
   if(error){ grid.innerHTML = `<div class="card"><div class="muted">Couldn't load campaigns: ${esc(error.message)}</div></div>`; return; }
   grid.innerHTML = campaignCardsHtml(data||[]);
+  grid.querySelectorAll("[data-editcamp]").forEach(b=>b.onclick=()=>{ const c=(data||[]).find(x=>x.id===b.dataset.editcamp); if(c) openCampaignModal(c); });
 }
 
-function openCampaignModal(){
-  let m = document.getElementById("campaignModal");
-  if(!m){
-    m = el("div","modal-overlay"); m.id="campaignModal";
-    m.innerHTML = `<div class="modal">
-      <div class="modal-head"><strong>New Campaign</strong><button class="icon-btn" id="cmClose">✕</button></div>
-      <form id="campaignForm" class="modal-form">
-        <div class="mf-row"><label>Campaign name<input name="name" required placeholder="Summer Glow Launch"></label>
-        <label>Brand<input name="brand" placeholder="Lume Cosmetics"></label></div>
-        <div class="mf-row"><label>Type<select name="type">
-          <option>Paid Campaign</option><option>Mass Barter</option><option>Turnkey Barter</option>
-          <option>Celebrity Story</option><option>UGC</option><option>Product Seeding</option><option>Hybrid</option>
-        </select></label>
-        <label>Status<select name="status"><option>Draft</option><option>Sourcing</option><option>Approval</option><option>In Production</option><option>Live</option></select></label></div>
-        <div class="mf-row"><label>Progress %<input name="progress" type="number" min="0" max="100" placeholder="0"></label>
-        <label>Creators<input name="creators" type="number" min="0" placeholder="0"></label></div>
-        <div class="auth-err" id="cmErr"></div>
-        <button class="btn" type="submit">Launch Campaign</button>
-      </form></div>`;
-    document.body.appendChild(m);
-  }
-  m.classList.add("open");
+function openCampaignModal(existing){
+  const ed = existing || {};
+  const opt = (arr,val)=>arr.map(o=>`<option${o===val?' selected':''}>${o}</option>`).join("");
+  let m = document.getElementById("campaignModal"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id="campaignModal";
+  m.innerHTML = `<div class="modal modal-lg">
+    <div class="modal-head"><strong>${existing?'Edit Campaign':'New Campaign'}</strong><button class="icon-btn" id="cmClose">✕</button></div>
+    <form id="campaignForm" class="modal-form">
+      <div class="mf-row"><label>Campaign name<input name="name" required value="${esc(ed.name||'')}" placeholder="Summer Glow Launch"></label>
+      <label>Brand<input name="brand" value="${esc(ed.brand||'')}" placeholder="Lume Cosmetics"></label></div>
+      <div class="mf-row"><label>Type<select name="type">${opt(["Paid Campaign","Mass Barter","Turnkey Barter","Celebrity Story","UGC","Product Seeding","Hybrid"], ed.type)}</select></label>
+      <label>Objective<select name="objective">${opt(["Awareness","Engagement","Sales / Conversions","UGC content","Product launch","App installs","Store visits"], ed.objective)}</select></label></div>
+      <div class="mf-row"><label>Status<select name="status">${opt(["Draft","Sourcing","Approval","In Production","Live","Completed"], ed.status)}</select></label>
+      <label>Budget (₹)<input name="budget" type="number" min="0" value="${ed.budget!=null?esc(ed.budget):''}" placeholder="100000"></label></div>
+      <div class="mf-row"><label>Platforms<input name="platforms" value="${esc(ed.platforms||'')}" placeholder="Instagram, YouTube"></label>
+      <label>Hashtags<input name="hashtags" value="${esc(ed.hashtags||'')}" placeholder="#summerglow #ad"></label></div>
+      <label>Deliverables<textarea name="deliverables" rows="2" placeholder="e.g. 2 Reels + 3 Stories + 1 Static post">${esc(ed.deliverables||'')}</textarea></label>
+      <label>Brief / notes<textarea name="brief" rows="3" placeholder="Goals, key messaging, dos & don'ts, references…">${esc(ed.brief||'')}</textarea></label>
+      <div class="mf-row"><label>Start date<input name="start_date" type="date" value="${esc(ed.start_date||'')}"></label>
+      <label>End date<input name="end_date" type="date" value="${esc(ed.end_date||'')}"></label></div>
+      <div class="mf-row"><label>Progress %<input name="progress" type="number" min="0" max="100" value="${ed.progress!=null?esc(ed.progress):''}" placeholder="0"></label>
+      <label>Creators<input name="creators" type="number" min="0" value="${ed.creators!=null?esc(ed.creators):''}" placeholder="0"></label></div>
+      <div class="auth-err" id="cmErr"></div>
+      <button class="btn" type="submit">${existing?'Save changes':'Launch Campaign'}</button>
+    </form></div>`;
+  document.body.appendChild(m); m.classList.add("open");
   m.onclick = e=>{ if(e.target.id==="campaignModal") m.classList.remove("open"); };
   document.getElementById("cmClose").onclick = ()=> m.classList.remove("open");
-  const form = document.getElementById("campaignForm");
-  form.onsubmit = async e=>{
+  document.getElementById("campaignForm").onsubmit = async e=>{
     e.preventDefault();
-    const f = new FormData(form), err = document.getElementById("cmErr");
-    const btn = form.querySelector("button[type=submit]");
-    err.textContent=""; btn.disabled=true; btn.textContent="Launching…";
-    const row = { name:f.get("name"), brand:f.get("brand"), type:f.get("type"), status:f.get("status"),
+    const f = new FormData(e.target), err = document.getElementById("cmErr");
+    const btn = e.target.querySelector("button[type=submit]");
+    err.textContent=""; btn.disabled=true; btn.textContent="Saving…";
+    const row = { name:f.get("name"), brand:f.get("brand"), type:f.get("type"), objective:f.get("objective"),
+      status:f.get("status"), budget:parseFloat(f.get("budget"))||null, platforms:f.get("platforms"),
+      hashtags:f.get("hashtags"), deliverables:f.get("deliverables"), brief:f.get("brief"),
+      start_date:f.get("start_date")||null, end_date:f.get("end_date")||null,
       progress:parseInt(f.get("progress"))||0, creators:parseInt(f.get("creators"))||0 };
-    if(window.Auth && Auth.profile){ row.org_name = Auth.profile.org; row.org_id = Auth.profile.org_id; }
     try{
-      if(!window.sb) throw new Error("Database not connected yet.");
-      const { error } = await window.sb.from("campaigns").insert(row);
+      if(!window.sb) throw new Error("Database not connected.");
+      let error;
+      if(existing){ ({ error } = await sb.from("campaigns").update(row).eq("id", existing.id)); }
+      else { if(window.Auth&&Auth.profile){ row.org_name=Auth.profile.org; row.org_id=Auth.profile.org_id; } ({ error } = await sb.from("campaigns").insert(row)); }
       if(error) throw error;
-      m.classList.remove("open");
-      await loadCampaigns();
-    }catch(ex){
-      err.textContent = ex.message || "Couldn't save.";
-      btn.disabled=false; btn.textContent="Launch Campaign";
-    }
+      m.classList.remove("open"); await loadCampaigns();
+    }catch(ex){ err.textContent = ex.message||"Couldn't save."; btn.disabled=false; btn.textContent=existing?'Save changes':'Launch Campaign'; }
   };
 }
 
@@ -1451,6 +1556,11 @@ function renderContent(){
     loadCreators();
     const add = document.getElementById("addCreatorBtn");
     if(add) add.onclick = openCreatorModal;
+    const imp = document.getElementById("importCreatorBtn");
+    const inp = document.getElementById("creatorCsvInput");
+    if(imp && inp){ imp.onclick = ()=> inp.click(); inp.onchange = ()=>{ if(inp.files[0]) importCreatorsCsv(inp.files[0]); inp.value=""; }; }
+    const smp = document.getElementById("csvSample");
+    if(smp) smp.onclick = e=>{ e.preventDefault(); csvSampleDownload(); };
   }
   if(currentPage==="celebrity"){
     loadStories();
@@ -1473,7 +1583,7 @@ function renderContent(){
   if(currentPage==="campaigns"){
     loadCampaigns();
     const add = document.getElementById("addCampaignBtn");
-    if(add) add.onclick = openCampaignModal;
+    if(add) add.onclick = ()=> openCampaignModal();
   }
   if(currentPage==="settings"){
     renderIntegrations();
@@ -1489,7 +1599,7 @@ function renderContent(){
   if(currentPage==="barter"){
     loadBarter();
     const add = document.getElementById("addBarterBtn");
-    if(add) add.onclick = openBarterModal;
+    if(add) add.onclick = ()=> openBarterModal();
   }
   // Fill any KPI cards on the page with live values from the database.
   loadKPIs();

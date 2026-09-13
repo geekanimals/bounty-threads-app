@@ -189,6 +189,10 @@ create table if not exists creators (
   followers text, eng text, rating numeric, handle text,
   created_at timestamptz default now()
 );
+-- bulk import + "invite to app" flow needs contact + invite tracking
+alter table creators add column if not exists email text;
+alter table creators add column if not exists invite_status text default 'none'; -- none | invited | joined
+alter table creators add column if not exists invited_at timestamptz;
 alter table creators enable row level security;
 drop policy if exists "org read creators"   on creators;
 drop policy if exists "org insert creators" on creators;
@@ -207,6 +211,15 @@ create table if not exists campaigns (
   progress int default 0, creators int default 0,
   created_at timestamptz default now()
 );
+-- Richer campaign brief fields (competitive: CreatorIQ/GRIN/Aspire)
+alter table campaigns add column if not exists objective text;
+alter table campaigns add column if not exists budget numeric;
+alter table campaigns add column if not exists platforms text;
+alter table campaigns add column if not exists deliverables text;
+alter table campaigns add column if not exists brief text;
+alter table campaigns add column if not exists hashtags text;
+alter table campaigns add column if not exists start_date date;
+alter table campaigns add column if not exists end_date date;
 alter table campaigns enable row level security;
 drop policy if exists "org read campaigns"   on campaigns;
 drop policy if exists "org insert campaigns" on campaigns;
@@ -246,6 +259,12 @@ create table if not exists barter_items (
   value numeric, reach numeric,
   created_at timestamptz default now()
 );
+-- Richer barter fields
+alter table barter_items add column if not exists product_link text;
+alter table barter_items add column if not exists quantity int;
+alter table barter_items add column if not exists deliverables text;
+alter table barter_items add column if not exists deadline date;
+alter table barter_items add column if not exists address text;
 alter table barter_items enable row level security;
 drop policy if exists "org read barter"   on barter_items;
 drop policy if exists "org insert barter" on barter_items;
