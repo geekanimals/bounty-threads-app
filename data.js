@@ -35,7 +35,7 @@ const NAV_META = {
   campaigns:{ic:"📣",label:"Campaigns"}, marketplace:{ic:"🛒",label:"Marketplace"},
   barter:{ic:"📦",label:"Mass Barter"}, celebrity:{ic:"👑",label:"Celebrity Stories"},
   creators:{ic:"👥",label:"Creators"}, irm:{ic:"🤝",label:"IRM"},
-  mediakit:{ic:"📸",label:"Media Kit"},
+  mediakit:{ic:"📸",label:"Media Kit"}, admin:{ic:"🛡",label:"Admin"},
   listening:{ic:"📡",label:"Listening"}, logistics:{ic:"🚚",label:"Logistics"},
   finance:{ic:"💰",label:"Finance"}, reports:{ic:"📊",label:"Reports"},
   approvals:{ic:"✅",label:"Approvals"}, growth:{ic:"🚀",label:"Growth"},

@@ -23,8 +23,10 @@ create table if not exists members (
   name      text,
   email     text,
   role      text default 'owner',
+  status    text default 'active',   -- active | pending | declined  (agencies start pending)
   created_at timestamptz default now()
 );
+alter table members add column if not exists status text default 'active';
 alter table members enable row level security;
 
 -- A user can read + manage only their OWN member row; and read co-members in their org.
@@ -55,6 +57,12 @@ drop trigger if exists members_no_org_change on members;
 create trigger members_no_org_change
   before update on members
   for each row execute function public.members_guard();
+
+-- Column-level lock: clients may update ONLY their own `name`. role/status/org_id can never be
+-- changed from the browser (no self-escalation to owner, no self-approval). The trigger and the
+-- admin RPCs below run as the table owner and bypass this, so provisioning/approval still work.
+revoke insert, update on members from authenticated;
+grant update (name) on members to authenticated;
 
 -- Helper: the caller's org_id, read from their members row.
 create or replace function my_org()
@@ -120,6 +128,7 @@ declare
   v_org_id   uuid;
   v_org_name text;
   v_role     text;
+  v_status   text;
 begin
   -- Join an org ONLY if the signup carries a valid invite token for a matching pending invite.
   -- (Email match alone is not enough — that would let anyone be captured into another org.)
@@ -133,18 +142,21 @@ begin
     v_org_id   := inv.org_id;
     v_org_name := coalesce(inv.org_name, 'My Org');
     v_role     := coalesce(nullif(inv.role,''), 'creator');
+    v_status   := 'active';   -- invited users are pre-approved by an owner
     update public.invites set status = 'accepted' where id = inv.id;
   else
     v_org_id   := gen_random_uuid();
     v_org_name := coalesce(nullif(new.raw_user_meta_data->>'org_name',''), 'My Org');
     v_role     := coalesce(nullif(new.raw_user_meta_data->>'role',''), 'owner');
+    -- Creators onboard instantly; agency-side roles need platform approval.
+    v_status   := case when v_role = 'creator' then 'active' else 'pending' end;
   end if;
 
-  insert into public.members (id, org_id, org_name, name, email, role)
+  insert into public.members (id, org_id, org_name, name, email, role, status)
   values (
     new.id, v_org_id, v_org_name,
     coalesce(new.raw_user_meta_data->>'full_name', ''),
-    new.email, v_role
+    new.email, v_role, v_status
   )
   on conflict (id) do nothing;
   return new;
@@ -434,6 +446,44 @@ drop policy if exists "auth delete ig-media" on storage.objects;
 create policy "auth upload ig-media" on storage.objects for insert to authenticated with check (bucket_id = 'ig-media' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "public read ig-media"  on storage.objects for select using (bucket_id = 'ig-media');
 create policy "auth delete ig-media"  on storage.objects for delete to authenticated using (bucket_id = 'ig-media' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------- PLATFORM ADMINS (your team — approve agency/brand signups) ----------
+-- Add yourself once:  insert into platform_admins(user_id) values ('<your-auth-user-id>');
+create table if not exists platform_admins (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz default now()
+);
+alter table platform_admins enable row level security;
+-- (no client policies — managed via the Supabase dashboard / service role)
+
+create or replace function public.is_platform_admin()
+returns boolean language sql stable security definer set search_path = public
+as $$ select exists (select 1 from public.platform_admins where user_id = auth.uid()) $$;
+grant execute on function public.is_platform_admin() to authenticated;
+
+-- Pending agency signups across ALL orgs — returns rows only to a platform admin.
+create or replace function public.pending_members()
+returns table(id uuid, name text, email text, role text, org_name text, created_at timestamptz)
+language sql stable security definer set search_path = public
+as $$
+  select m.id, m.name, m.email, m.role, m.org_name, m.created_at
+  from public.members m
+  where m.status = 'pending' and public.is_platform_admin()
+  order by m.created_at desc
+$$;
+grant execute on function public.pending_members() to authenticated;
+
+-- Approve/decline a pending member — platform admins only.
+create or replace function public.set_member_status(p_id uuid, p_status text)
+returns void language plpgsql security definer set search_path = public
+as $$
+begin
+  if not public.is_platform_admin() then raise exception 'Not authorized'; end if;
+  if p_status not in ('active','declined') then raise exception 'Invalid status'; end if;
+  update public.members set status = p_status where id = p_id;
+end;
+$$;
+grant execute on function public.set_member_status(uuid, text) to authenticated;
 
 -- ---------- AI USAGE (per-user daily cap for the AI assistant) ----------
 create table if not exists ai_usage (

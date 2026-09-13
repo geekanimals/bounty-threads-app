@@ -27,7 +27,7 @@ const Auth = {
   async loadProfile() {
     if (!this.user) return null;
     const { data, error } = await sb.from('members')
-      .select('org_id, org_name, name, role, email')
+      .select('org_id, org_name, name, role, email, status')
       .eq('id', this.user.id)
       .maybeSingle();
     const md = this.user.user_metadata || {};
@@ -48,7 +48,8 @@ const Auth = {
       name: data.name || md.full_name || this.user.email,
       role: data.role || 'owner',
       org: data.org_name || md.org_name || 'My Org',
-      org_id: data.org_id
+      org_id: data.org_id,
+      status: data.status || 'active'
     };
     return this.profile;
   },

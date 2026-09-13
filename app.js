@@ -44,8 +44,10 @@ function initRoles(){
 /* ---------- Sidebar ---------- */
 function renderNav(){
   const nav = $("#nav"); nav.innerHTML="";
-  ROLES[currentRole].nav.forEach(key=>{
-    const m = NAV_META[key];
+  const keys = ROLES[currentRole].nav.slice();
+  if(window.__isAdmin) keys.push("admin");
+  keys.forEach(key=>{
+    const m = NAV_META[key] || {ic:"🛡", label:key};
     const a = el("a","", `<span class="ic">${m.ic}</span><span>${m.label}</span>`);
     if(key===currentPage) a.classList.add("active");
     a.onclick = ()=>{ currentPage=key; renderShell(); if(window.innerWidth<=760) $("#sidebar").classList.remove("open"); };
@@ -1144,8 +1146,28 @@ function wireMkComposer(){
   };
 }
 
+/* ================= ADMIN (platform team — approve agency signups) ================= */
+function renderAdmin(){
+  let html = pageHead("Admin — Approvals","Review and approve agency, brand & manager signups.");
+  html += `<div class="card"><h3>Awaiting approval</h3><div class="list" id="adminRows"><div class="muted" style="padding:8px">Loading…</div></div></div>`;
+  return html;
+}
+async function loadAdmin(){
+  const wrap=document.getElementById("adminRows");
+  if(!wrap||!window.sb) return;
+  const { data, error } = await sb.rpc("pending_members");
+  if(error){ wrap.innerHTML=`<div class="muted" style="padding:8px">${esc(error.message)}</div>`; return; }
+  const list=data||[];
+  if(!list.length){ wrap.innerHTML=`<div class="muted" style="padding:8px">No pending signups 🎉</div>`; return; }
+  wrap.innerHTML = list.map(x=>`<div class="row"><div class="r-main"><div class="r-title">${esc(x.name)||esc(x.email)}</div>
+    <div class="r-sub">${esc(x.email)} · ${esc(x.role)}${x.org_name?" · "+esc(x.org_name):""}</div></div>
+    <span><button class="mini-btn" data-approve="${esc(x.id)}">Approve</button> <button class="mini-btn ghost" data-decline="${esc(x.id)}">Decline</button></span></div>`).join("");
+  wrap.querySelectorAll("[data-approve]").forEach(b=>b.onclick=async()=>{ await sb.rpc("set_member_status",{p_id:b.dataset.approve,p_status:"active"}); loadAdmin(); });
+  wrap.querySelectorAll("[data-decline]").forEach(b=>b.onclick=async()=>{ await sb.rpc("set_member_status",{p_id:b.dataset.decline,p_status:"declined"}); loadAdmin(); });
+}
+
 const PAGES = {
-  dashboard:renderDashboard, barter:renderBarter, creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit,
+  dashboard:renderDashboard, barter:renderBarter, creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit, admin:renderAdmin,
   campaigns:renderCampaigns, reports:renderReports, growth:renderGrowth, settings:renderSettings,
   celebrity:renderCelebrity, approvals:renderApprovals, marketplace:renderMarketplace,
   brands:renderBrands, portfolio:renderPortfolio, finance:renderFinance, logistics:renderLogistics,
@@ -1447,6 +1469,7 @@ function renderContent(){
   if(currentPage==="logistics") loadLogistics();
   if(currentPage==="mediakit") loadMediaKit();
   if(currentPage==="growth") loadGrowth();
+  if(currentPage==="admin") loadAdmin();
   if(currentPage==="campaigns"){
     loadCampaigns();
     const add = document.getElementById("addCampaignBtn");
@@ -1565,12 +1588,29 @@ function toggleTheme(){
 }
 
 /* ---------- Boot (called after auth) ---------- */
+function showPending(){
+  const root = document.getElementById("authRoot");
+  if(!root) return;
+  root.classList.add("open");
+  root.innerHTML = `<div class="auth-wrap"><div class="auth-card" style="max-width:420px;text-align:center;margin:auto">
+    <div class="brand-mark" style="margin:0 auto 14px">G</div>
+    <h2 style="margin-bottom:8px">Your account is under review</h2>
+    <p class="muted" style="margin-bottom:18px">Thanks for signing up! Agency, brand & manager accounts are approved by our team before full access — we'll email you as soon as you're in (usually within a day).</p>
+    <button class="btn ghost" id="pendingSignout">Sign out</button>
+  </div></div>`;
+  const b = document.getElementById("pendingSignout"); if(b) b.onclick = ()=> window.Auth && Auth.signOut();
+}
+
 function bootOS(){
+  // Gate: agency-side accounts awaiting platform approval don't enter the OS.
+  if(window.Auth && Auth.profile && Auth.profile.status === "pending"){ showPending(); return; }
   // Seed the signed-in user's role into the shell.
   if(window.Auth && Auth.profile && ROLES[Auth.profile.role]){
     currentRole = Auth.profile.role;
   }
   init();
+  // Platform admins get an Admin queue in the nav.
+  if(window.sb){ sb.rpc("is_platform_admin").then(({data})=>{ if(data===true){ window.__isAdmin=true; renderNav(); } }).catch(()=>{}); }
 }
 
 /* ---------- Wire up ---------- */
