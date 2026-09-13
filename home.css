@@ -210,3 +210,14 @@ a{text-decoration:none;color:inherit}
   .price-card.featured{transform:none}
   .sec-head h2,.barter-copy h2,.cta-band h2{font-size:28px}
 }
+/* Cookie / consent banner (shared with the app) */
+.consent-bar{position:fixed;left:0;right:0;bottom:0;z-index:400;background:#fff;border-top:1px solid var(--line);box-shadow:0 -8px 30px rgba(20,20,60,.10)}
+.consent-inner{max-width:1080px;margin:0 auto;padding:14px 18px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;justify-content:space-between}
+.consent-txt{display:flex;flex-direction:column;gap:2px;font-size:13px;max-width:640px}
+.consent-txt b{font-size:14px;color:var(--ink)}
+.consent-txt span{color:var(--muted)}
+.consent-txt a{color:var(--brand);font-weight:600;text-decoration:none}
+.consent-btns{display:flex;gap:10px;flex-wrap:wrap}
+.consent-btn{padding:10px 16px;border-radius:11px;border:none;background:var(--brand);color:#fff;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit}
+.consent-btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+@media(max-width:600px){.consent-btns{width:100%}.consent-btn{flex:1}}

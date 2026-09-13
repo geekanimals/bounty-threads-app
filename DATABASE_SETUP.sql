@@ -102,6 +102,11 @@ create table if not exists invites (
   created_at timestamptz default now()
 );
 alter table invites add column if not exists token uuid not null default gen_random_uuid();
+-- Invites can go out over WhatsApp (preferred) or email; optionally tied to an imported creator.
+alter table invites add column if not exists name text;
+alter table invites add column if not exists whatsapp text;
+alter table invites add column if not exists channel text default 'whatsapp'; -- whatsapp | email
+alter table invites add column if not exists creator_id uuid;
 alter table invites enable row level security;
 drop policy if exists "org read invites"   on invites;
 drop policy if exists "org insert invites" on invites;
@@ -193,6 +198,14 @@ create table if not exists creators (
 alter table creators add column if not exists email text;
 alter table creators add column if not exists invite_status text default 'none'; -- none | invited | joined
 alter table creators add column if not exists invited_at timestamptz;
+-- WhatsApp is the preferred channel; email is the fallback.
+alter table creators add column if not exists whatsapp text;
+alter table creators add column if not exists phone text;
+alter table creators add column if not exists preferred_channel text default 'whatsapp'; -- whatsapp | email
+-- Location: auto-picked current location + a saved shipping address (for barters).
+alter table creators add column if not exists address text;
+alter table creators add column if not exists lat numeric;
+alter table creators add column if not exists lng numeric;
 alter table creators enable row level security;
 drop policy if exists "org read creators"   on creators;
 drop policy if exists "org insert creators" on creators;
@@ -372,6 +385,11 @@ create table if not exists irm_contacts (
   last_touch date, notes text,
   created_at timestamptz default now()
 );
+-- Contact channels for keeping relationships warm (WhatsApp preferred).
+alter table irm_contacts add column if not exists whatsapp text;
+alter table irm_contacts add column if not exists phone text;
+alter table irm_contacts add column if not exists email text;
+alter table irm_contacts add column if not exists preferred_channel text default 'whatsapp';
 alter table irm_contacts enable row level security;
 drop policy if exists "org read irm"   on irm_contacts;
 drop policy if exists "org insert irm" on irm_contacts;
@@ -438,6 +456,56 @@ as $$
   limit 1
 $$;
 grant execute on function public.public_profile(text) to anon, authenticated;
+
+-- ---------- ORG PUBLIC PROFILE (shareable agency/brand/creator workspace page) ----------
+-- One public page per org. Keyed by org_id; the owner sets a unique slug + public bio.
+create table if not exists org_profiles (
+  org_id uuid primary key default my_org(),
+  slug text unique,
+  display_name text,
+  tagline text,
+  bio text,
+  logo_url text,
+  website text,
+  whatsapp text,
+  email text,
+  city text,
+  is_public boolean default true,
+  updated_at timestamptz default now()
+);
+alter table org_profiles enable row level security;
+drop policy if exists "org read own profile"   on org_profiles;
+drop policy if exists "org insert own profile" on org_profiles;
+drop policy if exists "org update own profile" on org_profiles;
+create policy "org read own profile"   on org_profiles for select using (org_id = my_org());
+-- Only owners/corporate admins may create/edit the org's public page.
+create policy "org insert own profile" on org_profiles for insert with check (org_id = my_org() and my_role() in ('owner','corporate'));
+create policy "org update own profile" on org_profiles for update using (org_id = my_org() and my_role() in ('owner','corporate'));
+
+-- Public, read-only org page by slug. Returns the org header + its public roster + live campaign count.
+-- Exposes only safe public fields (never org_id, tokens, or private CRM data).
+create or replace function public.public_org(p_slug text)
+returns jsonb
+language sql stable security definer set search_path = public
+as $$
+  select case when p.org_id is null then null else jsonb_build_object(
+    'slug', p.slug, 'display_name', coalesce(p.display_name, 'Workspace'),
+    'tagline', p.tagline, 'bio', p.bio, 'logo_url', p.logo_url, 'website', p.website,
+    'whatsapp', p.whatsapp, 'email', p.email, 'city', p.city,
+    'creator_count', (select count(*) from public.creators c where c.org_id = p.org_id),
+    'campaign_count', (select count(*) from public.campaigns cm where cm.org_id = p.org_id),
+    'creators', coalesce((
+      select jsonb_agg(jsonb_build_object('name', c.name, 'handle', c.handle, 'tier', c.tier,
+                                          'cat', c.cat, 'followers', c.followers, 'city', c.city)
+             order by c.created_at desc)
+      from (select * from public.creators c2 where c2.org_id = p.org_id order by c2.created_at desc limit 24) c
+    ), '[]'::jsonb)
+  ) end
+  from public.org_profiles p
+  where lower(p.slug) = lower(p_slug) and p.is_public = true
+  limit 1
+$$;
+grant execute on function public.public_org(text) to anon, authenticated;
 
 -- ---------- SOCIAL TOKENS (access tokens — SERVER ONLY, no client access) ----------
 -- RLS is enabled with NO policies for the anon/authenticated roles, so the browser

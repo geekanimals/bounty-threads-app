@@ -13,8 +13,24 @@ const ROLE_OPTIONS = [
 // server-side trigger lets them join the inviting org (email match alone is not enough).
 const INVITE_TOKEN = new URLSearchParams(location.search).get("invite");
 
+// If this device previously signed in with Instagram, greet the returning creator so they
+// can continue in one tap (Instagram remembers the authorization — usually no re-consent).
+function returningCreator(){
+  try{
+    if(localStorage.getItem("geekos_conn_instagram") !== "1") return null;
+    return { name: localStorage.getItem("geekos_last_name") || "" };
+  }catch(e){ return null; }
+}
+
 function loginView(mode){
   const isUp = mode === "signup";
+  const back = returningCreator();
+  const welcomeBack = (!isUp && back) ? `
+    <div class="welcome-back">
+      <div class="wb-txt">👋 Welcome back${back.name?`, <b>${back.name.replace(/[<>&]/g,"")}</b>`:""}</div>
+      <button type="button" class="ig-btn wb-btn" id="igWelcome"><span class="ig-ic">📸</span> Continue with Instagram</button>
+      <button type="button" class="wb-not" id="wbNot">Not you? Sign in another way</button>
+    </div>` : "";
   return `
   <div class="auth-wrap">
     <div class="auth-card">
@@ -23,6 +39,8 @@ function loginView(mode){
         <div><div class="brand-name">Geek Influencer OS</div>
         <div class="muted">The operating system for influencer agencies</div></div>
       </div>
+
+      ${welcomeBack}
 
       <div class="auth-tabs">
         <button class="${!isUp?'act':''}" data-mode="login">Sign in</button>
@@ -74,6 +92,15 @@ function mountLogin(mode="login"){
 
   const ig = document.getElementById("igSignIn");
   if(ig) ig.onclick = ()=>{ if(typeof connectInstagram==="function") connectInstagram(); };
+
+  // Returning-creator fast path.
+  const igw = document.getElementById("igWelcome");
+  if(igw) igw.onclick = ()=>{ if(typeof connectInstagram==="function") connectInstagram(); };
+  const wbNot = document.getElementById("wbNot");
+  if(wbNot) wbNot.onclick = ()=>{
+    try{ localStorage.removeItem("geekos_conn_instagram"); localStorage.removeItem("geekos_last_name"); }catch(e){}
+    mountLogin("login");
+  };
 
   const form = document.getElementById("authForm");
   form.onsubmit = async e=>{

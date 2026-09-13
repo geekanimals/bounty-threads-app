@@ -18,3 +18,7 @@ verify_jwt = false
 # AI assistant — signed-in users only.
 [functions.ai-chat]
 verify_jwt = true
+
+# WhatsApp sender — signed-in users only (automated sending; app falls back to wa.me links).
+[functions.whatsapp-send]
+verify_jwt = true

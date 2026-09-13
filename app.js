@@ -91,6 +91,61 @@ function fmtMoney(n){
   return '₹'+n;
 }
 
+/* ---------- Communication channels (WhatsApp preferred, email fallback) ---------- */
+// Normalize a phone/WhatsApp number to digits, defaulting to India (+91) when no country code.
+function normalizePhone(raw){
+  if(!raw) return "";
+  let d = String(raw).replace(/[^\d+]/g,"");
+  if(d.startsWith("+")) return d.slice(1);
+  d = d.replace(/\D/g,"");
+  if(d.length === 10) return "91" + d;      // bare Indian mobile
+  if(d.length === 11 && d.startsWith("0")) return "91" + d.slice(1);
+  return d;
+}
+// Click-to-chat link — opens WhatsApp (app or web) with a prefilled message. Works with zero setup.
+function waLink(phone, text){
+  const p = normalizePhone(phone);
+  return "https://wa.me/" + p + (text ? "?text=" + encodeURIComponent(text) : "");
+}
+function mailtoLink(email, subject, body){
+  return "mailto:" + encodeURIComponent(email||"") +
+    "?subject=" + encodeURIComponent(subject||"") + "&body=" + encodeURIComponent(body||"");
+}
+// Reach a contact on their preferred channel; opens WhatsApp or the mail client in a new tab.
+function reachOut({ whatsapp, phone, email, preferred_channel }, message, subject){
+  const wa = whatsapp || phone;
+  const useWa = (preferred_channel !== "email") && wa;
+  if(useWa){ window.open(waLink(wa, message), "_blank", "noopener"); return "whatsapp"; }
+  if(email){ window.open(mailtoLink(email, subject || "Hello from Geek Influencer OS", message), "_blank", "noopener"); return "email"; }
+  return null;
+}
+
+/* ---------- Location (auto-picker + reverse geocode, best-effort) ---------- */
+// Uses the browser Geolocation API (asks the user's permission), then reverse-geocodes
+// via OpenStreetMap Nominatim (free, no key). Returns {lat,lng,city,address}.
+function pickLocation(){
+  return new Promise((resolve, reject)=>{
+    if(!navigator.geolocation){ reject(new Error("Location isn't supported on this device.")); return; }
+    navigator.geolocation.getCurrentPosition(async pos=>{
+      const lat = +pos.coords.latitude.toFixed(6), lng = +pos.coords.longitude.toFixed(6);
+      let city = "", address = "";
+      try{
+        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+          { headers:{ "Accept":"application/json" } });
+        if(r.ok){
+          const j = await r.json();
+          const a = j.address || {};
+          city = a.city || a.town || a.village || a.suburb || a.state_district || a.state || "";
+          address = j.display_name || "";
+        }
+      }catch(e){ /* reverse geocode is best-effort; coordinates still returned */ }
+      resolve({ lat, lng, city, address });
+    }, err=>{
+      reject(new Error(err.code === 1 ? "Location permission denied." : "Couldn't get your location."));
+    }, { enableHighAccuracy:true, timeout:10000, maximumAge:60000 });
+  });
+}
+
 // Compute every KPI the current page shows, live from the org's real rows (RLS-scoped).
 async function loadKPIs(){
   const cells = Array.from(document.querySelectorAll('[id^="kpi-"]'));
@@ -412,15 +467,18 @@ function renderCreators(){
   let html = `<div class="page-head"><div><h1>Creators</h1><p>Discovery & roster — AI-matched to your campaigns.</p></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn ghost" id="importCreatorBtn">⬆ Import CSV</button>
+      <button class="btn ghost" id="bulkInviteBtn" disabled>✉ Invite all</button>
       <button class="btn" id="addCreatorBtn">+ Add Creator</button></div></div>`;
   html += `<input type="file" id="creatorCsvInput" accept=".csv,text/csv" hidden>`;
   html += `<div id="csvImportNote" class="muted" style="margin:0 0 10px;font-size:12px">
-    CSV columns: <code>name, handle, email, city, tier, followers, engagement, category, rating</code> — only <b>name</b> is required.
-    <a href="#" id="csvSample">Download sample</a></div>`;
-  html += `<div class="card"><table><thead><tr><th>Creator</th><th>City</th><th>Tier</th><th>Followers</th><th>Engagement</th><th>Category</th><th>Rating</th></tr></thead>
+    CSV columns: <code>name, handle, whatsapp, email, city, address, tier, followers, engagement, category, rating</code> — only <b>name</b> is required.
+    Add <b>whatsapp</b> (or email) so you can send app sign-in invites. <a href="#" id="csvSample">Download sample</a></div>`;
+  html += `<div class="card"><table><thead><tr><th>Creator</th><th>City</th><th>Tier</th><th>Followers</th><th>Contact</th><th>App</th><th>Actions</th></tr></thead>
     <tbody id="creatorRows"><tr><td colspan="7" class="muted" style="padding:24px">Loading creators…</td></tr></tbody></table></div>`;
   return html;
 }
+
+const INVITE_BADGE = { none:"", invited:`<span class="tag warn">Invited</span>`, joined:`<span class="tag good">Joined</span>` };
 
 // Minimal RFC-4180-ish CSV parser (handles quoted fields, embedded commas & newlines).
 function parseCsv(text){
@@ -445,7 +503,8 @@ function parseCsv(text){
 // Map flexible CSV header names to our creator columns.
 const CSV_ALIASES = {
   name:["name","full name","creator","creator name"], handle:["handle","username","instagram","ig","insta"],
-  email:["email","e-mail","mail"], city:["city","location"], tier:["tier"],
+  email:["email","e-mail","mail"], whatsapp:["whatsapp","wa","whatsapp number","mobile","phone","contact","number"],
+  city:["city","location"], address:["address","shipping address","full address"], tier:["tier"],
   followers:["followers","follower count","reach"], eng:["engagement","eng","engagement rate","er"],
   cat:["category","cat","niche","vertical"], rating:["rating","stars","score"]
 };
@@ -477,6 +536,7 @@ async function importCreatorsCsv(file){
       const name = get(rows[r], "name");
       if(!name) continue;
       const rec = { name, handle:get(rows[r],"handle"), email:(get(rows[r],"email")||"").toLowerCase(),
+        whatsapp:get(rows[r],"whatsapp"), address:get(rows[r],"address"),
         city:get(rows[r],"city"), tier:get(rows[r],"tier")||"Micro", followers:get(rows[r],"followers"),
         eng:get(rows[r],"eng"), cat:get(rows[r],"cat"), rating:parseFloat(get(rows[r],"rating"))||null };
       if(org_id){ rec.org_id = org_id; rec.org_name = org_name; }
@@ -492,8 +552,8 @@ async function importCreatorsCsv(file){
       if(error) throw error;
       inserted += chunk.length;
     }
-    const withEmail = records.filter(r => r.email).length;
-    say(`✓ Imported ${inserted} creators${withEmail?` (${withEmail} have emails — use “Invite to app” to send sign-in requests)`:""}.`);
+    const reachable = records.filter(r => r.whatsapp || r.email).length;
+    say(`✓ Imported ${inserted} creators${reachable?` — ${reachable} reachable. Use “Invite all” to send sign-in requests over WhatsApp/email.`:""}.`);
     await loadCreators();
   }catch(ex){
     say(ex.message || "Import failed.", true);
@@ -501,9 +561,9 @@ async function importCreatorsCsv(file){
 }
 
 function csvSampleDownload(){
-  const sample = "name,handle,email,city,tier,followers,engagement,category,rating\n" +
-    "Aarav Mehta,@aaravmehta,aarav@example.com,Mumbai,Macro,842K,4.2%,Fashion,4.8\n" +
-    "Ishita Rao,@ishitarao,ishita@example.com,Bengaluru,Micro,128K,6.1%,Beauty,4.9\n";
+  const sample = "name,handle,whatsapp,email,city,address,tier,followers,engagement,category,rating\n" +
+    "Aarav Mehta,@aaravmehta,+919812345678,aarav@example.com,Mumbai,,Macro,842K,4.2%,Fashion,4.8\n" +
+    "Ishita Rao,@ishitarao,+919876543210,ishita@example.com,Bengaluru,,Micro,128K,6.1%,Beauty,4.9\n";
   const blob = new Blob([sample], {type:"text/csv"});
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a"); a.href = url; a.download = "creators-sample.csv";
@@ -513,8 +573,17 @@ function csvSampleDownload(){
 
 function creatorRowsHtml(list){
   if(!list.length) return `<tr><td colspan="7" class="muted" style="padding:24px">No creators yet — add your first one 👆</td></tr>`;
-  return list.map(c=>`<tr><td><span class="avatar">${esc((c.name||"?").split(" ").map(x=>x[0]).join("").slice(0,2))}</span>${esc(c.name)}</td>
-    <td>${esc(c.city)||"—"}</td><td><span class="tag brand">${esc(c.tier)||"—"}</span></td><td>${esc(c.followers)||"—"}</td><td>${esc(c.eng)||"—"}</td><td>${esc(c.cat)||"—"}</td><td>⭐ ${esc(c.rating)||"—"}</td></tr>`).join("");
+  return list.map(c=>{
+    const chan = c.whatsapp ? `<span title="WhatsApp">🟢 ${esc(c.whatsapp)}</span>` : (c.email ? `<span title="Email">✉ ${esc(c.email)}</span>` : `<span class="muted">—</span>`);
+    const canInvite = !!(c.id && (c.whatsapp || c.email) && (c.invite_status||"none")!=="joined");
+    return `<tr><td><span class="avatar">${esc((c.name||"?").split(" ").map(x=>x[0]).join("").slice(0,2))}</span>${esc(c.name)}</td>
+      <td>${esc(c.city)||"—"}</td><td><span class="tag brand">${esc(c.tier)||"—"}</span></td><td>${esc(c.followers)||"—"}</td>
+      <td>${chan}</td>
+      <td>${INVITE_BADGE[c.invite_status||"none"]||""}</td>
+      <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${canInvite?`<button class="mini-btn" data-invitecreator="${esc(c.id)}">${(c.invite_status==="invited")?"Re-invite":"Invite to app"}</button>`:""}
+        <button class="mini-btn ghost" data-editcreator="${esc(c.id)}">Edit</button></div></td></tr>`;
+  }).join("");
 }
 
 async function loadCreators(){
@@ -530,50 +599,180 @@ async function loadCreators(){
   if(org_id) q = q.eq("org_id", org_id);
   const { data, error } = await q;
   if(error){ tbody.innerHTML = `<tr><td colspan="7" class="muted" style="padding:24px">Couldn't load creators: ${esc(error.message)}</td></tr>`; return; }
-  tbody.innerHTML = creatorRowsHtml(data||[]);
+  const list = data||[];
+  tbody.innerHTML = creatorRowsHtml(list);
+  const byId = id => list.find(x=>x.id===id);
+  tbody.querySelectorAll("[data-editcreator]").forEach(b=> b.onclick = ()=>{ const c=byId(b.dataset.editcreator); if(c) openCreatorModal(c); });
+  tbody.querySelectorAll("[data-invitecreator]").forEach(b=> b.onclick = ()=>{ const c=byId(b.dataset.invitecreator); if(c) inviteCreator(c, b); });
+  // Bulk-invite header button reflects how many creators are reachable & not yet joined.
+  const bulk = document.getElementById("bulkInviteBtn");
+  if(bulk){
+    const pending = list.filter(c => (c.whatsapp||c.email) && (c.invite_status||"none")!=="joined");
+    bulk.textContent = `✉ Invite all (${pending.length})`;
+    bulk.disabled = !pending.length;
+    bulk.onclick = ()=> bulkInviteCreators(pending);
+  }
 }
 
-function openCreatorModal(){
-  let m = document.getElementById("creatorModal");
-  if(!m){
-    m = el("div","modal-overlay"); m.id="creatorModal";
-    m.innerHTML = `<div class="modal">
-      <div class="modal-head"><strong>Add Creator</strong><button class="icon-btn" id="ccClose">✕</button></div>
-      <form id="creatorForm" class="modal-form">
-        <div class="mf-row"><label>Name<input name="name" required placeholder="Ananya Sharma"></label>
-        <label>City<input name="city" placeholder="Delhi"></label></div>
-        <div class="mf-row"><label>Tier<select name="tier"><option>Micro</option><option>Mid</option><option>Macro</option><option>Celebrity</option></select></label>
-        <label>Category<input name="cat" placeholder="Fashion"></label></div>
-        <div class="mf-row"><label>Followers<input name="followers" placeholder="128K"></label>
-        <label>Engagement<input name="eng" placeholder="4.2%"></label></div>
-        <div class="mf-row"><label>Rating<input name="rating" placeholder="4.8"></label>
-        <label>Handle<input name="handle" placeholder="@ananya"></label></div>
-        <div class="auth-err" id="ccErr"></div>
-        <button class="btn" type="submit">Save Creator</button>
-      </form></div>`;
-    document.body.appendChild(m);
+// Compose the invite: create an invites row (role=creator) tied to this org, then open the
+// creator's preferred channel (WhatsApp/email) with a prefilled sign-in message + link.
+async function inviteCreator(c, btn){
+  const note = document.getElementById("csvImportNote");
+  const say = (msg, err)=>{ if(note){ note.innerHTML = `<span style="color:${err?'var(--danger,#c0392b)':'var(--accent,#2d7)'}">${esc(msg)}</span>`; } };
+  try{
+    if(!window.sb) throw new Error("Database not connected.");
+    if(btn){ btn.disabled = true; btn.textContent = "…"; }
+    const org_id = (window.Auth && Auth.profile && Auth.profile.org_id) || null;
+    const org_name = (window.Auth && Auth.profile && Auth.profile.org) || "our roster";
+    // Reuse an existing pending invite for this email if present, else create one (gets a token).
+    let token, email = (c.email||"").toLowerCase();
+    if(email){
+      const { data: existing } = await sb.from("invites").select("token").eq("email", email).eq("status","pending").limit(1);
+      token = existing && existing[0] && existing[0].token;
+    }
+    if(!token){
+      const row = { email: email || null, name: c.name, whatsapp: c.whatsapp||null, role:"creator", status:"pending",
+        channel: (c.preferred_channel!=="email" && (c.whatsapp)) ? "whatsapp" : "email", creator_id: c.id };
+      if(org_id){ row.org_id = org_id; row.org_name = org_name; }
+      const { data, error } = await sb.from("invites").insert(row).select("token").single();
+      if(error) throw error;
+      token = data.token;
+    }
+    const base = location.origin + location.pathname.replace(/[^/]*$/,"") + "app.html";
+    const link = base + "?invite=" + token;
+    const msg = `Hi ${c.name||"there"}! ${org_name} is inviting you to join us on Geek Influencer OS — you'll get your own auto-built media kit and barter/campaign invites. Sign in here: ${link}`;
+    const via = reachOut(c, msg, `You're invited to join ${org_name}`);
+    // Track that we invited them.
+    await sb.from("creators").update({ invite_status:"invited", invited_at:new Date().toISOString() }).eq("id", c.id);
+    if(!via){
+      // No channel opened — hand over a copyable link.
+      try{ await navigator.clipboard.writeText(link); say("No WhatsApp/email on file — invite link copied to clipboard."); }
+      catch(e){ prompt("Share this invite link:", link); }
+    }else{
+      say(`✓ Invite opened in ${via==="whatsapp"?"WhatsApp":"your email"} for ${c.name}.`);
+    }
+    await loadCreators();
+  }catch(ex){
+    say(ex.message || "Couldn't create invite.", true);
+    if(btn){ btn.disabled = false; btn.textContent = "Invite to app"; }
   }
-  m.classList.add("open");
+}
+
+// Bulk: create invites for everyone reachable, then hand over WhatsApp/mail links to send.
+async function bulkInviteCreators(list){
+  const note = document.getElementById("csvImportNote");
+  const say = (msg, err)=>{ if(note){ note.innerHTML = `<span style="color:${err?'var(--danger,#c0392b)':'var(--accent,#2d7)'}">${esc(msg)}</span>`; } };
+  if(!list.length){ say("Everyone reachable has already been invited."); return; }
+  if(!confirm(`Create sign-in invites for ${list.length} creator${list.length>1?'s':''}? You'll get a list of WhatsApp/email links to send.`)) return;
+  try{
+    if(!window.sb) throw new Error("Database not connected.");
+    const org_id = (window.Auth && Auth.profile && Auth.profile.org_id) || null;
+    const org_name = (window.Auth && Auth.profile && Auth.profile.org) || "our roster";
+    const base = location.origin + location.pathname.replace(/[^/]*$/,"") + "app.html";
+    const links = [];
+    for(const c of list){
+      let token, email = (c.email||"").toLowerCase();
+      if(email){
+        const { data: ex } = await sb.from("invites").select("token").eq("email", email).eq("status","pending").limit(1);
+        token = ex && ex[0] && ex[0].token;
+      }
+      if(!token){
+        const row = { email: email||null, name:c.name, whatsapp:c.whatsapp||null, role:"creator", status:"pending",
+          channel:(c.preferred_channel!=="email" && c.whatsapp)?"whatsapp":"email", creator_id:c.id };
+        if(org_id){ row.org_id = org_id; row.org_name = org_name; }
+        const { data, error } = await sb.from("invites").insert(row).select("token").single();
+        if(error) continue;
+        token = data.token;
+      }
+      const link = base + "?invite=" + token;
+      const msg = `Hi ${c.name||"there"}! ${org_name} is inviting you to Geek Influencer OS. Sign in: ${link}`;
+      const wa = c.whatsapp || c.phone;
+      links.push({ name:c.name, href: (c.preferred_channel!=="email" && wa) ? waLink(wa, msg) : mailtoLink(email, `Join ${org_name}`, msg), chan: (c.preferred_channel!=="email" && wa)?"WhatsApp":"Email" });
+      await sb.from("creators").update({ invite_status:"invited", invited_at:new Date().toISOString() }).eq("id", c.id);
+    }
+    showBulkInviteLinks(links);
+    await loadCreators();
+  }catch(ex){ say(ex.message||"Bulk invite failed.", true); }
+}
+
+// Present the generated invite links so the agency can fire them off one tap each.
+function showBulkInviteLinks(links){
+  let m = document.getElementById("bulkInvModal"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id="bulkInvModal";
+  const rows = links.map(l=>`<div class="row"><div class="r-main"><div class="r-title">${esc(l.name||"Creator")}</div><div class="r-sub">${esc(l.chan)}</div></div>
+    <a class="mini-btn" href="${esc(l.href)}" target="_blank" rel="noopener">Send ↗</a></div>`).join("");
+  m.innerHTML = `<div class="modal modal-lg"><div class="modal-head"><strong>${links.length} invite${links.length>1?'s':''} ready</strong><button class="icon-btn" id="biClose">✕</button></div>
+    <div class="modal-form"><p class="muted">Tap “Send” on each to open a prefilled WhatsApp / email with their personal sign-in link. (Automatic bulk sending activates once the WhatsApp Business API is connected.)</p>
+    <div class="list" style="max-height:52vh;overflow:auto">${rows||'<div class="muted" style="padding:8px">Nothing to send.</div>'}</div></div></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  m.onclick = e=>{ if(e.target.id==="bulkInvModal") m.classList.remove("open"); };
+  document.getElementById("biClose").onclick = ()=> m.classList.remove("open");
+}
+
+function openCreatorModal(existing){
+  const ed = existing || {};
+  const opt = (arr,val)=>arr.map(o=>`<option${o===val?' selected':''}>${o}</option>`).join("");
+  let m = document.getElementById("creatorModal"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id="creatorModal";
+  m.innerHTML = `<div class="modal modal-lg">
+    <div class="modal-head"><strong>${existing?'Edit Creator':'Add Creator'}</strong><button class="icon-btn" id="ccClose">✕</button></div>
+    <form id="creatorForm" class="modal-form">
+      <div class="mf-row"><label>Name<input name="name" required value="${esc(ed.name||'')}" placeholder="Ananya Sharma"></label>
+      <label>Handle<input name="handle" value="${esc(ed.handle||'')}" placeholder="@ananya"></label></div>
+      <div class="mf-row"><label>Tier<select name="tier">${opt(["Micro","Mid","Macro","Celebrity"], ed.tier)}</select></label>
+      <label>Category<input name="cat" value="${esc(ed.cat||'')}" placeholder="Fashion"></label></div>
+      <div class="mf-row"><label>Followers<input name="followers" value="${esc(ed.followers||'')}" placeholder="128K"></label>
+      <label>Engagement<input name="eng" value="${esc(ed.eng||'')}" placeholder="4.2%"></label></div>
+      <div class="mf-row"><label>Rating<input name="rating" value="${ed.rating!=null?esc(ed.rating):''}" placeholder="4.8"></label>
+      <label>Preferred channel<select name="preferred_channel">${opt(["whatsapp","email"], ed.preferred_channel||"whatsapp")}</select></label></div>
+      <div class="mf-sec">Contact</div>
+      <div class="mf-row"><label>WhatsApp<input name="whatsapp" value="${esc(ed.whatsapp||'')}" placeholder="+91 98xxxxxxxx"></label>
+      <label>Email<input name="email" type="email" value="${esc(ed.email||'')}" placeholder="ananya@email.com"></label></div>
+      <div class="mf-sec">Location</div>
+      <div class="mf-row"><label>City<input name="city" value="${esc(ed.city||'')}" placeholder="Delhi"></label>
+      <label>Saved address (shipping)<input name="address" value="${esc(ed.address||'')}" placeholder="Flat, street, area, PIN"></label></div>
+      <button type="button" class="btn ghost" id="ccGeo" style="align-self:flex-start">📍 Use current location</button>
+      <input type="hidden" name="lat" value="${ed.lat!=null?esc(ed.lat):''}"><input type="hidden" name="lng" value="${ed.lng!=null?esc(ed.lng):''}">
+      <div class="lead-msg" id="ccGeoMsg"></div>
+      <div class="auth-err" id="ccErr"></div>
+      <button class="btn" type="submit">${existing?'Save changes':'Save Creator'}</button>
+    </form></div>`;
+  document.body.appendChild(m); m.classList.add("open");
   m.onclick = e=>{ if(e.target.id==="creatorModal") m.classList.remove("open"); };
   document.getElementById("ccClose").onclick = ()=> m.classList.remove("open");
   const form = document.getElementById("creatorForm");
+  const geoBtn = document.getElementById("ccGeo"), geoMsg = document.getElementById("ccGeoMsg");
+  geoBtn.onclick = async ()=>{
+    geoBtn.disabled = true; geoMsg.className = "lead-msg"; geoMsg.textContent = "Locating…";
+    try{
+      const loc = await pickLocation();
+      form.lat.value = loc.lat; form.lng.value = loc.lng;
+      if(loc.city && !form.city.value) form.city.value = loc.city;
+      if(loc.address && !form.address.value) form.address.value = loc.address;
+      geoMsg.className = "lead-msg ok"; geoMsg.textContent = `📍 ${loc.city || (loc.lat+", "+loc.lng)}`;
+    }catch(ex){ geoMsg.className = "lead-msg"; geoMsg.textContent = ex.message; }
+    finally{ geoBtn.disabled = false; }
+  };
   form.onsubmit = async e=>{
     e.preventDefault();
     const f = new FormData(form), err = document.getElementById("ccErr");
     const btn = form.querySelector("button[type=submit]");
     err.textContent=""; btn.disabled=true; btn.textContent="Saving…";
     const row = { name:f.get("name"), city:f.get("city"), tier:f.get("tier"), cat:f.get("cat"),
-      followers:f.get("followers"), eng:f.get("eng"), rating:f.get("rating")||null, handle:f.get("handle") };
-    if(window.Auth && Auth.profile){ row.org_name = Auth.profile.org; row.org_id = Auth.profile.org_id; }
+      followers:f.get("followers"), eng:f.get("eng"), rating:parseFloat(f.get("rating"))||null, handle:f.get("handle"),
+      whatsapp:f.get("whatsapp"), email:(f.get("email")||"").toLowerCase(), preferred_channel:f.get("preferred_channel"),
+      address:f.get("address"), lat:parseFloat(f.get("lat"))||null, lng:parseFloat(f.get("lng"))||null };
     try{
       if(!window.sb) throw new Error("Database not connected yet.");
-      const { error } = await window.sb.from("creators").insert(row);
+      let error;
+      if(existing){ ({error}=await window.sb.from("creators").update(row).eq("id", existing.id)); }
+      else { if(window.Auth && Auth.profile){ row.org_name = Auth.profile.org; row.org_id = Auth.profile.org_id; } ({error}=await window.sb.from("creators").insert(row)); }
       if(error) throw error;
       m.classList.remove("open");
       await loadCreators();
     }catch(ex){
       err.textContent = ex.message || "Couldn't save.";
-      btn.disabled=false; btn.textContent="Save Creator";
+      btn.disabled=false; btn.textContent=existing?'Save changes':'Save Creator';
     }
   };
 }
@@ -958,8 +1157,8 @@ async function loadLogistics(){
 const IRM_STATUSES = ["New","Active","Warm","At Risk","Dormant"];
 function renderIRM(){
   let html = pageHead("IRM — Influencer Relationships","Every creator & celebrity relationship, kept warm.",`<span id="addIrmBtn">+ Add Contact</span>`);
-  html += `<div class="card"><table><thead><tr><th>Contact</th><th>Type</th><th>Status</th><th>Health</th><th>Last touch</th></tr></thead>
-    <tbody id="irmRows"><tr><td colspan="5" class="muted" style="padding:24px">Loading…</td></tr></tbody></table></div>`;
+  html += `<div class="card"><table><thead><tr><th>Contact</th><th>Type</th><th>Status</th><th>Health</th><th>Last touch</th><th>Reach out</th></tr></thead>
+    <tbody id="irmRows"><tr><td colspan="6" class="muted" style="padding:24px">Loading…</td></tr></tbody></table></div>`;
   return html;
 }
 function irmHealthBar(h){ h=Math.max(0,Math.min(100,parseInt(h)||0)); return `<div class="bar" style="width:90px;display:inline-block;vertical-align:middle"><span style="width:${h}%"></span></div> <span class="muted">${h}</span>`; }
@@ -967,13 +1166,20 @@ async function loadIRM(){
   const body=document.getElementById("irmRows");
   if(!body||!window.sb) return;
   const { data, error } = await sb.from("irm_contacts").select("*").order("created_at",{ascending:false});
-  if(error){ body.innerHTML=`<tr><td colspan="5" class="muted" style="padding:24px">IRM isn't set up yet (run the latest DATABASE_SETUP.sql). ${esc(error.message)}</td></tr>`; return; }
+  if(error){ body.innerHTML=`<tr><td colspan="6" class="muted" style="padding:24px">IRM isn't set up yet (run the latest DATABASE_SETUP.sql). ${esc(error.message)}</td></tr>`; return; }
   const list=data||[];
+  const reach = x=>{
+    const wa = x.whatsapp || x.phone;
+    if(x.preferred_channel!=="email" && wa) return `<a class="mini-btn" href="${esc(waLink(wa, "Hi "+(x.name||"")+"!"))}" target="_blank" rel="noopener">💬 WhatsApp</a>`;
+    if(x.email) return `<a class="mini-btn ghost" href="${esc(mailtoLink(x.email,"Hello from "+((Auth.profile&&Auth.profile.org)||"us"),"Hi "+(x.name||"")+"!"))}">✉ Email</a>`;
+    return `<span class="muted">—</span>`;
+  };
   body.innerHTML = list.length ? list.map(x=>`<tr><td><span class="avatar">${esc((x.name||"?").slice(0,2).toUpperCase())}</span>${esc(x.name)}</td>
     <td><span class="tag brand">${esc(x.kind||"Creator")}</span></td>
     <td>${esc(x.status||"New")}</td>
     <td>${irmHealthBar(x.health)}</td>
-    <td>${esc(x.last_touch)||"—"}</td></tr>`).join("") : `<tr><td colspan="5" class="muted" style="padding:24px">No contacts yet — add your first relationship 👆</td></tr>`;
+    <td>${esc(x.last_touch)||"—"}</td>
+    <td>${reach(x)}</td></tr>`).join("") : `<tr><td colspan="6" class="muted" style="padding:24px">No contacts yet — add your first relationship 👆</td></tr>`;
 }
 function openIrmModal(){
   let m = document.getElementById("irmModal");
@@ -987,7 +1193,11 @@ function openIrmModal(){
         <label>Health (0–100)<input name="health" type="number" min="0" max="100" placeholder="60"></label></div>
         <div class="mf-row"><label>Last touch<input name="last_touch" type="date"></label>
         <label>Handle<input name="handle" placeholder="@aarav"></label></div>
-        <label>Notes<input name="notes" placeholder="Prefers WhatsApp; likes tech barters"></label>
+        <div class="mf-sec">Contact (WhatsApp preferred)</div>
+        <div class="mf-row"><label>WhatsApp<input name="whatsapp" placeholder="+91 98xxxxxxxx"></label>
+        <label>Email<input name="email" type="email" placeholder="aarav@email.com"></label></div>
+        <div class="mf-row"><label>Preferred channel<select name="preferred_channel"><option value="whatsapp">WhatsApp</option><option value="email">Email</option></select></label>
+        <label>Notes<input name="notes" placeholder="Likes tech barters"></label></div>
         <div class="auth-err" id="imErr"></div>
         <button class="btn" type="submit">Add Contact</button></form></div>`;
     document.body.appendChild(m);
@@ -1000,12 +1210,42 @@ function openIrmModal(){
     const f=new FormData(e.target), err=document.getElementById("imErr"), btn=e.target.querySelector("button[type=submit]");
     err.textContent=""; btn.disabled=true; btn.textContent="Saving…";
     const row={ name:f.get("name"), kind:f.get("kind"), status:f.get("status"), health:parseInt(f.get("health"))||null,
-      last_touch:f.get("last_touch")||null, handle:f.get("handle"), notes:f.get("notes") };
+      last_touch:f.get("last_touch")||null, handle:f.get("handle"), notes:f.get("notes"),
+      whatsapp:f.get("whatsapp"), email:(f.get("email")||"").toLowerCase(), preferred_channel:f.get("preferred_channel") };
     if(window.Auth&&Auth.profile){ row.org_id=Auth.profile.org_id; }
     try{ if(!window.sb) throw new Error("Database not connected."); const { error }=await sb.from("irm_contacts").insert(row); if(error) throw error;
       m.classList.remove("open"); await loadIRM();
     }catch(ex){ err.textContent=ex.message||"Couldn't save."; btn.disabled=false; btn.textContent="Add Contact"; }
   };
+}
+
+/* ================= LISTENING (mentions from connected IG accounts) ================= */
+function renderListening(){
+  let html = pageHead("Listening","Mentions & tags across your connected accounts — real data from Instagram.");
+  html += `<div class="card"><h3>Recent mentions</h3>
+    <p class="muted" style="margin-bottom:12px">Every post that tagged or mentioned a connected creator. Connect Instagram (Media Kit → Connect) to populate this.</p>
+    <div id="listenGrid" class="mk-grid"><div class="muted" style="padding:8px">Loading…</div></div></div>`;
+  html += `<div class="ai-suggest" style="margin-top:12px"><span class="spark">📡</span><div class="s-body"><b>More listening is coming</b>
+    <p>Keyword & hashtag tracking and brand-mention alerts activate as more platform integrations (Meta pages, YouTube, LinkedIn) come online in Settings → Integrations.</p></div></div>`;
+  return html;
+}
+async function loadListening(){
+  const grid = document.getElementById("listenGrid");
+  if(!grid || !window.sb) return;
+  // social_accounts is org-readable; pull mentions from every connected account in the org.
+  const { data, error } = await sb.from("social_accounts").select("username, mentions");
+  if(error){ grid.innerHTML = `<div class="muted" style="padding:8px">Couldn't load mentions: ${esc(error.message)}</div>`; return; }
+  const all = [];
+  (data||[]).forEach(acc=>{
+    (Array.isArray(acc.mentions)?acc.mentions:[]).forEach(m=> all.push(Object.assign({ _on:acc.username }, m)));
+  });
+  if(!all.length){ grid.innerHTML = `<div class="muted" style="padding:8px">No mentions yet. Once a connected creator is tagged on Instagram, those posts show up here.</div>`; return; }
+  grid.innerHTML = all.slice(0,24).map(m=>{
+    const img = m.media_type==="VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
+    return `<a href="${esc(safeUrl(m.permalink))}" target="_blank" rel="noopener" class="mk-post">
+      ${img?`<img src="${esc(safeUrl(img))}" alt="" loading="lazy">`:`<div class="mk-post-noimg">@${esc(m.username||"tagged")}</div>`}
+      <span class="mk-meta">@${esc(m.username)||"tagged"} → @${esc(m._on)}</span></a>`;
+  }).join("");
 }
 
 /* ================= ROSTER (talent manager — reuse creators) ================= */
@@ -1277,7 +1517,7 @@ const PAGES = {
   celebrity:renderCelebrity, approvals:renderApprovals, marketplace:renderMarketplace,
   brands:renderBrands, portfolio:renderPortfolio, finance:renderFinance, logistics:renderLogistics,
   irm:renderIRM,
-  listening:()=>renderPlaceholder("Listening","Social listening & mentions — activates once your Meta / Google / LinkedIn integrations are connected.")
+  listening:renderListening
 };
 
 /* ---------- Social integrations (Settings) — real OAuth launch flow ---------- */
@@ -1355,6 +1595,8 @@ async function finishInstagram(code){
     const authRoot = document.getElementById("authRoot");
     if(authRoot){ authRoot.classList.remove("open"); authRoot.innerHTML = ""; }
     if(window.Auth) await Auth.currentSession();
+    // Remember this device so returning creators get a one-tap "welcome back" (no re-typing).
+    try{ localStorage.setItem("geekos_last_name", (Auth.profile && Auth.profile.name) || ""); }catch(e){}
     currentPage = "mediakit";
     if(typeof bootOS==="function") bootOS();
   }catch(ex){
@@ -1480,12 +1722,83 @@ function renderSettings(){
     <h4 style="margin-top:18px">Pending invites</h4>
     <div class="list" id="pendingInvites"><div class="muted" style="padding:8px">Loading…</div></div>
   </div>`;
+  html += `<div class="card"><h3>Public workspace page</h3>
+    <p class="muted" style="margin-bottom:12px">A public link to <b>${esc(org)}</b> you can share with brands & creators — shows your roster and campaign activity, no login needed.</p>
+    <form id="orgProfileForm" class="modal-form">
+      <div class="mf-row"><label>Public link (slug)<input name="slug" placeholder="geek-media" pattern="[a-z0-9-]+" title="lowercase letters, numbers and dashes"></label>
+      <label>Display name<input name="display_name" placeholder="${esc(org)}"></label></div>
+      <label>Tagline<input name="tagline" placeholder="India's barter-first creator agency"></label>
+      <label>Bio<textarea name="bio" rows="3" placeholder="What your agency does, who you work with…"></textarea></label>
+      <div class="mf-row"><label>Contact WhatsApp<input name="whatsapp" placeholder="+91 98xxxxxxxx"></label>
+      <label>Contact email<input name="email" type="email" placeholder="hello@agency.com"></label></div>
+      <div class="mf-row"><label>Website<input name="website" placeholder="agency.com"></label>
+      <label>City<input name="city" placeholder="Gurugram"></label></div>
+      <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-size:13px"><input type="checkbox" name="is_public" style="width:auto" checked> Page is public</label>
+      <div class="auth-err" id="orgProfErr"></div>
+      <div class="lead-msg" id="orgProfMsg"></div>
+      <div id="orgProfLink" style="display:none;margin-top:2px"></div>
+      <button class="btn" type="submit">Save & get link</button>
+    </form></div>`;
   html += `<div class="card"><h3>Social Platform Integrations</h3>
     <p class="muted" style="margin-bottom:16px">Connect official platform APIs (no scraping) to pull real analytics from creator accounts and brand pages. Each needs a registered developer app — status shown live below.</p>
     <div id="integrationList"></div>
     <div class="ai-suggest" style="margin-top:8px"><span class="spark">🔑</span><div class="s-body"><b>3 steps to go live per platform</b><p>1) Register a developer app (Meta / Google / LinkedIn). 2) Add your <b>Client ID</b> in app.js and register this redirect URL on the app: <code>${OAUTH_REDIRECT}</code>. 3) Deploy the <code>oauth-exchange</code> Edge Function (holds the secret & stores tokens). "Connect" then launches the real consent screen. Meta & LinkedIn require app review before real data is granted.</p></div></div>
   </div>`;
   return html;
+}
+
+/* ---------- Org public profile (shareable workspace page) ---------- */
+function orgPublicUrl(slug){
+  return location.origin + location.pathname.replace(/[^/]*$/,"") + "o.html?o=" + encodeURIComponent(slug);
+}
+async function loadOrgProfile(){
+  const form = document.getElementById("orgProfileForm");
+  if(!form || !window.sb) return;
+  const { data } = await sb.from("org_profiles").select("*").maybeSingle();
+  if(data){
+    ["slug","display_name","tagline","bio","whatsapp","email","website","city"].forEach(k=>{ if(form[k]) form[k].value = data[k]||""; });
+    if(form.is_public) form.is_public.checked = data.is_public !== false;
+    if(data.slug) showOrgLink(data.slug);
+  }
+}
+function showOrgLink(slug){
+  const box = document.getElementById("orgProfLink");
+  if(!box) return;
+  const url = orgPublicUrl(slug);
+  box.style.display = "block";
+  box.innerHTML = `<div class="row"><div class="r-main"><div class="r-title">Your public link</div>
+    <div class="r-sub"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></div></div>
+    <button type="button" class="mini-btn" id="orgCopyLink">Copy</button></div>`;
+  const cp = document.getElementById("orgCopyLink");
+  if(cp) cp.onclick = async ()=>{ try{ await navigator.clipboard.writeText(url); cp.textContent="Copied!"; setTimeout(()=>cp.textContent="Copy",1500); }catch(e){ prompt("Copy your link:", url); } };
+}
+function wireOrgProfileForm(){
+  const form = document.getElementById("orgProfileForm");
+  if(!form) return;
+  form.onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(form), err = document.getElementById("orgProfErr"), msg = document.getElementById("orgProfMsg");
+    const btn = form.querySelector("button[type=submit]");
+    err.textContent=""; msg.textContent=""; msg.className="lead-msg"; btn.disabled=true; btn.textContent="Saving…";
+    const slug = (f.get("slug")||"").trim().toLowerCase().replace(/[^a-z0-9-]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"");
+    if(!slug){ err.textContent="Pick a public link (slug) — e.g. your agency name."; btn.disabled=false; btn.textContent="Save & get link"; return; }
+    const row = { slug, display_name:f.get("display_name")||null, tagline:f.get("tagline")||null, bio:f.get("bio")||null,
+      whatsapp:f.get("whatsapp")||null, email:(f.get("email")||"").toLowerCase()||null, website:f.get("website")||null,
+      city:f.get("city")||null, is_public:!!f.get("is_public"), updated_at:new Date().toISOString() };
+    if(window.Auth && Auth.profile && Auth.profile.org_id) row.org_id = Auth.profile.org_id;
+    try{
+      if(!window.sb) throw new Error("Database not connected.");
+      // org_id is the PK; upsert so save works whether or not a page exists yet.
+      const { error } = await sb.from("org_profiles").upsert(row, { onConflict:"org_id" });
+      if(error){
+        if((error.code==="23505") || /duplicate|unique/i.test(error.message)) throw new Error("That link is taken — try another slug.");
+        throw error;
+      }
+      msg.className="lead-msg ok"; msg.textContent="Saved. Share your public link below.";
+      showOrgLink(slug);
+    }catch(ex){ err.textContent = ex.message || "Couldn't save."; }
+    finally{ btn.disabled=false; btn.textContent="Save & get link"; }
+  };
 }
 
 /* ---------- Team (invites + members) ---------- */
@@ -1572,6 +1885,7 @@ function renderContent(){
     const add = document.getElementById("addIrmBtn");
     if(add) add.onclick = openIrmModal;
   }
+  if(currentPage==="listening") loadListening();
   if(currentPage==="approvals") loadApprovals();
   if(currentPage==="marketplace") loadMarketplace();
   if(currentPage==="brands" || currentPage==="portfolio") loadBrands();
@@ -1589,6 +1903,8 @@ function renderContent(){
     renderIntegrations();
     wireInviteForm();
     loadTeam();
+    wireOrgProfileForm();
+    loadOrgProfile();
   }
   if(currentPage==="reports"){
     loadReportRows();
