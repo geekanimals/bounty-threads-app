@@ -299,3 +299,15 @@ tbody tr:hover{background:var(--panel-2)}
   .card table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
   .card table thead,.card table tbody,.card table tr{display:table;width:100%;table-layout:fixed}
 }
+
+/* ---------- AI Assistant chat ---------- */
+.ai-body{display:flex;flex-direction:column;min-height:0;flex:1}
+.ai-thread{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px 10px}
+.ai-msg{max-width:88%;padding:10px 13px;border-radius:14px;font-size:14px;line-height:1.5;white-space:normal;word-wrap:break-word}
+.ai-msg.bot{background:#f1f2fb;color:#1a1c2e;border-bottom-left-radius:5px;align-self:flex-start}
+.ai-msg.user{background:linear-gradient(135deg,#6c5ce7,#8f7bff);color:#fff;border-bottom-right-radius:5px;align-self:flex-end}
+.ai-msg.pending{opacity:.6;font-style:italic}
+.ai-input{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--line,#e6e8f2)}
+.ai-input input{flex:1;border:1px solid var(--line,#e6e8f2);border-radius:12px;padding:11px 14px;font-size:14px;outline:none;background:var(--card,#fff);color:var(--ink,#1a1c2e)}
+.ai-input input:focus{border-color:#6c5ce7}
+.ai-input .btn{padding:11px 18px}

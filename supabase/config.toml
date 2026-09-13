@@ -14,3 +14,7 @@ verify_jwt = false
 # Refresh runs from a JWT (user) or a cron secret, so JWT verification is handled in-code.
 [functions.instagram-refresh]
 verify_jwt = false
+
+# AI assistant — signed-in users only.
+[functions.ai-chat]
+verify_jwt = true

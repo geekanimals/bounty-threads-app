@@ -1496,14 +1496,46 @@ function runPalette(key){
 }
 
 /* ---------- AI drawer ---------- */
+let AI_HISTORY = [];
 function openAi(){
   const r=ROLES[currentRole];
   $("#aiTitle").textContent=r.ai.title; $("#aiSub").textContent=r.ai.sub;
-  const sug=AI_SUGGEST[currentRole]||[];
-  $("#aiBody").innerHTML=`<div class="ai-msg bot">Hi ${r.name.split(" ")[0]} — I'm your ${r.ai.title}. Here's what I'd do next on <b>${NAV_META[currentPage].label}</b>:</div>
-    ${sug.map(s=>`<div class="ai-msg"><b>${s.t}</b><br><span class="muted">${s.p}</span></div>`).join("")}
-    <div class="ai-msg muted">Full conversational AI activates when the OpenAI connector is added.</div>`;
+  if(!AI_HISTORY.length){
+    const sug=(AI_SUGGEST[currentRole]||[]).map(s=>`• ${s.t}`).join("\n");
+    AI_HISTORY=[{role:"assistant", content:`Hi ${r.name.split(" ")[0]} — I'm your ${r.ai.title}. Ask me anything about growing on the platform, or what to do next.${sug?`\n\nA couple of ideas:\n${sug}`:""}`}];
+  }
+  renderAiChat();
   $("#aiOverlay").classList.add("open");
+}
+function aiFormat(t){ return esc(t).replace(/\n/g,"<br>"); }
+function renderAiChat(){
+  const body=$("#aiBody");
+  body.innerHTML=`<div class="ai-thread" id="aiThread">${AI_HISTORY.map(m=>`<div class="ai-msg ${m.role==='user'?'user':'bot'}${m._pending?' pending':''}">${aiFormat(m.content)}</div>`).join("")}</div>
+    <form id="aiForm" class="ai-input"><input id="aiInput" placeholder="Ask your ${esc(ROLES[currentRole].ai.title)}…" autocomplete="off"><button class="btn" type="submit" id="aiSend">Send</button></form>`;
+  const thread=$("#aiThread"); if(thread) thread.scrollTop=thread.scrollHeight;
+  const form=$("#aiForm");
+  if(form) form.onsubmit=e=>{ e.preventDefault(); const v=$("#aiInput").value.trim(); if(v) sendAiMessage(v); };
+  const inp=$("#aiInput"); if(inp) inp.focus();
+}
+async function sendAiMessage(text){
+  AI_HISTORY.push({role:"user", content:text});
+  AI_HISTORY.push({role:"assistant", content:"…", _pending:true});
+  renderAiChat();
+  try{
+    if(!(window.sb && window.sb.functions)) throw new Error("Not connected.");
+    const ctx={ role:currentRole, roleLabel:ROLES[currentRole].name, page:(NAV_META[currentPage]&&NAV_META[currentPage].label)||currentPage,
+      name:(window.Auth&&Auth.profile&&Auth.profile.name)||"", org:(window.Auth&&Auth.profile&&Auth.profile.org)||"" };
+    const msgs=AI_HISTORY.filter(m=>!m._pending).map(m=>({role:m.role, content:m.content}));
+    const { data, error } = await sb.functions.invoke("ai-chat", { body:{ messages:msgs, context:ctx } });
+    if(error) throw error;
+    if(data && data.error) throw new Error(data.error);
+    AI_HISTORY=AI_HISTORY.filter(m=>!m._pending);
+    AI_HISTORY.push({role:"assistant", content:(data&&data.reply)||"(no response)"});
+  }catch(ex){
+    AI_HISTORY=AI_HISTORY.filter(m=>!m._pending);
+    AI_HISTORY.push({role:"assistant", content:"Sorry — I couldn't reach the AI. "+(ex.message||ex)+"\n\n(Deploy the ai-chat function and set OPENAI_API_KEY.)"});
+  }
+  renderAiChat();
 }
 function closeAi(){ $("#aiOverlay").classList.remove("open"); }
 
