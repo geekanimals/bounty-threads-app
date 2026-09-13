@@ -252,16 +252,51 @@ create policy "org delete campaigns" on campaigns for delete using (org_id = my_
 -- Return type changed (was `setof campaigns`), so drop the old signature before recreating.
 drop function if exists public.open_campaigns();
 create or replace function public.open_campaigns()
-returns table(id uuid, name text, brand text, type text, status text, org_id uuid, org_name text)
+returns table(id uuid, name text, brand text, type text, status text, org_id uuid, org_name text,
+              objective text, budget numeric, platforms text, deliverables text, brief text,
+              hashtags text, start_date date, end_date date)
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  select id, name, brand, type, status, org_id, org_name
+  select id, name, brand, type, status, org_id, org_name,
+         objective, budget, platforms, deliverables, brief, hashtags, start_date, end_date
   from public.campaigns where status in ('Sourcing','Live') order by created_at desc
 $$;
 grant execute on function public.open_campaigns() to authenticated;
+
+-- Creator's own applications, joined to live campaign details so they can review what they
+-- applied to (campaigns RLS is org-scoped, so a plain join from the client can't see the brief).
+create or replace function public.my_applications()
+returns table(id uuid, status text, created_at timestamptz, campaign_id uuid, campaign_name text,
+              agency_name text, brand text, type text, objective text, budget numeric,
+              platforms text, deliverables text, brief text, hashtags text, start_date date, end_date date)
+language sql stable security definer set search_path = public
+as $$
+  select a.id, a.status, a.created_at, a.campaign_id, a.campaign_name,
+         c.org_name as agency_name, c.brand, c.type, c.objective, c.budget,
+         c.platforms, c.deliverables, c.brief, c.hashtags, c.start_date, c.end_date
+  from public.applications a
+  left join public.campaigns c on c.id = a.campaign_id
+  where a.org_id = my_org()
+  order by a.created_at desc
+$$;
+grant execute on function public.my_applications() to authenticated;
+
+-- Applications TO the caller's campaigns (agency side), with creator contact where available.
+-- Lets the agency see & act on inbound applications from the dashboard, not just Approvals.
+create or replace function public.campaign_applications()
+returns table(id uuid, status text, created_at timestamptz, campaign_id uuid, campaign_name text,
+              creator_name text, creator_org text)
+language sql stable security definer set search_path = public
+as $$
+  select a.id, a.status, a.created_at, a.campaign_id, a.campaign_name, a.creator_name, a.org_name
+  from public.applications a
+  where a.agency_org_id = my_org()
+  order by a.created_at desc
+$$;
+grant execute on function public.campaign_applications() to authenticated;
 
 -- ---------- BARTER ITEMS ----------
 create table if not exists barter_items (

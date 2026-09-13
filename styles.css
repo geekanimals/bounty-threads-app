@@ -153,6 +153,12 @@ tbody tr:hover{background:var(--panel-2)}
 .modal-form textarea:focus{outline:none;border-color:var(--brand)}
 .lead-msg{font-size:13px;color:var(--muted)}
 .lead-msg.ok{color:var(--good)}
+/* Campaign detail rows */
+.cd-row{display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-bottom:1px solid var(--line)}
+.cd-l{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.cd-v{font-size:14px;font-weight:600;text-align:right}
+.cd-block{padding:10px 0;border-bottom:1px solid var(--line)}
+.cd-body{margin-top:6px;font-size:14px;line-height:1.5;white-space:pre-wrap}
 
 /* Cookie / consent banner */
 .consent-bar{position:fixed;left:0;right:0;bottom:0;z-index:400;background:var(--panel,#fff);border-top:1px solid var(--line);box-shadow:0 -8px 30px rgba(20,20,60,.10)}

@@ -258,6 +258,7 @@ function renderDashboard(){
   let html = pageHead("Dashboard", `Welcome back, ${esc(first)} — here's your live cockpit.`);
   html += `<div id="onboardCard"></div>`;
   html += kpiRow(role);
+  if(role!=="creator") html += `<div id="inboundAppsCard"></div>`;
   html += `<div class="grid two"><div class="grid" style="gap:16px">
       <div class="card"><h3>Today's Tasks</h3><div class="list" id="tasksList"><div class="muted" style="padding:8px">Loading…</div></div></div>
       <div class="card"><h3>Recent Activity</h3><div class="list" id="activityList"><div class="muted" style="padding:8px">Loading…</div></div></div>
@@ -314,9 +315,30 @@ async function loadDashboard(){
         {label:"Start a barter batch",       done:barter.length>0,    page:"barter"}
       ]
     );
+    loadInboundApplications();
   }
   renderTasks(campaigns, barter);
   renderActivity(buildActivityItems(creators, campaigns, barter));
+}
+
+// Agency-side: show creator applications to THIS org's campaigns, right on the dashboard,
+// so they're noticed without digging into Approvals. Approve/decline inline.
+async function loadInboundApplications(){
+  const wrap = document.getElementById("inboundAppsCard");
+  if(!wrap || !window.sb) return;
+  const { data, error } = await sb.rpc("campaign_applications");
+  if(error){ wrap.innerHTML = ""; return; } // RPC not deployed yet — stay quiet
+  const apps = (data||[]).filter(a=>a.status==="Applied");
+  if(!apps.length){ wrap.innerHTML = ""; return; }
+  wrap.innerHTML = `<div class="card" style="margin-bottom:16px"><h3>Creator applications <span class="tag warn">${apps.length} new</span></h3>
+    <p class="muted" style="margin-bottom:10px">Creators who applied to your campaigns. Approve to bring them in, or manage all in Approvals.</p>
+    <div class="list" id="inboundAppsList">${apps.slice(0,6).map(a=>`<div class="row">
+      <span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span>
+      <div class="r-main"><div class="r-title">${esc(a.creator_name)||"Creator"}</div><div class="r-sub">→ ${esc(a.campaign_name)||"campaign"}${a.creator_org?` · ${esc(a.creator_org)}`:""}</div></div>
+      <span><button class="mini-btn" data-appapprove="${esc(a.id)}">Approve</button> <button class="mini-btn ghost" data-appdecline="${esc(a.id)}">Decline</button></span></div>`).join("")}</div></div>`;
+  const act = (id, status)=> updateStatus("applications", id, {status}, loadInboundApplications);
+  wrap.querySelectorAll("[data-appapprove]").forEach(b=>b.onclick=()=>act(b.dataset.appapprove,"Approved"));
+  wrap.querySelectorAll("[data-appdecline]").forEach(b=>b.onclick=()=>act(b.dataset.appdecline,"Declined"));
 }
 
 function renderOnboard(title, sub, steps){
@@ -1059,33 +1081,99 @@ async function loadApprovals(){
 /* ================= MARKETPLACE (creator: browse + apply) ================= */
 function renderMarketplace(){
   let html = pageHead("Campaign Marketplace","Browse open campaigns and apply.");
+  html += `<div class="card" id="myAppsCard" style="margin-bottom:16px"><h3>My applications</h3>
+    <div id="myAppsList"><div class="muted" style="padding:8px">Loading…</div></div></div>`;
+  html += `<h3 style="margin:6px 0 12px">Open campaigns</h3>`;
   html += `<div class="grid three" id="marketGrid"><div class="card"><div class="muted">Loading…</div></div></div>`;
   return html;
 }
+
+// Keep the last-loaded open campaigns + the creator's applications so the detail modal & state
+// can be rendered without refetching.
+let _openCampaigns = [], _myApps = [];
+
 async function loadMarketplace(){
   const grid=document.getElementById("marketGrid");
   if(!grid) return;
   if(!window.sb){ grid.innerHTML=`<div class="card"><div class="muted">Connect the database.</div></div>`; return; }
-  // Open campaigns across all orgs come from a dedicated read-only function (keeps campaigns RLS org-scoped).
-  const { data, error } = await sb.rpc("open_campaigns");
-  if(error){ grid.innerHTML=`<div class="card"><div class="muted">Couldn't load: ${esc(error.message)}</div></div>`; return; }
-  const list=data||[];
-  if(!list.length){ grid.innerHTML=`<div class="card"><div class="ai-suggest"><span class="spark">🛒</span><div class="s-body"><b>No open campaigns yet</b><p>Campaigns in Sourcing or Live status show here to apply to.</p></div></div></div>`; return; }
+  const [oc, ma] = await Promise.all([ sb.rpc("open_campaigns"), sb.rpc("my_applications") ]);
+  if(oc.error){ grid.innerHTML=`<div class="card"><div class="muted">Couldn't load: ${esc(oc.error.message)}</div></div>`; return; }
+  _openCampaigns = oc.data||[];
+  _myApps = (ma && ma.data) || [];
+  renderMyApps();
+  const appliedIds = new Set(_myApps.map(a=>a.campaign_id));
   const mine = (window.Auth && Auth.profile && Auth.profile.org_id) || null;
-  grid.innerHTML = list.map(c=>{
+  if(!_openCampaigns.length){ grid.innerHTML=`<div class="card"><div class="ai-suggest"><span class="spark">🛒</span><div class="s-body"><b>No open campaigns yet</b><p>Campaigns in Sourcing or Live status show here to apply to.</p></div></div></div>`; return; }
+  grid.innerHTML = _openCampaigns.map(c=>{
     const own = mine && c.org_id === mine; // don't let a creator "apply" to their own org's campaign
+    const applied = appliedIds.has(c.id);
+    const meta = [c.brand, c.type, c.budget?fmtMoney(c.budget):null, c.platforms].filter(Boolean).map(esc).join(" · ");
+    const deliv = c.deliverables ? `<div class="mk-sub" style="margin-top:8px">📦 ${esc(c.deliverables.slice(0,90))}${c.deliverables.length>90?"…":""}</div>` : "";
     return `<div class="card"><h3>${esc(c.name)}<span class="tag good">${esc(c.status)}</span></h3>
-    <div class="muted">${esc(c.brand)||"—"} · ${esc(c.type)||"—"}${c.org_name?` · ${esc(c.org_name)}`:""}</div>
-    ${own?`<div class="muted" style="margin-top:10px;font-size:12px">Your campaign</div>`:`<button class="btn" data-apply="${esc(c.id)}" style="margin-top:10px">Apply →</button>`}</div>`;
+    <div class="muted">${meta||"—"}${c.org_name?` · ${esc(c.org_name)}`:""}</div>
+    ${deliv}
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn ghost" data-viewcamp="${esc(c.id)}">View details</button>
+      ${own?`<span class="muted" style="align-self:center;font-size:12px">Your campaign</span>`
+        :applied?`<button class="btn ghost" disabled>✓ Applied</button>`
+        :`<button class="btn" data-apply="${esc(c.id)}">Apply →</button>`}</div></div>`;
   }).join("");
   grid.querySelectorAll("button[data-apply]").forEach(b=>b.onclick=()=>applyToCampaign(b.dataset.apply, b));
+  grid.querySelectorAll("[data-viewcamp]").forEach(b=>b.onclick=()=>{ const c=_openCampaigns.find(x=>x.id===b.dataset.viewcamp); if(c) openCampaignDetail(c); });
 }
+
+function renderMyApps(){
+  const wrap = document.getElementById("myAppsList");
+  const card = document.getElementById("myAppsCard");
+  if(!wrap) return;
+  if(!_myApps.length){ if(card) card.style.display="none"; return; }
+  if(card) card.style.display="";
+  const badge = s => `<span class="tag ${s==="Approved"?"good":s==="Declined"?"":"warn"}">${esc(s||"Applied")}</span>`;
+  wrap.innerHTML = _myApps.map(a=>`<div class="row">
+    <div class="r-main"><div class="r-title">${esc(a.campaign_name)||"Campaign"}</div>
+    <div class="r-sub">${[a.agency_name,a.brand,a.type].filter(Boolean).map(esc).join(" · ")||"—"}</div></div>
+    ${badge(a.status)}
+    <button class="mini-btn ghost" data-viewapp="${esc(a.id)}">Details</button></div>`).join("");
+  wrap.querySelectorAll("[data-viewapp]").forEach(b=>b.onclick=()=>{ const a=_myApps.find(x=>x.id===b.dataset.viewapp); if(a) openCampaignDetail(a, true); });
+}
+
+// Rich read-only campaign detail — used from both an open-campaign card and a My-Applications row.
+function openCampaignDetail(c, isApp){
+  let m = document.getElementById("campDetailModal"); if(m) m.remove();
+  const row = (label,val)=> val ? `<div class="cd-row"><span class="cd-l">${label}</span><span class="cd-v">${esc(val)}</span></div>` : "";
+  const dates = (c.start_date||c.end_date) ? `${c.start_date||"—"} → ${c.end_date||"—"}` : "";
+  m = el("div","modal-overlay"); m.id="campDetailModal";
+  m.innerHTML = `<div class="modal modal-lg"><div class="modal-head"><strong>${esc(c.campaign_name||c.name)||"Campaign"}</strong><button class="icon-btn" id="cdClose">✕</button></div>
+    <div class="modal-form">
+      ${isApp?`<div style="margin-bottom:4px"><span class="tag ${c.status==="Approved"?"good":c.status==="Declined"?"":"warn"}">${esc(c.status||"Applied")}</span></div>`:""}
+      ${row("Agency", c.agency_name||c.org_name)}
+      ${row("Brand", c.brand)}
+      ${row("Type", c.type)}
+      ${row("Objective", c.objective)}
+      ${row("Budget", c.budget?fmtMoney(c.budget):"")}
+      ${row("Platforms", c.platforms)}
+      ${row("Hashtags", c.hashtags)}
+      ${row("Timeline", dates)}
+      ${c.deliverables?`<div class="cd-block"><div class="cd-l">Deliverables</div><div class="cd-body">${esc(c.deliverables)}</div></div>`:""}
+      ${c.brief?`<div class="cd-block"><div class="cd-l">Brief</div><div class="cd-body">${esc(c.brief)}</div></div>`:""}
+      ${(!isApp && !(Auth.profile&&Auth.profile.org_id===c.org_id))?`<button class="btn" id="cdApply" data-apply="${esc(c.id)}" style="margin-top:6px">Apply →</button>`:""}
+    </div></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  m.onclick = e=>{ if(e.target.id==="campDetailModal") m.classList.remove("open"); };
+  document.getElementById("cdClose").onclick = ()=> m.classList.remove("open");
+  const ap = document.getElementById("cdApply");
+  if(ap) ap.onclick = ()=> applyToCampaign(ap.dataset.apply, ap);
+}
+
 async function applyToCampaign(id, btn){
   if(!window.sb) return;
   btn.disabled=true; btn.textContent="Applying…";
   // Server-side RPC validates the campaign and sets the agency routing (can't be forged).
   const { error } = await sb.rpc("apply_to_campaign", { p_campaign_id: id });
-  btn.textContent = error ? "Try again" : "✓ Applied"; if(!error) btn.classList.add("ghost");
+  if(error){ btn.disabled=false; btn.textContent="Try again"; alert("Couldn't apply: "+error.message); return; }
+  btn.textContent = "✓ Applied"; btn.classList.add("ghost");
+  const dm = document.getElementById("campDetailModal"); if(dm) dm.classList.remove("open");
+  await loadMarketplace(); // refresh My applications + card states
 }
 
 /* ================= BRAND CRM / PORTFOLIO (derived from campaigns) ================= */
