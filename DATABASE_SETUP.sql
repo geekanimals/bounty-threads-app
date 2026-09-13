@@ -146,7 +146,8 @@ alter table leads enable row level security;
 drop policy if exists "anyone submits a lead" on leads;
 drop policy if exists "signed-in read leads"  on leads;
 create policy "anyone submits a lead" on leads for insert with check (true);
-create policy "signed-in read leads"  on leads for select using (auth.uid() is not null);
+-- NOTE: intentionally NO client read policy. Homepage leads (prospect PII) are read
+-- only via the Supabase dashboard / service role — never exposed to signed-in app users.
 
 -- ---------- CREATORS ----------
 create table if not exists creators (

@@ -14,9 +14,19 @@ function esc(v){
     .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
 
-/* ---------- Role select ---------- */
+/* ---------- Role (locked to the signed-in user's real role) ---------- */
 function initRoles(){
   const sel = $("#roleSelect");
+  if(!sel) return;
+  const wrap = sel.closest(".role-switch");
+  // A signed-in user is locked to their DB role — no free switching between agency/creator/etc.
+  if(window.Auth && Auth.profile){
+    if(ROLES[Auth.profile.role]) currentRole = Auth.profile.role;
+    const label = (ROLES[currentRole] && ROLES[currentRole].label) || currentRole;
+    if(wrap) wrap.innerHTML = `<label>Signed in as</label><div class="role-static">${esc(label)}</div>`;
+    return;
+  }
+  // No auth (shouldn't happen in production) — allow the demo switcher.
   sel.innerHTML = Object.entries(ROLES).map(([k,r])=>`<option value="${k}">${r.label}</option>`).join("");
   sel.value = currentRole;
   sel.onchange = e => { currentRole = e.target.value; currentPage = "dashboard"; renderShell(); };
@@ -152,14 +162,28 @@ function activityCard(role){
 }
 
 function creatorGrowthCard(){
-  return `<div class="card"><h3>Your Dream Plan 🚀</h3>
-    <div class="r-title" style="margin-bottom:4px">Become a Paid Creator</div>
-    <div class="muted">Growth score 78 / 100 — you're 22 points from unlocking Paid tier.</div>
-    <div class="bar"><span style="width:78%"></span></div>
-    <div style="margin-top:16px" class="list">
-      <div class="row"><span class="dot good"></span><div class="r-main"><div class="r-title">Post 3 reels this week</div><div class="r-sub">2 / 3 done</div></div></div>
-      <div class="row"><span class="dot warn"></span><div class="r-main"><div class="r-title">Reply to 20 comments</div><div class="r-sub">AI: boosts engagement 12%</div></div></div>
-    </div></div>`;
+  // Filled live by renderDreamSummary() from the dashboard loader.
+  return `<div class="card"><h3>Your Dream Plan 🚀</h3><div id="dreamSummary" class="muted">Loading…</div></div>`;
+}
+
+function dreamScore(tasks){ const t=Array.isArray(tasks)?tasks:[]; return t.length? Math.round(t.filter(x=>x.done).length/t.length*100) : 0; }
+
+function renderDreamSummary(plan){
+  const el = document.getElementById("dreamSummary");
+  if(!el) return;
+  if(!plan){
+    el.innerHTML = `<p style="margin:0 0 10px">Choose a goal and we'll build your personalized roadmap.</p>
+      <button class="btn" id="setDream">Pick your dream →</button>`;
+    const b=document.getElementById("setDream"); if(b) b.onclick=()=>{ currentPage="growth"; renderShell(); };
+    return;
+  }
+  const tasks = Array.isArray(plan.tasks)?plan.tasks:[];
+  const score = dreamScore(tasks);
+  el.innerHTML = `<div class="r-title" style="margin-bottom:4px;color:var(--ink,#1a1c2e)">${esc(plan.goal)}</div>
+    <div class="muted">${score}% there — ${tasks.filter(x=>x.done).length}/${tasks.length} milestones done.</div>
+    <div class="bar" style="margin-top:8px"><span style="width:${score}%"></span></div>
+    <button class="btn" style="margin-top:12px" id="openDream">Open roadmap →</button>`;
+  const b=document.getElementById("openDream"); if(b) b.onclick=()=>{ currentPage="growth"; renderShell(); };
 }
 
 function renderDashboard(){
@@ -200,18 +224,20 @@ async function loadDashboard(){
     // Creators get a creator-shaped setup checklist (not agency actions).
     const [ig, plans, apps] = await Promise.all([
       sb.from("social_accounts").select("id").eq("platform","instagram").limit(1),
-      sb.from("dream_plans").select("id").limit(1),
+      sb.from("dream_plans").select("*").order("created_at",{ascending:false}).limit(1),
       sb.from("applications").select("id").limit(1)
     ]);
+    const plan = (plans.data||[])[0] || null;
     renderOnboard(
       "🚀 Set up your creator profile",
       "Connect your Instagram and pick a goal — your OS comes alive.",
       [
-        {label:"Connect your Instagram", done:(ig.data||[]).length>0,    page:"mediakit"},
-        {label:"Pick your Dream Plan",   done:(plans.data||[]).length>0, page:"growth"},
-        {label:"Apply to a campaign",    done:(apps.data||[]).length>0,  page:"marketplace"}
+        {label:"Connect your Instagram", done:(ig.data||[]).length>0, page:"mediakit"},
+        {label:"Pick your Dream Plan",   done:!!plan,                 page:"growth"},
+        {label:"Apply to a campaign",    done:(apps.data||[]).length>0, page:"marketplace"}
       ]
     );
+    renderDreamSummary(plan);
   } else {
     renderOnboard(
       "🚀 Get your workspace set up",
@@ -545,11 +571,71 @@ async function loadReportRows(){
   }).join("");
 }
 
+/* ================= DREAM PLAN (Growth) ================= */
+const DREAM_TASKS = [
+  "Connect your Instagram & complete your media kit",
+  "Post 3 reels this week",
+  "Reply to 20 comments to lift engagement",
+  "Apply to 2 open campaigns",
+  "Reach out to 5 brands for collaborations",
+  "Hit a 3%+ engagement rate",
+  "Land your first barter or paid deal"
+];
+
 function renderGrowth(){
-  let html = pageHead("Creator Growth","Your AI-powered career roadmap.");
-  html += kpiRow("creator");
-  html += `<div class="grid two">${creatorGrowthCard()}${aiSuggestCard("creator")}</div>`;
+  let html = pageHead("Creator Growth","Pick your dream — then follow the roadmap to get there.");
+  html += `<div id="growthBody"><div class="card"><div class="muted">Loading…</div></div></div>`;
   return html;
+}
+
+async function loadGrowth(){
+  const wrap = document.getElementById("growthBody");
+  if(!wrap) return;
+  if(!window.sb){ wrap.innerHTML = `<div class="card"><div class="muted">Connect the database.</div></div>`; return; }
+  const { data } = await sb.from("dream_plans").select("*").order("created_at",{ascending:false}).limit(1);
+  const plan = (data && data[0]) || null;
+  if(!plan){
+    wrap.innerHTML = `<div class="card"><h3>Choose your dream 🎯</h3>
+      <p class="muted" style="margin-bottom:14px">What do you want to achieve as a creator? Pick one and we'll build your personalized roadmap.</p>
+      <div class="dream-grid">${DREAM_GOALS.map(g=>`<button class="dream-opt" data-goal="${esc(g)}">${esc(g)}</button>`).join("")}</div></div>`;
+    wrap.querySelectorAll(".dream-opt").forEach(b=>b.onclick=()=>createDream(b.dataset.goal));
+    return;
+  }
+  const tasks = Array.isArray(plan.tasks)?plan.tasks:[];
+  const score = dreamScore(tasks);
+  const nextTask = tasks.find(x=>!x.done);
+  wrap.innerHTML = `<div class="card dream-hero">
+      <div class="dream-eyebrow">Your dream</div>
+      <h2 style="margin:2px 0 12px">${esc(plan.goal)}</h2>
+      <div class="bar"><span style="width:${score}%"></span></div>
+      <div class="dream-meta"><span><b>${score}%</b> there</span><span>${tasks.filter(x=>x.done).length}/${tasks.length} milestones</span>${nextTask?`<span>Next: ${esc(nextTask.t)}</span>`:`<span>🎉 Dream complete!</span>`}</div>
+    </div>
+    <div class="card" style="margin-top:16px"><h3>Your roadmap</h3>
+      <div class="list">${tasks.map((x,i)=>`<div class="row dream-task" data-i="${i}" style="cursor:pointer">
+        <span class="dot ${x.done?'good':'warn'}"></span>
+        <div class="r-main"><div class="r-title" style="${x.done?'text-decoration:line-through;opacity:.6':''}">${esc(x.t)}</div></div>
+        <span class="tag ${x.done?'good':'brand'}">${x.done?'✓ Done':'Mark done'}</span></div>`).join("")}</div>
+      <div style="margin-top:14px"><button class="mini-btn ghost" id="changeDream">Change dream</button></div>
+    </div>`;
+  const local = tasks.map(x=>({...x}));
+  wrap.querySelectorAll(".dream-task").forEach(row=>{
+    row.onclick = async ()=>{
+      const i = parseInt(row.dataset.i);
+      local[i].done = !local[i].done;
+      await sb.from("dream_plans").update({ tasks: local, score: dreamScore(local) }).eq("id", plan.id);
+      loadGrowth();
+    };
+  });
+  const cd = document.getElementById("changeDream");
+  if(cd) cd.onclick = async ()=>{ if(confirm("Pick a different dream? This resets your roadmap.")){ await sb.from("dream_plans").delete().eq("id", plan.id); loadGrowth(); } };
+}
+
+async function createDream(goal){
+  if(!window.sb) return;
+  const row = { goal, score:0, tasks: DREAM_TASKS.map(t=>({t, done:false})) };
+  if(window.Auth && Auth.profile){ row.org_id = Auth.profile.org_id; row.creator_email = Auth.profile.email; }
+  const { error } = await sb.from("dream_plans").insert(row);
+  if(!error) loadGrowth();
 }
 
 function renderPlaceholder(title,sub){
@@ -1251,6 +1337,7 @@ function renderContent(){
   if(currentPage==="finance") loadFinance();
   if(currentPage==="logistics") loadLogistics();
   if(currentPage==="mediakit") loadMediaKit();
+  if(currentPage==="growth") loadGrowth();
   if(currentPage==="campaigns"){
     loadCampaigns();
     const add = document.getElementById("addCampaignBtn");
