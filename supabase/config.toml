@@ -10,3 +10,7 @@ verify_jwt = true
 # Sign-in flow is called by signed-OUT users, so JWT verification must be off.
 [functions.instagram-login]
 verify_jwt = false
+
+# Refresh runs from a JWT (user) or a cron secret, so JWT verification is handled in-code.
+[functions.instagram-refresh]
+verify_jwt = false

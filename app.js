@@ -14,6 +14,15 @@ function esc(v){
     .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
 
+// Only allow http(s)/relative/anchor URLs into href/src — blocks javascript:, data:, etc.
+function safeUrl(u){
+  if(u==null) return "#";
+  const s = String(u).trim();
+  if(/^https?:\/\//i.test(s) || s.startsWith("/") || s.startsWith("#")) return s;
+  if(/^[a-z0-9.-]+\.[a-z]{2,}([\/?#]|$)/i.test(s)) return "https://"+s; // bare domain
+  return "#";
+}
+
 /* ---------- Role (locked to the signed-in user's real role) ---------- */
 function initRoles(){
   const sel = $("#roleSelect");
@@ -420,7 +429,7 @@ async function loadCreators(){
   let q = window.sb.from("creators").select("*").order("created_at",{ascending:false});
   if(org_id) q = q.eq("org_id", org_id);
   const { data, error } = await q;
-  if(error){ tbody.innerHTML = `<tr><td colspan="7" class="muted" style="padding:24px">Couldn't load creators: ${error.message}</td></tr>`; return; }
+  if(error){ tbody.innerHTML = `<tr><td colspan="7" class="muted" style="padding:24px">Couldn't load creators: ${esc(error.message)}</td></tr>`; return; }
   tbody.innerHTML = creatorRowsHtml(data||[]);
 }
 
@@ -496,7 +505,7 @@ async function loadCampaigns(){
   let cq = window.sb.from("campaigns").select("*").order("created_at",{ascending:false});
   if(org_id) cq = cq.eq("org_id", org_id);
   const { data, error } = await cq;
-  if(error){ grid.innerHTML = `<div class="card"><div class="muted">Couldn't load campaigns: ${error.message}</div></div>`; return; }
+  if(error){ grid.innerHTML = `<div class="card"><div class="muted">Couldn't load campaigns: ${esc(error.message)}</div></div>`; return; }
   grid.innerHTML = campaignCardsHtml(data||[]);
 }
 
@@ -666,7 +675,7 @@ function storyCardHtml(d){
   const sub = [d.brand, d.fee?("fee ₹"+fmtNum(d.fee)):null].filter(Boolean).join(" · ");
   return `<div class="kan-card"><div class="kc-name">${esc(d.celebrity||"Celebrity")}</div>
     <div class="kc-sub">${esc(sub)||"—"}</div>
-    ${d.proof_url?`<a class="kc-sub" href="${esc(d.proof_url)}" target="_blank" rel="noopener">View proof ↗</a>`:""}
+    ${d.proof_url?`<a class="kc-sub" href="${esc(safeUrl(d.proof_url))}" target="_blank" rel="noopener">View proof ↗</a>`:""}
     ${next?`<button class="mini-btn" data-adv="${esc(d.id)}" data-next="${esc(next)}" style="margin-top:8px">Move to ${esc(next)} →</button>`:""}</div>`;
 }
 async function loadStories(){
@@ -939,7 +948,7 @@ function mkHead(a){
   const postCard = (m,meta)=>{
     const img = m.media_type==="VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
     const badge = m.media_type==="VIDEO" ? "▶" : (m.media_type==="CAROUSEL_ALBUM" ? "❏" : "");
-    return `<a href="${esc(m.permalink)||'#'}" target="_blank" rel="noopener" class="mk-post">
+    return `<a href="${esc(safeUrl(m.permalink))}" target="_blank" rel="noopener" class="mk-post">
       <img src="${esc(img)}" alt="" loading="lazy">${badge?`<span class="mk-type">${badge}</span>`:""}
       <span class="mk-meta">${meta||`❤ ${fmtNum(m.like_count)} · 💬 ${fmtNum(m.comments_count)}`}</span></a>`;
   };
@@ -963,7 +972,7 @@ function mkHead(a){
   // Work portfolio (editable)
   const portfolio = Array.isArray(E.portfolio)?E.portfolio:[];
   const portfolioHtml = portfolio.length
-    ? `<div class="mk-portfolio">${portfolio.map(p=>`<div class="mk-brand"><div class="mk-brand-ic">${esc((p.brand||'?').slice(0,2).toUpperCase())}</div><div class="mk-brand-b"><div class="mk-brand-n">${esc(p.brand)}</div>${p.note?`<div class="muted" style="font-size:12px">${esc(p.note)}</div>`:''}</div>${p.url?`<a href="${esc(p.url)}" target="_blank" rel="noopener" class="mk-brand-link">↗</a>`:''}</div>`).join("")}</div>`
+    ? `<div class="mk-portfolio">${portfolio.map(p=>`<div class="mk-brand"><div class="mk-brand-ic">${esc((p.brand||'?').slice(0,2).toUpperCase())}</div><div class="mk-brand-b"><div class="mk-brand-n">${esc(p.brand)}</div>${p.note?`<div class="muted" style="font-size:12px">${esc(p.note)}</div>`:''}</div>${p.url?`<a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener" class="mk-brand-link">↗</a>`:''}</div>`).join("")}</div>`
     : `<div class="muted" style="padding:8px">No collaborations yet — click <b>Edit</b> to showcase brands you've worked with.</div>`;
 
   // Rate card (editable)
@@ -982,7 +991,7 @@ function mkHead(a){
           <div class="mk-handle">@${esc(a.username)}</div>
           ${headline?`<div class="mk-headline">${esc(headline)}</div>`:''}
           ${bio?`<div class="mk-bio">${esc(bio)}</div>`:""}
-          ${a.website?`<a class="mk-web" href="${esc(a.website)}" target="_blank" rel="noopener">🔗 ${esc(a.website)}</a>`:""}
+          ${a.website?`<a class="mk-web" href="${esc(safeUrl(a.website))}" target="_blank" rel="noopener">🔗 ${esc(a.website)}</a>`:""}
         </div>
         <div class="mk-hero-actions"><button class="mk-share" id="mkShare">Share kit</button>${editBtn("profile")}</div>
       </div>
@@ -1097,6 +1106,10 @@ async function loadMediaKit(){
   const cta = document.getElementById("mkComposeCta");
   if(cta) cta.onclick = ()=>{ const c=document.getElementById("mkComposer"); if(c) c.scrollIntoView({behavior:"smooth"}); };
   wrap.querySelectorAll("[data-mkedit]").forEach(b=> b.onclick = ()=> openMkEdit(b.dataset.mkedit, acct));
+  // Lazily refresh the Instagram token + re-sync stats if this kit is stale (>7 days).
+  if(acct.updated_at && (Date.now() - new Date(acct.updated_at).getTime()) > 7*86400*1000){
+    sb.functions.invoke("instagram-refresh").catch(()=>{});
+  }
 }
 
 function wireMkComposer(){
@@ -1226,8 +1239,8 @@ async function finishInstagram(code){
 
 const INTEGRATIONS = [
   { key:"instagram", ic:"📸", name:"Instagram (Business / Creator)", desc:"Log in with Instagram to auto-build your media kit and publish posts from the app.", scopes:"instagram_business_basic · content_publish · manage_insights", portal:"developers.facebook.com" },
-  { key:"google", ic:"▶️", name:"Google (YouTube)", desc:"Import channel stats, video performance & audience demographics.", scopes:"youtube.readonly · yt-analytics.readonly", portal:"console.cloud.google.com" },
-  { key:"linkedin", ic:"💼", name:"LinkedIn", desc:"Fetch creator & company-page follower growth and post reach.", scopes:"r_organization_social · r_member_social", portal:"linkedin.com/developers" }
+  { key:"google", ic:"▶️", name:"Google (YouTube)", desc:"Import channel stats, video performance & audience demographics.", scopes:"youtube.readonly · yt-analytics.readonly", portal:"console.cloud.google.com", soon:true },
+  { key:"linkedin", ic:"💼", name:"LinkedIn", desc:"Fetch creator & company-page follower growth and post reach.", scopes:"r_organization_social · r_member_social", portal:"linkedin.com/developers", soon:true }
 ];
 
 function integrationState(key){
@@ -1299,12 +1312,12 @@ function renderIntegrations(){
     return `<div class="integration">
       <div class="int-ic">${i.ic}</div>
       <div class="int-body">
-        <div class="int-title">${i.name}
-          <span class="conn-chip ${on?'on':''}">${on?'● Connected':'○ Not connected'}</span></div>
-        <div class="int-desc">${i.desc}</div>
-        <div class="int-scopes">Scopes: ${i.scopes}</div>
+        <div class="int-title">${esc(i.name)}
+          ${i.soon?`<span class="conn-chip">Coming soon</span>`:`<span class="conn-chip ${on?'on':''}">${on?'● Connected':'○ Not connected'}</span>`}</div>
+        <div class="int-desc">${esc(i.desc)}</div>
+        <div class="int-scopes">Scopes: ${esc(i.scopes)}</div>
       </div>
-      <button class="btn ${on?'ghost':''}" data-conn="${i.key}">${on?'Disconnect':'Connect'}</button>
+      ${i.soon?`<button class="btn ghost" disabled style="opacity:.5;cursor:default">Soon</button>`:`<button class="btn ${on?'ghost':''}" data-conn="${esc(i.key)}">${on?'Disconnect':'Connect'}</button>`}
     </div>`;
   }).join("");
   wrap.querySelectorAll("button[data-conn]").forEach(b=>{
@@ -1316,7 +1329,7 @@ function renderIntegrations(){
       } else if(k==="instagram"){
         connectInstagram(); // Instagram Login flow
       } else {
-        startOAuth(k); // Facebook/Google/LinkedIn consent screen
+        startOAuth(k); // (reserved for future providers)
       }
     };
   });

@@ -292,3 +292,10 @@ tbody tr:hover{background:var(--panel-2)}
 .mk-rates tr:last-child td{border-bottom:none}
 .mk-rate-p{text-align:right;font-weight:700;white-space:nowrap}
 @media(max-width:760px){.mk-cols{grid-template-columns:1fr}.mk-bar-l{flex-basis:90px}}
+
+/* ---------- Mobile: let wide tables scroll inside their card ---------- */
+.card table{width:100%}
+@media(max-width:760px){
+  .card table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  .card table thead,.card table tbody,.card table tr{display:table;width:100%;table-layout:fixed}
+}

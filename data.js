@@ -4,7 +4,7 @@
 const ROLES = {
   owner: {
     label: "Agency Owner", initials: "AO", name: "Agency Owner",
-    nav: ["dashboard","brands","campaigns","barter","celebrity","creators","irm","listening","finance","reports","approvals","settings"],
+    nav: ["dashboard","brands","campaigns","barter","celebrity","creators","irm","listening","logistics","finance","reports","approvals","settings"],
     ai: { title:"Owner Agent", sub:"Growth & revenue copilot" }
   },
   corporate: {
