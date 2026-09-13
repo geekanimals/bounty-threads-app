@@ -211,6 +211,8 @@ create policy "org delete campaigns" on campaigns for delete using (org_id = my_
 
 -- Marketplace surface: open (Sourcing/Live) campaigns across ALL orgs, read-only.
 -- SECURITY DEFINER bypasses the org-scoped RLS above, but only exposes open campaigns.
+-- Return type changed (was `setof campaigns`), so drop the old signature before recreating.
+drop function if exists public.open_campaigns();
 create or replace function public.open_campaigns()
 returns table(id uuid, name text, brand text, type text, status text, org_id uuid, org_name text)
 language sql
