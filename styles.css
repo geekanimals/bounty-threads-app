@@ -202,3 +202,50 @@ tbody tr:hover{background:var(--panel-2)}
 .mk-post{position:relative;display:block;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:#eef0fa}
 .mk-post img{width:100%;height:100%;object-fit:cover;display:block}
 .mk-post .mk-meta{position:absolute;left:0;right:0;bottom:0;padding:6px 8px;font-size:11px;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.6))}
+
+/* ---------- Media Kit (professional) ---------- */
+.mk-connect{text-align:center;padding:40px 24px}
+.mk-connect-ic{font-size:44px}
+.mk-connect .btn.big{font-size:15px;padding:12px 22px}
+.mk-kit{display:block}
+.mk-cover{position:relative;border-radius:16px;overflow:hidden;background:var(--card,#fff);border:1px solid var(--line,#e6e8f2)}
+.mk-cover-grad{height:96px;background:linear-gradient(120deg,#6c5ce7,#8f7bff 40%,#c86dd7 100%)}
+.mk-hero{display:flex;align-items:flex-end;gap:16px;padding:0 22px 20px;margin-top:-44px;flex-wrap:wrap}
+.mk-avatar{width:96px;height:96px;border-radius:50%;object-fit:cover;border:4px solid var(--card,#fff);background:#eef0fa;flex:0 0 auto}
+.mk-avatar.mk-ph{display:grid;place-items:center;background:linear-gradient(135deg,#6c5ce7,#8f7bff);color:#fff;font-weight:800;font-size:30px}
+.mk-hero-id{flex:1;min-width:200px;padding-bottom:2px}
+.mk-name{font-size:22px;font-weight:800;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mk-badge{font-size:11px;font-weight:600;text-transform:capitalize;background:#eef0fa;color:#6c5ce7;padding:2px 9px;border-radius:20px;letter-spacing:0}
+.mk-handle{color:var(--muted,#5a6079);font-weight:500;margin-top:1px}
+.mk-bio{margin-top:8px;font-size:14px;line-height:1.5;max-width:560px}
+.mk-web{display:inline-block;margin-top:6px;font-size:13px;color:#6c5ce7;text-decoration:none}
+.mk-share{align-self:center;background:#111;color:#fff;border:none;border-radius:10px;padding:9px 16px;font-weight:600;font-size:13px;cursor:pointer}
+.mk-share:hover{opacity:.9}
+.mk-tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:16px 0}
+.mk-tile{background:var(--card,#fff);border:1px solid var(--line,#e6e8f2);border-radius:14px;padding:16px}
+.mk-tile.hero{background:linear-gradient(135deg,#6c5ce7,#8f7bff);border:none;color:#fff}
+.mk-tile-v{font-size:24px;font-weight:800;letter-spacing:-.02em}
+.mk-tile-l{font-size:12px;color:var(--muted,#5a6079);margin-top:2px}
+.mk-tile.hero .mk-tile-l{color:rgba(255,255,255,.85)}
+.mk-section{margin-top:16px}
+.mk-top{display:flex;gap:16px;align-items:flex-start}
+.mk-top-img{flex:0 0 140px}
+.mk-top-img img{width:140px;height:140px;object-fit:cover;border-radius:12px;display:block}
+.mk-top-body{flex:1;min-width:0}
+.mk-top-cap{font-size:14px;line-height:1.5;margin:0 0 10px}
+.mk-top-stats{display:flex;gap:16px;font-size:13px;color:var(--muted,#5a6079)}
+.mk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mk-post{position:relative;display:block;aspect-ratio:1/1;border-radius:12px;overflow:hidden;background:#eef0fa}
+.mk-post img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .25s}
+.mk-post:hover img{transform:scale(1.05)}
+.mk-post .mk-type{position:absolute;top:6px;right:8px;font-size:12px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.5)}
+.mk-post .mk-meta{position:absolute;left:0;right:0;bottom:0;padding:6px 8px;font-size:11px;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.65))}
+.mk-collab{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+@media(max-width:760px){.mk-tiles{grid-template-columns:repeat(2,1fr)}.mk-top-img,.mk-top-img img{flex-basis:110px;width:110px;height:110px}}
+
+/* ---------- Auth: Continue with Instagram ---------- */
+.auth-or{display:flex;align-items:center;gap:12px;margin:16px 0;color:var(--muted,#5a6079);font-size:12px}
+.auth-or::before,.auth-or::after{content:"";flex:1;height:1px;background:var(--line,#e6e8f2)}
+.ig-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:9px;border:none;border-radius:12px;padding:12px 16px;font-weight:700;font-size:14px;color:#fff;cursor:pointer;background:linear-gradient(90deg,#f09433,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888)}
+.ig-btn:hover{filter:brightness(1.05)}
+.ig-btn .ig-ic{font-size:16px}

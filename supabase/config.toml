@@ -6,3 +6,7 @@ verify_jwt = true
 
 [functions.instagram-publish]
 verify_jwt = true
+
+# Sign-in flow is called by signed-OUT users, so JWT verification must be off.
+[functions.instagram-login]
+verify_jwt = false

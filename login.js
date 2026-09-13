@@ -37,6 +37,10 @@ function loginView(mode){
         <button class="btn auth-submit" type="submit">${isUp?"Create account →":"Enter the OS →"}</button>
       </form>
 
+      <div class="auth-or"><span>or</span></div>
+      <button type="button" class="ig-btn" id="igSignIn"><span class="ig-ic">📸</span> Continue with Instagram</button>
+      <div class="muted" style="text-align:center;font-size:12px;margin-top:8px">Creators: sign in with Instagram to auto-build your media kit.</div>
+
       ${Auth.isDemo()?`<div class="auth-note">⚡ Demo mode — accounts & per-org security turn on the moment Supabase is connected.</div>`:``}
     </div>
     <div class="auth-side">
@@ -61,6 +65,9 @@ function mountLogin(mode="login"){
   root.querySelectorAll(".auth-tabs button").forEach(b=>{
     b.onclick = ()=> mountLogin(b.dataset.mode);
   });
+
+  const ig = document.getElementById("igSignIn");
+  if(ig) ig.onclick = ()=>{ if(typeof connectInstagram==="function") connectInstagram(); };
 
   const form = document.getElementById("authForm");
   form.onsubmit = async e=>{
@@ -92,6 +99,7 @@ function mountLogin(mode="login"){
 
 // Gate: show OS only if session exists, else login.
 async function startApp(){
+  if(window.__igLoggingIn){ return; } // Instagram sign-in callback is finishing — don't flash login
   const session = await Auth.currentSession();
   if(session){ bootOS(); }
   else { mountLogin("login"); }

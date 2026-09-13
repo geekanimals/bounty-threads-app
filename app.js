@@ -188,34 +188,57 @@ function buildActivityItems(creators, campaigns, barter){
 
 async function loadDashboard(){
   if(!window.sb) return;
+  const role = currentRole;
   const [cr, ca, ba] = await Promise.all([
     sb.from("creators").select("name,created_at").order("created_at",{ascending:false}),
     sb.from("campaigns").select("name,brand,status,created_at").order("created_at",{ascending:false}),
     sb.from("barter_items").select("product,creator,stage,created_at").order("created_at",{ascending:false})
   ]);
   const creators=cr.data||[], campaigns=ca.data||[], barter=ba.data||[];
-  renderOnboard(creators.length, campaigns.length, barter.length);
+
+  if(role === "creator"){
+    // Creators get a creator-shaped setup checklist (not agency actions).
+    const [ig, plans, apps] = await Promise.all([
+      sb.from("social_accounts").select("id").eq("platform","instagram").limit(1),
+      sb.from("dream_plans").select("id").limit(1),
+      sb.from("applications").select("id").limit(1)
+    ]);
+    renderOnboard(
+      "🚀 Set up your creator profile",
+      "Connect your Instagram and pick a goal — your OS comes alive.",
+      [
+        {label:"Connect your Instagram", done:(ig.data||[]).length>0,    page:"mediakit"},
+        {label:"Pick your Dream Plan",   done:(plans.data||[]).length>0, page:"growth"},
+        {label:"Apply to a campaign",    done:(apps.data||[]).length>0,  page:"marketplace"}
+      ]
+    );
+  } else {
+    renderOnboard(
+      "🚀 Get your workspace set up",
+      "A few quick steps and your OS goes live with your own data.",
+      [
+        {label:"Add your first creator",     done:creators.length>0, page:"creators"},
+        {label:"Launch your first campaign", done:campaigns.length>0, page:"campaigns"},
+        {label:"Start a barter batch",       done:barter.length>0,    page:"barter"}
+      ]
+    );
+  }
   renderTasks(campaigns, barter);
   renderActivity(buildActivityItems(creators, campaigns, barter));
 }
 
-function renderOnboard(nCreators, nCampaigns, nBarter){
+function renderOnboard(title, sub, steps){
   const wrap = document.getElementById("onboardCard");
   if(!wrap) return;
-  const steps = [
-    {label:"Add your first creator",     done:nCreators>0, page:"creators"},
-    {label:"Launch your first campaign", done:nCampaigns>0, page:"campaigns"},
-    {label:"Start a barter batch",       done:nBarter>0,   page:"barter"}
-  ];
   const doneCount = steps.filter(s=>s.done).length;
   if(doneCount === steps.length){ wrap.innerHTML = ""; return; } // fully set up — hide
   const pct = Math.round(doneCount/steps.length*100);
   wrap.innerHTML = `<div class="card" style="margin-bottom:16px">
-    <h3>🚀 Get your workspace set up <span class="muted" style="font-weight:400">${doneCount}/${steps.length} done</span></h3>
-    <div class="muted" style="margin:2px 0 10px">A few quick steps and your OS goes live with your own data.</div>
+    <h3>${esc(title)} <span class="muted" style="font-weight:400">${doneCount}/${steps.length} done</span></h3>
+    <div class="muted" style="margin:2px 0 10px">${esc(sub)}</div>
     <div class="bar"><span style="width:${pct}%"></span></div>
     <div class="list" style="margin-top:14px">
-    ${steps.map(s=>`<div class="row onboard-step" data-page="${s.page}" style="cursor:${s.done?"default":"pointer"}">
+    ${steps.map(s=>`<div class="row onboard-step" data-page="${esc(s.page)}" style="cursor:${s.done?"default":"pointer"}">
       <span class="dot ${s.done?"good":"warn"}"></span>
       <div class="r-main"><div class="r-title" style="${s.done?"text-decoration:line-through;opacity:.55":""}">${esc(s.label)}</div></div>
       ${s.done?'<span class="tag good">✓ Done</span>':'<span class="tag brand">Start →</span>'}</div>`).join("")}
@@ -788,45 +811,83 @@ function renderRoster(){
 
 /* ================= MEDIA KIT (Instagram) ================= */
 function renderMediaKit(){
-  let html = pageHead("Media Kit","Your Instagram — auto-built into a shareable kit, and post from here.");
+  let html = pageHead("Media Kit","Your Instagram, auto-built into a professional, shareable kit.");
   html += `<div id="mkBody"><div class="card"><div class="muted">Loading…</div></div></div>`;
   return html;
 }
 
 function mkNotConnected(){
-  return `<div class="card"><div class="ai-suggest"><span class="spark">📸</span>
-    <div class="s-body"><b>Connect your Instagram</b><p>Log in with your Instagram Business or Creator account to auto-build your media kit and publish posts from here.</p></div>
-    <button class="btn" id="mkConnect">Connect Instagram</button></div></div>`;
+  return `<div class="card mk-connect">
+    <div class="mk-connect-ic">📸</div>
+    <h2 style="margin:6px 0">Build your media kit in seconds</h2>
+    <p class="muted" style="max-width:440px;margin:0 auto 16px">Connect your Instagram Business or Creator account and we'll auto-generate a professional media kit — followers, engagement, top posts — and let you publish right from here.</p>
+    <button class="btn big" id="mkConnect">Connect Instagram</button>
+    <div class="muted" style="font-size:12px;margin-top:12px">We never see your password. Disconnect anytime.</div>
+  </div>`;
 }
 
 function mkHead(a){
   const media = Array.isArray(a.recent_media) ? a.recent_media : [];
-  let eng = "—";
-  if(a.followers_count && media.length){
-    const avg = media.reduce((s,m)=>s+((m.like_count||0)+(m.comments_count||0)),0)/media.length;
-    eng = ((avg/a.followers_count)*100).toFixed(1)+"%";
-  }
-  const stat = (label,val)=>`<div class="kpi"><div class="k-label">${label}</div><div class="k-val">${val}</div></div>`;
+  const n = media.length || 0;
+  const sum = (k)=> media.reduce((s,m)=>s+(Number(m[k])||0),0);
+  const avgLikes = n ? Math.round(sum("like_count")/n) : 0;
+  const avgComments = n ? Math.round(sum("comments_count")/n) : 0;
+  const engStr = (a.followers_count && n) ? (((avgLikes+avgComments)/a.followers_count)*100).toFixed(2)+"%" : "—";
+  let top = null;
+  media.forEach(m=>{ const e=(Number(m.like_count)||0)+(Number(m.comments_count)||0); if(!top || e>top._e){ top={...m,_e:e}; } });
+  const initials = esc((a.name||a.username||"?").slice(0,2).toUpperCase());
+  const firstName = esc((a.name||a.username||"me").split(" ")[0]);
+
   const posts = media.slice(0,9).map(m=>{
     const img = m.media_type==="VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
+    const badge = m.media_type==="VIDEO" ? "▶" : (m.media_type==="CAROUSEL_ALBUM" ? "❏" : "");
     return `<a href="${esc(m.permalink)||'#'}" target="_blank" rel="noopener" class="mk-post">
-      <img src="${esc(img)}" alt="" loading="lazy">
+      <img src="${esc(img)}" alt="" loading="lazy">${badge?`<span class="mk-type">${badge}</span>`:""}
       <span class="mk-meta">❤ ${fmtNum(m.like_count)} · 💬 ${fmtNum(m.comments_count)}</span></a>`;
-  }).join("") || `<div class="muted" style="padding:8px">No posts yet.</div>`;
-  return `<div class="card mk-headcard">
-      ${a.profile_picture_url?`<img class="mk-avatar" src="${esc(a.profile_picture_url)}" alt="">`:`<div class="mk-avatar mk-ph">${esc((a.name||a.username||"?").slice(0,2).toUpperCase())}</div>`}
-      <div class="mk-id"><h2 style="margin:0">${esc(a.name)||esc(a.username)}</h2>
-        <div class="muted">@${esc(a.username)}${a.account_type?" · "+esc(a.account_type):""}</div>
-        ${a.biography?`<p style="margin:6px 0 0">${esc(a.biography)}</p>`:""}
-        ${a.website?`<a href="${esc(a.website)}" target="_blank" rel="noopener">${esc(a.website)}</a>`:""}</div>
+  }).join("");
+
+  const tile = (val,label,accent)=>`<div class="mk-tile ${accent||''}"><div class="mk-tile-v">${val}</div><div class="mk-tile-l">${label}</div></div>`;
+
+  return `<div class="mk-kit">
+    <div class="mk-cover">
+      <div class="mk-cover-grad"></div>
+      <div class="mk-hero">
+        ${a.profile_picture_url?`<img class="mk-avatar" src="${esc(a.profile_picture_url)}" alt="">`:`<div class="mk-avatar mk-ph">${initials}</div>`}
+        <div class="mk-hero-id">
+          <div class="mk-name">${esc(a.name)||esc(a.username)} ${a.account_type?`<span class="mk-badge">${esc(a.account_type)}</span>`:""}</div>
+          <div class="mk-handle">@${esc(a.username)}</div>
+          ${a.biography?`<div class="mk-bio">${esc(a.biography)}</div>`:""}
+          ${a.website?`<a class="mk-web" href="${esc(a.website)}" target="_blank" rel="noopener">🔗 ${esc(a.website)}</a>`:""}
+        </div>
+        <button class="mk-share" id="mkShare">Share kit</button>
+      </div>
     </div>
-    <div class="kpi-row" style="margin-top:16px">
-      ${stat("Followers", fmtNum(a.followers_count))}
-      ${stat("Following", fmtNum(a.follows_count))}
-      ${stat("Posts", fmtNum(a.media_count))}
-      ${stat("Engagement", eng)}
+
+    <div class="mk-tiles">
+      ${tile(fmtNum(a.followers_count),"Followers","hero")}
+      ${tile(engStr,"Avg. engagement")}
+      ${tile(fmtNum(avgLikes),"Avg. likes")}
+      ${tile(fmtNum(avgComments),"Avg. comments")}
+      ${tile(fmtNum(a.media_count),"Total posts")}
     </div>
-    <div class="card" style="margin-top:16px"><h3>Recent posts</h3><div class="mk-grid">${posts}</div></div>`;
+
+    ${(top && top.media_url)?`<div class="card mk-section"><h3>Top performing post</h3>
+      <div class="mk-top">
+        <a href="${esc(top.permalink)||'#'}" target="_blank" rel="noopener" class="mk-top-img"><img src="${esc(top.media_type==='VIDEO'?(top.thumbnail_url||top.media_url):top.media_url)}" alt="" loading="lazy"></a>
+        <div class="mk-top-body">
+          ${top.caption?`<p class="mk-top-cap">${esc(String(top.caption).slice(0,200))}${String(top.caption).length>200?'…':''}</p>`:`<p class="muted">No caption</p>`}
+          <div class="mk-top-stats"><span>❤ ${fmtNum(top.like_count)} likes</span><span>💬 ${fmtNum(top.comments_count)} comments</span></div>
+        </div>
+      </div></div>`:""}
+
+    <div class="card mk-section"><h3>Content showcase</h3>
+      ${posts?`<div class="mk-grid">${posts}</div>`:`<div class="muted" style="padding:8px">No posts yet.</div>`}</div>
+
+    <div class="card mk-section mk-collab">
+      <div><h3 style="margin:0 0 2px">Work with ${firstName}</h3>
+        <div class="muted">Barters, paid campaigns & brand collaborations — managed end-to-end in Geek Influencer OS.</div></div>
+      <button class="btn" id="mkComposeCta">Create a post →</button>
+    </div>`;
 }
 
 function mkComposer(){
@@ -854,6 +915,12 @@ async function loadMediaKit(){
   if(error || !acct){ showConnect(); return; }
   wrap.innerHTML = mkHead(acct) + mkComposer();
   wireMkComposer();
+  const share = document.getElementById("mkShare");
+  if(share) share.onclick = async ()=>{
+    try{ await navigator.clipboard.writeText("https://instagram.com/"+(acct.username||"")); share.textContent="Copied!"; setTimeout(()=>share.textContent="Share kit",1500); }catch(e){}
+  };
+  const cta = document.getElementById("mkComposeCta");
+  if(cta) cta.onclick = ()=>{ const c=document.getElementById("mkComposer"); if(c) c.scrollIntoView({behavior:"smooth"}); };
 }
 
 function wireMkComposer(){
@@ -948,15 +1015,36 @@ function connectInstagram(){
 async function finishInstagram(code){
   try{
     if(!(window.sb && window.sb.functions)) throw new Error("Edge Functions not available.");
-    await sb.auth.getSession(); // ensure the signed-in session is loaded before invoking
-    const { data, error } = await sb.functions.invoke("instagram-auth", { body:{ code, redirect_uri: IG_REDIRECT } });
+    const { data:{ session } } = await sb.auth.getSession();
+
+    if(session){
+      // Signed in already → CONNECT this Instagram to the current account.
+      const { data, error } = await sb.functions.invoke("instagram-auth", { body:{ code, redirect_uri: IG_REDIRECT } });
+      if(error) throw error;
+      if(data && data.error) throw new Error(data.error);
+      localStorage.setItem("geekos_conn_instagram","1");
+      alert("Instagram connected ✅ — your media kit is ready.");
+      currentPage = "mediakit"; if(typeof renderShell==="function") renderShell();
+      return;
+    }
+
+    // Not signed in → SIGN IN with Instagram (server creates/loads the user + a session token).
+    const { data, error } = await sb.functions.invoke("instagram-login", { body:{ code, redirect_uri: IG_REDIRECT } });
     if(error) throw error;
     if(data && data.error) throw new Error(data.error);
+    const { error: vErr } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: "magiclink" });
+    if(vErr) throw vErr;
     localStorage.setItem("geekos_conn_instagram","1");
-    alert("Instagram connected ✅ — your media kit is ready.");
-    currentPage = "mediakit"; if(typeof renderShell==="function") renderShell();
+    // Boot the OS straight onto the media kit.
+    const authRoot = document.getElementById("authRoot");
+    if(authRoot){ authRoot.classList.remove("open"); authRoot.innerHTML = ""; }
+    if(window.Auth) await Auth.currentSession();
+    currentPage = "mediakit";
+    if(typeof bootOS==="function") bootOS();
   }catch(ex){
-    alert("Couldn't finish connecting Instagram: " + (ex.message||ex) + "\n\nCheck that the instagram-auth Edge Function is deployed and this redirect URL is registered in Meta:\n" + IG_REDIRECT);
+    window.__igLoggingIn = false;
+    alert("Instagram sign-in failed: " + (ex.message||ex) + "\n\nMake sure the instagram-login & instagram-auth Edge Functions are deployed and this redirect URL is registered in Meta:\n" + IG_REDIRECT);
+    if(window.startApp && !((await sb.auth.getSession()).data.session)) mountLogin("login");
   }
 }
 
@@ -1004,7 +1092,7 @@ async function handleOAuthCallback(){
   localStorage.removeItem("geekos_oauth_state");
 
   // Instagram Login uses its own Edge Function flow.
-  if(platform === "instagram"){ await finishInstagram(code); return; }
+  if(platform === "instagram"){ window.__igLoggingIn = true; await finishInstagram(code); return; }
 
   try{
     if(!(window.sb && window.sb.functions)){
