@@ -233,7 +233,7 @@ async function loadDashboard(){
     // Creators get a creator-shaped setup checklist (not agency actions).
     const [ig, plans, apps] = await Promise.all([
       sb.from("social_accounts").select("id").eq("platform","instagram").limit(1),
-      sb.from("dream_plans").select("*").order("created_at",{ascending:false}).limit(1),
+      sb.from("dream_plans").select("*").eq("creator_email",(window.Auth&&Auth.profile&&Auth.profile.email)||"").order("created_at",{ascending:false}).limit(1),
       sb.from("applications").select("id").limit(1)
     ]);
     const plan = (plans.data||[])[0] || null;
@@ -556,7 +556,7 @@ function openCampaignModal(){
 }
 
 function renderReports(){
-  let html = pageHead("Reports","Live campaign performance for your org.","Export");
+  let html = pageHead("Reports","Live campaign performance for your org.");
   html += kpiRow(currentRole);
   html += `<div class="card"><h3>Campaign Performance</h3>
     <div class="list" id="reportRows"><div class="muted" style="padding:12px">Loading…</div></div></div>`;
@@ -601,7 +601,7 @@ async function loadGrowth(){
   const wrap = document.getElementById("growthBody");
   if(!wrap) return;
   if(!window.sb){ wrap.innerHTML = `<div class="card"><div class="muted">Connect the database.</div></div>`; return; }
-  const { data } = await sb.from("dream_plans").select("*").order("created_at",{ascending:false}).limit(1);
+  const { data } = await sb.from("dream_plans").select("*").eq("creator_email",(window.Auth&&Auth.profile&&Auth.profile.email)||"").order("created_at",{ascending:false}).limit(1);
   const plan = (data && data[0]) || null;
   if(!plan){
     wrap.innerHTML = `<div class="card"><h3>Choose your dream 🎯</h3>
@@ -770,17 +770,15 @@ async function loadMarketplace(){
     const own = mine && c.org_id === mine; // don't let a creator "apply" to their own org's campaign
     return `<div class="card"><h3>${esc(c.name)}<span class="tag good">${esc(c.status)}</span></h3>
     <div class="muted">${esc(c.brand)||"—"} · ${esc(c.type)||"—"}${c.org_name?` · ${esc(c.org_name)}`:""}</div>
-    ${own?`<div class="muted" style="margin-top:10px;font-size:12px">Your campaign</div>`:`<button class="btn" data-apply="${esc(c.id)}" data-name="${esc(c.name)}" data-agency="${esc(c.org_id)}" style="margin-top:10px">Apply →</button>`}</div>`;
+    ${own?`<div class="muted" style="margin-top:10px;font-size:12px">Your campaign</div>`:`<button class="btn" data-apply="${esc(c.id)}" style="margin-top:10px">Apply →</button>`}</div>`;
   }).join("");
-  grid.querySelectorAll("button[data-apply]").forEach(b=>b.onclick=()=>applyToCampaign(b.dataset.apply, b.dataset.name, b.dataset.agency, b));
+  grid.querySelectorAll("button[data-apply]").forEach(b=>b.onclick=()=>applyToCampaign(b.dataset.apply, b));
 }
-async function applyToCampaign(id, name, agencyOrgId, btn){
+async function applyToCampaign(id, btn){
   if(!window.sb) return;
   btn.disabled=true; btn.textContent="Applying…";
-  const row={ campaign_id:id, campaign_name:name, agency_org_id:agencyOrgId||null,
-    creator_name:(window.Auth&&Auth.profile&&Auth.profile.name)||"Creator", status:"Applied" };
-  if(window.Auth&&Auth.profile){ row.org_name=Auth.profile.org; row.org_id=Auth.profile.org_id; }
-  const { error } = await sb.from("applications").insert(row);
+  // Server-side RPC validates the campaign and sets the agency routing (can't be forged).
+  const { error } = await sb.rpc("apply_to_campaign", { p_campaign_id: id });
   btn.textContent = error ? "Try again" : "✓ Applied"; if(!error) btn.classList.add("ghost");
 }
 
@@ -805,7 +803,7 @@ async function loadBrands(){
 
 /* ================= FINANCE (derived economics) ================= */
 function renderFinance(){
-  let html = pageHead("Finance","Barter value, EMV & celebrity deal economics.","Export");
+  let html = pageHead("Finance","Barter value, EMV & celebrity deal economics.");
   html += `<div class="kpi-row">
     <div class="kpi"><div class="k-label">Barter Value</div><div class="k-val" id="fin-barter">…</div></div>
     <div class="kpi"><div class="k-label">Est. EMV</div><div class="k-val" id="fin-emv">…</div></div>
@@ -949,7 +947,7 @@ function mkHead(a){
     const img = m.media_type==="VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
     const badge = m.media_type==="VIDEO" ? "▶" : (m.media_type==="CAROUSEL_ALBUM" ? "❏" : "");
     return `<a href="${esc(safeUrl(m.permalink))}" target="_blank" rel="noopener" class="mk-post">
-      <img src="${esc(img)}" alt="" loading="lazy">${badge?`<span class="mk-type">${badge}</span>`:""}
+      <img src="${esc(safeUrl(img))}" alt="" loading="lazy">${badge?`<span class="mk-type">${badge}</span>`:""}
       <span class="mk-meta">${meta||`❤ ${fmtNum(m.like_count)} · 💬 ${fmtNum(m.comments_count)}`}</span></a>`;
   };
   const posts = media.slice(0,9).map(m=>postCard(m)).join("");
@@ -985,7 +983,7 @@ function mkHead(a){
     <div class="mk-cover">
       <div class="mk-cover-grad"></div>
       <div class="mk-hero">
-        ${a.profile_picture_url?`<img class="mk-avatar" src="${esc(a.profile_picture_url)}" alt="">`:`<div class="mk-avatar mk-ph">${initials}</div>`}
+        ${a.profile_picture_url?`<img class="mk-avatar" src="${esc(safeUrl(a.profile_picture_url))}" alt="">`:`<div class="mk-avatar mk-ph">${initials}</div>`}
         <div class="mk-hero-id">
           <div class="mk-name">${esc(a.name)||esc(a.username)} ${a.account_type?`<span class="mk-badge">${esc(a.account_type)}</span>`:""}</div>
           <div class="mk-handle">@${esc(a.username)}</div>
@@ -1101,7 +1099,9 @@ async function loadMediaKit(){
   wireMkComposer();
   const share = document.getElementById("mkShare");
   if(share) share.onclick = async ()=>{
-    try{ await navigator.clipboard.writeText("https://instagram.com/"+(acct.username||"")); share.textContent="Copied!"; setTimeout(()=>share.textContent="Share kit",1500); }catch(e){}
+    const url = location.origin + location.pathname.replace(/[^/]*$/,"") + "p.html?u=" + encodeURIComponent(acct.username||"");
+    try{ await navigator.clipboard.writeText(url); share.textContent="Copied!"; setTimeout(()=>share.textContent="Share kit",1500); }
+    catch(e){ prompt("Your public media kit link:", url); }
   };
   const cta = document.getElementById("mkComposeCta");
   if(cta) cta.onclick = ()=>{ const c=document.getElementById("mkComposer"); if(c) c.scrollIntoView({behavior:"smooth"}); };

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Media Kit — Geek Influencer OS</title>
+  <meta name="description" content="A creator media kit, powered by Geek Influencer OS.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body{background:var(--bg,#f7f8fc);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+    .pub-wrap{max-width:760px;margin:0 auto;padding:24px 18px 60px}
+    .pub-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    .pub-brand{display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink,#1a1c2e);font-weight:800}
+    .pub-mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#6c5ce7,#8f7bff);color:#fff;display:grid;place-items:center;font-weight:800}
+    .pub-cta{background:#111;color:#fff;text-decoration:none;border-radius:10px;padding:9px 15px;font-weight:600;font-size:13px}
+    .pub-foot{text-align:center;margin-top:26px;color:var(--muted,#5a6079);font-size:13px}
+    .pub-foot a{color:#6c5ce7;text-decoration:none;font-weight:600}
+    .pub-loading,.pub-empty{text-align:center;padding:60px 20px;color:var(--muted,#5a6079)}
+  </style>
+</head>
+<body>
+<div class="pub-wrap">
+  <div class="pub-top">
+    <a href="index.html" class="pub-brand"><span class="pub-mark">G</span> Geek Influencer OS</a>
+    <a href="app.html" class="pub-cta">Build your own kit →</a>
+  </div>
+  <div id="kit"><div class="pub-loading">Loading media kit…</div></div>
+  <div class="pub-foot">This media kit is powered by <a href="index.html">Geek Influencer OS</a> — the OS for creators, brands &amp; agencies.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = 'https://edibibytqfrrxfztukpm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf';
+const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+function esc(v){ if(v==null) return ""; return String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+function safeUrl(u){ if(u==null) return "#"; const s=String(u).trim(); if(/^https?:\/\//i.test(s)||s.startsWith("/")||s.startsWith("#")) return s; if(/^[a-z0-9.-]+\.[a-z]{2,}([\/?#]|$)/i.test(s)) return "https://"+s; return "#"; }
+function fmtNum(n){ return (Number(n)||0).toLocaleString('en-IN'); }
+
+function edits(a){ return (a && a.edits && typeof a.edits==="object" && !Array.isArray(a.edits)) ? a.edits : {}; }
+
+function renderKit(a){
+  const E = edits(a);
+  const media = Array.isArray(a.recent_media) ? a.recent_media : [];
+  const n = media.length || 0;
+  const sum = k => media.reduce((s,m)=>s+(Number(m[k])||0),0);
+  const avgLikes = n ? Math.round(sum("like_count")/n) : 0;
+  const avgComments = n ? Math.round(sum("comments_count")/n) : 0;
+  const engStr = (a.followers_count && n) ? (((avgLikes+avgComments)/a.followers_count)*100).toFixed(2)+"%" : "—";
+  const reachStr = a.avg_reach ? fmtNum(a.avg_reach) : "—";
+  const initials = esc((a.name||a.username||"?").slice(0,2).toUpperCase());
+  const bio = E.bio || a.biography || "";
+  const headline = E.headline || "";
+  const sorted = [...media].sort((x,y)=>((Number(y.like_count)||0)+(Number(y.comments_count)||0))-((Number(x.like_count)||0)+(Number(x.comments_count)||0)));
+  const postCard = m=>{ const img=m.media_type==="VIDEO"?(m.thumbnail_url||m.media_url):m.media_url; const badge=m.media_type==="VIDEO"?"▶":(m.media_type==="CAROUSEL_ALBUM"?"❏":""); return `<a href="${esc(safeUrl(m.permalink))}" target="_blank" rel="noopener" class="mk-post"><img src="${esc(safeUrl(img))}" alt="" loading="lazy">${badge?`<span class="mk-type">${badge}</span>`:""}<span class="mk-meta">❤ ${fmtNum(m.like_count)} · 💬 ${fmtNum(m.comments_count)}</span></a>`; };
+  const posts = media.slice(0,9).map(postCard).join("");
+  const tops = sorted.slice(0,3).map(postCard).join("");
+  const tile=(v,l,acc)=>`<div class="mk-tile ${acc||''}"><div class="mk-tile-v">${v}</div><div class="mk-tile-l">${l}</div></div>`;
+  const aud=(a.audience&&typeof a.audience==="object")?a.audience:{};
+  const topOf=(o,k)=>{const en=Object.entries(o||{}).sort((x,y)=>y[1]-x[1]).slice(0,k);const t=Object.values(o||{}).reduce((s,v)=>s+Number(v||0),0)||1;return en.map(([kk,v])=>({k:kk,pct:Math.round(Number(v)/t*100)}));};
+  const audGA=topOf(aud.gender_age,6),audC=topOf(aud.country,5),audCity=topOf(aud.city,5),hasAud=audGA.length||audC.length||audCity.length;
+  const bar=(l,p)=>`<div class="mk-bar-row"><span class="mk-bar-l">${esc(l)}</span><span class="mk-bar-track"><span style="width:${p}%"></span></span><span class="mk-bar-v">${p}%</span></div>`;
+  const mentions=Array.isArray(a.mentions)?a.mentions:[];
+  const mCards=mentions.slice(0,6).map(m=>{const img=m.media_type==="VIDEO"?(m.thumbnail_url||m.media_url):m.media_url;return `<a href="${esc(safeUrl(m.permalink))}" target="_blank" rel="noopener" class="mk-post"><img src="${esc(safeUrl(img))}" alt="" loading="lazy"><span class="mk-meta">@${esc(m.username)||"tagged"}</span></a>`;}).join("");
+  const portfolio=Array.isArray(E.portfolio)?E.portfolio:[];
+  const portHtml=portfolio.length?`<div class="mk-portfolio">${portfolio.map(p=>`<div class="mk-brand"><div class="mk-brand-ic">${esc((p.brand||'?').slice(0,2).toUpperCase())}</div><div class="mk-brand-b"><div class="mk-brand-n">${esc(p.brand)}</div>${p.note?`<div class="muted" style="font-size:12px">${esc(p.note)}</div>`:''}</div>${p.url?`<a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener" class="mk-brand-link">↗</a>`:''}</div>`).join("")}</div>`:"";
+  const rates=Array.isArray(E.rate_card)?E.rate_card:[];
+  const rateHtml=rates.length?`<table class="mk-rates"><tbody>${rates.map(r=>`<tr><td>${esc(r.item)}</td><td class="mk-rate-p">${esc(r.price)}</td></tr>`).join("")}</tbody></table>`:"";
+
+  return `<div class="mk-kit">
+    <div class="mk-cover"><div class="mk-cover-grad"></div><div class="mk-hero">
+      ${a.profile_picture_url?`<img class="mk-avatar" src="${esc(safeUrl(a.profile_picture_url))}" alt="">`:`<div class="mk-avatar mk-ph">${initials}</div>`}
+      <div class="mk-hero-id"><div class="mk-name">${esc(a.name)||esc(a.username)} ${a.account_type?`<span class="mk-badge">${esc(a.account_type)}</span>`:""}</div>
+      <div class="mk-handle"><a href="https://instagram.com/${esc(a.username)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">@${esc(a.username)}</a></div>
+      ${headline?`<div class="mk-headline">${esc(headline)}</div>`:''}${bio?`<div class="mk-bio">${esc(bio)}</div>`:""}
+      ${a.website?`<a class="mk-web" href="${esc(safeUrl(a.website))}" target="_blank" rel="noopener">🔗 ${esc(a.website)}</a>`:""}</div></div></div>
+    <div class="mk-tiles">${tile(fmtNum(a.followers_count),"Followers","hero")}${tile(engStr,"Avg. engagement")}${tile(reachStr,"Avg. reach / post")}${tile(fmtNum(avgLikes),"Avg. likes")}${tile(fmtNum(a.media_count),"Total posts")}</div>
+    <div class="mk-cols">
+      <div class="card mk-section"><div class="mk-sec-head"><h3>Audience</h3></div>${hasAud?`${audGA.length?`<div class="mk-sub">Age &amp; gender</div>${audGA.map(x=>bar(x.k,x.pct)).join("")}`:''}${audC.length?`<div class="mk-sub" style="margin-top:12px">Top countries</div>${audC.map(x=>bar(x.k,x.pct)).join("")}`:''}${audCity.length?`<div class="mk-sub" style="margin-top:12px">Top cities</div>${audCity.map(x=>bar(x.k,x.pct)).join("")}`:''}`:`<div class="muted" style="padding:8px">Audience insights not available.</div>`}</div>
+      ${rateHtml?`<div class="card mk-section"><div class="mk-sec-head"><h3>Rate card</h3></div>${rateHtml}</div>`:`<div class="card mk-section"><div class="mk-sec-head"><h3>Work with ${esc((a.name||a.username||"me").split(" ")[0])}</h3></div><div class="muted" style="padding:8px">Reach out on Instagram to collaborate.</div></div>`}
+    </div>
+    ${tops?`<div class="card mk-section"><h3>Top performing posts</h3><div class="mk-grid">${tops}</div></div>`:""}
+    ${portHtml?`<div class="card mk-section"><div class="mk-sec-head"><h3>Work portfolio</h3></div>${portHtml}</div>`:""}
+    ${mCards?`<div class="card mk-section"><h3>Mentions</h3><div class="mk-grid">${mCards}</div></div>`:""}
+    ${posts?`<div class="card mk-section"><h3>Content showcase</h3><div class="mk-grid">${posts}</div></div>`:""}
+  </div>`;
+}
+
+(async function(){
+  const u = new URLSearchParams(location.search).get("u");
+  const root = document.getElementById("kit");
+  if(!u){ root.innerHTML = `<div class="pub-empty">No creator specified.</div>`; return; }
+  if(!sb){ root.innerHTML = `<div class="pub-empty">Couldn't load.</div>`; return; }
+  try{
+    const { data, error } = await sb.rpc("public_profile", { p_username: u });
+    const a = (data && data[0]) || null;
+    if(error || !a){ root.innerHTML = `<div class="pub-empty">Media kit not found for “${esc(u)}”.</div>`; return; }
+    document.title = `${a.name || a.username} — Media Kit`;
+    root.innerHTML = renderKit(a);
+  }catch(e){ root.innerHTML = `<div class="pub-empty">Couldn't load this media kit.</div>`; }
+})();
+</script>
+</body>
+</html>

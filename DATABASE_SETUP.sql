@@ -47,6 +47,7 @@ set search_path = public
 as $$
 begin
   new.org_id := old.org_id;  -- org_id is immutable from the client
+  new.role   := old.role;    -- role is immutable from the client (no self-escalation to owner)
   return new;
 end;
 $$;
@@ -69,6 +70,17 @@ $$;
 -- Now that my_org() exists, allow members to read co-members in their org.
 create policy "org read members" on members for select using (org_id = my_org());
 
+-- Helper: the caller's role (SECURITY DEFINER avoids RLS recursion on members).
+create or replace function my_role()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select role from public.members where id = auth.uid()
+$$;
+
 -- ---------- INVITES (team members join an existing org) ----------
 create table if not exists invites (
   id uuid primary key default gen_random_uuid(),
@@ -88,7 +100,8 @@ drop policy if exists "org insert invites" on invites;
 drop policy if exists "org update invites" on invites;
 drop policy if exists "org delete invites" on invites;
 create policy "org read invites"   on invites for select using (org_id = my_org());
-create policy "org insert invites" on invites for insert with check (org_id = my_org());
+-- Only owners/corporate admins may invite (not every member), into their own org.
+create policy "org insert invites" on invites for insert with check (org_id = my_org() and my_role() in ('owner','corporate'));
 create policy "org update invites" on invites for update using (org_id = my_org());
 create policy "org delete invites" on invites for delete using (org_id = my_org());
 
@@ -199,13 +212,14 @@ create policy "org delete campaigns" on campaigns for delete using (org_id = my_
 -- Marketplace surface: open (Sourcing/Live) campaigns across ALL orgs, read-only.
 -- SECURITY DEFINER bypasses the org-scoped RLS above, but only exposes open campaigns.
 create or replace function public.open_campaigns()
-returns setof campaigns
+returns table(id uuid, name text, brand text, type text, status text, org_id uuid, org_name text)
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  select * from public.campaigns where status in ('Sourcing','Live') order by created_at desc
+  select id, name, brand, type, status, org_id, org_name
+  from public.campaigns where status in ('Sourcing','Live') order by created_at desc
 $$;
 grant execute on function public.open_campaigns() to authenticated;
 
@@ -241,15 +255,49 @@ create table if not exists applications (
 );
 alter table applications add column if not exists agency_org_id uuid;
 alter table applications enable row level security;
-drop policy if exists "org read apps"   on applications;
-drop policy if exists "org insert apps" on applications;
-drop policy if exists "org update apps" on applications;
+drop policy if exists "org read apps"     on applications;
+drop policy if exists "org insert apps"   on applications;
+drop policy if exists "org update apps"   on applications;
+drop policy if exists "agency update apps"  on applications;
+drop policy if exists "creator update apps" on applications;
 -- Either side (the creator who applied, or the agency that owns the campaign) can read it.
 create policy "org read apps"   on applications for select using (org_id = my_org() or agency_org_id = my_org());
--- A creator inserts an application stamped with THEIR org; agency_org_id points at the campaign's org.
-create policy "org insert apps" on applications for insert with check (org_id = my_org());
--- The agency (or the creator) can update status (approve / decline / withdraw).
-create policy "org update apps" on applications for update using (org_id = my_org() or agency_org_id = my_org());
+-- Direct client inserts may NOT set agency_org_id — routing to an agency happens only through
+-- apply_to_campaign() (which validates the campaign). This blocks forged/spam applications.
+create policy "org insert apps" on applications for insert with check (org_id = my_org() and agency_org_id is null);
+-- Only the agency that owns the campaign may approve/decline.
+create policy "agency update apps"  on applications for update using (agency_org_id = my_org()) with check (agency_org_id = my_org());
+-- The creator may only keep/withdraw their own application — never self-approve.
+create policy "creator update apps" on applications for update using (org_id = my_org()) with check (org_id = my_org() and status in ('Applied','Withdrawn'));
+
+-- Server-side apply: validates the campaign is real & open, sets agency_org_id from it (un-forgeable),
+-- and de-dupes. This is the only path that can route an application to an agency.
+create or replace function public.apply_to_campaign(p_campaign_id uuid)
+returns public.applications
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  c        public.campaigns;
+  existing public.applications;
+  newrow   public.applications;
+  me       public.members;
+begin
+  select * into c from public.campaigns where id = p_campaign_id and status in ('Sourcing','Live');
+  if c.id is null then raise exception 'Campaign is not open for applications'; end if;
+  if c.org_id = my_org() then raise exception 'You cannot apply to your own campaign'; end if;
+  select * into me from public.members where id = auth.uid();
+  select * into existing from public.applications
+    where campaign_id = p_campaign_id and org_id = my_org() limit 1;
+  if existing.id is not null then return existing; end if;
+  insert into public.applications (org_id, org_name, agency_org_id, campaign_id, campaign_name, creator_name, status)
+  values (my_org(), me.org_name, c.org_id, c.id, c.name, me.name, 'Applied')
+  returning * into newrow;
+  return newrow;
+end;
+$$;
+grant execute on function public.apply_to_campaign(uuid) to authenticated;
 
 -- ---------- DREAM PLANS (creator growth) ----------
 create table if not exists dream_plans (
@@ -331,9 +379,32 @@ drop policy if exists "org write social"  on social_accounts;
 drop policy if exists "org update social" on social_accounts;
 drop policy if exists "org delete social" on social_accounts;
 create policy "org read social"   on social_accounts for select using (org_id = my_org());
-create policy "org write social"  on social_accounts for insert with check (org_id = my_org());
 create policy "org update social" on social_accounts for update using (org_id = my_org());
 create policy "org delete social" on social_accounts for delete using (org_id = my_org());
+-- Clients may NOT insert rows and may only UPDATE the `edits` column. All Instagram-synced
+-- stats (followers, avg_reach, audience, mentions, recent_media...) are written ONLY by the
+-- Edge Functions (service_role), so a creator can't forge the numbers brands evaluate them on.
+revoke insert, update on social_accounts from authenticated;
+grant update (edits, updated_at) on social_accounts to authenticated;
+
+-- Public, read-only creator media kit (for shareable public profile pages). Exposes only safe
+-- public fields (never tokens or org_id). Callable by anyone (anon) by username.
+create or replace function public.public_profile(p_username text)
+returns table(username text, name text, account_type text, followers_count int, follows_count int,
+              media_count int, avg_reach numeric, profile_picture_url text, biography text, website text,
+              recent_media jsonb, audience jsonb, mentions jsonb, edits jsonb)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select username, name, account_type, followers_count, follows_count, media_count, avg_reach,
+         profile_picture_url, biography, website, recent_media, audience, mentions, edits
+  from public.social_accounts
+  where lower(username) = lower(p_username) and platform = 'instagram'
+  limit 1
+$$;
+grant execute on function public.public_profile(text) to anon, authenticated;
 
 -- ---------- SOCIAL TOKENS (access tokens — SERVER ONLY, no client access) ----------
 -- RLS is enabled with NO policies for the anon/authenticated roles, so the browser
@@ -357,9 +428,20 @@ insert into storage.buckets (id, name, public)
 drop policy if exists "auth upload ig-media" on storage.objects;
 drop policy if exists "public read ig-media" on storage.objects;
 drop policy if exists "auth delete ig-media" on storage.objects;
-create policy "auth upload ig-media" on storage.objects for insert to authenticated with check (bucket_id = 'ig-media');
+-- Each user can only write/delete under their OWN uid folder prefix (client uploads to `${uid}/...`).
+create policy "auth upload ig-media" on storage.objects for insert to authenticated with check (bucket_id = 'ig-media' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "public read ig-media"  on storage.objects for select using (bucket_id = 'ig-media');
-create policy "auth delete ig-media"  on storage.objects for delete to authenticated using (bucket_id = 'ig-media');
+create policy "auth delete ig-media"  on storage.objects for delete to authenticated using (bucket_id = 'ig-media' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------- AI USAGE (per-user daily cap for the AI assistant) ----------
+create table if not exists ai_usage (
+  member_id uuid references auth.users(id) on delete cascade,
+  day date not null default current_date,
+  count int not null default 0,
+  primary key (member_id, day)
+);
+alter table ai_usage enable row level security;
+-- (no client policies — only the ai-chat Edge Function, via service_role, reads/writes this)
 
 -- ===================================================================
 -- DONE. Real Supabase Auth + Postgres-enforced per-org isolation.

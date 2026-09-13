@@ -11,6 +11,8 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || "";
 const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const DAILY_CAP = Number(Deno.env.get("AI_DAILY_CAP") || "60");
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -24,6 +26,14 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: "Not authenticated" }, 401);
 
     if (!OPENAI_API_KEY) return json({ error: "OPENAI_API_KEY is not set on the server." }, 500);
+
+    // Per-user daily cap so one user can't run up the OpenAI bill.
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: usage } = await admin.from("ai_usage").select("count").eq("member_id", user.id).eq("day", today).maybeSingle();
+    const used = usage?.count || 0;
+    if (used >= DAILY_CAP) return json({ error: `You've reached today's AI limit (${DAILY_CAP} messages). It resets tomorrow.` }, 429);
+    await admin.from("ai_usage").upsert({ member_id: user.id, day: today, count: used + 1 }, { onConflict: "member_id,day" });
 
     const { messages, context } = await req.json();
     const ctx = context || {};

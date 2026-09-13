@@ -43,9 +43,9 @@ function loginView(mode){
         <button class="btn auth-submit" type="submit">${isUp?"Create account →":"Enter the OS →"}</button>
       </form>
 
-      <div class="auth-or"><span>or</span></div>
-      <button type="button" class="ig-btn" id="igSignIn"><span class="ig-ic">📸</span> Continue with Instagram</button>
-      <div class="muted" style="text-align:center;font-size:12px;margin-top:8px">Creators: sign in with Instagram to auto-build your media kit.</div>
+      <div class="auth-or"><span>${isUp?"or, if you're a Creator":"or"}</span></div>
+      <button type="button" class="ig-btn" id="igSignIn"><span class="ig-ic">📸</span> Continue with Instagram — as a Creator</button>
+      <div class="muted" style="text-align:center;font-size:12px;margin-top:8px">Creators sign in with Instagram (we auto-build your media kit). Agencies, brands & managers use <b>${isUp?"the form above":"Create account"}</b> to pick your role.</div>
 
       ${Auth.isDemo()?`<div class="auth-note">⚡ Demo mode — accounts & per-org security turn on the moment Supabase is connected.</div>`:``}
     </div>
