@@ -1,0 +1,8 @@
+# Supabase CLI config. Link with:  supabase link --project-ref edibibytqfrrxfztukpm
+project_id = "edibibytqfrrxfztukpm"
+
+[functions.instagram-auth]
+verify_jwt = true
+
+[functions.instagram-publish]
+verify_jwt = true

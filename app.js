@@ -786,8 +786,110 @@ function renderRoster(){
     <tbody id="creatorRows"><tr><td colspan="7" class="muted" style="padding:24px">Loading…</td></tr></tbody></table></div>`;
 }
 
+/* ================= MEDIA KIT (Instagram) ================= */
+function renderMediaKit(){
+  let html = pageHead("Media Kit","Your Instagram — auto-built into a shareable kit, and post from here.");
+  html += `<div id="mkBody"><div class="card"><div class="muted">Loading…</div></div></div>`;
+  return html;
+}
+
+function mkNotConnected(){
+  return `<div class="card"><div class="ai-suggest"><span class="spark">📸</span>
+    <div class="s-body"><b>Connect your Instagram</b><p>Log in with your Instagram Business or Creator account to auto-build your media kit and publish posts from here.</p></div>
+    <button class="btn" id="mkConnect">Connect Instagram</button></div></div>`;
+}
+
+function mkHead(a){
+  const media = Array.isArray(a.recent_media) ? a.recent_media : [];
+  let eng = "—";
+  if(a.followers_count && media.length){
+    const avg = media.reduce((s,m)=>s+((m.like_count||0)+(m.comments_count||0)),0)/media.length;
+    eng = ((avg/a.followers_count)*100).toFixed(1)+"%";
+  }
+  const stat = (label,val)=>`<div class="kpi"><div class="k-label">${label}</div><div class="k-val">${val}</div></div>`;
+  const posts = media.slice(0,9).map(m=>{
+    const img = m.media_type==="VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
+    return `<a href="${esc(m.permalink)||'#'}" target="_blank" rel="noopener" class="mk-post">
+      <img src="${esc(img)}" alt="" loading="lazy">
+      <span class="mk-meta">❤ ${fmtNum(m.like_count)} · 💬 ${fmtNum(m.comments_count)}</span></a>`;
+  }).join("") || `<div class="muted" style="padding:8px">No posts yet.</div>`;
+  return `<div class="card mk-headcard">
+      ${a.profile_picture_url?`<img class="mk-avatar" src="${esc(a.profile_picture_url)}" alt="">`:`<div class="mk-avatar mk-ph">${esc((a.name||a.username||"?").slice(0,2).toUpperCase())}</div>`}
+      <div class="mk-id"><h2 style="margin:0">${esc(a.name)||esc(a.username)}</h2>
+        <div class="muted">@${esc(a.username)}${a.account_type?" · "+esc(a.account_type):""}</div>
+        ${a.biography?`<p style="margin:6px 0 0">${esc(a.biography)}</p>`:""}
+        ${a.website?`<a href="${esc(a.website)}" target="_blank" rel="noopener">${esc(a.website)}</a>`:""}</div>
+    </div>
+    <div class="kpi-row" style="margin-top:16px">
+      ${stat("Followers", fmtNum(a.followers_count))}
+      ${stat("Following", fmtNum(a.follows_count))}
+      ${stat("Posts", fmtNum(a.media_count))}
+      ${stat("Engagement", eng)}
+    </div>
+    <div class="card" style="margin-top:16px"><h3>Recent posts</h3><div class="mk-grid">${posts}</div></div>`;
+}
+
+function mkComposer(){
+  return `<div class="card" style="margin-top:16px"><h3>Create a post</h3>
+    <p class="muted" style="margin-bottom:10px">Upload an image and caption — it publishes straight to your Instagram.</p>
+    <form id="mkComposer" class="modal-form">
+      <label>Image<input type="file" name="image" accept="image/*" required></label>
+      <label>Caption<textarea name="caption" rows="3" placeholder="Write a caption… #barter"></textarea></label>
+      <div class="auth-err" id="mkErr"></div>
+      <div class="lead-msg" id="mkMsg"></div>
+      <button class="btn" type="submit">Publish to Instagram →</button>
+    </form></div>`;
+}
+
+async function loadMediaKit(){
+  const wrap = document.getElementById("mkBody");
+  if(!wrap) return;
+  const showConnect = ()=>{ wrap.innerHTML = mkNotConnected(); const b=document.getElementById("mkConnect"); if(b) b.onclick=connectInstagram; };
+  if(!window.sb){ showConnect(); return; }
+  const memberId = (window.Auth && Auth.profile && Auth.profile.id) || null;
+  let query = sb.from("social_accounts").select("*").eq("platform","instagram");
+  if(memberId) query = query.eq("member_id", memberId);
+  const { data, error } = await query.order("updated_at",{ascending:false}).limit(1);
+  const acct = (data && data[0]) || null;
+  if(error || !acct){ showConnect(); return; }
+  wrap.innerHTML = mkHead(acct) + mkComposer();
+  wireMkComposer();
+}
+
+function wireMkComposer(){
+  const form = document.getElementById("mkComposer");
+  if(!form) return;
+  form.onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(form), err=document.getElementById("mkErr"), msg=document.getElementById("mkMsg");
+    const btn = form.querySelector("button[type=submit]");
+    err.textContent=""; msg.textContent=""; msg.className="lead-msg";
+    const file = f.get("image");
+    if(!file || !file.size){ err.textContent="Pick an image first."; return; }
+    btn.disabled=true; btn.textContent="Uploading…";
+    try{
+      if(!window.sb) throw new Error("Not connected.");
+      const uid = (window.Auth && Auth.profile && Auth.profile.id) || "anon";
+      const safe = (file.name||"post.jpg").replace(/[^a-zA-Z0-9._-]/g,"");
+      const path = `${uid}/${Date.now()}-${safe}`;
+      const up = await sb.storage.from("ig-media").upload(path, file, { upsert:false, contentType:file.type||"image/jpeg" });
+      if(up.error) throw up.error;
+      const { data:pub } = sb.storage.from("ig-media").getPublicUrl(path);
+      btn.textContent="Publishing…";
+      const { data, error } = await sb.functions.invoke("instagram-publish", { body:{ image_url: pub.publicUrl, caption: f.get("caption")||"" } });
+      if(error) throw error;
+      if(data && data.error) throw new Error(data.error);
+      msg.textContent="Posted to Instagram ✅"; msg.className="lead-msg ok"; form.reset();
+    }catch(ex){
+      err.textContent = (ex.message||ex);
+    }finally{
+      btn.disabled=false; btn.textContent="Publish to Instagram →";
+    }
+  };
+}
+
 const PAGES = {
-  dashboard:renderDashboard, barter:renderBarter, creators:renderCreators, roster:renderRoster,
+  dashboard:renderDashboard, barter:renderBarter, creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit,
   campaigns:renderCampaigns, reports:renderReports, growth:renderGrowth, settings:renderSettings,
   celebrity:renderCelebrity, approvals:renderApprovals, marketplace:renderMarketplace,
   brands:renderBrands, portfolio:renderPortfolio, finance:renderFinance, logistics:renderLogistics,
@@ -823,8 +925,43 @@ const OAUTH = {
   }
 };
 
+/* ---------- Instagram (Instagram Login) — real integration ---------- */
+const INSTAGRAM_APP_ID = "944216414793314"; // Instagram app ID (public)
+const IG_SCOPES = "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights,instagram_business_manage_comments";
+// Must EXACTLY match the redirect registered in Meta → Instagram login settings.
+const IG_REDIRECT = location.origin + location.pathname.replace(/[^/]*$/,"") + "app.html";
+
+function connectInstagram(){
+  const state = "instagram:" + Math.random().toString(36).slice(2);
+  localStorage.setItem("geekos_oauth_state", state);
+  const p = new URLSearchParams({
+    client_id: INSTAGRAM_APP_ID,
+    redirect_uri: IG_REDIRECT,
+    response_type: "code",
+    scope: IG_SCOPES,
+    state
+  });
+  location.href = "https://www.instagram.com/oauth/authorize?" + p.toString();
+}
+
+// Called after Instagram redirects back with ?code — hands it to the Edge Function.
+async function finishInstagram(code){
+  try{
+    if(!(window.sb && window.sb.functions)) throw new Error("Edge Functions not available.");
+    await sb.auth.getSession(); // ensure the signed-in session is loaded before invoking
+    const { data, error } = await sb.functions.invoke("instagram-auth", { body:{ code, redirect_uri: IG_REDIRECT } });
+    if(error) throw error;
+    if(data && data.error) throw new Error(data.error);
+    localStorage.setItem("geekos_conn_instagram","1");
+    alert("Instagram connected ✅ — your media kit is ready.");
+    currentPage = "mediakit"; if(typeof renderShell==="function") renderShell();
+  }catch(ex){
+    alert("Couldn't finish connecting Instagram: " + (ex.message||ex) + "\n\nCheck that the instagram-auth Edge Function is deployed and this redirect URL is registered in Meta:\n" + IG_REDIRECT);
+  }
+}
+
 const INTEGRATIONS = [
-  { key:"meta", ic:"📸", name:"Meta (Instagram + Facebook)", desc:"Pull creator & brand-page analytics, verify live posts, import audience insights.", scopes:"instagram_basic · pages_read_engagement · business_management", portal:"developers.facebook.com" },
+  { key:"instagram", ic:"📸", name:"Instagram (Business / Creator)", desc:"Log in with Instagram to auto-build your media kit and publish posts from the app.", scopes:"instagram_business_basic · content_publish · manage_insights", portal:"developers.facebook.com" },
   { key:"google", ic:"▶️", name:"Google (YouTube)", desc:"Import channel stats, video performance & audience demographics.", scopes:"youtube.readonly · yt-analytics.readonly", portal:"console.cloud.google.com" },
   { key:"linkedin", ic:"💼", name:"LinkedIn", desc:"Fetch creator & company-page follower growth and post reach.", scopes:"r_organization_social · r_member_social", portal:"linkedin.com/developers" }
 ];
@@ -865,6 +1002,9 @@ async function handleOAuthCallback(){
   history.replaceState({}, "", location.pathname);
   if(state !== expected){ console.warn("OAuth state mismatch — ignoring."); return; }
   localStorage.removeItem("geekos_oauth_state");
+
+  // Instagram Login uses its own Edge Function flow.
+  if(platform === "instagram"){ await finishInstagram(code); return; }
 
   try{
     if(!(window.sb && window.sb.functions)){
@@ -909,8 +1049,10 @@ function renderIntegrations(){
       if(integrationState(k)){
         localStorage.removeItem("geekos_conn_"+k);
         renderIntegrations();
+      } else if(k==="instagram"){
+        connectInstagram(); // Instagram Login flow
       } else {
-        startOAuth(k); // launches the real platform consent screen
+        startOAuth(k); // Facebook/Google/LinkedIn consent screen
       }
     };
   });
@@ -1020,6 +1162,7 @@ function renderContent(){
   if(currentPage==="brands" || currentPage==="portfolio") loadBrands();
   if(currentPage==="finance") loadFinance();
   if(currentPage==="logistics") loadLogistics();
+  if(currentPage==="mediakit") loadMediaKit();
   if(currentPage==="campaigns"){
     loadCampaigns();
     const add = document.getElementById("addCampaignBtn");

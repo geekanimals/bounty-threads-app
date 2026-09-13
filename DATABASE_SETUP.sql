@@ -269,6 +269,57 @@ create policy "org insert irm" on irm_contacts for insert with check (org_id = m
 create policy "org update irm" on irm_contacts for update using (org_id = my_org());
 create policy "org delete irm" on irm_contacts for delete using (org_id = my_org());
 
+-- ---------- SOCIAL ACCOUNTS (Instagram media kit — profile is org-readable) ----------
+create table if not exists social_accounts (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null default my_org(),
+  member_id uuid references auth.users(id) on delete cascade,
+  platform text not null default 'instagram',
+  ig_user_id text,
+  username text, name text, account_type text,
+  followers_count int default 0, follows_count int default 0, media_count int default 0,
+  profile_picture_url text, biography text, website text,
+  recent_media jsonb default '[]'::jsonb,
+  connected_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (member_id, platform)
+);
+alter table social_accounts enable row level security;
+drop policy if exists "org read social"   on social_accounts;
+drop policy if exists "org write social"  on social_accounts;
+drop policy if exists "org update social" on social_accounts;
+drop policy if exists "org delete social" on social_accounts;
+create policy "org read social"   on social_accounts for select using (org_id = my_org());
+create policy "org write social"  on social_accounts for insert with check (org_id = my_org());
+create policy "org update social" on social_accounts for update using (org_id = my_org());
+create policy "org delete social" on social_accounts for delete using (org_id = my_org());
+
+-- ---------- SOCIAL TOKENS (access tokens — SERVER ONLY, no client access) ----------
+-- RLS is enabled with NO policies for the anon/authenticated roles, so the browser
+-- can never read or write tokens. Only Edge Functions (service_role) touch this table.
+create table if not exists social_tokens (
+  member_id uuid references auth.users(id) on delete cascade,
+  platform text not null default 'instagram',
+  ig_user_id text,
+  access_token text,
+  expires_at timestamptz,
+  updated_at timestamptz default now(),
+  primary key (member_id, platform)
+);
+alter table social_tokens enable row level security;
+-- (intentionally no policies — locked to service_role)
+
+-- ---------- STORAGE: bucket for media the creator uploads to publish ----------
+insert into storage.buckets (id, name, public)
+  values ('ig-media', 'ig-media', true)
+  on conflict (id) do nothing;
+drop policy if exists "auth upload ig-media" on storage.objects;
+drop policy if exists "public read ig-media" on storage.objects;
+drop policy if exists "auth delete ig-media" on storage.objects;
+create policy "auth upload ig-media" on storage.objects for insert to authenticated with check (bucket_id = 'ig-media');
+create policy "public read ig-media"  on storage.objects for select using (bucket_id = 'ig-media');
+create policy "auth delete ig-media"  on storage.objects for delete to authenticated using (bucket_id = 'ig-media');
+
 -- ===================================================================
 -- DONE. Real Supabase Auth + Postgres-enforced per-org isolation.
 -- org_id now DEFAULTS to my_org() on insert, so the browser can't spoof it,

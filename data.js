@@ -24,7 +24,7 @@ const ROLES = {
   },
   creator: {
     label: "Creator", initials: "CR", name: "Creator",
-    nav: ["dashboard","marketplace","barter","growth","reports"],
+    nav: ["dashboard","mediakit","marketplace","barter","growth","reports"],
     ai: { title:"Creator Agent", sub:"Your career coach" }
   }
 };
@@ -35,6 +35,7 @@ const NAV_META = {
   campaigns:{ic:"📣",label:"Campaigns"}, marketplace:{ic:"🛒",label:"Marketplace"},
   barter:{ic:"📦",label:"Mass Barter"}, celebrity:{ic:"👑",label:"Celebrity Stories"},
   creators:{ic:"👥",label:"Creators"}, irm:{ic:"🤝",label:"IRM"},
+  mediakit:{ic:"📸",label:"Media Kit"},
   listening:{ic:"📡",label:"Listening"}, logistics:{ic:"🚚",label:"Logistics"},
   finance:{ic:"💰",label:"Finance"}, reports:{ic:"📊",label:"Reports"},
   approvals:{ic:"✅",label:"Approvals"}, growth:{ic:"🚀",label:"Growth"},

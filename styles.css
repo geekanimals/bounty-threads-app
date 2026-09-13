@@ -191,3 +191,14 @@ tbody tr:hover{background:var(--panel-2)}
   .menu-btn{display:block}
   .kpi-row{grid-template-columns:1fr 1fr}
 }
+
+/* ---------- Media Kit ---------- */
+.mk-headcard{display:flex;gap:16px;align-items:flex-start}
+.mk-avatar{width:76px;height:76px;border-radius:50%;object-fit:cover;flex:0 0 auto}
+.mk-avatar.mk-ph{display:grid;place-items:center;background:linear-gradient(135deg,#6c5ce7,#8f7bff);color:#fff;font-weight:800;font-size:24px}
+.mk-id{min-width:0}
+.mk-id a{color:var(--brand,#6c5ce7);word-break:break-all}
+.mk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mk-post{position:relative;display:block;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:#eef0fa}
+.mk-post img{width:100%;height:100%;object-fit:cover;display:block}
+.mk-post .mk-meta{position:absolute;left:0;right:0;bottom:0;padding:6px 8px;font-size:11px;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.6))}
