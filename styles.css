@@ -265,3 +265,30 @@ tbody tr:hover{background:var(--panel-2)}
 .dream-meta{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;font-size:13px;opacity:.95}
 .dream-task:hover{background:rgba(108,92,231,.05);border-radius:8px}
 @media(max-width:760px){.dream-grid{grid-template-columns:1fr}}
+
+/* ---------- Media Kit v2: sections, edit, audience, portfolio, rate card ---------- */
+.mk-hero-actions{display:flex;flex-direction:column;gap:8px;align-self:center}
+.mk-edit{background:#eef0fa;color:#4a4f6a;border:none;border-radius:9px;padding:6px 12px;font-weight:600;font-size:12px;cursor:pointer}
+.mk-edit:hover{background:#e2e5f5}
+.mk-headline{font-weight:600;margin-top:6px}
+.mk-sec-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.mk-sec-head h3{margin:0}
+.mk-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.mk-cols .mk-section{margin-top:0}
+.mk-sub{font-size:12px;font-weight:700;color:var(--muted,#5a6079);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+.mk-bar-row{display:flex;align-items:center;gap:10px;margin:5px 0;font-size:13px}
+.mk-bar-l{flex:0 0 120px;color:var(--ink,#1a1c2e);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mk-bar-track{flex:1;height:8px;background:#eef0fa;border-radius:6px;overflow:hidden}
+.mk-bar-track span{display:block;height:100%;background:linear-gradient(90deg,#6c5ce7,#8f7bff);border-radius:6px}
+.mk-bar-v{flex:0 0 38px;text-align:right;color:var(--muted,#5a6079)}
+.mk-portfolio{display:flex;flex-direction:column;gap:8px}
+.mk-brand{display:flex;align-items:center;gap:12px;padding:8px;border:1px solid var(--line,#e6e8f2);border-radius:12px}
+.mk-brand-ic{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#6c5ce7,#8f7bff);color:#fff;display:grid;place-items:center;font-weight:800;font-size:13px;flex:0 0 auto}
+.mk-brand-b{flex:1;min-width:0}
+.mk-brand-n{font-weight:700}
+.mk-brand-link{margin-left:auto;color:#6c5ce7;text-decoration:none;font-size:18px}
+.mk-rates{width:100%;border-collapse:collapse}
+.mk-rates td{padding:9px 4px;border-bottom:1px solid var(--line,#e6e8f2);font-size:14px}
+.mk-rates tr:last-child td{border-bottom:none}
+.mk-rate-p{text-align:right;font-weight:700;white-space:nowrap}
+@media(max-width:760px){.mk-cols{grid-template-columns:1fr}.mk-bar-l{flex-basis:90px}}

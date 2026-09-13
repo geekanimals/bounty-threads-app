@@ -751,19 +751,25 @@ async function loadMarketplace(){
   const grid=document.getElementById("marketGrid");
   if(!grid) return;
   if(!window.sb){ grid.innerHTML=`<div class="card"><div class="muted">Connect the database.</div></div>`; return; }
-  const { data, error } = await sb.from("campaigns").select("*").in("status",["Sourcing","Live"]).order("created_at",{ascending:false});
+  // Open campaigns across all orgs come from a dedicated read-only function (keeps campaigns RLS org-scoped).
+  const { data, error } = await sb.rpc("open_campaigns");
   if(error){ grid.innerHTML=`<div class="card"><div class="muted">Couldn't load: ${esc(error.message)}</div></div>`; return; }
   const list=data||[];
   if(!list.length){ grid.innerHTML=`<div class="card"><div class="ai-suggest"><span class="spark">🛒</span><div class="s-body"><b>No open campaigns yet</b><p>Campaigns in Sourcing or Live status show here to apply to.</p></div></div></div>`; return; }
-  grid.innerHTML = list.map(c=>`<div class="card"><h3>${esc(c.name)}<span class="tag good">${esc(c.status)}</span></h3>
-    <div class="muted">${esc(c.brand)||"—"} · ${esc(c.type)||"—"}</div>
-    <button class="btn" data-apply="${esc(c.id)}" data-name="${esc(c.name)}" style="margin-top:10px">Apply →</button></div>`).join("");
-  grid.querySelectorAll("button[data-apply]").forEach(b=>b.onclick=()=>applyToCampaign(b.dataset.apply, b.dataset.name, b));
+  const mine = (window.Auth && Auth.profile && Auth.profile.org_id) || null;
+  grid.innerHTML = list.map(c=>{
+    const own = mine && c.org_id === mine; // don't let a creator "apply" to their own org's campaign
+    return `<div class="card"><h3>${esc(c.name)}<span class="tag good">${esc(c.status)}</span></h3>
+    <div class="muted">${esc(c.brand)||"—"} · ${esc(c.type)||"—"}${c.org_name?` · ${esc(c.org_name)}`:""}</div>
+    ${own?`<div class="muted" style="margin-top:10px;font-size:12px">Your campaign</div>`:`<button class="btn" data-apply="${esc(c.id)}" data-name="${esc(c.name)}" data-agency="${esc(c.org_id)}" style="margin-top:10px">Apply →</button>`}</div>`;
+  }).join("");
+  grid.querySelectorAll("button[data-apply]").forEach(b=>b.onclick=()=>applyToCampaign(b.dataset.apply, b.dataset.name, b.dataset.agency, b));
 }
-async function applyToCampaign(id, name, btn){
+async function applyToCampaign(id, name, agencyOrgId, btn){
   if(!window.sb) return;
   btn.disabled=true; btn.textContent="Applying…";
-  const row={ campaign_id:id, campaign_name:name, creator_name:(window.Auth&&Auth.profile&&Auth.profile.name)||"Creator", status:"Applied" };
+  const row={ campaign_id:id, campaign_name:name, agency_org_id:agencyOrgId||null,
+    creator_name:(window.Auth&&Auth.profile&&Auth.profile.name)||"Creator", status:"Applied" };
   if(window.Auth&&Auth.profile){ row.org_name=Auth.profile.org; row.org_id=Auth.profile.org_id; }
   const { error } = await sb.from("applications").insert(row);
   btn.textContent = error ? "Try again" : "✓ Applied"; if(!error) btn.classList.add("ghost");
@@ -912,27 +918,59 @@ function mkNotConnected(){
   </div>`;
 }
 
+function mkEdits(a){ return (a && a.edits && typeof a.edits==="object" && !Array.isArray(a.edits)) ? a.edits : {}; }
+
 function mkHead(a){
+  const E = mkEdits(a);
   const media = Array.isArray(a.recent_media) ? a.recent_media : [];
   const n = media.length || 0;
   const sum = (k)=> media.reduce((s,m)=>s+(Number(m[k])||0),0);
   const avgLikes = n ? Math.round(sum("like_count")/n) : 0;
   const avgComments = n ? Math.round(sum("comments_count")/n) : 0;
   const engStr = (a.followers_count && n) ? (((avgLikes+avgComments)/a.followers_count)*100).toFixed(2)+"%" : "—";
-  let top = null;
-  media.forEach(m=>{ const e=(Number(m.like_count)||0)+(Number(m.comments_count)||0); if(!top || e>top._e){ top={...m,_e:e}; } });
+  const reachStr = a.avg_reach ? fmtNum(a.avg_reach) : "—";
   const initials = esc((a.name||a.username||"?").slice(0,2).toUpperCase());
   const firstName = esc((a.name||a.username||"me").split(" ")[0]);
+  const bio = E.bio || a.biography || "";
+  const headline = E.headline || "";
 
-  const posts = media.slice(0,9).map(m=>{
+  const eng = m=>(Number(m.like_count)||0)+(Number(m.comments_count)||0);
+  const sorted = [...media].sort((x,y)=>eng(y)-eng(x));
+  const postCard = (m,meta)=>{
     const img = m.media_type==="VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
     const badge = m.media_type==="VIDEO" ? "▶" : (m.media_type==="CAROUSEL_ALBUM" ? "❏" : "");
     return `<a href="${esc(m.permalink)||'#'}" target="_blank" rel="noopener" class="mk-post">
       <img src="${esc(img)}" alt="" loading="lazy">${badge?`<span class="mk-type">${badge}</span>`:""}
-      <span class="mk-meta">❤ ${fmtNum(m.like_count)} · 💬 ${fmtNum(m.comments_count)}</span></a>`;
-  }).join("");
+      <span class="mk-meta">${meta||`❤ ${fmtNum(m.like_count)} · 💬 ${fmtNum(m.comments_count)}`}</span></a>`;
+  };
+  const posts = media.slice(0,9).map(m=>postCard(m)).join("");
+  const tops = sorted.slice(0,3).map(m=>postCard(m)).join("");
 
   const tile = (val,label,accent)=>`<div class="mk-tile ${accent||''}"><div class="mk-tile-v">${val}</div><div class="mk-tile-l">${label}</div></div>`;
+  const editBtn = (s)=>`<button class="mk-edit" data-mkedit="${s}">✎ Edit</button>`;
+
+  // Audience demographics
+  const aud = (a.audience && typeof a.audience==="object") ? a.audience : {};
+  const topOf = (obj,k)=>{ const en=Object.entries(obj||{}).sort((x,y)=>y[1]-x[1]).slice(0,k); const total=Object.values(obj||{}).reduce((s,v)=>s+Number(v||0),0)||1; return en.map(([kk,v])=>({k:kk,pct:Math.round(Number(v)/total*100)})); };
+  const audGA=topOf(aud.gender_age,6), audCountries=topOf(aud.country,5), audCities=topOf(aud.city,5);
+  const hasAudience = audGA.length||audCountries.length||audCities.length;
+  const barRow=(label,pct)=>`<div class="mk-bar-row"><span class="mk-bar-l">${esc(label)}</span><span class="mk-bar-track"><span style="width:${pct}%"></span></span><span class="mk-bar-v">${pct}%</span></div>`;
+
+  // Mentions
+  const mentions = Array.isArray(a.mentions)?a.mentions:[];
+  const mentionCards = mentions.slice(0,6).map(m=>postCard(m, "@"+(esc(m.username)||"tagged"))).join("");
+
+  // Work portfolio (editable)
+  const portfolio = Array.isArray(E.portfolio)?E.portfolio:[];
+  const portfolioHtml = portfolio.length
+    ? `<div class="mk-portfolio">${portfolio.map(p=>`<div class="mk-brand"><div class="mk-brand-ic">${esc((p.brand||'?').slice(0,2).toUpperCase())}</div><div class="mk-brand-b"><div class="mk-brand-n">${esc(p.brand)}</div>${p.note?`<div class="muted" style="font-size:12px">${esc(p.note)}</div>`:''}</div>${p.url?`<a href="${esc(p.url)}" target="_blank" rel="noopener" class="mk-brand-link">↗</a>`:''}</div>`).join("")}</div>`
+    : `<div class="muted" style="padding:8px">No collaborations yet — click <b>Edit</b> to showcase brands you've worked with.</div>`;
+
+  // Rate card (editable)
+  const rates = Array.isArray(E.rate_card)?E.rate_card:[];
+  const rateHtml = rates.length
+    ? `<table class="mk-rates"><tbody>${rates.map(r=>`<tr><td>${esc(r.item)}</td><td class="mk-rate-p">${esc(r.price)}</td></tr>`).join("")}</tbody></table>`
+    : `<div class="muted" style="padding:8px">No rate card yet — click <b>Edit</b> to add your rates.</div>`;
 
   return `<div class="mk-kit">
     <div class="mk-cover">
@@ -942,38 +980,89 @@ function mkHead(a){
         <div class="mk-hero-id">
           <div class="mk-name">${esc(a.name)||esc(a.username)} ${a.account_type?`<span class="mk-badge">${esc(a.account_type)}</span>`:""}</div>
           <div class="mk-handle">@${esc(a.username)}</div>
-          ${a.biography?`<div class="mk-bio">${esc(a.biography)}</div>`:""}
+          ${headline?`<div class="mk-headline">${esc(headline)}</div>`:''}
+          ${bio?`<div class="mk-bio">${esc(bio)}</div>`:""}
           ${a.website?`<a class="mk-web" href="${esc(a.website)}" target="_blank" rel="noopener">🔗 ${esc(a.website)}</a>`:""}
         </div>
-        <button class="mk-share" id="mkShare">Share kit</button>
+        <div class="mk-hero-actions"><button class="mk-share" id="mkShare">Share kit</button>${editBtn("profile")}</div>
       </div>
     </div>
 
     <div class="mk-tiles">
       ${tile(fmtNum(a.followers_count),"Followers","hero")}
       ${tile(engStr,"Avg. engagement")}
+      ${tile(reachStr,"Avg. reach / post")}
       ${tile(fmtNum(avgLikes),"Avg. likes")}
-      ${tile(fmtNum(avgComments),"Avg. comments")}
       ${tile(fmtNum(a.media_count),"Total posts")}
     </div>
 
-    ${(top && top.media_url)?`<div class="card mk-section"><h3>Top performing post</h3>
-      <div class="mk-top">
-        <a href="${esc(top.permalink)||'#'}" target="_blank" rel="noopener" class="mk-top-img"><img src="${esc(top.media_type==='VIDEO'?(top.thumbnail_url||top.media_url):top.media_url)}" alt="" loading="lazy"></a>
-        <div class="mk-top-body">
-          ${top.caption?`<p class="mk-top-cap">${esc(String(top.caption).slice(0,200))}${String(top.caption).length>200?'…':''}</p>`:`<p class="muted">No caption</p>`}
-          <div class="mk-top-stats"><span>❤ ${fmtNum(top.like_count)} likes</span><span>💬 ${fmtNum(top.comments_count)} comments</span></div>
-        </div>
-      </div></div>`:""}
+    <div class="mk-cols">
+      <div class="card mk-section"><div class="mk-sec-head"><h3>Audience</h3></div>
+        ${hasAudience ? `
+          ${audGA.length?`<div class="mk-sub">Age &amp; gender</div>${audGA.map(x=>barRow(x.k,x.pct)).join("")}`:''}
+          ${audCountries.length?`<div class="mk-sub" style="margin-top:12px">Top countries</div>${audCountries.map(x=>barRow(x.k,x.pct)).join("")}`:''}
+          ${audCities.length?`<div class="mk-sub" style="margin-top:12px">Top cities</div>${audCities.map(x=>barRow(x.k,x.pct)).join("")}`:''}
+        ` : `<div class="muted" style="padding:8px">Audience demographics appear automatically once your Instagram Insights sync (needs 100+ followers and approved insights access).</div>`}
+      </div>
+      <div class="card mk-section"><div class="mk-sec-head"><h3>Rate card</h3>${editBtn("ratecard")}</div>${rateHtml}</div>
+    </div>
+
+    ${tops?`<div class="card mk-section"><h3>Top performing posts</h3><div class="mk-grid">${tops}</div></div>`:""}
+
+    <div class="card mk-section"><div class="mk-sec-head"><h3>Work portfolio</h3>${editBtn("portfolio")}</div>${portfolioHtml}</div>
+
+    <div class="card mk-section"><h3>Mentions</h3>
+      ${mentionCards ? `<div class="mk-grid">${mentionCards}</div>` : `<div class="muted" style="padding:8px">Posts where brands &amp; others tag you will appear here once they're available from Instagram.</div>`}</div>
 
     <div class="card mk-section"><h3>Content showcase</h3>
       ${posts?`<div class="mk-grid">${posts}</div>`:`<div class="muted" style="padding:8px">No posts yet.</div>`}</div>
 
     <div class="card mk-section mk-collab">
       <div><h3 style="margin:0 0 2px">Work with ${firstName}</h3>
-        <div class="muted">Barters, paid campaigns & brand collaborations — managed end-to-end in Geek Influencer OS.</div></div>
+        <div class="muted">Barters, paid campaigns &amp; brand collaborations — managed end-to-end in Geek Influencer OS.</div></div>
       <button class="btn" id="mkComposeCta">Create a post →</button>
     </div>`;
+}
+
+function openMkEdit(section, acct){
+  const E = mkEdits(acct);
+  let title="Edit", fields="";
+  if(section==="profile"){
+    title="Edit profile";
+    fields = `<label>Headline / tagline<input name="headline" value="${esc(E.headline||'')}" placeholder="Tech &amp; lifestyle creator · Mumbai"></label>
+      <label>Bio<textarea name="bio" rows="3" placeholder="Short bio…">${esc(E.bio||acct.biography||'')}</textarea></label>`;
+  } else if(section==="ratecard"){
+    title="Edit rate card";
+    const lines=(Array.isArray(E.rate_card)?E.rate_card:[]).map(r=>`${r.item} | ${r.price}`).join("\n");
+    fields = `<div class="muted" style="margin-bottom:8px">One per line: <b>Service | Price</b></div>
+      <label>Rates<textarea name="lines" rows="6" placeholder="Instagram Reel | ₹15,000&#10;Story (3 frames) | ₹5,000&#10;Static post | ₹10,000">${esc(lines)}</textarea></label>`;
+  } else if(section==="portfolio"){
+    title="Edit work portfolio";
+    const lines=(Array.isArray(E.portfolio)?E.portfolio:[]).map(p=>[p.brand,p.note,p.url].filter(Boolean).join(" | ")).join("\n");
+    fields = `<div class="muted" style="margin-bottom:8px">One per line: <b>Brand | Note (optional) | Link (optional)</b></div>
+      <label>Collaborations<textarea name="lines" rows="6" placeholder="Nykaa | Summer barter campaign | https://instagram.com/p/…&#10;boAt | Paid reel">${esc(lines)}</textarea></label>`;
+  }
+  let m=document.getElementById("mkEditModal"); if(m) m.remove();
+  m=el("div","modal-overlay"); m.id="mkEditModal";
+  m.innerHTML=`<div class="modal"><div class="modal-head"><strong>${title}</strong><button class="icon-btn" id="mkeClose">✕</button></div>
+    <form id="mkEditForm" class="modal-form">${fields}<div class="auth-err" id="mkeErr"></div><button class="btn" type="submit">Save</button></form></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  m.onclick=e=>{ if(e.target.id==="mkEditModal") m.classList.remove("open"); };
+  document.getElementById("mkeClose").onclick=()=>m.classList.remove("open");
+  document.getElementById("mkEditForm").onsubmit=async e=>{
+    e.preventDefault();
+    const f=new FormData(e.target), err=document.getElementById("mkeErr");
+    const btn=e.target.querySelector("button[type=submit]"); btn.disabled=true; btn.textContent="Saving…";
+    const newEdits = { ...E };
+    if(section==="profile"){ newEdits.headline=(f.get("headline")||"").trim(); newEdits.bio=(f.get("bio")||"").trim(); }
+    else if(section==="ratecard"){ newEdits.rate_card=(f.get("lines")||"").split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{ const p=l.split("|").map(s=>s.trim()); return {item:p[0]||l, price:p[1]||""}; }); }
+    else if(section==="portfolio"){ newEdits.portfolio=(f.get("lines")||"").split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{ const p=l.split("|").map(s=>s.trim()); return {brand:p[0]||l, note:p[1]||"", url:p[2]||""}; }); }
+    try{
+      const { error } = await sb.from("social_accounts").update({ edits:newEdits, updated_at:new Date().toISOString() }).eq("id", acct.id);
+      if(error) throw error;
+      m.classList.remove("open"); loadMediaKit();
+    }catch(ex){ err.textContent=ex.message||"Couldn't save."; btn.disabled=false; btn.textContent="Save"; }
+  };
 }
 
 function mkComposer(){
@@ -1007,6 +1096,7 @@ async function loadMediaKit(){
   };
   const cta = document.getElementById("mkComposeCta");
   if(cta) cta.onclick = ()=>{ const c=document.getElementById("mkComposer"); if(c) c.scrollIntoView({behavior:"smooth"}); };
+  wrap.querySelectorAll("[data-mkedit]").forEach(b=> b.onclick = ()=> openMkEdit(b.dataset.mkedit, acct));
 }
 
 function wireMkComposer(){
@@ -1275,10 +1365,16 @@ async function loadTeam(){
       <span class="tag brand">${esc(x.role||"member")}</span></div>`).join("") : `<div class="muted" style="padding:8px">Just you so far.</div>`;
   }
   if(iWrap){
+    const base = location.origin + location.pathname.replace(/[^/]*$/,"") + "app.html";
     iWrap.innerHTML = invites.length ? invites.map(x=>`<div class="row">
       <span class="dot warn"></span>
       <div class="r-main"><div class="r-title">${esc(x.email)}</div><div class="r-sub">Invited as ${esc(x.role||"creator")}</div></div>
-      <button class="mini-btn ghost" data-cancelinv="${esc(x.id)}">Cancel</button></div>`).join("") : `<div class="muted" style="padding:8px">No pending invites.</div>`;
+      <span><button class="mini-btn" data-invlink="${esc(x.token||'')}">Copy link</button>
+      <button class="mini-btn ghost" data-cancelinv="${esc(x.id)}">Cancel</button></span></div>`).join("") : `<div class="muted" style="padding:8px">No pending invites.</div>`;
+    iWrap.querySelectorAll("[data-invlink]").forEach(b=>b.onclick=async()=>{
+      const link = base + "?invite=" + b.dataset.invlink;
+      try{ await navigator.clipboard.writeText(link); b.textContent="Copied!"; setTimeout(()=>b.textContent="Copy link",1500); }catch(e){ prompt("Share this invite link:", link); }
+    });
     iWrap.querySelectorAll("[data-cancelinv]").forEach(b=>b.onclick=async()=>{
       await sb.from("invites").delete().eq("id", b.dataset.cancelinv); loadTeam();
     });
@@ -1300,7 +1396,7 @@ function wireInviteForm(){
       const { error } = await sb.from("invites").insert(row);
       if(error) throw error;
       form.reset();
-      msg.textContent = `Invite created for ${row.email}. Share your app link — they join automatically when they sign up with this email.`;
+      msg.textContent = `Invite created for ${row.email}. Use “Copy link” below and send it to them — signing up via that link joins them to your org.`;
       msg.className = "lead-msg ok";
       loadTeam();
     }catch(ex){

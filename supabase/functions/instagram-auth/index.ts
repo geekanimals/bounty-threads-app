@@ -10,6 +10,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
+import { fetchProfileBundle } from "../_shared/ig.ts";
 
 const IG_APP_ID = Deno.env.get("INSTAGRAM_APP_ID")!;
 const IG_APP_SECRET = Deno.env.get("INSTAGRAM_APP_SECRET")!;
@@ -61,21 +62,10 @@ Deno.serve(async (req) => {
     const expiresIn = Number(longData.expires_in) || 3600;
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
-    // --- 3) fetch profile ---
-    const fields =
-      "user_id,username,name,account_type,followers_count,follows_count,media_count,profile_picture_url,biography,website";
-    const profRes = await fetch(`${GRAPH}/me?fields=${fields}&access_token=${accessToken}`);
-    const profile = await profRes.json();
+    // --- 3) fetch profile + media + insights (avg reach, audience, mentions) ---
+    const { profile, media, avgReach, audience, mentions } = await fetchProfileBundle(accessToken, igUserId);
 
-    // --- 4) fetch recent media (for the media kit) ---
-    const mediaFields =
-      "id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count";
-    const mediaRes = await fetch(
-      `${GRAPH}/me/media?fields=${mediaFields}&limit=12&access_token=${accessToken}`,
-    );
-    const media = await mediaRes.json();
-
-    // --- 5) persist (service role) ---
+    // --- 4) persist (service role) ---
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
     const { data: member } = await admin
       .from("members").select("org_id").eq("id", user.id).maybeSingle();
@@ -94,7 +84,10 @@ Deno.serve(async (req) => {
       profile_picture_url: profile.profile_picture_url ?? null,
       biography: profile.biography ?? null,
       website: profile.website ?? null,
-      recent_media: media.data ?? [],
+      recent_media: media ?? [],
+      avg_reach: avgReach,
+      audience: audience,
+      mentions: mentions,
       updated_at: new Date().toISOString(),
     };
 

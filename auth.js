@@ -53,11 +53,13 @@ const Auth = {
     return this.profile;
   },
 
-  async signUp({ name, email, password, org, role }) {
+  async signUp({ name, email, password, org, role, inviteToken }) {
+    const meta = { full_name: name, org_name: org, role: role || 'owner' };
+    if (inviteToken) meta.invite_token = inviteToken; // joins the inviting org only if the token matches
     const { data, error } = await sb.auth.signUp({
       email: email.toLowerCase(),
       password,
-      options: { data: { full_name: name, org_name: org, role: role || 'owner' } }
+      options: { data: meta }
     });
     if (error) throw new Error(error.message);
     if (!data.session) {

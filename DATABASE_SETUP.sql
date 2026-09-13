@@ -33,8 +33,10 @@ drop policy if exists "member self insert" on members;
 drop policy if exists "member self update" on members;
 drop policy if exists "org read members"   on members;
 create policy "member self read"   on members for select using (id = auth.uid());
-create policy "member self insert" on members for insert with check (id = auth.uid());
 create policy "member self update" on members for update using (id = auth.uid());
+-- NOTE: no "member self insert" policy on purpose. The members row is created ONLY by the
+-- handle_new_user trigger (SECURITY DEFINER). This removes the vector where a client could
+-- insert its own members row with a victim's org_id to breach isolation.
 
 -- Guard: a member can never move themselves to another org (isolation-critical).
 create or replace function public.members_guard()
@@ -74,10 +76,12 @@ create table if not exists invites (
   org_name text,
   email text not null,
   role text default 'creator',
+  token uuid not null default gen_random_uuid(),  -- shared in the invite link; required to join
   invited_by uuid default auth.uid(),
   status text default 'pending',   -- pending | accepted
   created_at timestamptz default now()
 );
+alter table invites add column if not exists token uuid not null default gen_random_uuid();
 alter table invites enable row level security;
 drop policy if exists "org read invites"   on invites;
 drop policy if exists "org insert invites" on invites;
@@ -104,9 +108,12 @@ declare
   v_org_name text;
   v_role     text;
 begin
-  -- If this email was invited to an org, join THAT org instead of creating a new one.
+  -- Join an org ONLY if the signup carries a valid invite token for a matching pending invite.
+  -- (Email match alone is not enough — that would let anyone be captured into another org.)
   select * into inv from public.invites
-    where lower(email) = lower(new.email) and status = 'pending'
+    where lower(email) = lower(new.email)
+      and status = 'pending'
+      and token::text = coalesce(new.raw_user_meta_data->>'invite_token','')
     order by created_at desc limit 1;
 
   if inv.id is not null then
@@ -180,10 +187,27 @@ drop policy if exists "org read campaigns"   on campaigns;
 drop policy if exists "org insert campaigns" on campaigns;
 drop policy if exists "org update campaigns" on campaigns;
 drop policy if exists "org delete campaigns" on campaigns;
+drop policy if exists "marketplace read campaigns" on campaigns;
 create policy "org read campaigns"   on campaigns for select using (org_id = my_org());
+-- NOTE: campaigns RLS stays strictly org-scoped (so Brand CRM / Finance / KPIs never leak
+-- across orgs). The marketplace instead reads open campaigns through the open_campaigns()
+-- function below — an explicit, read-only, cross-org surface for Sourcing/Live campaigns only.
 create policy "org insert campaigns" on campaigns for insert with check (org_id = my_org());
 create policy "org update campaigns" on campaigns for update using (org_id = my_org());
 create policy "org delete campaigns" on campaigns for delete using (org_id = my_org());
+
+-- Marketplace surface: open (Sourcing/Live) campaigns across ALL orgs, read-only.
+-- SECURITY DEFINER bypasses the org-scoped RLS above, but only exposes open campaigns.
+create or replace function public.open_campaigns()
+returns setof campaigns
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select * from public.campaigns where status in ('Sourcing','Live') order by created_at desc
+$$;
+grant execute on function public.open_campaigns() to authenticated;
 
 -- ---------- BARTER ITEMS ----------
 create table if not exists barter_items (
@@ -204,21 +228,28 @@ create policy "org insert barter" on barter_items for insert with check (org_id 
 create policy "org update barter" on barter_items for update using (org_id = my_org());
 create policy "org delete barter" on barter_items for delete using (org_id = my_org());
 
--- ---------- APPLICATIONS (creator → campaign) ----------
+-- ---------- APPLICATIONS (creator → campaign; crosses the org boundary) ----------
+-- org_id        = the applying CREATOR's org (so the creator sees their own applications)
+-- agency_org_id = the CAMPAIGN's org (so the agency sees applications to their campaigns)
 create table if not exists applications (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null default my_org(), org_name text,
+  agency_org_id uuid,
   campaign_id uuid, campaign_name text,
   creator_name text, status text default 'Applied',
   created_at timestamptz default now()
 );
+alter table applications add column if not exists agency_org_id uuid;
 alter table applications enable row level security;
 drop policy if exists "org read apps"   on applications;
 drop policy if exists "org insert apps" on applications;
 drop policy if exists "org update apps" on applications;
-create policy "org read apps"   on applications for select using (org_id = my_org());
+-- Either side (the creator who applied, or the agency that owns the campaign) can read it.
+create policy "org read apps"   on applications for select using (org_id = my_org() or agency_org_id = my_org());
+-- A creator inserts an application stamped with THEIR org; agency_org_id points at the campaign's org.
 create policy "org insert apps" on applications for insert with check (org_id = my_org());
-create policy "org update apps" on applications for update using (org_id = my_org());
+-- The agency (or the creator) can update status (approve / decline / withdraw).
+create policy "org update apps" on applications for update using (org_id = my_org() or agency_org_id = my_org());
 
 -- ---------- DREAM PLANS (creator growth) ----------
 create table if not exists dream_plans (
@@ -281,10 +312,19 @@ create table if not exists social_accounts (
   followers_count int default 0, follows_count int default 0, media_count int default 0,
   profile_picture_url text, biography text, website text,
   recent_media jsonb default '[]'::jsonb,
+  avg_reach numeric,                       -- avg reach per recent post (from insights)
+  audience jsonb default '{}'::jsonb,      -- follower demographics: {countries,cities,gender_age}
+  mentions jsonb default '[]'::jsonb,      -- media where this creator was tagged/mentioned
+  edits jsonb default '{}'::jsonb,         -- creator's editable overrides: {headline,bio,rate_card,portfolio,hidden}
   connected_at timestamptz default now(),
   updated_at timestamptz default now(),
   unique (member_id, platform)
 );
+-- Media-kit v2 columns (safe to run on an existing table)
+alter table social_accounts add column if not exists avg_reach numeric;
+alter table social_accounts add column if not exists audience jsonb default '{}'::jsonb;
+alter table social_accounts add column if not exists mentions jsonb default '[]'::jsonb;
+alter table social_accounts add column if not exists edits jsonb default '{}'::jsonb;
 alter table social_accounts enable row level security;
 drop policy if exists "org read social"   on social_accounts;
 drop policy if exists "org write social"  on social_accounts;

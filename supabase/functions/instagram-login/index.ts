@@ -7,6 +7,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
+import { fetchProfileBundle } from "../_shared/ig.ts";
 
 const IG_APP_ID = Deno.env.get("INSTAGRAM_APP_ID")!;
 const IG_APP_SECRET = Deno.env.get("INSTAGRAM_APP_SECRET")!;
@@ -40,11 +41,8 @@ Deno.serve(async (req) => {
     const accessToken = longData.access_token || shortData.access_token;
     const expiresAt = new Date(Date.now() + (Number(longData.expires_in) || 3600) * 1000).toISOString();
 
-    // 3) profile + media
-    const fields = "user_id,username,name,account_type,followers_count,follows_count,media_count,profile_picture_url,biography,website";
-    const profile = await (await fetch(`${GRAPH}/me?fields=${fields}&access_token=${accessToken}`)).json();
-    const mediaFields = "id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count";
-    const media = await (await fetch(`${GRAPH}/me/media?fields=${mediaFields}&limit=12&access_token=${accessToken}`)).json();
+    // 3) profile + media + insights (avg reach, audience, mentions)
+    const { profile, media, avgReach, audience, mentions } = await fetchProfileBundle(accessToken, igUserId);
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
@@ -82,7 +80,9 @@ Deno.serve(async (req) => {
       account_type: profile.account_type ?? null, followers_count: profile.followers_count ?? 0,
       follows_count: profile.follows_count ?? 0, media_count: profile.media_count ?? 0,
       profile_picture_url: profile.profile_picture_url ?? null, biography: profile.biography ?? null,
-      website: profile.website ?? null, recent_media: media.data ?? [], updated_at: new Date().toISOString(),
+      website: profile.website ?? null, recent_media: media ?? [],
+      avg_reach: avgReach, audience: audience, mentions: mentions,
+      updated_at: new Date().toISOString(),
     }, { onConflict: "member_id,platform" });
     await admin.from("social_tokens").upsert({
       member_id: userId, platform: "instagram", ig_user_id: igUserId,

@@ -9,6 +9,10 @@ const ROLE_OPTIONS = [
   ["creator","Creator"]
 ];
 
+// If the user arrived via a team-invite link, capture the token — signup passes it so the
+// server-side trigger lets them join the inviting org (email match alone is not enough).
+const INVITE_TOKEN = new URLSearchParams(location.search).get("invite");
+
 function loginView(mode){
   const isUp = mode === "signup";
   return `
@@ -24,6 +28,8 @@ function loginView(mode){
         <button class="${!isUp?'act':''}" data-mode="login">Sign in</button>
         <button class="${isUp?'act':''}" data-mode="signup">Create account</button>
       </div>
+
+      ${isUp && INVITE_TOKEN ? `<div class="auth-note">🎟️ You've been invited to a team — sign up with the invited email to join it.</div>` : ``}
 
       <form id="authForm" class="auth-form">
         ${isUp?`
@@ -81,7 +87,7 @@ function mountLogin(mode="login"){
       if(mode==="signup"){
         await Auth.signUp({
           name:f.get("name"), email:f.get("email"), password:f.get("password"),
-          org:f.get("org"), role:f.get("role")
+          org:f.get("org"), role:f.get("role"), inviteToken: INVITE_TOKEN || undefined
         });
       }else{
         await Auth.signIn({ email:f.get("email"), password:f.get("password") });
@@ -102,5 +108,5 @@ async function startApp(){
   if(window.__igLoggingIn){ return; } // Instagram sign-in callback is finishing — don't flash login
   const session = await Auth.currentSession();
   if(session){ bootOS(); }
-  else { mountLogin("login"); }
+  else { mountLogin(INVITE_TOKEN ? "signup" : "login"); }
 }
