@@ -413,13 +413,16 @@ function barterCardHtml(c){
   const idx = BARTER_STAGES.indexOf(stage);
   const next = idx < BARTER_STAGES.length-1 ? BARTER_STAGES[idx+1] : null;
   const sub = [c.creator, c.quantity?("×"+c.quantity):null, c.value?("₹"+fmtNum(c.value)):null].filter(Boolean).join(" · ");
+  const overdue = c.deadline && (c.stage!=="Content Live" && c.stage!=="Completed") && new Date(c.deadline) < new Date();
   return `<div class="kan-card"><div class="kc-name">${esc(c.product||c.creator||"Barter item")}</div>
     <div class="kc-sub">${esc(sub)||"—"}</div>
     ${c.deliverables?`<div class="kc-sub">📦 ${esc(c.deliverables)}</div>`:""}
-    ${c.deadline?`<div class="kc-sub">⏰ ${esc(c.deadline)}</div>`:""}
+    ${c.deadline?`<div class="kc-sub"${overdue?' style="color:var(--bad,#c0392b);font-weight:700"':''}>⏰ ${esc(c.deadline)}${overdue?" · overdue":""}</div>`:""}
+    ${c.tracking_number?`<div class="kc-sub">🚚 ${esc(c.carrier||"Shipment")}: ${esc(c.tracking_number)}</div>`:""}
     ${c.product_link?`<a class="kc-sub" href="${esc(safeUrl(c.product_link))}" target="_blank" rel="noopener">Product ↗</a>`:""}
     <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
       ${next?`<button class="mini-btn" data-advance="${esc(c.id)}" data-next="${esc(next)}">→ ${esc(next)}</button>`:""}
+      ${c.creator?`<button class="mini-btn ghost" data-remind="${esc(c.id)}">💬 Remind</button>`:""}
       <button class="mini-btn ghost" data-editbarter="${esc(c.id)}">Edit</button></div></div>`;
 }
 
@@ -436,6 +439,25 @@ async function loadBarter(){
     ${byStage[s].map(barterCardHtml).join("") || `<div class="muted" style="font-size:12px;padding:6px 2px">—</div>`}</div>`).join("");
   wrap.querySelectorAll("button[data-advance]").forEach(b=> b.onclick = ()=> advanceBarter(b.dataset.advance, b.dataset.next));
   wrap.querySelectorAll("[data-editbarter]").forEach(b=> b.onclick = ()=>{ const it=items.find(x=>x.id===b.dataset.editbarter); if(it) openBarterModal(it); });
+  wrap.querySelectorAll("[data-remind]").forEach(b=> b.onclick = ()=>{ const it=items.find(x=>x.id===b.dataset.remind); if(it) remindBarter(it); });
+}
+
+// Send a content reminder to the barter creator over WhatsApp (looks up their contact by name).
+async function remindBarter(item){
+  if(!window.sb) return;
+  let contact = null;
+  const { data } = await sb.from("creators").select("name,whatsapp,phone,email,preferred_channel").ilike("name", (item.creator||"").trim()).limit(1);
+  contact = (data||[])[0] || null;
+  if(!contact || !(contact.whatsapp || contact.phone || contact.email)){
+    alert(`No contact on file for “${item.creator||"this creator"}”. Add them (with WhatsApp/email) in Creators, then try again.`);
+    return;
+  }
+  const parts = [`Hi ${item.creator||"there"}! Quick reminder about your barter: ${item.product||"the product"}.`];
+  if(item.deliverables) parts.push(`Deliverables: ${item.deliverables}.`);
+  if(item.deadline) parts.push(`Please post by ${item.deadline}.`);
+  parts.push("Thanks! 🙌");
+  const via = reachOut(contact, parts.join(" "), "Content reminder");
+  if(via){ await sb.from("barter_items").update({ reminded_at:new Date().toISOString() }).eq("id", item.id); }
 }
 
 async function advanceBarter(id, nextStage){
@@ -462,6 +484,10 @@ function openBarterModal(existing){
       <label>Content deadline<input name="deadline" type="date" value="${esc(ed.deadline||'')}"></label></div>
       <div class="mf-row"><label>Est. reach<input name="reach" type="number" min="0" value="${ed.reach!=null?esc(ed.reach):''}" placeholder="120000"></label>
       <label>Shipping address<input name="address" value="${esc(ed.address||'')}" placeholder="Creator's address"></label></div>
+      <div class="mf-sec">Shipping / tracking</div>
+      <div class="mf-row"><label>Carrier<input name="carrier" value="${esc(ed.carrier||'')}" placeholder="Delhivery / BlueDart"></label>
+      <label>Tracking number<input name="tracking_number" value="${esc(ed.tracking_number||'')}" placeholder="AWB123456"></label></div>
+      <label style="max-width:50%">Shipped on<input name="shipped_at" type="date" value="${esc(ed.shipped_at||'')}"></label>
       <div class="auth-err" id="bmErr"></div>
       <button class="btn" type="submit">${existing?'Save changes':'Add to Pipeline'}</button></form></div>`;
   document.body.appendChild(m); m.classList.add("open");
@@ -473,7 +499,8 @@ function openBarterModal(existing){
     const btn = e.target.querySelector("button[type=submit]"); err.textContent=""; btn.disabled=true; btn.textContent="Saving…";
     const row = { product:f.get("product"), product_link:f.get("product_link"), creator:f.get("creator"), campaign:f.get("campaign"),
       value:parseFloat(f.get("value"))||null, quantity:parseInt(f.get("quantity"))||null, deliverables:f.get("deliverables"),
-      stage:f.get("stage")||"Requested", deadline:f.get("deadline")||null, reach:parseFloat(f.get("reach"))||null, address:f.get("address") };
+      stage:f.get("stage")||"Requested", deadline:f.get("deadline")||null, reach:parseFloat(f.get("reach"))||null, address:f.get("address"),
+      carrier:f.get("carrier"), tracking_number:f.get("tracking_number"), shipped_at:f.get("shipped_at")||null };
     try{
       if(!window.sb) throw new Error("Database not connected.");
       let error;
@@ -495,10 +522,31 @@ function renderCreators(){
   html += `<div id="csvImportNote" class="muted" style="margin:0 0 10px;font-size:12px">
     CSV columns: <code>name, handle, whatsapp, email, city, address, tier, followers, engagement, category, rating</code> — only <b>name</b> is required.
     Add <b>whatsapp</b> (or email) so you can send app sign-in invites. <a href="#" id="csvSample">Download sample</a></div>`;
-  html += `<div class="card"><table><thead><tr><th>Creator</th><th>City</th><th>Tier</th><th>Followers</th><th>Contact</th><th>App</th><th>Actions</th></tr></thead>
-    <tbody id="creatorRows"><tr><td colspan="7" class="muted" style="padding:24px">Loading creators…</td></tr></tbody></table></div>`;
+  // Discovery filter/search/match bar.
+  html += `<div class="card filter-bar" style="margin-bottom:14px">
+    <input id="crSearch" class="fb-input" placeholder="🔍 Search name, handle, city, category…">
+    <select id="crTier" class="fb-input"><option value="">All tiers</option><option>Nano</option><option>Micro</option><option>Mid</option><option>Macro</option><option>Celebrity</option></select>
+    <select id="crCat" class="fb-input"><option value="">All categories</option></select>
+    <select id="crMinF" class="fb-input"><option value="0">Any followers</option><option value="10000">10K+</option><option value="50000">50K+</option><option value="100000">100K+</option><option value="500000">500K+</option><option value="1000000">1M+</option></select>
+    <select id="crMatch" class="fb-input"><option value="">🎯 Match to campaign…</option></select>
+    <select id="crSort" class="fb-input"><option value="recent">Newest</option><option value="followers">Most followers</option><option value="rating">Top rated</option><option value="match">Best match</option></select>
+    <span id="crCount" class="muted" style="align-self:center;font-size:12px"></span>
+  </div>`;
+  html += `<div class="card"><table><thead><tr><th>Creator</th><th>City</th><th>Tier</th><th>Followers</th><th id="crMatchCol" style="display:none">Match</th><th>Contact</th><th>App</th><th>Actions</th></tr></thead>
+    <tbody id="creatorRows"><tr><td colspan="8" class="muted" style="padding:24px">Loading creators…</td></tr></tbody></table></div>`;
   return html;
 }
+
+// Parse a follower string like "128K", "1.2M", "84,000" to a number for filtering/sorting/matching.
+function parseFollowers(v){
+  if(v==null) return 0;
+  if(typeof v === "number") return v;
+  let s = String(v).trim().toLowerCase().replace(/,/g,"");
+  const mult = s.endsWith("m") ? 1e6 : s.endsWith("k") ? 1e3 : 1;
+  const n = parseFloat(s.replace(/[km]$/,"")) || 0;
+  return Math.round(n * mult);
+}
+function parseEng(v){ return parseFloat(String(v||"").replace(/[^\d.]/g,"")) || 0; }
 
 const INVITE_BADGE = { none:"", invited:`<span class="tag warn">Invited</span>`, joined:`<span class="tag good">Joined</span>` };
 
@@ -593,13 +641,15 @@ function csvSampleDownload(){
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
 
-function creatorRowsHtml(list){
-  if(!list.length) return `<tr><td colspan="7" class="muted" style="padding:24px">No creators yet — add your first one 👆</td></tr>`;
+function creatorRowsHtml(list, showMatch){
+  if(!list.length) return `<tr><td colspan="8" class="muted" style="padding:24px">No creators match — adjust your filters, or add creators 👆</td></tr>`;
   return list.map(c=>{
     const chan = c.whatsapp ? `<span title="WhatsApp">🟢 ${esc(c.whatsapp)}</span>` : (c.email ? `<span title="Email">✉ ${esc(c.email)}</span>` : `<span class="muted">—</span>`);
     const canInvite = !!(c.id && (c.whatsapp || c.email) && (c.invite_status||"none")!=="joined");
-    return `<tr><td><span class="avatar">${esc((c.name||"?").split(" ").map(x=>x[0]).join("").slice(0,2))}</span>${esc(c.name)}</td>
+    const matchCell = showMatch ? `<td>${matchBadge(c._match)}</td>` : "";
+    return `<tr><td><span class="avatar">${esc((c.name||"?").split(" ").map(x=>x[0]).join("").slice(0,2))}</span>${esc(c.name)}${c.handle?`<div class="r-sub" style="margin-left:34px">${esc(c.handle)}</div>`:""}</td>
       <td>${esc(c.city)||"—"}</td><td><span class="tag brand">${esc(c.tier)||"—"}</span></td><td>${esc(c.followers)||"—"}</td>
+      ${matchCell}
       <td>${chan}</td>
       <td>${INVITE_BADGE[c.invite_status||"none"]||""}</td>
       <td><div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -607,29 +657,107 @@ function creatorRowsHtml(list){
         <button class="mini-btn ghost" data-editcreator="${esc(c.id)}">Edit</button></div></td></tr>`;
   }).join("");
 }
+function matchBadge(score){
+  if(score==null) return "—";
+  const cls = score>=70 ? "good" : score>=40 ? "warn" : "";
+  return `<span class="tag ${cls}">${score}%</span>`;
+}
+
+// Heuristic "AI match": score a creator (0–100) against a campaign by category/niche overlap,
+// tier fit, engagement and reach. Deterministic + instant (no API round-trip).
+function matchScore(creator, camp){
+  if(!camp) return null;
+  const hay = [camp.name, camp.brand, camp.objective, camp.platforms, camp.hashtags, camp.brief, camp.deliverables, camp.type]
+    .filter(Boolean).join(" ").toLowerCase();
+  let score = 0;
+  const cat = (creator.cat||"").toLowerCase().trim();
+  if(cat && hay.includes(cat)) score += 45;                 // niche match — biggest signal
+  else if(cat){ // partial word overlap
+    const words = cat.split(/[\s/&,]+/).filter(w=>w.length>2);
+    if(words.some(w=>hay.includes(w))) score += 22;
+  }
+  const eng = parseEng(creator.eng); if(eng>=6) score += 20; else if(eng>=3) score += 12; else if(eng>0) score += 5;
+  const f = parseFollowers(creator.followers);
+  const budget = Number(camp.budget)||0;
+  // Bigger budgets favour bigger creators; small/barter favour micro (better ROI).
+  if(budget>=100000){ if(f>=100000) score += 18; else if(f>=25000) score += 8; }
+  else { if(f>=10000 && f<200000) score += 18; else if(f>0) score += 8; }
+  const rating = Number(creator.rating)||0; if(rating>=4.5) score += 12; else if(rating>=4) score += 7;
+  const city = (creator.city||"").toLowerCase(); if(city && hay.includes(city)) score += 5;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+let _creatorList = [];       // full roster for the current page
+let _matchCampaigns = [];    // this org's campaigns, for the match dropdown
 
 async function loadCreators(){
   const tbody = document.getElementById("creatorRows");
   if(!tbody) return;
-  if(!window.sb){
-    // No DB connected — show mock roster.
-    tbody.innerHTML = creatorRowsHtml(CREATORS);
-    return;
-  }
+  if(!window.sb){ _creatorList = CREATORS.slice(); applyCreatorFilters(); return; }
   const org_id = (window.Auth && Auth.profile && Auth.profile.org_id) || null;
   let q = window.sb.from("creators").select("*").order("created_at",{ascending:false});
   if(org_id) q = q.eq("org_id", org_id);
-  const { data, error } = await q;
-  if(error){ tbody.innerHTML = `<tr><td colspan="7" class="muted" style="padding:24px">Couldn't load creators: ${esc(error.message)}</td></tr>`; return; }
-  const list = data||[];
-  tbody.innerHTML = creatorRowsHtml(list);
-  const byId = id => list.find(x=>x.id===id);
+  const [{ data, error }, camps] = await Promise.all([
+    q,
+    window.sb.from("campaigns").select("id,name,brand,type,objective,platforms,hashtags,brief,deliverables,budget").order("created_at",{ascending:false})
+  ]);
+  if(error){ tbody.innerHTML = `<tr><td colspan="8" class="muted" style="padding:24px">Couldn't load creators: ${esc(error.message)}</td></tr>`; return; }
+  _creatorList = data||[];
+  _matchCampaigns = (camps && camps.data) || [];
+  // Populate the category + match-campaign dropdowns from real data.
+  const catSel = document.getElementById("crCat");
+  if(catSel){
+    const cats = [...new Set(_creatorList.map(c=>(c.cat||"").trim()).filter(Boolean))].sort();
+    catSel.innerHTML = `<option value="">All categories</option>` + cats.map(c=>`<option>${esc(c)}</option>`).join("");
+  }
+  const matchSel = document.getElementById("crMatch");
+  if(matchSel){
+    matchSel.innerHTML = `<option value="">🎯 Match to campaign…</option>` + _matchCampaigns.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+  }
+  // Wire filter controls once.
+  ["crSearch","crTier","crCat","crMinF","crMatch","crSort"].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el && !el._wired){ el._wired = true; el.addEventListener("input", applyCreatorFilters); }
+  });
+  applyCreatorFilters();
+}
+
+function applyCreatorFilters(){
+  const tbody = document.getElementById("creatorRows");
+  if(!tbody) return;
+  const val = id => (document.getElementById(id)||{}).value || "";
+  const term = val("crSearch").toLowerCase().trim();
+  const tier = val("crTier"), cat = val("crCat"), minF = parseInt(val("crMinF"))||0;
+  const matchId = val("crMatch"); let sort = val("crSort");
+  const camp = matchId ? _matchCampaigns.find(c=>c.id===matchId) : null;
+  if(camp && sort==="recent") sort = "match"; // auto-switch to match ranking when a campaign is picked
+
+  let list = _creatorList.map(c=> camp ? Object.assign({}, c, {_match: matchScore(c, camp)}) : c);
+  list = list.filter(c=>{
+    if(tier && (c.tier||"")!==tier) return false;
+    if(cat && (c.cat||"")!==cat) return false;
+    if(minF && parseFollowers(c.followers) < minF) return false;
+    if(term){
+      const hay = [c.name,c.handle,c.city,c.cat,c.tier].filter(Boolean).join(" ").toLowerCase();
+      if(!hay.includes(term)) return false;
+    }
+    return true;
+  });
+  if(sort==="followers") list.sort((a,b)=>parseFollowers(b.followers)-parseFollowers(a.followers));
+  else if(sort==="rating") list.sort((a,b)=>(Number(b.rating)||0)-(Number(a.rating)||0));
+  else if(sort==="match") list.sort((a,b)=>(b._match||0)-(a._match||0));
+
+  const showMatch = !!camp;
+  const col = document.getElementById("crMatchCol"); if(col) col.style.display = showMatch ? "" : "none";
+  tbody.innerHTML = creatorRowsHtml(list, showMatch);
+  const byId = id => _creatorList.find(x=>x.id===id);
   tbody.querySelectorAll("[data-editcreator]").forEach(b=> b.onclick = ()=>{ const c=byId(b.dataset.editcreator); if(c) openCreatorModal(c); });
   tbody.querySelectorAll("[data-invitecreator]").forEach(b=> b.onclick = ()=>{ const c=byId(b.dataset.invitecreator); if(c) inviteCreator(c, b); });
-  // Bulk-invite header button reflects how many creators are reachable & not yet joined.
+  const count = document.getElementById("crCount");
+  if(count) count.textContent = `${list.length} of ${_creatorList.length}${camp?` · matched to “${camp.name}”`:""}`;
   const bulk = document.getElementById("bulkInviteBtn");
   if(bulk){
-    const pending = list.filter(c => (c.whatsapp||c.email) && (c.invite_status||"none")!=="joined");
+    const pending = _creatorList.filter(c => (c.whatsapp||c.email) && (c.invite_status||"none")!=="joined");
     bulk.textContent = `✉ Invite all (${pending.length})`;
     bulk.disabled = !pending.length;
     bulk.onclick = ()=> bulkInviteCreators(pending);
@@ -817,7 +945,8 @@ function campaignCardsHtml(list){
       ${c.budget?`<div class="muted" style="font-size:13px">💰 ₹${fmtNum(c.budget)}</div>`:""}
       ${(c.start_date||c.end_date)?`<div class="muted" style="font-size:13px">🗓 ${esc(c.start_date)||"—"} → ${esc(c.end_date)||"—"}</div>`:""}
       <div class="bar" style="margin-top:8px"><span style="width:${prog}%"></span></div>
-      <div class="camp-foot"><span class="muted">${prog}% · ${creators} creators</span><button class="mini-btn ghost" data-editcamp="${esc(c.id)}">Edit</button></div></div>`;
+      <div class="camp-foot"><span class="muted">${prog}% · ${creators} creators</span>
+      <span style="display:flex;gap:6px"><button class="mini-btn" data-opencamp="${esc(c.id)}">Open</button><button class="mini-btn ghost" data-editcamp="${esc(c.id)}">Edit</button></span></div></div>`;
   }).join("");
 }
 
@@ -832,6 +961,94 @@ async function loadCampaigns(){
   if(error){ grid.innerHTML = `<div class="card"><div class="muted">Couldn't load campaigns: ${esc(error.message)}</div></div>`; return; }
   grid.innerHTML = campaignCardsHtml(data||[]);
   grid.querySelectorAll("[data-editcamp]").forEach(b=>b.onclick=()=>{ const c=(data||[]).find(x=>x.id===b.dataset.editcamp); if(c) openCampaignModal(c); });
+  grid.querySelectorAll("[data-opencamp]").forEach(b=>b.onclick=()=>{ const c=(data||[]).find(x=>x.id===b.dataset.opencamp); if(c) openCampaignWorkspace(c.id); });
+}
+
+/* ================= CAMPAIGN WORKSPACE (one campaign, everything connected) ================= */
+let _wsCampaign = null;
+
+async function openCampaignWorkspace(id){
+  const content = document.querySelector("#content, .content");
+  if(!content || !window.sb) return;
+  content.innerHTML = `<div class="muted" style="padding:24px">Loading campaign…</div>`;
+  // Campaign (org-scoped), applications to it, and barter items linked by campaign name.
+  const [cRes, aRes] = await Promise.all([
+    sb.from("campaigns").select("*").eq("id", id).maybeSingle(),
+    sb.rpc("campaign_applications")
+  ]);
+  const c = cRes.data;
+  if(!c){ content.innerHTML = `<div class="card"><div class="muted">Couldn't open this campaign.</div></div>`; return; }
+  _wsCampaign = c;
+  const apps = ((aRes && aRes.data) || []).filter(a=>a.campaign_id===id);
+  const { data: bdata } = await sb.from("barter_items").select("*").eq("campaign", c.name||"__none__").order("created_at",{ascending:false});
+  const barter = bdata||[];
+  renderCampaignWorkspace(c, apps, barter);
+}
+
+function renderCampaignWorkspace(c, apps, barter){
+  const content = document.querySelector("#content, .content");
+  const st = {Live:"good","In Production":"brand",Sourcing:"warn",Approval:"warn",Draft:"warn",Completed:"good"}[c.status]||"brand";
+  const applied = apps.filter(a=>a.status==="Applied"), approved = apps.filter(a=>a.status==="Approved");
+  const info = (l,v)=> v ? `<div class="cd-row"><span class="cd-l">${l}</span><span class="cd-v">${esc(v)}</span></div>` : "";
+  // Deliverables checklist from the free-text field.
+  const items = (c.deliverables||"").split(/\r?\n|;|,(?![^(]*\))/).map(s=>s.trim()).filter(Boolean);
+  const done = Array.isArray(c.deliverables_done) ? c.deliverables_done : [];
+  const checklist = items.length ? items.map((it,i)=>`<label class="ws-check"><input type="checkbox" data-deliv="${i}" ${done.includes(it)?"checked":""}> <span${done.includes(it)?' style="text-decoration:line-through;opacity:.6"':''}>${esc(it)}</span></label>`).join("")
+    : `<div class="muted" style="padding:6px">No deliverables set — add them via Edit.</div>`;
+  const appRow = a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span>
+    <div class="r-main"><div class="r-title">${esc(a.creator_name)||"Creator"}</div><div class="r-sub">${esc(a.creator_org)||""} · ${esc(a.status)}</div></div>
+    ${a.status==="Applied"?`<span><button class="mini-btn" data-wsapprove="${esc(a.id)}">Approve</button> <button class="mini-btn ghost" data-wsdecline="${esc(a.id)}">Decline</button></span>`:`<span class="tag ${a.status==="Approved"?"good":""}">${esc(a.status)}</span>`}</div>`;
+  const barterRow = b=>`<div class="row"><div class="r-main"><div class="r-title">${esc(b.product||"Item")} ${b.creator?`· ${esc(b.creator)}`:""}</div>
+    <div class="r-sub">${esc(b.stage||"Requested")}${b.tracking_number?` · 🚚 ${esc(b.tracking_number)}`:""}${b.deadline?` · ⏰ ${esc(b.deadline)}`:""}</div></div>
+    <span class="tag brand">${esc(b.stage||"Requested")}</span></div>`;
+
+  content.innerHTML = `
+    <div style="margin-bottom:14px"><button class="btn ghost" id="wsBack">← Campaigns</button></div>
+    <div class="page-head"><div><h1>${esc(c.name)} <span class="tag ${st}">${esc(c.status)||"Draft"}</span></h1>
+      <p>${[c.brand,c.type,c.objective].filter(Boolean).map(esc).join(" · ")||"Campaign workspace"}</p></div>
+      <button class="btn" id="wsEdit">Edit campaign</button></div>
+
+    <div class="ws-stats">
+      <div class="ws-stat"><b>${applied.length}</b><span>New applicants</span></div>
+      <div class="ws-stat"><b>${approved.length}</b><span>Approved creators</span></div>
+      <div class="ws-stat"><b>${barter.length}</b><span>Barter shipments</span></div>
+      <div class="ws-stat"><b>${c.budget?fmtMoney(c.budget):"—"}</b><span>Budget</span></div>
+    </div>
+
+    <div class="grid two">
+      <div class="grid" style="gap:16px">
+        <div class="card"><h3>Applicants ${applied.length?`<span class="tag warn">${applied.length} new</span>`:""}</h3>
+          <div class="list" id="wsApps">${apps.length?apps.map(appRow).join(""):`<div class="muted" style="padding:8px">No applications yet. Creators apply from the Marketplace.</div>`}</div></div>
+        <div class="card"><h3>Barter shipments</h3>
+          <div class="list" id="wsBarter">${barter.length?barter.map(barterRow).join(""):`<div class="muted" style="padding:8px">No barter items linked. Create one in Mass Barter with campaign “${esc(c.name)}”.</div>`}</div></div>
+      </div>
+      <div class="grid" style="gap:16px">
+        <div class="card"><h3>Deliverables</h3><div id="wsChecklist">${checklist}</div></div>
+        <div class="card"><h3>Details</h3>
+          ${info("Platforms", c.platforms)}${info("Hashtags", c.hashtags)}
+          ${info("Timeline", (c.start_date||c.end_date)?`${c.start_date||"—"} → ${c.end_date||"—"}`:"")}
+          ${c.brief?`<div class="cd-block"><div class="cd-l">Brief</div><div class="cd-body">${esc(c.brief)}</div></div>`:""}</div>
+      </div>
+    </div>`;
+
+  document.getElementById("wsBack").onclick = ()=>{ currentPage="campaigns"; renderShell(); };
+  document.getElementById("wsEdit").onclick = ()=> openCampaignModal(c);
+  const reload = ()=> openCampaignWorkspace(c.id);
+  content.querySelectorAll("[data-wsapprove]").forEach(b=>b.onclick=()=>updateStatus("applications", b.dataset.wsapprove, {status:"Approved"}, reload));
+  content.querySelectorAll("[data-wsdecline]").forEach(b=>b.onclick=()=>updateStatus("applications", b.dataset.wsdecline, {status:"Declined"}, reload));
+  content.querySelectorAll("[data-deliv]").forEach(cb=> cb.onchange = ()=>{
+    const span = cb.parentNode.querySelector("span");
+    if(span){ span.style.textDecoration = cb.checked ? "line-through" : ""; span.style.opacity = cb.checked ? ".6" : ""; }
+    toggleDeliverable(c, items[+cb.dataset.deliv], cb.checked);
+  });
+}
+
+async function toggleDeliverable(c, item, checked){
+  if(!window.sb || !item) return;
+  let done = Array.isArray(c.deliverables_done) ? c.deliverables_done.slice() : [];
+  if(checked){ if(!done.includes(item)) done.push(item); } else { done = done.filter(x=>x!==item); }
+  c.deliverables_done = done;
+  await sb.from("campaigns").update({ deliverables_done: done }).eq("id", c.id);
 }
 
 function openCampaignModal(existing){

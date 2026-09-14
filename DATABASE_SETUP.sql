@@ -233,6 +233,8 @@ alter table campaigns add column if not exists brief text;
 alter table campaigns add column if not exists hashtags text;
 alter table campaigns add column if not exists start_date date;
 alter table campaigns add column if not exists end_date date;
+-- Campaign workspace: which deliverable lines are checked off (array of the checked line text).
+alter table campaigns add column if not exists deliverables_done jsonb default '[]'::jsonb;
 alter table campaigns enable row level security;
 drop policy if exists "org read campaigns"   on campaigns;
 drop policy if exists "org insert campaigns" on campaigns;
@@ -313,6 +315,11 @@ alter table barter_items add column if not exists quantity int;
 alter table barter_items add column if not exists deliverables text;
 alter table barter_items add column if not exists deadline date;
 alter table barter_items add column if not exists address text;
+-- Fulfilment / shipping tracking
+alter table barter_items add column if not exists carrier text;
+alter table barter_items add column if not exists tracking_number text;
+alter table barter_items add column if not exists shipped_at date;
+alter table barter_items add column if not exists reminded_at timestamptz;
 alter table barter_items enable row level security;
 drop policy if exists "org read barter"   on barter_items;
 drop policy if exists "org insert barter" on barter_items;

@@ -159,6 +159,19 @@ tbody tr:hover{background:var(--panel-2)}
 .cd-v{font-size:14px;font-weight:600;text-align:right}
 .cd-block{padding:10px 0;border-bottom:1px solid var(--line)}
 .cd-body{margin-top:6px;font-size:14px;line-height:1.5;white-space:pre-wrap}
+/* Discovery filter bar */
+.filter-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:12px 14px}
+.filter-bar .fb-input{padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-family:inherit;font-size:13px;font-weight:500}
+.filter-bar #crSearch{flex:1;min-width:180px}
+.filter-bar .fb-input:focus{outline:none;border-color:var(--brand)}
+/* Campaign workspace */
+.ws-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.ws-stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.ws-stat b{display:block;font-size:24px;font-weight:800}
+.ws-stat span{font-size:12px;color:var(--muted);font-weight:600}
+.ws-check{display:flex;align-items:center;gap:10px;padding:8px 4px;font-size:14px;border-bottom:1px solid var(--line);cursor:pointer}
+.ws-check input{width:auto;flex:none}
+@media(max-width:800px){.ws-stats{grid-template-columns:repeat(2,1fr)}}
 
 /* Cookie / consent banner */
 .consent-bar{position:fixed;left:0;right:0;bottom:0;z-index:400;background:var(--panel,#fff);border-top:1px solid var(--line);box-shadow:0 -8px 30px rgba(20,20,60,.10)}
