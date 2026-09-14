@@ -776,6 +776,40 @@ begin
 end $$;
 grant execute on function public.admin_delete_row(text, uuid) to authenticated;
 
+-- Restore/undo a change from an audit-log entry:
+--   DELETE  → re-insert the row from old_data
+--   UPDATE  → revert the row to old_data
+--   INSERT  → undo the creation (delete the row)
+-- The restore itself is a normal write, so it is captured in the audit log too.
+create or replace function public.admin_restore(p_audit_id bigint)
+returns text language plpgsql security definer set search_path = public as $$
+declare a public.audit_log; v_set text; v_id uuid;
+begin
+  if not public.is_platform_admin() then raise exception 'Not authorized'; end if;
+  select * into a from public.audit_log where id = p_audit_id;
+  if not found then raise exception 'Audit entry not found'; end if;
+  perform public._admin_editable(a.table_name);  -- only editable tables can be restored
+
+  if a.action = 'DELETE' then
+    execute format('insert into public.%I select * from jsonb_populate_record(null::public.%I, $1) on conflict (id) do nothing',
+                   a.table_name, a.table_name) using a.old_data;
+    return 'restored';
+  elsif a.action = 'UPDATE' then
+    v_id := nullif(a.old_data->>'id','')::uuid;
+    select string_agg(format('%I = %L', key, value), ', ') into v_set
+      from jsonb_each_text(a.old_data) where key <> 'id';
+    if v_set is null then raise exception 'Nothing to revert'; end if;
+    execute format('update public.%I set %s where id = $1', a.table_name, v_set) using v_id;
+    return 'reverted';
+  elsif a.action = 'INSERT' then
+    v_id := nullif(a.new_data->>'id','')::uuid;
+    execute format('delete from public.%I where id = $1', a.table_name) using v_id;
+    return 'undone';
+  end if;
+  return 'noop';
+end $$;
+grant execute on function public.admin_restore(bigint) to authenticated;
+
 -- Read the audit trail (optionally filtered by table / action / org).
 create or replace function public.admin_audit(p_limit int default 100, p_offset int default 0,
                                               p_table text default null, p_action text default null)

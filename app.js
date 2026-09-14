@@ -1851,12 +1851,60 @@ function adminData(body){
   body.innerHTML = `<div class="card filter-bar" style="margin-bottom:14px">
       <select id="adTable" class="fb-input">${ADMIN_TABLES.map(t=>`<option value="${t[0]}"${_adminDataTable===t[0]?' selected':''}>${esc(t[1])}</option>`).join("")}</select>
       <input id="adSearch" class="fb-input" placeholder="🔍 Search this table…" style="flex:1;min-width:180px">
+      <button class="btn ghost" id="adExportCsv">⬇ CSV</button>
+      <button class="btn ghost" id="adExportJson">⬇ JSON</button>
       <span id="adCount" class="muted" style="align-self:center;font-size:12px"></span>
     </div><div id="adRows"><div class="muted" style="padding:16px">Loading…</div></div>`;
   const tSel = document.getElementById("adTable"), search = document.getElementById("adSearch");
   tSel.onchange = ()=>{ _adminDataTable = tSel.value; adminLoadRows(); };
   let deb; search.oninput = ()=>{ clearTimeout(deb); deb = setTimeout(adminLoadRows, 300); };
+  document.getElementById("adExportCsv").onclick = ()=> exportAdminTable("csv");
+  document.getElementById("adExportJson").onclick = ()=> exportAdminTable("json");
   adminLoadRows();
+}
+
+// Export the current table (honouring the search box) — pages through the RPC to get ALL rows.
+async function exportAdminTable(fmt){
+  const table = _adminDataTable;
+  const search = (document.getElementById("adSearch")||{}).value || "";
+  const btn = document.getElementById(fmt==="csv"?"adExportCsv":"adExportJson");
+  const orig = btn ? btn.textContent : ""; if(btn){ btn.disabled=true; btn.textContent="Exporting…"; }
+  try{
+    let all = [], offset = 0; const PAGE = 500;
+    for(;;){
+      const { data, error } = await sb.rpc("admin_list_table", { p_table:table, p_search:search, p_limit:PAGE, p_offset:offset });
+      if(error) throw error;
+      const chunk = data||[]; all = all.concat(chunk);
+      if(chunk.length < PAGE || all.length >= 20000) break; // safety cap
+      offset += PAGE;
+    }
+    if(!all.length){ alert("No rows to export."); return; }
+    const stamp = new Date().toISOString().slice(0,10);
+    if(fmt==="json"){
+      downloadBlob(JSON.stringify(all, null, 2), `${table}-${stamp}.json`, "application/json");
+    }else{
+      downloadBlob(toCsv(all), `${table}-${stamp}.csv`, "text/csv");
+    }
+  }catch(ex){ alert("Export failed: "+(ex.message||ex)); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=orig; } }
+}
+
+// Flatten an array of row objects into CSV (union of all keys; nested values JSON-stringified).
+function toCsv(rows){
+  const keys = [];
+  rows.forEach(r=> Object.keys(r).forEach(k=>{ if(!keys.includes(k)) keys.push(k); }));
+  const cell = v => {
+    if(v==null) return "";
+    const s = typeof v==="object" ? JSON.stringify(v) : String(v);
+    return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  };
+  return [keys.join(",")].concat(rows.map(r=>keys.map(k=>cell(r[k])).join(","))).join("\n");
+}
+function downloadBlob(text, filename, type){
+  const blob = new Blob([text], {type}); const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
 
 async function adminLoadRows(){
@@ -1949,11 +1997,22 @@ async function adminLoadAudit(){
   const list = data||[];
   if(!list.length){ rows.innerHTML = `<div class="card"><div class="muted" style="padding:16px">No matching activity.</div></div>`; return; }
   const badge = a => `<span class="tag ${a==="INSERT"?"good":a==="DELETE"?"":"warn"}">${esc(a)}</span>`;
-  rows.innerHTML = `<div class="card" style="overflow-x:auto"><table><thead><tr><th>When</th><th>Action</th><th>Table</th><th>Actor</th><th>Record</th></tr></thead>
-    <tbody>${list.map(r=>`<tr><td>${esc(fmtDateTime(r.at))}</td><td>${badge(r.action)}</td><td>${esc(r.table_name)}</td>
+  const restoreLabel = { DELETE:"Restore", UPDATE:"Revert", INSERT:"Undo" };
+  const editable = new Set(["members","creators","campaigns","barter_items","applications","invites","irm_contacts","story_deals","dream_plans"]);
+  rows.innerHTML = `<div class="card" style="overflow-x:auto"><table><thead><tr><th>When</th><th>Action</th><th>Table</th><th>Actor</th><th>Record</th><th>Undo</th></tr></thead>
+    <tbody>${list.map((r,i)=>`<tr><td>${esc(fmtDateTime(r.at))}</td><td>${badge(r.action)}</td><td>${esc(r.table_name)}</td>
       <td>${esc(r.actor_email)||`<span class="muted">system</span>`}</td>
-      <td><button class="mini-btn ghost" data-audit='${esc(JSON.stringify({o:r.old_data,n:r.new_data}))}'>Diff</button></td></tr>`).join("")}</tbody></table></div>`;
-  rows.querySelectorAll("[data-audit]").forEach(b=>b.onclick=()=>{ try{ openAuditDiff(JSON.parse(b.dataset.audit)); }catch(e){} });
+      <td><button class="mini-btn ghost" data-audit="${i}">Diff</button></td>
+      <td>${editable.has(r.table_name)&&restoreLabel[r.action]?`<button class="mini-btn" data-restore="${esc(r.id)}" data-rlabel="${esc(restoreLabel[r.action])}">${restoreLabel[r.action]}</button>`:`<span class="muted">—</span>`}</td></tr>`).join("")}</tbody></table></div>`;
+  rows.querySelectorAll("[data-audit]").forEach(b=>b.onclick=()=>openAuditDiff({o:list[+b.dataset.audit].old_data,n:list[+b.dataset.audit].new_data}));
+  rows.querySelectorAll("[data-restore]").forEach(b=>b.onclick=()=>adminRestore(b.dataset.restore, b.dataset.rlabel));
+}
+
+async function adminRestore(auditId, label){
+  if(!confirm(`${label} this change? The row will be brought back / reverted to its earlier state. (This action is itself logged.)`)) return;
+  const { data, error } = await sb.rpc("admin_restore", { p_audit_id: Number(auditId) });
+  if(error){ alert("Couldn't "+label.toLowerCase()+": "+error.message); return; }
+  adminLoadAudit();
 }
 function openAuditDiff(d){
   let m = document.getElementById("auditDiffModal"); if(m) m.remove();
