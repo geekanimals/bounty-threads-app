@@ -1797,24 +1797,229 @@ function wireMkComposer(){
 }
 
 /* ================= ADMIN (platform team — approve agency signups) ================= */
+/* ================= SUPER ADMIN CONSOLE ================= */
+const ADMIN_TABS = [["overview","Overview"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["approvals","Approvals"],["admins","Super admins"]];
+const ADMIN_TABLES = [
+  ["members","Members"],["creators","Creators"],["campaigns","Campaigns"],["barter_items","Barter items"],
+  ["applications","Applications"],["invites","Invites"],["irm_contacts","IRM contacts"],
+  ["story_deals","Celebrity deals"],["dream_plans","Dream plans"],["org_profiles","Org profiles"]
+];
+const ADMIN_EDITABLE = new Set(["members","creators","campaigns","barter_items","applications","invites","irm_contacts","story_deals","dream_plans"]);
+const ADMIN_READONLY_FIELDS = new Set(["id","org_id","created_at","updated_at"]);
+let _adminTab = "overview";
+let _adminDataTable = "creators";
+
 function renderAdmin(){
-  let html = pageHead("Admin — Approvals","Review and approve agency, brand & manager signups.");
-  html += `<div class="card"><h3>Awaiting approval</h3><div class="list" id="adminRows"><div class="muted" style="padding:8px">Loading…</div></div></div>`;
+  let html = pageHead("Super Admin","Full cross-workspace control — every record, every change, with timestamps.");
+  html += `<div class="admin-tabs">${ADMIN_TABS.map(t=>`<button class="${_adminTab===t[0]?'act':''}" data-atab="${t[0]}">${esc(t[1])}</button>`).join("")}</div>`;
+  html += `<div id="adminBody"><div class="muted" style="padding:16px">Loading…</div></div>`;
   return html;
 }
-async function loadAdmin(){
+
+function loadAdmin(){
+  document.querySelectorAll("[data-atab]").forEach(b=> b.onclick = ()=>{ _adminTab = b.dataset.atab; currentPage="admin"; renderShell(); });
+  const body = document.getElementById("adminBody");
+  if(!body || !window.sb) return;
+  ({ overview:adminOverview, orgs:adminOrgs, data:adminData, audit:adminAudit, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+}
+
+async function adminOverview(body){
+  body.innerHTML = `<div class="muted" style="padding:16px">Loading…</div>`;
+  const { data, error } = await sb.rpc("admin_overview");
+  if(error){ body.innerHTML = adminErr(error); return; }
+  const o = data||{};
+  const card = (v,l)=>`<div class="ws-stat"><b>${fmtNum(v)}</b><span>${l}</span></div>`;
+  body.innerHTML = `<div class="ws-stats" style="grid-template-columns:repeat(4,1fr)">
+      ${card(o.orgs,"Workspaces")}${card(o.members,"Members")}${card(o.creators,"Creators")}${card(o.campaigns,"Campaigns")}
+      ${card(o.barter,"Barter items")}${card(o.applications,"Applications")}${card(o.pending,"Pending approvals")}${card(o.changes_24h,"Changes (24h)")}</div>
+    <div class="ai-suggest"><span class="spark">🛡</span><div class="s-body"><b>${fmtNum(o.admins)} super admin${o.admins==1?"":"s"}</b>
+      <p>Super admins can read, edit and delete any record across every workspace. Every change is written to the audit log with a timestamp and the actor. Use the tabs above to browse data, review the audit trail, approve signups, or manage admins.</p></div></div>`;
+}
+
+async function adminOrgs(body){
+  body.innerHTML = `<div class="muted" style="padding:16px">Loading…</div>`;
+  const { data, error } = await sb.rpc("admin_list_orgs");
+  if(error){ body.innerHTML = adminErr(error); return; }
+  const list = data||[];
+  body.innerHTML = `<div class="card"><table><thead><tr><th>Workspace</th><th>Members</th><th>Creators</th><th>Campaigns</th><th>Pending</th><th>Created</th></tr></thead>
+    <tbody>${list.length?list.map(o=>`<tr><td><b>${esc(o.org_name)||"—"}</b><div class="r-sub">${esc(o.org_id)}</div></td>
+      <td>${o.members}</td><td>${o.creators}</td><td>${o.campaigns}</td><td>${o.pending?`<span class="tag warn">${o.pending}</span>`:"0"}</td>
+      <td>${esc(fmtDate(o.created_at))}</td></tr>`).join(""):`<tr><td colspan="6" class="muted" style="padding:24px">No workspaces yet.</td></tr>`}</tbody></table></div>`;
+}
+
+function adminData(body){
+  body.innerHTML = `<div class="card filter-bar" style="margin-bottom:14px">
+      <select id="adTable" class="fb-input">${ADMIN_TABLES.map(t=>`<option value="${t[0]}"${_adminDataTable===t[0]?' selected':''}>${esc(t[1])}</option>`).join("")}</select>
+      <input id="adSearch" class="fb-input" placeholder="🔍 Search this table…" style="flex:1;min-width:180px">
+      <span id="adCount" class="muted" style="align-self:center;font-size:12px"></span>
+    </div><div id="adRows"><div class="muted" style="padding:16px">Loading…</div></div>`;
+  const tSel = document.getElementById("adTable"), search = document.getElementById("adSearch");
+  tSel.onchange = ()=>{ _adminDataTable = tSel.value; adminLoadRows(); };
+  let deb; search.oninput = ()=>{ clearTimeout(deb); deb = setTimeout(adminLoadRows, 300); };
+  adminLoadRows();
+}
+
+async function adminLoadRows(){
+  const rows = document.getElementById("adRows"); if(!rows) return;
+  const table = _adminDataTable;
+  const search = (document.getElementById("adSearch")||{}).value || "";
+  rows.innerHTML = `<div class="muted" style="padding:16px">Loading…</div>`;
+  const { data, error } = await sb.rpc("admin_list_table", { p_table:table, p_search:search, p_limit:200, p_offset:0 });
+  if(error){ rows.innerHTML = adminErr(error); return; }
+  const list = data||[];
+  const count = document.getElementById("adCount"); if(count) count.textContent = `${list.length} row${list.length===1?"":"s"}${list.length>=200?"+ (showing first 200)":""}`;
+  if(!list.length){ rows.innerHTML = `<div class="card"><div class="muted" style="padding:16px">No rows.</div></div>`; return; }
+  // Columns: a compact, meaningful subset (id + first few informative fields).
+  const keys = Object.keys(list[0]);
+  const shown = ["name","email","product","celebrity","campaign_name","creator_name","goal","status","role","stage","org_name"].filter(k=>keys.includes(k)).slice(0,3);
+  if(!shown.length) shown.push(keys.find(k=>k!=="id"&&k!=="org_id")||"id");
+  const editable = ADMIN_EDITABLE.has(table);
+  rows.innerHTML = `<div class="card" style="overflow-x:auto"><table><thead><tr>${shown.map(k=>`<th>${esc(k)}</th>`).join("")}<th>Created</th><th>Actions</th></tr></thead>
+    <tbody>${list.map((r,i)=>`<tr>${shown.map(k=>`<td>${esc(String(r[k]==null?"—":typeof r[k]==="object"?JSON.stringify(r[k]):r[k])).slice(0,60)}</td>`).join("")}
+      <td>${esc(fmtDate(r.created_at))}</td>
+      <td><div style="display:flex;gap:6px"><button class="mini-btn ghost" data-adview="${i}">View</button>
+      ${editable?`<button class="mini-btn ghost" data-adedit="${i}">Edit</button><button class="mini-btn" style="background:var(--bad,#c0392b)" data-addel="${i}">Delete</button>`:""}</div></td></tr>`).join("")}</tbody></table></div>`;
+  rows.querySelectorAll("[data-adview]").forEach(b=>b.onclick=()=>openAdminEdit(table, list[+b.dataset.adview], true));
+  rows.querySelectorAll("[data-adedit]").forEach(b=>b.onclick=()=>openAdminEdit(table, list[+b.dataset.adedit], false));
+  rows.querySelectorAll("[data-addel]").forEach(b=>b.onclick=()=>adminDeleteRow(table, list[+b.dataset.addel]));
+}
+
+function openAdminEdit(table, row, readOnly){
+  let m = document.getElementById("adminEditModal"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id="adminEditModal";
+  const fields = Object.keys(row).map(k=>{
+    const ro = readOnly || ADMIN_READONLY_FIELDS.has(k);
+    const v = row[k]==null ? "" : (typeof row[k]==="object" ? JSON.stringify(row[k]) : String(row[k]));
+    const multi = v.length > 60 || k==="brief"||k==="notes"||k==="deliverables";
+    const input = multi
+      ? `<textarea name="${esc(k)}" rows="2" ${ro?"readonly":""}>${esc(v)}</textarea>`
+      : `<input name="${esc(k)}" value="${esc(v)}" ${ro?"readonly":""}>`;
+    return `<label>${esc(k)}${ADMIN_READONLY_FIELDS.has(k)?' <span class="muted" style="text-transform:none;font-weight:400">(locked)</span>':""}${input}</label>`;
+  }).join("");
+  m.innerHTML = `<div class="modal modal-lg"><div class="modal-head"><strong>${readOnly?"View":"Edit"} ${esc(table)} record</strong><button class="icon-btn" id="aeClose">✕</button></div>
+    <form id="adminEditForm" class="modal-form">${fields}
+      <div class="auth-err" id="aeErr"></div>
+      ${readOnly?"":`<button class="btn" type="submit">Save changes</button>`}</form></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  m.onclick = e=>{ if(e.target.id==="adminEditModal") m.classList.remove("open"); };
+  document.getElementById("aeClose").onclick = ()=> m.classList.remove("open");
+  const form = document.getElementById("adminEditForm");
+  if(form) form.onsubmit = async e=>{
+    e.preventDefault();
+    const err = document.getElementById("aeErr"), btn = form.querySelector("button[type=submit]");
+    err.textContent=""; btn.disabled=true; btn.textContent="Saving…";
+    // Only send changed, non-locked fields.
+    const patch = {};
+    new FormData(form).forEach((val,k)=>{
+      if(ADMIN_READONLY_FIELDS.has(k)) return;
+      const orig = row[k]==null ? "" : (typeof row[k]==="object" ? JSON.stringify(row[k]) : String(row[k]));
+      if(String(val) !== orig) patch[k] = val === "" ? null : val;
+    });
+    if(!Object.keys(patch).length){ m.classList.remove("open"); return; }
+    const { error } = await sb.rpc("admin_update_row", { p_table:table, p_id:row.id, p_patch:patch });
+    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Save changes"; return; }
+    m.classList.remove("open"); adminLoadRows();
+  };
+}
+
+async function adminDeleteRow(table, row){
+  const label = row.name || row.email || row.product || row.campaign_name || row.id;
+  if(!confirm(`Delete this ${table} record?\n\n${label}\n\nThis is permanent (logged to the audit trail).`)) return;
+  const { error } = await sb.rpc("admin_delete_row", { p_table:table, p_id:row.id });
+  if(error){ alert("Couldn't delete: "+error.message); return; }
+  adminLoadRows();
+}
+
+async function adminAudit(body){
+  body.innerHTML = `<div class="card filter-bar" style="margin-bottom:14px">
+      <select id="auTable" class="fb-input"><option value="">All tables</option>${ADMIN_TABLES.filter(t=>t[0]!=="org_profiles").map(t=>`<option value="${t[0]}">${esc(t[1])}</option>`).join("")}</select>
+      <select id="auAction" class="fb-input"><option value="">All actions</option><option>INSERT</option><option>UPDATE</option><option>DELETE</option></select>
+    </div><div id="auRows"><div class="muted" style="padding:16px">Loading…</div></div>`;
+  document.getElementById("auTable").onchange = adminLoadAudit;
+  document.getElementById("auAction").onchange = adminLoadAudit;
+  adminLoadAudit();
+}
+async function adminLoadAudit(){
+  const rows = document.getElementById("auRows"); if(!rows) return;
+  const table = (document.getElementById("auTable")||{}).value || null;
+  const action = (document.getElementById("auAction")||{}).value || null;
+  rows.innerHTML = `<div class="muted" style="padding:16px">Loading…</div>`;
+  const { data, error } = await sb.rpc("admin_audit", { p_limit:150, p_offset:0, p_table:table, p_action:action });
+  if(error){ rows.innerHTML = adminErr(error); return; }
+  const list = data||[];
+  if(!list.length){ rows.innerHTML = `<div class="card"><div class="muted" style="padding:16px">No matching activity.</div></div>`; return; }
+  const badge = a => `<span class="tag ${a==="INSERT"?"good":a==="DELETE"?"":"warn"}">${esc(a)}</span>`;
+  rows.innerHTML = `<div class="card" style="overflow-x:auto"><table><thead><tr><th>When</th><th>Action</th><th>Table</th><th>Actor</th><th>Record</th></tr></thead>
+    <tbody>${list.map(r=>`<tr><td>${esc(fmtDateTime(r.at))}</td><td>${badge(r.action)}</td><td>${esc(r.table_name)}</td>
+      <td>${esc(r.actor_email)||`<span class="muted">system</span>`}</td>
+      <td><button class="mini-btn ghost" data-audit='${esc(JSON.stringify({o:r.old_data,n:r.new_data}))}'>Diff</button></td></tr>`).join("")}</tbody></table></div>`;
+  rows.querySelectorAll("[data-audit]").forEach(b=>b.onclick=()=>{ try{ openAuditDiff(JSON.parse(b.dataset.audit)); }catch(e){} });
+}
+function openAuditDiff(d){
+  let m = document.getElementById("auditDiffModal"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id="auditDiffModal";
+  const fmt = o => o ? `<pre class="audit-pre">${esc(JSON.stringify(o,null,2))}</pre>` : `<div class="muted">—</div>`;
+  m.innerHTML = `<div class="modal modal-lg"><div class="modal-head"><strong>Change detail</strong><button class="icon-btn" id="adfClose">✕</button></div>
+    <div class="modal-form"><div class="cd-l">Before</div>${fmt(d.o)}<div class="cd-l" style="margin-top:10px">After</div>${fmt(d.n)}</div></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  m.onclick = e=>{ if(e.target.id==="auditDiffModal") m.classList.remove("open"); };
+  document.getElementById("adfClose").onclick = ()=> m.classList.remove("open");
+}
+
+async function adminApprovals(body){
+  body.innerHTML = `<div class="card"><h3>Awaiting approval</h3><div class="list" id="adminRows"><div class="muted" style="padding:8px">Loading…</div></div></div>`;
   const wrap=document.getElementById("adminRows");
-  if(!wrap||!window.sb) return;
   const { data, error } = await sb.rpc("pending_members");
-  if(error){ wrap.innerHTML=`<div class="muted" style="padding:8px">${esc(error.message)}</div>`; return; }
+  if(error){ wrap.innerHTML=adminErr(error); return; }
   const list=data||[];
   if(!list.length){ wrap.innerHTML=`<div class="muted" style="padding:8px">No pending signups 🎉</div>`; return; }
   wrap.innerHTML = list.map(x=>`<div class="row"><div class="r-main"><div class="r-title">${esc(x.name)||esc(x.email)}</div>
     <div class="r-sub">${esc(x.email)} · ${esc(x.role)}${x.org_name?" · "+esc(x.org_name):""}</div></div>
     <span><button class="mini-btn" data-approve="${esc(x.id)}">Approve</button> <button class="mini-btn ghost" data-decline="${esc(x.id)}">Decline</button></span></div>`).join("");
-  wrap.querySelectorAll("[data-approve]").forEach(b=>b.onclick=async()=>{ await sb.rpc("set_member_status",{p_id:b.dataset.approve,p_status:"active"}); loadAdmin(); });
-  wrap.querySelectorAll("[data-decline]").forEach(b=>b.onclick=async()=>{ await sb.rpc("set_member_status",{p_id:b.dataset.decline,p_status:"declined"}); loadAdmin(); });
+  wrap.querySelectorAll("[data-approve]").forEach(b=>b.onclick=async()=>{ await sb.rpc("set_member_status",{p_id:b.dataset.approve,p_status:"active"}); adminApprovals(body); });
+  wrap.querySelectorAll("[data-decline]").forEach(b=>b.onclick=async()=>{ await sb.rpc("set_member_status",{p_id:b.dataset.decline,p_status:"declined"}); adminApprovals(body); });
 }
+
+async function adminAdmins(body){
+  body.innerHTML = `<div class="card"><h3>Add a super admin</h3>
+      <form id="addAdminForm" class="modal-form" style="padding:0">
+        <div class="mf-row"><label>User email<input name="email" type="email" required placeholder="teammate@geek.com"></label>
+        <label style="justify-content:flex-end"><span style="visibility:hidden">.</span><button class="btn" type="submit">Grant super admin</button></label></div>
+        <div class="auth-err" id="aaErr"></div><div class="lead-msg" id="aaMsg"></div>
+      </form></div>
+    <div class="card"><h3>Current super admins</h3><div class="list" id="adminList"><div class="muted" style="padding:8px">Loading…</div></div></div>`;
+  const form = document.getElementById("addAdminForm");
+  form.onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(form), err=document.getElementById("aaErr"), msg=document.getElementById("aaMsg");
+    err.textContent=""; msg.textContent="";
+    const { error } = await sb.rpc("admin_add_platform_admin", { p_email:(f.get("email")||"").trim() });
+    if(error){ err.textContent = error.message; return; }
+    msg.className="lead-msg ok"; msg.textContent="Added. They now have full super-admin access."; form.reset();
+    adminAdmins(body);
+  };
+  const listWrap = document.getElementById("adminList");
+  const { data, error } = await sb.rpc("admin_list_platform_admins");
+  if(error){ listWrap.innerHTML = adminErr(error); return; }
+  const me = (window.Auth && Auth.profile && Auth.profile.id) || null;
+  listWrap.innerHTML = (data||[]).map(a=>`<div class="row"><span class="avatar">${esc((a.name||a.email||"?").slice(0,2).toUpperCase())}</span>
+    <div class="r-main"><div class="r-title">${esc(a.name)||esc(a.email)||esc(a.user_id)}</div><div class="r-sub">${esc(a.email)||""} · since ${esc(fmtDate(a.created_at))}</div></div>
+    ${a.user_id===me?`<span class="tag brand">You</span>`:`<button class="mini-btn ghost" data-rmadmin="${esc(a.user_id)}">Remove</button>`}</div>`).join("");
+  listWrap.querySelectorAll("[data-rmadmin]").forEach(b=>b.onclick=async()=>{
+    if(!confirm("Remove super-admin access for this user?")) return;
+    const { error } = await sb.rpc("admin_remove_platform_admin", { p_user_id:b.dataset.rmadmin });
+    if(error){ alert(error.message); return; }
+    adminAdmins(body);
+  });
+}
+
+function adminErr(error){
+  const m = (error&&error.message)||"Something went wrong.";
+  const hint = /function|does not exist|schema cache/i.test(m) ? " — re-run the latest DATABASE_SETUP.sql in Supabase to install the Super Admin functions." : "";
+  return `<div class="card"><div class="muted" style="padding:16px">${esc(m)}${hint}</div></div>`;
+}
+function fmtDate(d){ if(!d) return "—"; try{ return new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}); }catch(e){ return String(d); } }
+function fmtDateTime(d){ if(!d) return "—"; try{ return new Date(d).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(e){ return String(d); } }
 
 const PAGES = {
   dashboard:renderDashboard, barter:renderBarter, creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit, admin:renderAdmin,

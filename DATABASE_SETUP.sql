@@ -625,7 +625,217 @@ alter table ai_usage enable row level security;
 -- (no client policies — only the ai-chat Edge Function, via service_role, reads/writes this)
 
 -- ===================================================================
+-- SUPER ADMIN — cross-org visibility, audit trail, and full data CRUD.
+-- A super admin is any user in platform_admins. Their power lives in the
+-- admin_* SECURITY DEFINER functions below (each re-checks is_platform_admin()),
+-- NOT in weakened table RLS — so a normal user can never reach across orgs.
+-- ===================================================================
+
+-- ---------- AUDIT LOG (every write across the app, with timestamps) ----------
+create table if not exists audit_log (
+  id          bigint generated always as identity primary key,
+  at          timestamptz not null default now(),
+  actor       uuid,           -- auth.uid() of whoever made the change
+  actor_email text,
+  action      text,           -- INSERT | UPDATE | DELETE
+  table_name  text,
+  row_id      uuid,
+  org_id      uuid,
+  old_data    jsonb,
+  new_data    jsonb
+);
+create index if not exists audit_log_at_idx    on audit_log (at desc);
+create index if not exists audit_log_org_idx   on audit_log (org_id);
+create index if not exists audit_log_table_idx on audit_log (table_name);
+alter table audit_log enable row level security;
+-- No client policies: the browser can never read/write audit_log directly.
+-- Reads happen only through admin_audit() (super-admin only). Writes happen only
+-- through the SECURITY DEFINER trigger below (runs as owner, bypasses RLS).
+
+-- Generic audit trigger — works on any table that has an `id` column (org_id optional).
+create or replace function public.audit_trigger()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_new jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) end;
+  v_old jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) end;
+  v_rowid uuid := coalesce(nullif(v_new->>'id','')::uuid, nullif(v_old->>'id','')::uuid);
+  v_org   uuid := coalesce(nullif(v_new->>'org_id','')::uuid, nullif(v_old->>'org_id','')::uuid);
+begin
+  insert into public.audit_log(actor, actor_email, action, table_name, row_id, org_id, old_data, new_data)
+  values (auth.uid(),
+          (select email from public.members where id = auth.uid()),
+          tg_op, tg_table_name, v_rowid, v_org, v_old, v_new);
+  return coalesce(new, old);
+end;
+$$;
+
+-- Attach the audit trigger to every core business table (all have id + org_id).
+do $$
+declare t text;
+begin
+  foreach t in array array['members','creators','campaigns','barter_items','applications',
+                           'invites','irm_contacts','story_deals','dream_plans'] loop
+    execute format('drop trigger if exists audit_%1$s on public.%1$s', t);
+    execute format('create trigger audit_%1$s after insert or update or delete on public.%1$s
+                    for each row execute function public.audit_trigger()', t);
+  end loop;
+end $$;
+
+-- Which tables the super-admin data browser may read / edit.
+create or replace function public._admin_listable(p_table text) returns void
+language plpgsql immutable set search_path = public as $$
+begin
+  if p_table not in ('members','creators','campaigns','barter_items','applications','invites',
+                     'irm_contacts','story_deals','dream_plans','org_profiles','audit_log') then
+    raise exception 'Table % is not browsable', p_table;
+  end if;
+end $$;
+create or replace function public._admin_editable(p_table text) returns void
+language plpgsql immutable set search_path = public as $$
+begin
+  -- audit_log & org_profiles are excluded from row edit/delete (append-only / composite key).
+  if p_table not in ('members','creators','campaigns','barter_items','applications','invites',
+                     'irm_contacts','story_deals','dream_plans') then
+    raise exception 'Table % is not editable here', p_table;
+  end if;
+end $$;
+
+-- Platform-wide snapshot: counts across ALL orgs + recent activity.
+create or replace function public.admin_overview()
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_platform_admin() then raise exception 'Not authorized'; end if;
+  return jsonb_build_object(
+    'orgs',        (select count(distinct org_id) from public.members),
+    'members',     (select count(*) from public.members),
+    'pending',     (select count(*) from public.members where status = 'pending'),
+    'creators',    (select count(*) from public.creators),
+    'campaigns',   (select count(*) from public.campaigns),
+    'barter',      (select count(*) from public.barter_items),
+    'applications',(select count(*) from public.applications),
+    'admins',      (select count(*) from public.platform_admins),
+    'changes_24h', (select count(*) from public.audit_log where at > now() - interval '24 hours')
+  );
+end $$;
+grant execute on function public.admin_overview() to authenticated;
+
+-- All workspaces (orgs) with headline stats.
+create or replace function public.admin_list_orgs()
+returns table(org_id uuid, org_name text, members int, creators int, campaigns int,
+              pending int, created_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  select m.org_id,
+         max(m.org_name) as org_name,
+         count(distinct m.id)::int as members,
+         (select count(*) from public.creators c  where c.org_id = m.org_id)::int as creators,
+         (select count(*) from public.campaigns cm where cm.org_id = m.org_id)::int as campaigns,
+         count(distinct m.id) filter (where m.status = 'pending')::int as pending,
+         min(m.created_at) as created_at
+  from public.members m
+  where public.is_platform_admin()
+  group by m.org_id
+  order by min(m.created_at) desc
+$$;
+grant execute on function public.admin_list_orgs() to authenticated;
+
+-- Read any browsable table across ALL orgs (returns rows as jsonb).
+create or replace function public.admin_list_table(p_table text, p_search text default null,
+                                                   p_limit int default 100, p_offset int default 0)
+returns setof jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_platform_admin() then raise exception 'Not authorized'; end if;
+  perform public._admin_listable(p_table);
+  return query execute format(
+    'select to_jsonb(t) from public.%I t %s order by t.ctid desc limit %L offset %L',
+    p_table,
+    case when coalesce(p_search,'') = '' then '' else format('where t::text ilike %L', '%'||p_search||'%') end,
+    greatest(1, least(p_limit, 500)), greatest(0, p_offset));
+end $$;
+grant execute on function public.admin_list_table(text, text, int, int) to authenticated;
+
+-- Update any editable row (patch = {column: value, ...}). Change is captured by the audit trigger.
+create or replace function public.admin_update_row(p_table text, p_id uuid, p_patch jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_set text;
+begin
+  if not public.is_platform_admin() then raise exception 'Not authorized'; end if;
+  perform public._admin_editable(p_table);
+  select string_agg(format('%I = %L', key, value), ', ') into v_set from jsonb_each_text(p_patch);
+  if v_set is null then return; end if;
+  execute format('update public.%I set %s where id = $1', p_table, v_set) using p_id;
+end $$;
+grant execute on function public.admin_update_row(text, uuid, jsonb) to authenticated;
+
+-- Delete any editable row. Captured by the audit trigger (old_data preserved).
+create or replace function public.admin_delete_row(p_table text, p_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_platform_admin() then raise exception 'Not authorized'; end if;
+  perform public._admin_editable(p_table);
+  execute format('delete from public.%I where id = $1', p_table) using p_id;
+end $$;
+grant execute on function public.admin_delete_row(text, uuid) to authenticated;
+
+-- Read the audit trail (optionally filtered by table / action / org).
+create or replace function public.admin_audit(p_limit int default 100, p_offset int default 0,
+                                              p_table text default null, p_action text default null)
+returns setof audit_log language sql stable security definer set search_path = public as $$
+  select * from public.audit_log
+  where public.is_platform_admin()
+    and (p_table  is null or table_name = p_table)
+    and (p_action is null or action = p_action)
+  order by at desc
+  limit greatest(1, least(p_limit, 500)) offset greatest(0, p_offset)
+$$;
+grant execute on function public.admin_audit(int, int, text, text) to authenticated;
+
+-- Change any member's role (super-admin only). Bypasses the client-side role lock.
+create or replace function public.admin_set_role(p_id uuid, p_role text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_platform_admin() then raise exception 'Not authorized'; end if;
+  if p_role not in ('owner','corporate','manager','brand','creator') then raise exception 'Invalid role'; end if;
+  update public.members set role = p_role where id = p_id;
+end $$;
+grant execute on function public.admin_set_role(uuid, text) to authenticated;
+
+-- Manage the super-admin list itself.
+create or replace function public.admin_list_platform_admins()
+returns table(user_id uuid, email text, name text, created_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  select pa.user_id, m.email, m.name, pa.created_at
+  from public.platform_admins pa
+  left join public.members m on m.id = pa.user_id
+  where public.is_platform_admin()
+  order by pa.created_at
+$$;
+grant execute on function public.admin_list_platform_admins() to authenticated;
+
+create or replace function public.admin_add_platform_admin(p_email text)
+returns text language plpgsql security definer set search_path = public as $$
+declare v_id uuid;
+begin
+  if not public.is_platform_admin() then raise exception 'Not authorized'; end if;
+  select id into v_id from public.members where lower(email) = lower(p_email) limit 1;
+  if v_id is null then raise exception 'No user with email %', p_email; end if;
+  insert into public.platform_admins(user_id) values (v_id) on conflict do nothing;
+  return 'ok';
+end $$;
+grant execute on function public.admin_add_platform_admin(text) to authenticated;
+
+create or replace function public.admin_remove_platform_admin(p_user_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_platform_admin() then raise exception 'Not authorized'; end if;
+  if p_user_id = auth.uid() then raise exception 'You cannot remove yourself'; end if;
+  delete from public.platform_admins where user_id = p_user_id;
+end $$;
+grant execute on function public.admin_remove_platform_admin(uuid) to authenticated;
+
+-- ===================================================================
 -- DONE. Real Supabase Auth + Postgres-enforced per-org isolation.
 -- org_id now DEFAULTS to my_org() on insert, so the browser can't spoof it,
 -- and RLS rejects any row that isn't the caller's org anyway.
+-- Super admins (platform_admins) get cross-org CRUD + a full audit trail
+-- through the admin_* functions above — every write is logged with a timestamp.
 -- ===================================================================
