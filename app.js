@@ -1555,9 +1555,11 @@ async function loadListening(){
 
 /* ================= ROSTER (talent manager — reuse creators) ================= */
 function renderRoster(){
+  // Reuses the creators loader (loadCreators → applyCreatorFilters), so the header row must
+  // match the discovery-era columns that creatorRowsHtml renders.
   return pageHead("My Roster","Your talent — manage & match to briefs.",`<span id="addCreatorBtn">+ Add Creator</span>`) +
-    `<div class="card"><table><thead><tr><th>Creator</th><th>City</th><th>Tier</th><th>Followers</th><th>Engagement</th><th>Category</th><th>Rating</th></tr></thead>
-    <tbody id="creatorRows"><tr><td colspan="7" class="muted" style="padding:24px">Loading…</td></tr></tbody></table></div>`;
+    `<div class="card"><table><thead><tr><th>Creator</th><th>City</th><th>Tier</th><th>Followers</th><th>Contact</th><th>App</th><th>Actions</th></tr></thead>
+    <tbody id="creatorRows"><tr><td colspan="8" class="muted" style="padding:24px">Loading…</td></tr></tbody></table></div>`;
 }
 
 /* ================= MEDIA KIT (Instagram) ================= */
@@ -1798,7 +1800,7 @@ function wireMkComposer(){
 
 /* ================= ADMIN (platform team — approve agency signups) ================= */
 /* ================= SUPER ADMIN CONSOLE ================= */
-const ADMIN_TABS = [["overview","Overview"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["approvals","Approvals"],["admins","Super admins"]];
+const ADMIN_TABS = [["overview","Overview"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["approvals","Approvals"],["admins","Super admins"]];
 const ADMIN_TABLES = [
   ["members","Members"],["creators","Creators"],["campaigns","Campaigns"],["barter_items","Barter items"],
   ["applications","Applications"],["invites","Invites"],["irm_contacts","IRM contacts"],
@@ -1820,7 +1822,70 @@ function loadAdmin(){
   document.querySelectorAll("[data-atab]").forEach(b=> b.onclick = ()=>{ _adminTab = b.dataset.atab; currentPage="admin"; renderShell(); });
   const body = document.getElementById("adminBody");
   if(!body || !window.sb) return;
-  ({ overview:adminOverview, orgs:adminOrgs, data:adminData, audit:adminAudit, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+  ({ overview:adminOverview, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+}
+
+/* System check — live-verifies the deployed database matches the code (tables, columns, RPCs).
+   Turns "random breaks" into an exact list of what's missing / what SQL to re-run. */
+const SYS_TABLES = ["members","creators","campaigns","barter_items","applications","invites","irm_contacts",
+  "story_deals","dream_plans","org_profiles","social_accounts","audit_log","platform_admins","leads"];
+const SYS_COLUMNS = [ // feature-critical columns added in later passes
+  ["creators","whatsapp"],["creators","invite_status"],["creators","lat"],
+  ["campaigns","deliverables"],["campaigns","deliverables_done"],["campaigns","budget"],
+  ["barter_items","tracking_number"],["barter_items","deadline"],
+  ["invites","token"],["members","status"],["irm_contacts","whatsapp"],["org_profiles","slug"]
+];
+const SYS_RPCS = [
+  ["is_platform_admin",{}],["open_campaigns",{}],["my_applications",{}],["campaign_applications",{}],
+  ["public_profile",{p_username:"__healthcheck__"}],["public_org",{p_slug:"__healthcheck__"}],
+  ["pending_members",{}],["admin_overview",{}],["admin_list_orgs",{}],
+  ["admin_list_table",{p_table:"creators",p_limit:1,p_offset:0}],["admin_audit",{p_limit:1,p_offset:0}],
+  ["admin_list_platform_admins",{}]
+];
+const MISSING_RE = /does not exist|schema cache|could not find|not find the function|relation .* does not/i;
+
+async function adminSystemCheck(body){
+  body.innerHTML = `<div class="card"><h3>System check</h3>
+    <p class="muted" style="margin-bottom:12px">Live-verifies that your deployed Supabase matches the app — every table, key column and function. Run this after each DATABASE_SETUP.sql update; anything red means re-run the SQL.</p>
+    <button class="btn" id="sysRun">Run checks</button>
+    <div id="sysResult" style="margin-top:14px"></div></div>`;
+  document.getElementById("sysRun").onclick = runSystemCheck;
+  runSystemCheck();
+}
+
+async function runSystemCheck(){
+  const out = document.getElementById("sysResult");
+  if(!out) return;
+  out.innerHTML = `<div class="muted" style="padding:8px">Running…</div>`;
+  const checks = [];
+  SYS_TABLES.forEach(t=> checks.push({ group:"Table", name:t, run: async()=>{
+    const { error } = await sb.from(t).select("*", { count:"exact", head:true });
+    return { ok: !(error && MISSING_RE.test(error.message)), detail: error? error.message : "" };
+  }}));
+  SYS_COLUMNS.forEach(([t,c])=> checks.push({ group:"Column", name:`${t}.${c}`, run: async()=>{
+    const { error } = await sb.from(t).select(c).limit(1);
+    return { ok: !(error && /column|does not exist/i.test(error.message)), detail: error? error.message : "" };
+  }}));
+  SYS_RPCS.forEach(([n,args])=> checks.push({ group:"Function", name:n+"()", run: async()=>{
+    const { error } = await sb.rpc(n, args);
+    return { ok: !(error && MISSING_RE.test(error.message)), detail: error? error.message : "" };
+  }}));
+
+  const results = [];
+  for(const c of checks){
+    try{ const r = await c.run(); results.push(Object.assign({}, c, r)); }
+    catch(ex){ results.push(Object.assign({}, c, { ok:false, detail:String(ex.message||ex) })); }
+  }
+  const pass = results.filter(r=>r.ok).length, fail = results.length - pass;
+  const badge = ok => ok ? `<span class="tag good">PASS</span>` : `<span class="tag" style="background:rgba(192,57,43,.14);color:var(--bad,#c0392b)">FAIL</span>`;
+  out.innerHTML = `<div class="ws-stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
+      <div class="ws-stat"><b>${results.length}</b><span>Checks</span></div>
+      <div class="ws-stat"><b style="color:var(--good)">${pass}</b><span>Passing</span></div>
+      <div class="ws-stat"><b style="color:${fail?'var(--bad,#c0392b)':'var(--good)'}">${fail}</b><span>Failing</span></div></div>
+    ${fail? `<div class="ai-suggest" style="margin-bottom:12px"><span class="spark">⚠️</span><div class="s-body"><b>${fail} item(s) not deployed</b><p>Re-run the latest <code>DATABASE_SETUP.sql</code> in Supabase → SQL Editor. Then run this check again — all rows should turn green.</p></div></div>` : `<div class="ai-suggest" style="margin-bottom:12px"><span class="spark">✅</span><div class="s-body"><b>All systems go</b><p>Your database is fully in sync with the app.</p></div></div>`}
+    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Type</th><th>Item</th><th>Status</th><th>Detail</th></tr></thead>
+      <tbody>${results.map(r=>`<tr><td>${esc(r.group)}</td><td><code>${esc(r.name)}</code></td><td>${badge(r.ok)}</td>
+        <td class="muted" style="font-size:12px">${esc((r.detail||"").slice(0,80))}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
 async function adminOverview(body){
