@@ -175,9 +175,9 @@ select throws_ok($$ delete from intel.ci_identity_merge_event
 
 -- ================= Prompt 2A-V hardening tests =================
 
--- legacy baseline applied before the six CI migrations
-select has_table('public','campaigns', 'legacy baseline schema present (public.campaigns)');
-select has_table('public','members',   'legacy baseline schema present (public.members)');
+-- NOTE: the six CI migrations are self-contained and do NOT depend on the legacy `public`
+-- schema (DATABASE_SETUP.sql is not clean-apply-safe — see docs/PHASE_0A_VERIFICATION.md §1),
+-- so no legacy-baseline presence is asserted here.
 
 -- control-event history tables exist
 select has_table('intel','ci_capability_switch_event',  'capability-switch event table exists');

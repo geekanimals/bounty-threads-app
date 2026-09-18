@@ -43,15 +43,8 @@ jobs:
         run: supabase migration list --local
 
       # Clean apply: legacy baseline (0000) then the six additive CI migrations.
-      - name: db reset (clean apply of all migrations)
+      - name: db reset (clean apply of the six CI migrations)
         run: supabase db reset
-
-      - name: Confirm pgTAP is available
-        run: |
-          supabase db reset >/dev/null 2>&1 || true
-          psql "$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '\"')" \
-            -c "create extension if not exists pgtap;" \
-            -c "select 'pgtap ' || extversion from pg_extension where extname='pgtap';"
 
       - name: Run pgTAP tests
         run: supabase test db

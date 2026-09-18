@@ -8,39 +8,39 @@ remote Supabase project.**
 ## 1. Legacy baseline strategy
 
 The repo previously had no migration history — only `DATABASE_SETUP.sql` (run by hand in the SQL
-editor). For deterministic local/CI verification we add a **legacy baseline migration**
-`supabase/migrations/20250101000000_legacy_baseline.sql` — a **reviewed** copy of
-`DATABASE_SETUP.sql`. On `supabase db reset` it builds the production-like schema **first**, then
-the six additive Creator Intelligence migrations run on top (satisfying the "clean legacy baseline
-followed by all six new migrations" gate).
+editor). We first tried a **legacy baseline migration** (a reviewed copy of `DATABASE_SETUP.sql`)
+so `supabase db reset` would build the production-like schema before the six CI migrations.
 
-Review of `DATABASE_SETUP.sql` before adopting it as a baseline:
-- **No top-level data-dependent row INSERTs.** The only INSERTs are inside functions
-  (`handle_new_user`, `apply_to_campaign`, `audit_trigger`, `admin_add_platform_admin`) plus one
-  idempotent schema seed (`insert into storage.buckets ... on conflict do nothing`).
-- **Fully idempotent** (16 `create table if not exists`, 27 `create or replace`, 48
-  `drop policy if exists`).
-- **Depends only on Supabase-provided objects**: `auth.users`, `auth.uid()`,
-  `storage.{buckets,objects}`, roles `anon`/`authenticated`/`service_role`, extension `pgcrypto`.
+**The first CI run rejected that approach** with a real finding (P8): `DATABASE_SETUP.sql` is **not
+clean-apply-safe.** It defines SQL-language functions (`my_applications()`,
+`campaign_applications()`) that reference `public.applications` **before** that table is created
+later in the same file. It only ever succeeded because it was re-run *idempotently over an
+already-populated database*; a truly clean apply fails with
+`relation "public.applications" does not exist (SQLSTATE 42P01)`.
 
-**Caveats (explicit):**
-- This is a **representative** baseline. It was **not** diffed against the live project — no
-  Supabase CLI/credentials are available in this environment, so production drift is unverified.
-  (No production **row data** was accessed or exported.)
-- The six CI migrations were additionally hardened to be **self-contained** (the only prior hard
-  dependency on the legacy schema — a FK to `public.campaigns` — was removed, §4). So `db reset`
-  succeeds even without the baseline; the baseline is kept to verify **co-existence** on a realistic
-  schema.
-- **Do NOT `supabase db push` the baseline to the remote project** — the remote already has this
-  schema. Before any remote use, the baseline must be marked already-applied
-  (`supabase migration repair --status applied 20250101000000`) under a **separate approved plan**.
-  That is out of scope here and was not performed.
+**Adopted strategy:** the six CI migrations were hardened to be **fully self-contained** (their only
+prior dependency on the legacy schema — a FK to `public.campaigns` — was removed, P1). They depend
+only on objects the Supabase local stack provides: `auth.users`, roles
+`anon`/`authenticated`/`service_role`, and `pgcrypto`. So **`supabase db reset` applies the six CI
+migrations on a clean database with no legacy schema at all**, and CI verifies them directly. The
+legacy baseline migration was **removed** — we do not bake a latent ordering bug into migration
+history.
+
+**Legacy co-existence is deferred, not lost.** Verifying "legacy schema + the six CI migrations
+together" requires `DATABASE_SETUP.sql` to be made clean-apply-safe first (reorder: create the
+`applications`/`campaigns` tables before the SQL functions that reference them, or convert those
+functions to `plpgsql` whose bodies are not resolved at create time). That reorder touches the
+legacy setup file and is tracked as a **separate follow-up** (P8) — it is **out of scope** for this
+dark-foundation pass and was not performed. Production is unaffected (its schema was built
+incrementally and already exists).
+
+**No production access:** the environment has no Supabase CLI/credentials; the legacy file was not
+diffed against the live project and **no production row data was accessed or exported**.
 
 ## 2. Dependency inventory (what each migration requires)
 
 | Migration | Requires (pre-existing) | Creates |
 |---|---|---|
-| `20250101000000_legacy_baseline` | `auth.users`, `auth.uid()`, `storage.{buckets,objects}`, roles `anon`/`authenticated`/`service_role`, `pgcrypto` | the legacy `public` app schema (members, campaigns, …) |
 | `…090001_ci_schemas_roles_helpers` | `pgcrypto`; roles `anon`/`authenticated`/`service_role` | schemas `intel`/`private`/`api`; helper fns `tg_set_updated_at`, `tg_block_mutation` |
 | `…090002_ci_identity_foundation` | `intel` schema; `auth.users` (FKs); helper fns | identity/account/connection/actor/org/merge/link tables |
 | `…090003_ci_profile_private` | `intel.ci_creator_identity`; `private` schema; `auth.users` | private personal/contact/address/provenance/edit-event |
@@ -63,6 +63,7 @@ stack**. No hard dependency on the legacy `public` schema remains.
 | P5 | Helper trigger functions had **no fixed `search_path`** and were **executable by PUBLIC** | Med | Added `set search_path = pg_catalog`; `revoke all … from public, anon, authenticated`; `alter default privileges … revoke execute on functions from public` |
 | P6 | Private `creator_profile_edit_event` stored **raw old/new PII values** | Med | Renamed to `old_value_hash`/`new_value_hash` — one-way hash / opaque ref only, never raw PII |
 | P7 | Rollback was described only as "drop schema cascade" (destructive after data) | Low | Documented **two rollback modes** (§5) and corrected the architecture doc |
+| P8 | **`DATABASE_SETUP.sql` is not clean-apply-safe** — SQL functions `my_applications()`/`campaign_applications()` reference `public.applications` before it is created; a clean `db reset` fails (`42P01`). Found by the **first CI run**, not statically. | **High** (legacy) | Removed the legacy baseline migration; CI verifies the self-contained CI migrations directly. Making the legacy file clean-apply-safe (reorder / use `plpgsql`) is a **deferred follow-up** that touches the legacy setup file — out of scope for the dark foundation, production unaffected. |
 
 No incompatible FK types were found (all uuid↔uuid; `member_id`→`auth.users.id`). Partial-unique
 constraints (one active connection; one default active address; unique active dream-brand rank)
@@ -93,30 +94,29 @@ data-retention and migration plan** (export + legal/DPO review + change-controll
 personal data and legally-retained records are involved. Schema teardown is **not** the production
 rollback once data exists.
 
-## 6. Verification status — HOLD (not yet VERIFIED)
+## 6. Verification status — HOLD (execution moved to CI)
 
-Phase 0A **remains HOLD**. The six migrations + baseline + pgTAP are drafted and statically
-reviewed, but **not executed**, because this environment has **no Docker, no Supabase CLI, no
-`psql`, no local Postgres**. Per the rule "if a command cannot run, report it as NOT RUN; do not
-mark Phase 0A verified," the following are **NOT RUN** locally:
+This environment has **no Docker, no Supabase CLI, no `psql`, no local Postgres**, so none of the
+verification commands can run locally (`supabase --version`, `migration list`, `db reset`,
+`test db`, `db lint`, type-gen, replay were all **NOT RUN locally**). Verification therefore runs
+in the **CI workflow** `.github/workflows/creator-intelligence-db.yml` on a **disposable** Supabase
+stack (GitHub-hosted Docker) with **no production secrets** and **no remote connection** (no
+`link`/`push`/`repair`).
 
-- `supabase --version`, `supabase migration list --local` — **NOT RUN**
-- `supabase db reset` (clean apply) — **NOT RUN**
-- `supabase test db` (pgTAP) — **NOT RUN**
-- `supabase db lint` / database advisors — **NOT RUN**
-- TypeScript type generation — **NOT RUN**
-- second `db reset` (deterministic replay) — **NOT RUN**
+**CI run history for this pass:**
+- **Run 1** (`35328022109`, commit `3a63c13`) — **FAIL** at `db start`, and this is the value it
+  added: it surfaced **P8** (the legacy baseline is not clean-apply-safe). Fixed by removing the
+  baseline migration and its two pgTAP assertions.
+- **Run 2** (commit after this doc) — pending; must pass `db reset` → `test db` → deterministic
+  replay before Phase 0A is marked **VERIFIED**.
 
-**Where verification happens:** the CI workflow `.github/workflows/creator-intelligence-db.yml`
-runs all of the above on a **disposable** Supabase stack (GitHub-hosted Docker), with **no
-production secrets** and **no remote connection** (no `link`/`push`/`repair`). Phase 0A becomes
-**VERIFIED** only when that workflow passes on a run of this commit. Static checks that *were* done
-locally: 30 `create table` across the CI migrations as expected, parenthesis balance per file, and
-a full line-by-line review (findings in §3).
+Phase 0A is **HOLD** until Run 2 (of the corrected commit) is green.
 
 ## 7. Remaining HOLD reasons
 
-- **CI not yet executed** — needs a GitHub Actions run of the new workflow (Docker + CLI).
-- **Production drift** of the legacy baseline unverified (no CLI/creds here).
+- **CI green not yet achieved** — Run 1 caught P8; the corrected commit's run must pass end-to-end.
+- **Legacy co-existence deferred** — reproducing legacy + CI migrations together needs
+  `DATABASE_SETUP.sql` made clean-apply-safe first (P8 follow-up); not attempted here.
+- **Production drift** of the legacy schema unverified (no CLI/creds here; no row data accessed).
 - Standing later-phase gates unchanged: external-KMS review, final legal retention durations, Meta
   runtime capability verification, pgmq scale test.
