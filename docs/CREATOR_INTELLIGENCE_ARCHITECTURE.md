@@ -74,7 +74,7 @@ An incomplete profile **must never** reduce Performance, raise Fraud Probability
 
 ## 5. Source-of-truth & field-provenance model
 
-Every profile field carries provenance: `source_type`, `source_reference`, `first_observed_at`, `last_updated_at`, `creator_confirmed_at`, `verification_status`, `verified_by`, `confidence` (where applicable). Stored in **`ci_profile_field_provenance`**; sensitive/commercial fields keep **edit history** (values never silently overwrite each other across sources).
+Every profile field carries provenance: `source_type`, `source_reference`, `first_observed_at`, `last_updated_at`, `creator_confirmed_at`, `verification_status`, `verified_by`, `confidence` (where applicable). Provenance is **split by sensitivity**: personal identity/contact/address fields → **`private.creator_profile_field_provenance`** (in the unexposed `private` schema); professional/commercial fields → **`intel.ci_profile_field_provenance`**. **Private field values (DOB, phone, email, address) are never stored in `intel`.** Sensitive private fields keep an append-only **edit history** in **`private.creator_profile_edit_event`**; values never silently overwrite each other across sources.
 
 **`source_type`:** From Instagram · From Geek account · Creator entered · Detected from content · Verified campaign history · Agency verified.
 **`verification_status`:** API observed · creator confirmed · campaign verified · agency verified · detected/unconfirmed · disputed · unavailable.
@@ -115,7 +115,8 @@ New objects live in **unexposed** schemas — `intel` (professional intelligence
 - **`ci_conversions`** — external outcomes (UTM/promo/pixel) for CPA/ROAS.
 
 ### 6.3 Profile entities (private + professional) — §7–§12
-`private.creator_personal_profile`, `private.creator_contact`, `private.creator_address`; `ci_creator_professional_profile`, `ci_creator_skill`, `ci_creator_resource`, `ci_creator_brand_experience`, `ci_creator_commercial_preference`, `ci_creator_rate_card`, `ci_creator_brand_aspiration`, `ci_profile_field_provenance`, `ci_profile_completion`.
+Private (`private` schema): `private.creator_personal_profile`, `private.creator_contact`, `private.creator_address`, `private.creator_profile_field_provenance`, `private.creator_profile_edit_event`.
+Professional (`intel` schema): `ci_creator_professional_profile`, `ci_creator_skill`, `ci_creator_resource`, `ci_creator_brand_experience`, `ci_creator_commercial_preference`, `ci_creator_rate_card`, **`ci_creator_rate_card_item`** (deliverable lines — normalized), `ci_creator_brand_aspiration`, `ci_profile_field_provenance`, `ci_profile_completion`.
 
 ### 6.4 Observed, control, messaging, feature store
 Raw: `ci_ingest_run`, `ci_account_snapshots`, `ci_media`(+`ci_media_version`, tombstone), `ci_media_insights`, `ci_audience_observations`, `ci_mentions`, `ci_comments`(+`ci_comment_sentiment`). Control: `ci_app_scope_capability`, `ci_scope_grant`, `ci_capability_switch`, `ci_processing_consent`, `ci_profile_visibility`, `ci_messaging_consent_events`(audit projection only). Messaging: `ci_ig_conversations`, `ci_ig_messages`, `ci_ig_message_events`, `conversation_assignments`, `ci_conversation_campaign_links`, `ci_response_metric_snapshots`, `ci_messaging_sync_jobs`. Feature store: `ci_metric`, `ci_ranking_run`, `ci_ranking_result`, `ci_data_request`.
@@ -140,7 +141,7 @@ Raw: `ci_ingest_run`, `ci_account_snapshots`, `ci_media`(+`ci_media_version`, to
 
 ## 8. Professional creator profile model (`intel` schema)
 
-**`ci_creator_professional_profile`** — `identity_id`, `display_name`, coarse `city`/`state`, `categories`, `languages`, `bio`, visibility defaults, provenance. Marketplace-facing; **no** contact/address/personal PII here.
+**`ci_creator_professional_profile`** — `identity_id`, `display_name`, coarse `city`/`state`, `categories`, `languages`, `bio`, visibility defaults, provenance. Marketplace-facing; **no** contact/address/personal PII here. Includes a **profile-image reference** (not treated as permanent): `profile_image_source_platform`, `profile_image_source_account_id`, `profile_image_url`, `profile_image_asset_ref`, `profile_image_observed_at`, `profile_image_status` (`fresh`|`stale`|`unavailable`) — the Instagram image can go stale/unavailable and is refreshed, never assumed permanent.
 
 **`ci_creator_skill`** — `identity_id`, `skill_key` (controlled searchable taxonomy + optional custom), `skill_level`, `years_experience`, `portfolio_link`, `creator_confirmed_at`. Taxonomy seed: Acting, Dancing, Singing, Makeup, Styling, Photography, Videography, Editing, Scriptwriting, Comedy, Fitness, Yoga, Cooking, Gaming, Technology, Finance, Parenting, Travel, Public speaking, Regional-language content, Live hosting.
 
@@ -168,7 +169,9 @@ Stored as a **creator-declared preference — not an authenticity or performance
 
 ## 11. Rate-card model
 
-**`ci_creator_rate_card`** — `rate_card_item_id`, `identity_id`, `platform_account_id` (nullable), `deliverable_type`, `amount`, `currency`(default INR), `unit_quantity`, `duration_minutes` (nullable), `negotiable`, `includes_production`, `includes_editing`, `usage_rights_included`, `usage_rights_days` (nullable), `exclusivity_included`, `travel_included`, `taxes_extra`, `notes`, `valid_from`, `valid_until`, `visibility`, `source_type`, `creator_confirmed_at`, `updated_at`. Card-level flags: accepts paid (y/n), rates negotiable (y/n), rate last updated, rate-card visibility, commercial contact (self/agent/manager).
+**Normalized into two tables** (card-level vs deliverable-level):
+- **`ci_creator_rate_card`** (card) — `rate_card_id`, `identity_id`, `platform_account_id` (nullable), `status`(active|archived), `currency` (ISO-4217, default INR), `negotiable`, `accepts_paid`, `visibility`, `commercial_contact_type`(self|agent|manager), `valid_from`, `valid_until`, `confirmed_at`, `updated_at`.
+- **`ci_creator_rate_card_item`** (deliverable line) — `rate_card_item_id`, `rate_card_id`, `deliverable_type`, `amount` (**≥ 0**), `unit_quantity` (**> 0**), `duration_minutes` (nullable), `includes_production`, `includes_editing`, `usage_rights_included`, `usage_rights_days` (nullable), `exclusivity_included`, `travel_included`, `taxes_extra`, `notes`. **`unique(rate_card_id, deliverable_type)`** prevents duplicate deliverables within a card.
 
 **Deliverable types:** IG Reel, IG Collab Reel, IG Static Post, IG Carousel, IG Story (single), IG Story (set), IG Live, Brand/store/restaurant visit, Event appearance, Event hosting, UGC video (no posting), UGC photo set, Usage-rights add-on, Exclusivity add-on, Travel/outstation add-on, Custom.
 
@@ -263,7 +266,7 @@ Dedupe by idempotency key; a differing same-day observation creates **another im
 
 ## 17. Audience-intelligence model
 
-**`ci_audience_observations`** distinguishes **follower / reached / engaged** audiences and stores **separate marginal breakdown rows** (age, gender, country, city). Columns: `identity_id`, `platform_account_id`, `metric_name`, `audience_type`, `breakdown_type`, `dimension_key`, `dimension_value`, `value_count`, `calculated_percentage`, `period`, `timeframe`, `observed_at`, `captured_at`, `source`, `api_version`, `run_id`, `status`(available|suppressed|insufficient_audience|permission_missing|token_expired|api_error), `suppression_reason`, `sample_size`/`audience_total`, `raw_payload_reference`/`response_hash`.
+**`ci_audience_observations`** distinguishes **follower / reached / engaged** audiences and stores **separate marginal breakdown rows** (age, gender, country, city). Columns use the **canonical raw-observation names** (§13/§14.G — no parallel `observed_at`/`run_id`): `identity_id`, `platform_account_id`, `metric_name`, `audience_type`, `breakdown_type`, `dimension_key`, `dimension_value`, `value_count`, `calculated_percentage`, `period`, `timeframe`, `source_observed_at`, `captured_at`, `source`, `api_version`, `ingest_run_id`, `source_record_id`, `payload_hash`, `idempotency_key`, `status`(available|suppressed|insufficient_audience|permission_missing|token_expired|api_error), `suppression_reason`, `sample_size`/`audience_total`, `raw_payload_reference`/`response_hash`.
 
 **Marginal vs joint:** Meta may return marginals only. Geek **must not** claim a joint intersection ("women 25–34 in Bangalore") unless Meta explicitly returns it. **No estimated joint segments at launch;** if ever estimated later, label **`predicted`** with method + confidence, never an observed fact. Audience data is **never** written into creator personal demographics (§5).
 
@@ -282,7 +285,7 @@ Dedupe by idempotency key; a differing same-day observation creates **another im
 
 ## 19. Feature store & scoring
 
-Provenance envelope on every non-observed value: `method`/`model_version`, `computed_at`, `window`, `sample_size`, `confidence`, `is_estimate`, `inputs`, `run_id`, `status`(ok|insufficient_data|unavailable|missing_permission|token_expired|api_error). Tiers: **observed / derived / predicted**. `ci_metric` compute writes **new** rows; unavailable is `unavailable`, never `0`.
+Provenance envelope on every non-observed value: `method`/`model_version`, `computed_at`, `window`, `sample_size`, `confidence`, `is_estimate`, `inputs`, `compute_run_id` (distinct from the raw `ingest_run_id`), `status`(ok|insufficient_data|unavailable|missing_permission|token_expired|api_error). Tiers: **observed / derived / predicted**. `ci_metric` compute writes **new** rows; unavailable is `unavailable`, never `0`.
 
 **Six separate, explainable measures (never one blend):** Creator Performance · Reliability · Brand-Safety · **Fraud Probability** (labelled estimate) · **Creator Intelligence Confidence** · **Verified Data Coverage**. Disabling a capability / withdrawing a permission lowers **only Confidence and Coverage** — never auto-reduces Performance, raises Fraud, labels untrustworthy, or fabricates a zero. **Profile Completion is separate and never influences** Performance/Fraud/Brand-Safety/ROI/authenticity/reliability/Intelligence Confidence. Publishing & Scheduling is operational (no score effect). Response speed alone is never quality.
 
@@ -336,9 +339,11 @@ Additive: nullable FK columns on `public` tables; dual-write; backfill; verify; 
 
 ## 25. Implementation phases (single canonical sequence)
 
-- **Phase 0A — Dark foundations:** `intel`/`private`/`api` schemas; identity/account/connection/operator/org model; **private profile model**; **professional profile model**; merge ledger; permission/control model (`ci_app_scope_capability` + `ci_scope_grant` + `ci_capability_switch` + `ci_processing_consent`); Vault; API boundary; RLS; pgTAP; feature flags. *No user-visible change.*
-- **Phase 0B — Instagram connection release:** one-click all-five OAuth; secure state; connection creation; permission verification; **initial ingestion**; **profile-draft creation**; **Meta prefill**; **profile-completion experience**; Data Access settings; existing-user reconnect/acknowledgement.
-- **Phase 1 — Creator Profile:** personal/contact profile; OTP/email verification; address book; skills/resources; brand history (+ mention review); barter preferences; paid rate card; dream brands; provenance badges; profile completion.
+> **Release-packaging rule (authoritative).** The creator-profile **backend and UI are built dark, behind feature flags, in Phase 0A/0B and ship as part of the Phase-0B release package** — the profile must exist *before* the new Instagram connection journey is publicly enabled, never built after users are routed into it. The "Phase 1" grouping below is a work breakdown, **not** a release that follows a live connection journey.
+
+- **Phase 0A — Dark foundations *(APPROVED — in progress; migrations added in `supabase/migrations/`, not applied remotely)*:** `intel`/`private`/`api` schemas; identity/account/connection/operator/org model; **private profile model**; **professional profile model** (incl. normalized rate card + profile-image reference); merge/unmerge ledger (append-only); permission/control model (`ci_app_scope_capability` + `ci_scope_grant` + `ci_capability_switch` + `ci_processing_consent` + `ci_profile_visibility`); **separated private/professional provenance**; RLS + least-privilege grants; pgTAP; feature flags. Vault wiring and the exposed `api` surface land in 0B. *No user-visible change.*
+- **Phase 0B — Instagram connection release (ships the profile backend + UI, flag-gated):** one-click all-five OAuth; secure state; connection creation; permission verification; **initial ingestion**; **profile-draft creation**; **Meta prefill**; **profile-completion experience**; Data Access settings; existing-user reconnect/acknowledgement; the `api` RPC surface + Vault.
+- **Phase 1 — Creator Profile (work breakdown, released with 0B):** personal/contact profile; OTP/email verification; address book; skills/resources; brand history (+ mention review); barter preferences; paid rate card; dream brands; provenance badges; profile completion.
 - **Phase 2 — Observed intelligence ingestion:** immutable account/media/audience observations; queue; latest views; capability verification.
 - **Phase 3 — Brand & campaign relationships:** canonical brands; org-brand relationships; campaign participation; campaign-verified brand experience; commercials.
 - **Phase 4 — Derived feature store:** performance, audience, content, sentiment, reliability, confidence, coverage.
@@ -394,6 +399,6 @@ Additive-by-construction: `intel`/`private`/`api` objects can be disabled/droppe
 | 17 | Capability matrix versioned; `public_profile`/`email` excluded from audience | **PASS** (field verification: **HOLD** — runtime) |
 | 18 | KMS custody / notice copy / PKCE specifics / product-policy defaults | **HOLD** — §28 |
 
-**Overall: PASS to enter Phase 0A** once §28 Phase-0A infra items (KMS custody decision recorded as Vault-for-now, `api` grant/exposure policy, merge threshold) are signed off. All other **HOLD** items are legal/DPO or runtime-verification gates bound to specific later phases.
+**Overall: Phase 0A is APPROVED and under way.** The dark database foundation (schemas, identity/profile/control tables, RLS, least-privilege grants, pgTAP) exists as additive Supabase migrations in `supabase/migrations/` (created locally, **not applied to any remote project**). Phase-0A infra decisions are recorded as decided (Vault for token secrets, Supabase-managed root-key custody for now, exact-verified-ID auto-merge, pgmq subject to load test). The remaining **HOLD** items (external-KMS review, final legal retention durations, Meta runtime capability verification, pgmq scale test) are later-phase gates and **do not block** the dark foundation.
 
 *End of specification. This is the single canonical v1.1 design; there is no competing model elsewhere in this document. Implementation is intentionally deferred.*
