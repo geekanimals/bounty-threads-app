@@ -48,6 +48,23 @@ Messaging inherits **every** non-negotiable of the base document — especially 
 
 ---
 
+## Amendment B (2026-09-18, Prompt 1C): Final consent model — one-time, all-five connection
+
+**Supersedes** every earlier suggestion of progressive consent, staged permission requests, a pre-OAuth permission-selection page, per-permission toggles *before* the first Meta authorization, per-brand progressive grants, and multiple onboarding authorization journeys. **Product decision:** a **single, one-time Instagram connection that requests all five approved permissions together**, on the *existing* connect screen. After connecting, creators manage **internal Geek capability switches** — which are **distinct from Meta permission status** — under **Settings → Connected Accounts → Instagram → Data Access**.
+
+Experience target: **Connect once → approve Meta permissions → intelligence builds automatically → manage access later only if desired.** Backend enforcement stays robust even though the UX is one click.
+
+**Sections changed by this amendment:**
+- **§6.3** — OAuth reframed: one request for all five; no staged flows; existing users reconnect **once** (migration).
+- **§11** — consent lifecycle rewritten to the one-time model + capability switches (removes progressive/per-brand grants).
+- **§14** — Phase 0/2 updated (single all-five scope string; Data Access page; capability switches; existing-user reconnect).
+- **§15** — acceptance tests reference §18.12.
+- **§18 (new)** — the authoritative Prompt 1C spec: connection flow, disclosure copy, final OAuth flow, Data Access settings, capability entity + semantics, permission-specific warning copy, the **six-measure** scoring/confidence model, brand-side display, re-enable, disconnect, and existing-user migration.
+
+Still bound by the six non-negotiables — in particular, the six measures in §18.7 are **distinct, explainable indices, not one opaque blended score** (#6), and unavailable data is **marked unavailable, never zero** (#7).
+
+---
+
 ## 1. Existing-state findings
 
 ### 1.1 What exists today (inspected, not assumed)
@@ -302,13 +319,15 @@ Legend: **Own** = only their own identity's data · **Org** = identities linked 
 
 All five Instagram scopes are **approved by Meta**: `instagram_business_basic`, `instagram_business_manage_insights`, `instagram_business_manage_comments`, `instagram_business_content_publish`, **`instagram_business_manage_messages`** (new). `public_profile` and `email` are **renewed**.
 
-### 6.3 OAuth request gap (must be closed before messaging can be granted)
+### 6.3 OAuth request gap → single all-five request (revised by Amendment B)
 
-The live OAuth scope string requests only **four** of the five: `instagram_business_basic`, `instagram_business_content_publish`, `instagram_business_manage_insights`, `instagram_business_manage_comments`. It **omits `instagram_business_manage_messages`**. Therefore:
+The live OAuth scope string requests only **four** of the five: `instagram_business_basic`, `instagram_business_content_publish`, `instagram_business_manage_insights`, `instagram_business_manage_comments`. It **omits `instagram_business_manage_messages`**.
 
-- **No creator has granted messaging yet** — even though Meta approved it.
-- Closing the gap = add the scope to the authorize URL's scope string (an implementation task for Phase 0; **not done in this step**).
-- **Existing creators must reconnect** to grant the new scope; a new connection grants it up front. Reconnection status is surfaced from `ci_scope_grant` (e.g. an inbox banner: "Reconnect Instagram to enable campaign messaging"). Messaging features stay dark for any creator without a **currently valid** messaging grant, and that dark state is labelled `missing_permission`, never `no_response`.
+**Final decision (Prompt 1C):** the fix is a **single scope-string change** so the *one existing* connect flow requests **all five together** (§18.3). No staged flow, no pre-OAuth selection page, no multiple journeys. Consequences:
+
+- **No creator has granted messaging yet** — even though Meta approved it — because the current string omits it.
+- The scope string becomes exactly: `instagram_business_basic,instagram_business_manage_insights,instagram_business_manage_comments,instagram_business_manage_messages,instagram_business_content_publish` (Phase 0; **not implemented in this step**).
+- **Existing creators reconnect once** to grant the new scope (migration, §18.11); a new connection grants all five up front. Reconnect status is surfaced from `ci_scope_grant` (e.g. a banner: "Reconnect Instagram to enable campaign messaging"). Messaging features stay dark for any creator without a **currently valid** messaging grant, labelled `missing_permission`, never `no_response`.
 
 ### 6.4 Capability → feature matrix
 
@@ -395,11 +414,13 @@ Every value in the engine is tagged `tier`:
 
 ## 11. Privacy & consent lifecycle
 
-1. **Grant** — at Instagram connect (scopes already requested today). Record `ci_consent` with `scope`, `purpose`, and default `granted_to_org = null` (own workspace). Sharing to a **brand** requires an explicit additional grant or an approved campaign participation.
-2. **Minimize** — store Meta **aggregate** demographics only; store message **timing**, not content; retention-limit comment text; never store raw tokens outside `social_tokens`.
+> **Revised by Amendment B (Prompt 1C).** Consent is a **one-time, all-five Instagram connection** (no progressive/staged/per-brand grants). Ongoing creator control is via **internal Geek capability switches**, which are **distinct from Meta permission status**. The authoritative spec — connection flow, disclosure copy, Data Access page, capability semantics, warnings, scoring, brand display, disconnect, migration — is **§18**. This section keeps the underlying data-protection invariants.
+
+1. **Grant (one-time)** — at Instagram connect the creator approves **all five** Meta permissions together (§18.3). Record grant per scope in `ci_scope_grant` (status model, §6.1) and a connection consent record in `ci_consent` (`scope`, `purpose`, `consent_version`). Brand visibility is governed by **org-scope RLS + capability state + aggregation rules** (§18.8), **not** per-brand grant toggles.
+2. **Minimize** — store Meta **aggregate** demographics only; store message **timing/metadata**, not content (content only if the inbox needs it, TTL'd — §17.7); retention-limit comment text; never store raw tokens outside `social_tokens`.
 3. **No sensitive inference** — the engine must not infer ethnicity, religion, health, sexual orientation, or re-identify individual audience members. Category/geo features use Meta aggregates and public post text only.
 4. **Purpose limitation** — metrics computed for evaluation/ranking; not sold, not cross-purposed.
-5. **Revoke** — flips `ci_consent.revoked_at`; `ci-ingest` stops; a purge job removes/anonymizes that identity's raw + derived rows within the SLA and cascades to `ci_metric`, `ci_ranking_result`. Wired to the existing `data-deletion.html` flow and Meta's data-deletion callback.
+5. **Capability disable vs. disconnect (two distinct levels)** — **Disabling a capability** (§18.4) is an *internal Geek switch*: it stops that capability's API calls/ingestion and excludes its data from future intelligence, records `{date, user, consent_version}`, and applies the stated historical-data retention/deletion treatment — but it does **not** claim the Meta permission was revoked unless Geek actually revoked it via a supported Meta mechanism. **Disconnect Instagram** (§18.10) is full removal: `ci_scope_grant`/`ci_consent` revoked, `ci-ingest`/`ci-messaging-sync` stop, and a purge job removes/anonymizes raw + derived rows within the SLA, cascading to `ci_metric`, `ci_ranking_result`, and messaging tables. Wired to the existing `data-deletion.html` flow and Meta's data-deletion callback.
 6. **Access / export** — `ci_data_request` supports subject access and export; every ingestion and admin action is already audited (`audit_log`, `ci_ingest_run`).
 7. **Fraud fairness** — estimates are labeled, evidenced, and appealable (a creator can contest; an override is recorded with provenance).
 
@@ -460,7 +481,7 @@ All are `SECURITY DEFINER`, re-check `is_platform_admin()`/`my_org()`/`ci_consen
 
 Messaging is **woven into** these phases, not bolted on as a separate system: it reuses the identity spine, the consent model, the provenance envelope, `ci_metric`, and the ranking pipeline.
 
-- **Phase 0 — Foundations (no behaviour change):** create `intel` schema; `ci_creator_identity`, `ci_identity_link`, `ci_consent`, `ci_ingest_run`; feature flags. Seed identities from `social_accounts` + shadow identities from `creators`. **Messaging:** add the **`ci_scope_grant`** registry; **add `instagram_business_manage_messages` to the OAuth scope string**; add the reconnect prompt/banner surfaced from scope status. *Ship dark.*
+- **Phase 0 — Foundations (no behaviour change):** create `intel` schema; `ci_creator_identity`, `ci_identity_link`, `ci_consent`, `ci_ingest_run`; feature flags. Seed identities from `social_accounts` + shadow identities from `creators`. **Messaging/consent (Amendment B):** add the **`ci_scope_grant`** registry and the **`ci_capability_switch`** table (internal toggles, §18.4); change the *single* OAuth scope string to request **all five** together (§18.3); add the first-run disclosure copy beside the existing Connect button (§18.2); build **Settings → Connected Accounts → Instagram → Data Access** (§18.5); add the reconnect banner surfaced from scope status. *Ship dark.*
 - **Phase 1 — Observed time-series:** `ci-ingest` + append-only snapshot tables; backfill seed from `social_accounts`; daily cron. **Messaging:** stand up the **Messaging webhook receiver** + **`ci-messaging-sync`** job writing **minimised** `ci_ig_conversations` / `ci_ig_messages` / `ci_ig_message_events` (gated on a *valid* messaging grant); operational inbox read path (audited, consent-checked). Verify idempotency & provenance. *Still no user-facing scoring change.*
 - **Phase 2 — Additive IDs & dual-write:** add nullable FK columns (Section 4); app dual-writes; backfill `ci_identity_link`; reconcile. **Messaging:** `ci_conversation_campaign_links` + `conversation_assignments` wired to existing campaigns; conversation **classification** (§17.3) runs; privacy filter drops non-campaign/private threads. Reads still legacy.
 - **Phase 3 — Feature store (observed→derived):** `ci_metric` + recipes for engagement, avg reach, category, geo, content quality, sentiment, reliability. **Messaging:** `ci_response_metric_snapshots` → responsiveness metrics (first-response time, acceptance/decline, follow-ups, unresolved) into `ci_metric` with `insufficient_data` handling and the *no-response ≠ missing-permission ≠ expired-token ≠ API-failure* distinctions (§17.5). Consent-gated `get_creator_intelligence`; brand sees **aggregated indicators only**.
@@ -481,6 +502,7 @@ Messaging is **woven into** these phases, not bolted on as a separate system: it
 - **Privacy:** revoke → purge within SLA verified end-to-end; export returns exactly the subject's data.
 - **Fraud presentation:** API refuses to emit a fraud value without `is_estimate`, confidence, and evidence.
 - **Load/cost:** insights ingestion at target creator count within API budget; NLP/vision within cost caps.
+- **Consent/connection/scoring (Amendment B):** the one-time all-five flow, capability switches, the six-measure scoring separation, unavailable≠zero, brand partial-verification display, and messaging privacy — full list in **§18.12**.
 
 ---
 
@@ -632,4 +654,119 @@ Instagram OAuth (scope string now includes manage_messages)
 
 ---
 
-*End of architecture. Implementation is intentionally deferred (constraints #10 and Amendment A). Amendment A revised §2.2, §3.6, §5, §6, and §14 and added §17; it introduced the messaging entity cluster and the `ci_scope_grant` registry. The next step remains review and sign-off on the identity spine (`ci_creator_identity`) and the consent model — now explicitly including the **messaging consent + granted-scope registry**, since responsiveness features and the campaign inbox both depend on a valid, per-creator messaging grant.*
+## 18. Consent, Capability Management & Scoring (Amendment B / Prompt 1C)
+
+Authoritative spec for the final consent model. **Design only — not implemented.**
+
+### 18.1 Connection UX principle
+
+One flow, one click, all five permissions. **Connect once → approve Meta permissions → intelligence builds automatically → manage access later only if desired.** No progressive consent, no staged requests, no pre-OAuth selection page, no per-permission toggles before the first authorization, no multiple onboarding journeys. Backend enforcement (§5, §6.1, §17.4) stays robust regardless.
+
+### 18.2 First-run disclosure copy (verbatim)
+
+Shown beside the *existing* Connect Instagram button:
+
+> **Build your verified Creator Intelligence profile.**
+> Geek uses your Instagram data to build a verified Creator Intelligence profile — content performance, audience & geographic strength, engagement quality, category affinity, organic brand mentions, campaign responsiveness, reliability, fraud & anomaly signals, and platform performance.
+> Links: **What Geek analyses** · **Privacy Policy** · **Data Use Policy** · **Disconnect Instagram**
+
+**Primary CTA:** **“Connect Instagram & Build My Profile”**
+
+On click → immediately open Meta's Instagram authorization requesting all five permissions together.
+
+### 18.3 Final OAuth flow
+
+1. **Scope string** (single request): `instagram_business_basic,instagram_business_manage_insights,instagram_business_manage_comments,instagram_business_manage_messages,instagram_business_content_publish`.
+2. Creator approves at Meta → callback with `code`.
+3. **Server** exchanges `code` for a token (Edge Function, service role). **Tokens never touch browser storage** (unchanged from today).
+4. **Verify granted permissions** (`debug_token` / token response) — Meta may grant a subset. Write per-scope status to **`ci_scope_grant`** (approved/requested/granted/valid/revoked, §6.1).
+5. **Store granted-permission state**; default all **capability switches** (§18.4) to *enabled* for scopes actually granted.
+6. **Auto-start initial ingestion** (`ci-ingest` + `ci-messaging-sync`) for granted+valid scopes.
+7. **Show ingestion progress** to the creator (a building-profile state).
+8. **Generate the first intelligence profile** once sufficient data is collected (else `insufficient_data`, not zeros).
+9. **Gracefully handle**: declined authorization, missing/partial permissions, expired tokens, revoked access — each a distinct, labelled state (never conflated with `no_response`/zero).
+
+### 18.4 Capability model (internal switches ≠ Meta permission)
+
+New table **`ci_capability_switch`**: `identity_id`, `capability`, `enabled bool`, `changed_at`, `changed_by`, `consent_version`, `retention_treatment`. **An internal Geek capability switch is distinct from Meta permission status** (`ci_scope_grant`). Capabilities:
+
+| Capability | Backing scope | Operational vs intelligence |
+|---|---|---|
+| Performance Insights | `…manage_insights` | intelligence |
+| Comment Intelligence | `…manage_comments` | intelligence |
+| Campaign Messaging Intelligence | `…manage_messages` | intelligence |
+| Publishing & Scheduling | `…content_publish` | **operational** (not a score input) |
+
+`instagram_business_basic` **cannot be disabled independently** (required for the connection); removal is via **Disconnect Instagram** only.
+
+**On disable, the engine:** stops all new API calls requiring that permission; stops related ingestion jobs; stops using that data in *future* intelligence calculations; records `{date, user, consent_version}`; applies & explains the historical-data retention/deletion treatment; **does not** silently re-enable; **does not** claim the Meta permission was revoked unless Geek revoked it via a supported Meta mechanism.
+
+### 18.5 Data Access settings design
+
+**Settings → Connected Accounts → Instagram → Data Access.** Lists the four toggles above (each: name, plain-language description, enabled state, last-changed) plus a distinct **Disconnect Instagram** action. Toggling **off** first shows the confirmation warning (§18.6). Toggling **on** follows §18.9 (resume vs. reauthorize). `basic` shown as always-on/required.
+
+### 18.6 Permission-specific warning copy (verbatim)
+
+General structure (shown before any disable):
+
+> **Reduce Creator Intelligence coverage?**
+> Turning off **[capability]** will reduce the Instagram information Geek can verify. Your account will remain active, but your Creator Intelligence Confidence may decrease and brands may see fewer verified signals when evaluating your profile.
+> Buttons: **Keep Enabled** · **Turn Off [Capability]**
+
+Per-capability impact line:
+
+- **Performance Insights** — “Turning this off prevents verification of reach, impressions, audience composition and content performance. This materially reduces Creator Intelligence Confidence.”
+- **Comment Intelligence** — “Turning this off prevents ongoing analysis of comment quality, sentiment, engagement authenticity and community response.”
+- **Campaign Messaging Intelligence** — “Turning this off prevents Geek from calculating campaign response times and communication-reliability signals.”
+- **Publishing and Scheduling** — “Turning this off disables Geek publishing, scheduling and campaign-posting workflows.” *(Operational only — must not lower authenticity or performance scores.)*
+
+### 18.7 Scoring, Confidence & Coverage model
+
+Six **separate, explainable** measures (not one opaque blend — honours #6):
+
+1. **Creator Performance Score** — reach/engagement/content performance (from insights).
+2. **Reliability Score** — responsiveness + fulfilment/deadline history.
+3. **Brand-Safety Score** — content/comment signals + conflict/exclusivity.
+4. **Fraud Probability** — a labelled **estimate** with evidence (never a fact).
+5. **Creator Intelligence Confidence** — how much the engine trusts its own read (function of coverage + freshness + sample size).
+6. **Verified Data Coverage** — % of intelligence categories currently verifiable given enabled capabilities + valid grants.
+
+**Rules (enforced in compute + presentation):** disabling a capability / withdrawing a permission may **only** lower **Confidence** and **Coverage**. It must **not** automatically reduce actual campaign Performance, increase Fraud Probability, label the creator untrustworthy, or fabricate a zero. **Unavailable data is marked `unavailable`, never `0`.** Operational Publishing has **no** effect on any score. Response speed alone is never equated with quality (§17.5).
+
+### 18.8 Brand-side display
+
+When capabilities are disabled, brands see:
+
+> **Partially verified Instagram profile — some intelligence signals are unavailable.**
+
+Plus: **Verified Data Coverage %**, **last successful verification date**, **available** intelligence categories, **unavailable** categories, and a **confidence level per prediction**. Language is **neutral** — never reveal or frame a creator's privacy choice judgmentally or negatively. Brands receive **derived/aggregated** signals only — never raw DMs, never message content or participants (§17.4).
+
+### 18.9 Re-enabling access
+
+If a creator switches a capability back on: **resume immediately** if the Meta permission is still granted and the token is valid; require **one** Meta reauthorization **only** if the permission is missing/expired/revoked — and **explain why** before redirecting. No silent re-enable.
+
+### 18.10 Full disconnection
+
+A separate **Disconnect Instagram** action. Before disconnecting, explain: new Instagram ingestion stops; the profile loses ongoing verification; Creator Intelligence Confidence decreases over time; Instagram-dependent campaign features stop; historical data is handled per the published retention/deletion policy. Executes the full revoke + purge path (§11.5).
+
+### 18.11 Existing-user migration
+
+Existing creators were connected under the four-scope string, so they lack a **valid messaging grant** and (initially) any `ci_capability_switch`/`ci_scope_grant` rows. Migration: (a) backfill `ci_scope_grant` from current `social_tokens`/`social_accounts` for the four scopes; default their capabilities enabled; (b) messaging capability shows **`missing_permission`** with a **one-time reconnect** banner ("Reconnect Instagram to enable campaign messaging"); (c) reconnect uses the same all-five flow and grants messaging up front; (d) no feature silently assumes messaging until a valid grant exists — responsiveness reports `missing_permission`, never `no_response`/zero.
+
+### 18.12 Acceptance tests
+
+- **One flow, all five:** the connect CTA opens exactly one Meta authorization whose scope string is the five-scope string; no pre-OAuth selection page exists.
+- **Token safety:** no Instagram token is ever present in browser storage/network to the client; exchange is server-side.
+- **Granted-state truth:** partial grants are recorded per scope; features gate on **valid**, not on app-approval.
+- **Auto-ingest + progress:** a successful connect starts ingestion and shows progress; first profile appears only after sufficient data, else `insufficient_data`.
+- **Capability disable:** stops API calls/ingestion for that scope, excludes its data from future calc, records `{date,user,consent_version}`, applies stated retention, never silently re-enables, and does not assert Meta revocation unless actually performed.
+- **Warning gate:** disabling shows the §18.6 warning with the correct per-capability impact; Publishing disable changes no score.
+- **Scoring separation:** disabling a capability lowers only Confidence + Coverage; Performance/Fraud/trust unchanged; unavailable metrics render `unavailable`, never `0`.
+- **Brand display:** partial profiles show the exact §18.8 copy + coverage %/last-verified/available/unavailable/per-prediction confidence, in neutral language; no raw DMs or message content/participants ever surface to brands.
+- **Re-enable:** resumes without reauth when grant valid; requires one reauth (with explanation) when missing/expired/revoked.
+- **Disconnect:** stops ingestion, executes purge per policy, shows the §18.10 explanation first.
+- **Migration:** existing users show messaging as `missing_permission` + reconnect banner; reconnect grants all five; nothing reports `no_response` for a missing grant.
+
+---
+
+*End of architecture. Implementation is intentionally deferred (constraint #10, Amendments A & B). Amendment A revised §2.2, §3.6, §5, §6, §14 and added §17 (messaging + `ci_scope_grant`). Amendment B (Prompt 1C) revised §6.3, §11, §14, §15 and added §18 — locking the final consent model to a one-time, all-five Instagram connection with post-hoc internal capability switches, a six-measure scoring model where permission withdrawal only lowers Confidence & Coverage, and unavailable-≠-zero throughout. The next step remains review and sign-off on the identity spine (`ci_creator_identity`), the consent model (`ci_scope_grant` + `ci_capability_switch` + `ci_consent`), and the six-measure scoring separation — everything else depends on them.*
