@@ -29,6 +29,25 @@ The engine must eventually serve: account & media time-series insights; campaign
 
 ---
 
+## Amendment A (2026-09-18): Instagram Messaging & Creator Responsiveness
+
+**Trigger.** Meta has now **approved all five** Instagram permissions for this app — adding **`instagram_business_manage_messages`** to the four already in use — and separately **renewed `public_profile` and `email`**. Two facts drive this amendment and must not be conflated:
+
+- **App approval ≠ creator consent.** Meta approving a scope only makes it *requestable*. Each creator still has to grant it, per account.
+- **The live OAuth scope string does not yet request `instagram_business_manage_messages`.** (It currently requests `instagram_business_basic`, `instagram_business_content_publish`, `instagram_business_manage_insights`, `instagram_business_manage_comments`.) So **no creator has granted messaging yet**, and existing creators must **reconnect** to grant it. This gap is now tracked as a first-class status (see revised §6).
+
+**Sections changed by this amendment (exact list also reproduced in the closing changelog):**
+- **§2.2 Data flow** — added the messaging ingestion path.
+- **§3.6 ER model** — registered the messaging entity cluster (detailed in §17.2).
+- **§5 RLS matrix** — added rows for conversations, individual messages, response metrics, campaign-linked metadata, messaging audits, and deletion/consent requests (revised matrix + notes).
+- **§6 Meta capability matrix** — reworked to hold *approved / requested / granted / valid / revoked* as **distinct, non-interchangeable** statuses, backed by a per-creator scope registry, and to document the OAuth gap + reconnection.
+- **§14 Implementation sequence** — messaging folded into the existing phases (not a separate subsystem).
+- **§17 (new)** — Instagram Messaging & Creator Responsiveness: messaging design, entities, conversation classification, privacy boundary, responsiveness features, messaging data flow, and the storage decision (data-minimisation default).
+
+Messaging inherits **every** non-negotiable of the base document — especially #2 (consented data only), #3 (tokens & private content stay server-side), #5 (no sensitive inference), #6 (no opaque score), and #7 (provenance envelope on every derived value).
+
+---
+
 ## 1. Existing-state findings
 
 ### 1.1 What exists today (inspected, not assumed)
@@ -129,6 +148,14 @@ Meta Graph ──► ci-ingest (Edge, service role, append-only)
 
 External conversion signals (UTM / promo / pixel) ──► ci_conversions ──► CPA/ROAS metrics
 Agency-entered negotiated terms ──► ci_commercials (private) ──► effective-cost metrics
+
+Instagram Messaging (webhooks + Conversations API)
+   └► granted-scope registry gate (ci_scope_grant) ──► ci-messaging-sync (Edge, service role)
+         └► ci_ig_conversations / ci_ig_messages   (MINIMISED: platform ids, direction,
+              timestamps, delivery/read state; content encrypted, stored only if inbox needs it)
+         └► conversation classification ──► privacy filter (campaign-operational only)
+         └► ci_ig_message_events (response-event LEDGER, no text)
+         └► ci_response_metric_snapshots ──► ci_metric (responsiveness, with provenance)
 ```
 
 **Invariants:** raw ingestion is append-only and written only by service-role Edge Functions; the browser never touches raw metric tables directly — only consent- and RLS-gated views/RPCs; tokens never leave `social_tokens`.
@@ -188,6 +215,15 @@ public.campaigns 1─* ci_conversions *─1 ci_creator_identity
 ci_ranking_run 1─* ci_ranking_result *─1 ci_creator_identity
 ci_creator_identity 1─* ci_consent
 every raw/derived row ──► ci_ingest_run (provenance)
+
+— messaging cluster (see §17.2) —
+ci_creator_identity 1─* ci_scope_grant           (per-scope status: approved/requested/granted/valid/revoked)
+ci_creator_identity 1─* ci_ig_conversations 1─* ci_ig_messages
+ci_ig_conversations 1─* ci_ig_message_events     (response-event ledger, no text)
+ci_ig_conversations *─1 conversation_assignments (→ members)
+ci_ig_conversations *─* public.campaigns         (via ci_conversation_campaign_links)
+ci_creator_identity 1─* ci_response_metric_snapshots ──► ci_metric (responsiveness)
+ci_messaging_sync_jobs ──► ci_ingest_run (provenance)   ci_creator_identity 1─* ci_messaging_consent_events
 ```
 
 ---
@@ -232,15 +268,49 @@ Legend: **Own** = only their own identity's data · **Org** = identities linked 
 | `ci_rank(brief)` (ranking) | — | Consented pool | Org pool | Org pool | Org pool | All |
 | `nl_search()` | — | Consented pool | Org pool | Org pool | Org pool | All |
 | `ci_consent` (grant/revoke) | Own | — | request only | request only | request only | All (view) |
-| raw tokens (`social_tokens`) | — | — | — | — | — | — (service role only) |
+| **`ci_ig_conversations`** (metadata: ids, category, timing, state — **no text**) | Own | — | Org **campaign-operational** convs, when authorised | Org (same) | Org (assigned talent) | Metadata only |
+| **`ci_ig_messages`** — **message content** | Own | — | Authorised campaign convs **only**, audited | Org (same) | Org (same) | **No routine access** (break-glass only, audited) |
+| **`ci_ig_message_events`** (response-event ledger, no text) | Own | — | Org (campaign) | Org | Org | All (no text) |
+| **campaign-linked message metadata** (`ci_conversation_campaign_links`) | Own | Own campaigns (metadata only) | Org (their campaigns) | Org | Org | All |
+| **derived response metrics** (`ci_response_metric_snapshots` / responsiveness `ci_metric`) | Own | **Aggregated indicators only** | Org | Org | Org | All (values, no text) |
+| **`conversation_assignments`** | Own (who's assigned) | — | Org | Org | Org | All |
+| **messaging audit** (`audit_log`, msg-content access) | Own actions | — | Org (their workspace) | Org | Org | All |
+| **messaging consent / deletion** (`ci_messaging_consent_events`, `ci_data_request`) | Own (manage) | — | request / view | request / view | request / view | All (view) |
+| raw tokens (`social_tokens`) & private message content at rest | — | — | — | — | — | — (service role only) |
 
-**Notes.** (a) A **brand** never sees a creator's data merely because the creator exists — only when the creator **consented to that brand** or **participated in that brand's campaign**. (b) **Agency/corporate/manager** see identities linked to *their own roster* (`org_id`), matching today's `creators` RLS. (c) Every cross-identity read (ranking, search) runs through a `SECURITY DEFINER` function that filters by consent + org before returning — the browser cannot enumerate identities.
+**Notes.** (a) A **brand** never sees a creator's data merely because the creator exists — only when the creator **consented to that brand** or **participated in that brand's campaign**. (b) **Agency/corporate/manager** see identities linked to *their own roster* (`org_id`), matching today's `creators` RLS. (c) Every cross-identity read (ranking, search) runs through a `SECURITY DEFINER` function that filters by consent + org before returning — the browser cannot enumerate identities. (d) **Brands never see raw DMs** — only aggregated response/reliability indicators. (e) **Super admins have no routine access to message content**; content reads are a separate, break-glass, *always-audited* path, and even then metadata/aggregates are the default. (f) **Unrelated / private conversations are excluded from every scoring input** — the privacy filter drops them before the response ledger (§17.4). (g) Message **content** rows carry RLS with **no client policies** (service-role only, like `social_tokens`); the operational inbox reads them through an audited, consent-checked `SECURITY DEFINER` function, never directly.
 
 ---
 
-## 6. Meta data capability matrix
+## 6. Meta permission capability matrix
 
-Mapping the **approved** permissions to what is actually obtainable, and where each engine feature's raw inputs come from. Approved scopes: `instagram_business_basic`, `instagram_business_manage_insights`, `instagram_business_manage_comments`, `instagram_business_content_publish`, `instagram_business_manage_messages`, `public_profile`, `email`.
+> **Revised by Amendment A.** A permission is not one boolean. Five statuses below are **distinct and must never be treated as interchangeable** — most visibly, *app-approved* is not *creator-granted*, and *granted* is not *currently valid*. The engine tracks all five per creator in a **granted-scope registry** (`ci_scope_grant`, §17.2); features gate on **valid grant**, not on app approval.
+
+### 6.1 The five permission statuses (per creator, per scope)
+
+| Status | Meaning | Where tracked | Feature gate uses it? |
+|---|---|---|---|
+| **Approved by Meta** | App may *request* this scope in OAuth | App config (constant) | No — necessary, not sufficient |
+| **Requested during OAuth** | The scope is in the live authorize URL's scope string | OAuth config → mirrored to `ci_scope_grant.requested` | No — determines what a creator is *asked* for |
+| **Granted by creator** | This creator approved the scope at connect | `ci_scope_grant.granted_at` (from token exchange / `debug_token`) | Precondition |
+| **Currently valid** | Granted **and** token unexpired/unrevoked | `ci_scope_grant.valid` (derived from `social_tokens.expires_at` + last check) | **Yes — the real gate** |
+| **Revoked / expired** | Previously valid, now not (creator removed the app, token lapsed, permission deauthorised) | `ci_scope_grant.revoked_at` / `valid=false` | Yes — disables features, triggers reconnect prompt |
+
+**Consequence:** the engine must always distinguish these. A missing responsiveness metric because a creator *never granted messaging* is a different fact from *token expired* — and both differ from *no messages exist* (§17.5 makes this explicit).
+
+### 6.2 App-approval state (verified 2026-09-18)
+
+All five Instagram scopes are **approved by Meta**: `instagram_business_basic`, `instagram_business_manage_insights`, `instagram_business_manage_comments`, `instagram_business_content_publish`, **`instagram_business_manage_messages`** (new). `public_profile` and `email` are **renewed**.
+
+### 6.3 OAuth request gap (must be closed before messaging can be granted)
+
+The live OAuth scope string requests only **four** of the five: `instagram_business_basic`, `instagram_business_content_publish`, `instagram_business_manage_insights`, `instagram_business_manage_comments`. It **omits `instagram_business_manage_messages`**. Therefore:
+
+- **No creator has granted messaging yet** — even though Meta approved it.
+- Closing the gap = add the scope to the authorize URL's scope string (an implementation task for Phase 0; **not done in this step**).
+- **Existing creators must reconnect** to grant the new scope; a new connection grants it up front. Reconnection status is surfaced from `ci_scope_grant` (e.g. an inbox banner: "Reconnect Instagram to enable campaign messaging"). Messaging features stay dark for any creator without a **currently valid** messaging grant, and that dark state is labelled `missing_permission`, never `no_response`.
+
+### 6.4 Capability → feature matrix
 
 | Permission | Provides (raw) | Feeds engine features |
 |---|---|---|
@@ -248,11 +318,11 @@ Mapping the **approved** permissions to what is actually obtainable, and where e
 | `instagram_business_manage_insights` | **account insights** (reach, impressions, profile_views, follower_count over time, accounts_engaged); **media insights** (reach, impressions, saved, likes, comments, shares, plays, total_interactions); **follower_demographics** (age·gender / country / city — *lifetime, aggregate, ≥100 followers*) | avg reach (with sample size), effective CPM/CPC base, geographic strength, category affinity (perf-weighted), content quality |
 | `instagram_business_manage_comments` | comments on the creator's media; mentions/tags | comment sentiment, organic brand mentions, audience-response quality |
 | `instagram_business_content_publish` | create/publish media (containers → publish) | *(publishing only — not analytics)* |
-| `instagram_business_manage_messages` | conversations/messages metadata | reliability & **response behaviour** (response time) — **metadata/timing only; message content not stored** |
+| **`instagram_business_manage_messages`** | **Instagram Conversations API + Messaging webhooks**: conversations, messages (id, direction, timestamp, delivery/read state, minimal content); the operational campaign inbox | **campaign inbox**; **creator responsiveness** (response times, acceptance/decline, follow-ups, conversion) — **derived from timing/metadata; raw content minimised & never scored** (§17) |
 | `public_profile` | basic public profile | identity resolution, media-kit fallback |
 | `email` | account email | account linkage, notifications |
 
-**Explicitly NOT available from Meta creator APIs (must be derived, estimated, or externally sourced):**
+### 6.5 Explicitly NOT available from Meta creator APIs (must be derived, estimated, or externally sourced)
 
 | Target metric | Why Meta can't give it | Our source |
 |---|---|---|
@@ -388,12 +458,14 @@ All are `SECURITY DEFINER`, re-check `is_platform_admin()`/`my_org()`/`ci_consen
 
 ## 14. Implementation sequence (do **not** start yet)
 
-- **Phase 0 — Foundations (no behaviour change):** create `intel` schema; `ci_creator_identity`, `ci_identity_link`, `ci_consent`, `ci_ingest_run`; feature flags. Seed identities from `social_accounts` + shadow identities from `creators`. *Ship dark.*
-- **Phase 1 — Observed time-series:** `ci-ingest` + append-only snapshot tables; backfill seed from `social_accounts`; daily cron. Verify idempotency & provenance. *Still no user-facing change.*
-- **Phase 2 — Additive IDs & dual-write:** add nullable FK columns (Section 4); app dual-writes; backfill `ci_identity_link`; reconcile. Reads still legacy.
-- **Phase 3 — Feature store (observed→derived):** `ci_metric` + recipes for engagement, avg reach, category, geo, content quality, sentiment, reliability; consent-gated `get_creator_intelligence`. Surface behind a flag with provenance UI.
-- **Phase 4 — Ranking & NL search:** `ci_brand`, `ci_campaign_participation`, `ci_commercials`; `ci_rank` + `nl_search`; effective CPM/CPC. Replace the client `matchScore()` heuristic.
-- **Phase 5 — Predicted & external:** `ci_conversions` ingestion (CPA/ROAS), fraud-risk **estimate** model, exclusivity/conflict detection. Full presentation contract enforced.
+Messaging is **woven into** these phases, not bolted on as a separate system: it reuses the identity spine, the consent model, the provenance envelope, `ci_metric`, and the ranking pipeline.
+
+- **Phase 0 — Foundations (no behaviour change):** create `intel` schema; `ci_creator_identity`, `ci_identity_link`, `ci_consent`, `ci_ingest_run`; feature flags. Seed identities from `social_accounts` + shadow identities from `creators`. **Messaging:** add the **`ci_scope_grant`** registry; **add `instagram_business_manage_messages` to the OAuth scope string**; add the reconnect prompt/banner surfaced from scope status. *Ship dark.*
+- **Phase 1 — Observed time-series:** `ci-ingest` + append-only snapshot tables; backfill seed from `social_accounts`; daily cron. **Messaging:** stand up the **Messaging webhook receiver** + **`ci-messaging-sync`** job writing **minimised** `ci_ig_conversations` / `ci_ig_messages` / `ci_ig_message_events` (gated on a *valid* messaging grant); operational inbox read path (audited, consent-checked). Verify idempotency & provenance. *Still no user-facing scoring change.*
+- **Phase 2 — Additive IDs & dual-write:** add nullable FK columns (Section 4); app dual-writes; backfill `ci_identity_link`; reconcile. **Messaging:** `ci_conversation_campaign_links` + `conversation_assignments` wired to existing campaigns; conversation **classification** (§17.3) runs; privacy filter drops non-campaign/private threads. Reads still legacy.
+- **Phase 3 — Feature store (observed→derived):** `ci_metric` + recipes for engagement, avg reach, category, geo, content quality, sentiment, reliability. **Messaging:** `ci_response_metric_snapshots` → responsiveness metrics (first-response time, acceptance/decline, follow-ups, unresolved) into `ci_metric` with `insufficient_data` handling and the *no-response ≠ missing-permission ≠ expired-token ≠ API-failure* distinctions (§17.5). Consent-gated `get_creator_intelligence`; brand sees **aggregated indicators only**.
+- **Phase 4 — Ranking & NL search:** `ci_brand`, `ci_campaign_participation`, `ci_commercials`; `ci_rank` + `nl_search`; effective CPM/CPC. Responsiveness enters ranking as **one named, capped sub-signal** (never as quality by itself). Replace the client `matchScore()` heuristic.
+- **Phase 5 — Predicted & external:** `ci_conversions` ingestion (CPA/ROAS), fraud-risk **estimate** model, exclusivity/conflict detection, conversation-to-campaign conversion rate. Full presentation contract enforced.
 - **Cut-over:** per table, switch reads to id-paths only after reconciliation passes; retain legacy text columns ≥ N cycles.
 
 ---
@@ -423,4 +495,141 @@ All are `SECURITY DEFINER`, re-check `is_platform_admin()`/`my_org()`/`ci_consen
 
 ---
 
-*End of architecture. Implementation is intentionally deferred (constraint #10). The next step is review and sign-off on the identity spine (`ci_creator_identity`) and the consent model, which everything else depends on.*
+## 17. Instagram Messaging & Creator Responsiveness (Amendment A)
+
+Messaging is an **additive extension** of the same engine: same identity spine, same consent model, same provenance envelope, same explainable ranking. It exists to (a) give agencies a campaign-operational inbox and (b) derive **responsiveness** signals — **never** to expose or mine private conversations.
+
+### 17.1 Messaging architecture (components)
+
+- **Granted-scope gate.** Every messaging read/sync first checks `ci_scope_grant` for a **currently valid** `instagram_business_manage_messages` grant for that creator (§6.1). No valid grant → feature is `missing_permission`, and a reconnect prompt is surfaced. Nothing is synced.
+- **Webhook receiver.** A new Edge Function subscribes to Instagram **Messaging webhooks** (`messages`, `message_reactions`, delivery/read). Events are verified (signature), enqueued, and processed idempotently. Webhooks carry minimal payloads; the **Conversations API** backfills/repairs gaps.
+- **Message sync jobs.** `ci-messaging-sync` (service role) reconciles conversations/messages for creators with a valid grant, on webhook trigger + a periodic sweep (catch missed events, respect rate limits, resume from a cursor). Provenance via `ci_messaging_sync_jobs` → `ci_ingest_run`.
+- **Encrypted operational inbox.** Conversations/messages are stored **minimised** (§17.7). Any retained content is encrypted at rest and reachable only through an audited, consent-checked `SECURITY DEFINER` inbox function — never a direct table read, never the browser.
+- **Conversation classification.** Each conversation is categorised (§17.3). Only **campaign-operational** categories may flow into intelligence; everything else is filtered out before the ledger.
+- **Privacy filter.** Sits between classification and the response ledger. Drops `unrelated/private` and anything not tied to a campaign; strips content; emits **timing/metadata-only** events.
+- **Response-event ledger.** `ci_ig_message_events` records *events* (`inbound_received`, `first_response_sent`, `follow_up_sent`, `accepted`, `declined`, `resolved`) with timestamps and links — **no message text**. This is the substrate for responsiveness metrics.
+- **Conversation assignments.** `conversation_assignments` maps a campaign conversation to the responsible agency member (for SLA attribution and inbox routing).
+- **Campaign-conversation links.** `ci_conversation_campaign_links` ties a conversation to a `public.campaigns` row (many-to-many), so responsiveness is measured *per campaign context*, not on private chatter.
+- **Response-SLA events.** SLA breaches/targets are computed from the ledger (e.g. first-response > target) and stored as events feeding `agency response SLA` and `unresolved campaign conversations`.
+- **Consent & revocation events.** `ci_messaging_consent_events` append-only records grant/reconnect/revoke transitions specific to messaging, driving sync eligibility and deletion.
+- **Retention & deletion.** Content (if any) has the **shortest viable TTL**; a purge job removes content past TTL and on revoke/deletion, cascading to derived rows where required (§17.4, §17.7).
+
+### 17.2 Required entities (adapted to repo `ci_`/`intel` conventions)
+
+All in the `intel` schema; all raw/content tables are **service-role only** (RLS on, no client policies), read via audited functions. Names map to the brief's requested entities.
+
+| Brief entity | This design | Shape (minimised) |
+|---|---|---|
+| *(scope registry — new prerequisite)* | **`ci_scope_grant`** | `identity_id`, `member_id`, `platform`, `scope`, `requested bool`, `granted_at`, `valid bool`, `revoked_at`, `last_checked_at`, `source` |
+| instagram_conversations | **`ci_ig_conversations`** | `conversation_id` (platform id) PK, `identity_id`, `ig_thread_ref`, `counterparty_ref` (opaque/pseudonymised), `category` (§17.3), `is_campaign_operational bool`, `status`, `first_seen_at`, `last_event_at`, `msg_count` |
+| instagram_messages | **`ci_ig_messages`** | `message_id` (platform id) PK, `conversation_id`, `direction` (`inbound`\|`outbound`), `sent_at`, `delivery_state`, `read_state`, `content_ref null` (encrypted blob ref **only if inbox needs it**), `content_ttl_at` |
+| instagram_message_events | **`ci_ig_message_events`** | `id`, `conversation_id`, `event_type`, `at`, `campaign_id null`, `actor_member_id null` — **no text** |
+| conversation_assignments | **`conversation_assignments`** | `conversation_id`, `assigned_member_id` (→ members), `assigned_at`, `state` |
+| conversation_campaign_links | **`ci_conversation_campaign_links`** | `conversation_id`, `campaign_id` (→ public.campaigns), `linked_by`, `linked_at`, `link_method` |
+| creator_response_metric_snapshots | **`ci_response_metric_snapshots`** | `identity_id`, `as_of`, `window`, `metric_key`, `value_num`, `sample_size`, `confidence`, `status` (`ok`\|`insufficient_data`\|`missing_permission`\|`token_expired`\|`sync_error`), `run_id` |
+| messaging_sync_jobs | **`ci_messaging_sync_jobs`** | `job_id`, `identity_id`, `started_at`, `finished_at`, `cursor`, `status`, `events_processed`, `error`, `run_id` |
+| messaging_consent_events | **`ci_messaging_consent_events`** | `id`, `identity_id`, `event` (`granted`\|`reconnected`\|`revoked`\|`deleted`), `scope`, `at`, `evidence` |
+
+Responsiveness metrics also land in the shared **`ci_metric`** feature store (tier `derived`) so ranking and `get_creator_intelligence` treat them uniformly, each with the full provenance envelope.
+
+### 17.3 Conversation classification
+
+Every conversation gets exactly one category. Classification runs server-side (rule + model, versioned in the provenance envelope). **Only the campaign-operational categories (★) may contribute to Creator Intelligence**; the rest are inbox-only or excluded entirely.
+
+| Category | Contributes to intelligence? |
+|---|---|
+| ★ campaign invitation | Yes |
+| ★ active campaign | Yes |
+| ★ commercial negotiation | Yes (timing only; commercials themselves live in `ci_commercials`) |
+| ★ deliverable discussion | Yes |
+| ★ revision or approval | Yes |
+| ★ logistics | Yes |
+| support | No (operational inbox only) |
+| inbound brand enquiry | Yes, **only** once linked to a campaign; else inbox-only |
+| unrelated / private | **Never** — dropped by the privacy filter, excluded from scoring |
+| unclassified | **Never** used for scoring until confidently classified; may sit in inbox as "needs review" |
+
+**Rule:** a conversation influences responsiveness metrics **only** if `is_campaign_operational = true` **and** it is linked to a campaign (`ci_conversation_campaign_links`). Uncertainty defaults to *exclude*.
+
+### 17.4 Privacy boundary (enforced, not aspirational)
+
+- **Agencies** access **campaign conversations in their own workspace** when authorised (assignment/role), through the audited inbox function — scoped by `org_id` + campaign link.
+- **Creators** access **their own** conversations and their own derived metrics; they own the consent and deletion controls.
+- **Brands** see **aggregated response/reliability indicators only** — never a message, never a thread, never a counterparty. Aggregates respect a minimum sample size (no re-identification).
+- **Brands must never see raw creator DMs.** Enforced by RLS (no brand policy on content tables) + the aggregation-only read path.
+- **Super admins** have **no routine access to message content.** Content access is a separate **break-glass** path, always audited, and justified; day-to-day admin uses metadata/aggregates.
+- **Unrelated/private conversations cannot affect scoring** — filtered before the ledger; never reach `ci_metric`.
+- **Content minimisation & TTL:** full message content is **not retained longer than necessary** (§17.7); default is to store no content at all.
+- **Creator controls:** disconnect, revoke, delete, correct, and **dispute** (contest a derived metric) — each recorded with provenance; revoke/delete purge content + cascade derived rows.
+- **Auditing:** **every** access to message content is written to `audit_log` (actor, conversation, purpose, timestamp).
+- **Never log content:** message text must **never** be written to application logs, error traces, or analytics. Logs carry ids and event types only.
+- **Server-side only:** tokens and any private message content remain server-side; the browser receives inbox views and aggregates through consent-checked functions, never raw rows.
+
+### 17.5 New intelligence features (responsiveness)
+
+Each is a distinct `ci_metric` key (tier `derived`) with the full provenance envelope (`sample_size`, `confidence`, `window`, `method`/`model_version`, `computed_at`) and an explicit **`status`**:
+
+| Feature | metric_key | Notes |
+|---|---|---|
+| Campaign invitation response rate | `campaign_invite_response_rate` | responded invites ÷ invites |
+| Median first-response time | `first_response_time_median` | over campaign-operational convs |
+| p75 first-response time | `first_response_time_p75` | tail latency |
+| Acceptance rate | `campaign_acceptance_rate` | accepted ÷ decided |
+| Decline rate | `campaign_decline_rate` | declined ÷ decided |
+| Follow-ups before response | `follow_ups_before_response` | agency nudges needed |
+| Conversation-to-campaign conversion rate | `conversation_to_campaign_rate` | convs that became live participation |
+| Unresolved campaign conversations | `unresolved_campaign_conversations` | open past SLA |
+| Creator last campaign response | `last_campaign_response_at` | recency |
+| Agency response SLA | `agency_response_sla` | attributed to the agency member, not the creator |
+| Sample size / confidence / window | (envelope on every row) | mandatory |
+
+**Non-negotiable distinctions (encoded in `status`, never collapsed to a single "no response"):**
+
+- **`no_response`** — messages exist, creator did not reply. A real signal.
+- **`missing_permission`** — creator never granted (a valid) `instagram_business_manage_messages`. **Not** a responsiveness fact; shows a reconnect prompt.
+- **`token_expired`** — grant lapsed/revoked; sync paused. **Not** a responsiveness fact.
+- **`sync_error`** — API/webhook failure or backlog. **Not** a responsiveness fact; ops alert.
+- **`insufficient_data`** — below the minimum sample size for the window → the metric **returns `insufficient_data`**, not a number, and does not enter ranking.
+
+**And:** **response speed is not creator quality by itself.** Responsiveness is one capped sub-signal in brief-specific ranking (§10/§17.6); it is never presented as an overall grade, and fast replies never override poor fit or content signals.
+
+### 17.6 Updated data flow (messaging path)
+
+```
+Instagram OAuth (scope string now includes manage_messages)
+  → granted-scope registry (ci_scope_grant: approved≠requested≠granted≠valid≠revoked)   ─ gate ─►
+  → Conversations API + Messaging webhooks
+  → ci-messaging-sync (service role, idempotent, provenance via ci_messaging_sync_jobs)
+  → encrypted operational inbox (ci_ig_conversations / ci_ig_messages, MINIMISED, audited reads)
+  → conversation classification (§17.3)
+  → privacy filter (campaign-operational + campaign-linked only; content stripped)
+  → response-event ledger (ci_ig_message_events — timing/metadata, NO text)
+  → aggregated creator responsiveness features (ci_response_metric_snapshots → ci_metric, with status + confidence)
+  → explainable brief-specific ranking (responsiveness = one named, capped sub-signal)
+```
+
+### 17.7 Architecture decision — store metadata, not message text (data-minimisation default)
+
+**Decision:** Geek OS **does not store full message text by default.** For each message it stores: **platform message id, direction, timestamp, conversation category, campaign link, response timing, and delivery/read state where available.** **Limited encrypted content is stored only when strictly required for inbox functionality**, under the shortest viable TTL, encrypted at rest, access audited.
+
+**Why:** it satisfies both goals (operational inbox + responsiveness) from **metadata and timing alone**; it minimises breach blast-radius and regulatory surface; it makes revoke/delete cheap and complete; and it structurally prevents private content from ever reaching scoring (the ledger is text-free). Full-text retention would add risk and compliance burden for **no** additional intelligence value, since responsiveness is a function of *events and timing*, not content.
+
+**Consequences:** the inbox shows recent content live from the API (fetch-on-view) rather than a long-term text store; content columns (`ci_ig_messages.content_ref`) are nullable and TTL'd; classification runs on transient content server-side and persists only the resulting category, never the text; deletion is a metadata + short-TTL-content operation.
+
+**Rejected alternative:** *store full conversation text for richer NLP.* Rejected — violates data minimisation (#2/#3/#5), enlarges breach/compliance exposure, complicates deletion, and yields no responsiveness signal that timing/events don't already provide.
+
+### 17.8 Messaging API contracts (design-level)
+
+| Contract | Kind | Purpose | Auth |
+|---|---|---|---|
+| `ig_messaging_webhook` | Edge (public, signed) | verify + enqueue Instagram webhook events | Meta signature |
+| `ci_messaging_sync(identity)` | Edge | reconcile conversations/messages for a valid-grant creator | service role / cron |
+| `get_campaign_inbox(campaign_id)` | RPC | audited, consent-checked inbox view (metadata + fetch-on-view content) | agency org + assignment |
+| `classify_conversation(conversation_id)` | Edge | server-side category (versioned) | service role |
+| `get_creator_responsiveness(identity_id)` | RPC | responsiveness `ci_metric` **with status + provenance**; brands get aggregates only | consent + RLS |
+| `record_messaging_consent(event)` / `revoke_messaging(identity)` | RPC | consent lifecycle + purge trigger | self (creator) |
+| `dispute_metric(metric_ref)` | RPC | creator contests a derived responsiveness value | self (creator) |
+
+---
+
+*End of architecture. Implementation is intentionally deferred (constraints #10 and Amendment A). Amendment A revised §2.2, §3.6, §5, §6, and §14 and added §17; it introduced the messaging entity cluster and the `ci_scope_grant` registry. The next step remains review and sign-off on the identity spine (`ci_creator_identity`) and the consent model — now explicitly including the **messaging consent + granted-scope registry**, since responsiveness features and the campaign inbox both depend on a valid, per-creator messaging grant.*
