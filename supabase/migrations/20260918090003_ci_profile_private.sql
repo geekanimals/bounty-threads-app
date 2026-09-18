@@ -4,7 +4,7 @@
 -- PII lives ONLY here. Never in intel. Age is NEVER stored (calculated from DOB).
 
 -- ---------- personal identity ----------
-create table if not exists private.creator_personal_profile (
+create table private.creator_personal_profile (
   identity_id          uuid primary key references intel.ci_creator_identity(identity_id) on delete cascade,
   first_name           text,
   last_name            text,
@@ -25,7 +25,8 @@ create table if not exists private.creator_personal_profile (
 
 -- DOB cannot be in the future (trigger, since current_date is not allowed in a CHECK)
 create or replace function private.tg_validate_personal()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql
+set search_path = pg_catalog as $$
 begin
   if new.date_of_birth is not null and new.date_of_birth > current_date then
     raise exception 'date_of_birth cannot be in the future';
@@ -33,12 +34,13 @@ begin
   return new;
 end;
 $$;
+revoke all on function private.tg_validate_personal() from public, anon, authenticated;
 drop trigger if exists personal_validate on private.creator_personal_profile;
 create trigger personal_validate before insert or update on private.creator_personal_profile
   for each row execute function private.tg_validate_personal();
 
 -- ---------- contact (E.164 WhatsApp; independent verification states) ----------
-create table if not exists private.creator_contact (
+create table private.creator_contact (
   identity_id             uuid primary key references intel.ci_creator_identity(identity_id) on delete cascade,
   whatsapp_e164           text check (whatsapp_e164 is null or whatsapp_e164 ~ '^\+[1-9]\d{6,14}$'),
   whatsapp_verified_at    timestamptz,
@@ -56,7 +58,7 @@ create table if not exists private.creator_contact (
 );
 
 -- ---------- delivery addresses (one default active address per identity) ----------
-create table if not exists private.creator_address (
+create table private.creator_address (
   address_id           uuid primary key default gen_random_uuid(),
   identity_id          uuid not null references intel.ci_creator_identity(identity_id) on delete cascade,
   line1                text,
@@ -75,13 +77,13 @@ create table if not exists private.creator_address (
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now()
 );
-create unique index if not exists creator_address_one_default_active_uq
+create unique index creator_address_one_default_active_uq
   on private.creator_address(identity_id)
   where is_default = true and deleted_at is null;
-create index if not exists creator_address_identity_idx on private.creator_address(identity_id);
+create index creator_address_identity_idx on private.creator_address(identity_id);
 
 -- ---------- private field provenance (personal/contact/address fields) ----------
-create table if not exists private.creator_profile_field_provenance (
+create table private.creator_profile_field_provenance (
   id                 uuid primary key default gen_random_uuid(),
   identity_id        uuid not null references intel.ci_creator_identity(identity_id) on delete cascade,
   field_key          text not null,
@@ -99,22 +101,24 @@ create table if not exists private.creator_profile_field_provenance (
   confidence         numeric,
   created_at         timestamptz not null default now()
 );
-create index if not exists private_prov_identity_field_idx
+create index private_prov_identity_field_idx
   on private.creator_profile_field_provenance(identity_id, field_key);
 
 -- ---------- append-only edit-event log for sensitive private fields ----------
-create table if not exists private.creator_profile_edit_event (
-  event_id      uuid primary key default gen_random_uuid(),
-  identity_id   uuid not null references intel.ci_creator_identity(identity_id) on delete cascade,
-  field_key     text not null,
-  change_type   text not null default 'update',
-  old_value     text,                 -- private schema, locked & audited; may hold hashes
-  new_value     text,
-  changed_by    uuid references auth.users(id) on delete set null,
-  change_reason text,
-  changed_at    timestamptz not null default now()
+-- Minimisation: this log records THAT a field changed, never the raw PII value. Store an
+-- opaque reference and/or a one-way hash of the value, not the phone/email/address/DOB itself.
+create table private.creator_profile_edit_event (
+  event_id       uuid primary key default gen_random_uuid(),
+  identity_id    uuid not null references intel.ci_creator_identity(identity_id) on delete cascade,
+  field_key      text not null,
+  change_type    text not null default 'update',
+  old_value_hash text,                 -- one-way hash / opaque ref only — NEVER raw PII
+  new_value_hash text,
+  changed_by     uuid references auth.users(id) on delete set null,
+  change_reason  text,
+  changed_at     timestamptz not null default now()
 );
-create index if not exists private_edit_identity_idx on private.creator_profile_edit_event(identity_id);
+create index private_edit_identity_idx on private.creator_profile_edit_event(identity_id);
 drop trigger if exists private_edit_append_only on private.creator_profile_edit_event;
 create trigger private_edit_append_only
   before update or delete on private.creator_profile_edit_event

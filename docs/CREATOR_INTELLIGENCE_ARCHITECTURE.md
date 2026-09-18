@@ -363,7 +363,11 @@ Additive: nullable FK columns on `public` tables; dual-write; backfill; verify; 
 
 ## 27. Rollback plan
 
-Additive-by-construction: `intel`/`private`/`api` objects can be disabled/dropped without touching `public`; no legacy column altered/dropped early. Feature flags gate every read cut-over (default off). Queue/workers have a kill switch; raw tables are append-only. Backfill links live in `ci_identity_link`. Column retirement is a later, separately-approved migration. Bad metric versions roll back by **recompute from immutable raw**, not data surgery. Profile is additive — disabling the profile flag reverts to today's media-kit behaviour.
+Additive-by-construction: `intel`/`private`/`api` objects are isolated from `public`; no legacy column altered/dropped early. Feature flags gate every read cut-over (default off). Queue/workers have a kill switch; raw tables are append-only. Backfill links live in `ci_identity_link`. Bad metric versions roll back by **recompute from immutable raw**, not data surgery. Profile is additive — disabling the profile flag reverts to today's media-kit behaviour.
+
+**Two rollback modes (authoritative — see `docs/PHASE_0A_VERIFICATION.md` §5):**
+- **A — before any real data collection:** disable flags; if desired, drop the isolated schemas (`drop schema api/private/intel cascade`). No backfill exists, so zero effect on legacy `public` data. This is the **only** mode where destructive teardown is acceptable.
+- **B — after any real personal/intelligence data exists:** **never** drop. Turn off flags, stop workers, keep `api` unexposed and revoke RPC grants — disable reads/workers/API exposure while **retaining tables and data**. Destructive schema deletion then requires a **separate approved data-retention & migration plan** (export + legal/DPO review + change-controlled drop). Schema teardown is **not** the production rollback once data exists.
 
 ---
 

@@ -31,20 +31,29 @@ grant usage on schema intel   to service_role;
 grant usage on schema private to service_role;
 
 -- ---------- shared helper: set updated_at on write ----------
+-- Fixed search_path (no unqualified object resolution); not directly callable by clients.
 create or replace function intel.tg_set_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql
+set search_path = pg_catalog as $$
 begin
-  new.updated_at := now();
+  new.updated_at := now();   -- pg_catalog.now()
   return new;
 end;
 $$;
 
 -- ---------- shared helper: append-only guard (blocks UPDATE/DELETE for every role) ----------
 create or replace function intel.tg_block_mutation()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql
+set search_path = pg_catalog as $$
 begin
   raise exception 'append-only table %.% — % is not permitted',
     tg_table_schema, tg_table_name, tg_op;
   return null;
 end;
 $$;
+
+-- Internal helper functions must not be executable by browser/public roles.
+revoke all on function intel.tg_set_updated_at()  from public, anon, authenticated;
+revoke all on function intel.tg_block_mutation()   from public, anon, authenticated;
+alter default privileges in schema intel   revoke execute on functions from public;
+alter default privileges in schema private revoke execute on functions from public;

@@ -9,7 +9,7 @@
 --   • Only an exact verified platform user id may reconcile; handle/name/email/fuzzy → review only.
 
 -- ---------- the human/talent/creator entity (no platform id, no member_id) ----------
-create table if not exists intel.ci_creator_identity (
+create table intel.ci_creator_identity (
   identity_id  uuid primary key default gen_random_uuid(),
   display_name text,
   kind         text not null default 'creator' check (kind in ('creator','celebrity','talent')),
@@ -19,7 +19,7 @@ create table if not exists intel.ci_creator_identity (
 );
 
 -- ---------- a real account on a platform ----------
-create table if not exists intel.ci_platform_account (
+create table intel.ci_platform_account (
   platform_account_id uuid primary key default gen_random_uuid(),
   platform            text not null,
   platform_user_id    text not null,
@@ -34,7 +34,7 @@ create table if not exists intel.ci_platform_account (
 );
 
 -- ---------- identity <-> account over time (one identity -> many accounts) ----------
-create table if not exists intel.ci_identity_platform_account (
+create table intel.ci_identity_platform_account (
   id                  uuid primary key default gen_random_uuid(),
   identity_id         uuid not null references intel.ci_creator_identity(identity_id) on delete cascade,
   platform_account_id uuid not null references intel.ci_platform_account(platform_account_id) on delete cascade,
@@ -46,11 +46,11 @@ create table if not exists intel.ci_identity_platform_account (
   created_at          timestamptz not null default now(),
   constraint ci_ipa_uq unique (identity_id, platform_account_id, valid_from)
 );
-create index if not exists ci_ipa_identity_idx on intel.ci_identity_platform_account(identity_id);
-create index if not exists ci_ipa_account_idx  on intel.ci_identity_platform_account(platform_account_id);
+create index ci_ipa_identity_idx on intel.ci_identity_platform_account(identity_id);
+create index ci_ipa_account_idx  on intel.ci_identity_platform_account(platform_account_id);
 
 -- ---------- a specific OAuth/token connection (token_reference points at Vault, never a token) ----------
-create table if not exists intel.ci_platform_connection (
+create table intel.ci_platform_connection (
   connection_id            uuid primary key default gen_random_uuid(),
   platform_account_id      uuid not null references intel.ci_platform_account(platform_account_id) on delete cascade,
   provider_app_environment text not null default 'instagram:prod',
@@ -67,13 +67,15 @@ create table if not exists intel.ci_platform_connection (
   updated_at               timestamptz not null default now()
 );
 -- exactly one ACTIVE connection per account + provider app/environment
-create unique index if not exists ci_conn_one_active_uq
+create unique index ci_conn_one_active_uq
   on intel.ci_platform_connection(platform_account_id, provider_app_environment)
   where status = 'active';
-create index if not exists ci_conn_account_idx on intel.ci_platform_connection(platform_account_id);
+create index ci_conn_account_idx on intel.ci_platform_connection(platform_account_id);
+create index ci_conn_supersedes_idx on intel.ci_platform_connection(supersedes_connection_id);
+create index ci_conn_authorised_by_idx on intel.ci_platform_connection(authorised_by_member_id);
 
 -- ---------- who may operate an identity (many operators per identity; agent-managed ok) ----------
-create table if not exists intel.ci_identity_actor_access (
+create table intel.ci_identity_actor_access (
   id          uuid primary key default gen_random_uuid(),
   identity_id uuid not null references intel.ci_creator_identity(identity_id) on delete cascade,
   member_id   uuid not null references auth.users(id) on delete cascade,
@@ -84,10 +86,10 @@ create table if not exists intel.ci_identity_actor_access (
   evidence    jsonb,
   constraint ci_actor_uq unique (identity_id, member_id, access_role)
 );
-create index if not exists ci_actor_member_idx on intel.ci_identity_actor_access(member_id);
+create index ci_actor_member_idx on intel.ci_identity_actor_access(member_id);
 
 -- ---------- org-scoped CRM relationship (relationship-scoped access, not blanket "org") ----------
-create table if not exists intel.ci_org_creator_relationship (
+create table intel.ci_org_creator_relationship (
   id                        uuid primary key default gen_random_uuid(),
   org_id                    uuid not null,
   identity_id               uuid not null references intel.ci_creator_identity(identity_id) on delete cascade,
@@ -100,11 +102,12 @@ create table if not exists intel.ci_org_creator_relationship (
   ended_at                  timestamptz,
   constraint ci_org_creator_uq unique (org_id, identity_id, relationship_type)
 );
-create index if not exists ci_org_creator_org_idx on intel.ci_org_creator_relationship(org_id);
-create index if not exists ci_org_creator_identity_idx on intel.ci_org_creator_relationship(identity_id);
+create index ci_org_creator_org_idx on intel.ci_org_creator_relationship(org_id);
+create index ci_org_creator_identity_idx on intel.ci_org_creator_relationship(identity_id);
+create index ci_org_creator_mgr_idx on intel.ci_org_creator_relationship(assigned_manager_member_id);
 
 -- ---------- append-only merge/unmerge ledger ----------
-create table if not exists intel.ci_identity_merge_event (
+create table intel.ci_identity_merge_event (
   event_id           uuid primary key default gen_random_uuid(),
   event_type         text not null check (event_type in ('merge','unmerge')),
   source_identity_id uuid not null,
@@ -116,8 +119,8 @@ create table if not exists intel.ci_identity_merge_event (
   performed_at       timestamptz not null default now(),
   constraint ci_merge_distinct_ck check (source_identity_id <> target_identity_id)
 );
-create index if not exists ci_merge_source_idx on intel.ci_identity_merge_event(source_identity_id);
-create index if not exists ci_merge_target_idx on intel.ci_identity_merge_event(target_identity_id);
+create index ci_merge_source_idx on intel.ci_identity_merge_event(source_identity_id);
+create index ci_merge_target_idx on intel.ci_identity_merge_event(target_identity_id);
 
 drop trigger if exists ci_merge_append_only on intel.ci_identity_merge_event;
 create trigger ci_merge_append_only
@@ -125,7 +128,7 @@ create trigger ci_merge_append_only
   for each row execute function intel.tg_block_mutation();
 
 -- ---------- migration/reconciliation ledger ONLY (never the runtime relationship model) ----------
-create table if not exists intel.ci_identity_link (
+create table intel.ci_identity_link (
   id                 uuid primary key default gen_random_uuid(),
   identity_id        uuid references intel.ci_creator_identity(identity_id) on delete set null,
   entity_schema      text,
@@ -139,6 +142,8 @@ create table if not exists intel.ci_identity_link (
   evidence           jsonb,
   created_at         timestamptz not null default now()
 );
+
+create index ci_link_identity_idx on intel.ci_identity_link(identity_id);
 
 -- updated_at triggers
 drop trigger if exists ci_identity_set_updated_at on intel.ci_creator_identity;

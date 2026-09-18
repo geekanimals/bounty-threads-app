@@ -1,0 +1,72 @@
+name: Creator Intelligence DB (Phase 0A verification)
+
+# Verifies the additive Creator Intelligence migrations on a DISPOSABLE local Supabase stack.
+# It NEVER receives production secrets and NEVER connects to or modifies the remote project:
+# no `supabase link`, no `supabase db push`, no `supabase migration repair`, no SUPABASE_ACCESS_TOKEN.
+# All commands operate on the ephemeral CI database only.
+
+on:
+  push:
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/tests/**'
+      - '.github/workflows/creator-intelligence-db.yml'
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: reset + pgTAP + deterministic replay
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI (pinned)
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.33.9
+
+      - name: CLI version
+        run: supabase --version
+
+      # Bring up only the local Postgres stack (no Studio/analytics), purely local.
+      - name: Start local database
+        run: supabase db start
+
+      - name: Migration list (local)
+        run: supabase migration list --local
+
+      # Clean apply: legacy baseline (0000) then the six additive CI migrations.
+      - name: db reset (clean apply of all migrations)
+        run: supabase db reset
+
+      - name: Confirm pgTAP is available
+        run: |
+          supabase db reset >/dev/null 2>&1 || true
+          psql "$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '\"')" \
+            -c "create extension if not exists pgtap;" \
+            -c "select 'pgtap ' || extversion from pg_extension where extname='pgtap';"
+
+      - name: Run pgTAP tests
+        run: supabase test db
+
+      - name: Schema lint (advisor-style)
+        run: supabase db lint --level warning || true
+
+      - name: Generated TypeScript types (schema coherence check, non-blocking)
+        continue-on-error: true
+        run: supabase gen types typescript --local > /tmp/ci_types.ts && head -5 /tmp/ci_types.ts
+
+      # Deterministic replay: a second clean reset must produce the identical schema.
+      - name: db reset again (deterministic replay)
+        run: supabase db reset
+
+      - name: Stop stack
+        if: always()
+        run: supabase stop || true

@@ -173,5 +173,65 @@ select throws_ok($$ delete from intel.ci_identity_merge_event
   where event_id = '55555555-5555-5555-5555-555555555555' $$,
   null, null, 'merge event cannot be deleted');
 
+-- ================= Prompt 2A-V hardening tests =================
+
+-- legacy baseline applied before the six CI migrations
+select has_table('public','campaigns', 'legacy baseline schema present (public.campaigns)');
+select has_table('public','members',   'legacy baseline schema present (public.members)');
+
+-- control-event history tables exist
+select has_table('intel','ci_capability_switch_event',  'capability-switch event table exists');
+select has_table('intel','ci_processing_consent_event', 'processing-consent event table exists');
+select has_table('intel','ci_profile_visibility_event', 'profile-visibility event table exists');
+
+-- event tables store no PII
+select hasnt_column('intel','ci_capability_switch_event','whatsapp_e164', 'cap event has no phone');
+select hasnt_column('intel','ci_processing_consent_event','email',        'consent event has no email');
+select hasnt_column('intel','ci_processing_consent_event','date_of_birth','consent event has no DOB');
+select hasnt_column('intel','ci_profile_visibility_event','line1',        'visibility event has no address');
+
+-- control-event ledgers are append-only
+insert into intel.ci_capability_switch_event(event_id, identity_id, capability, new_state)
+  values ('66660000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','performance_insights', true);
+select throws_ok($$ update intel.ci_capability_switch_event set new_state = false
+  where event_id = '66660000-0000-0000-0000-000000000001' $$, null, null, 'capability event cannot be updated');
+select throws_ok($$ delete from intel.ci_capability_switch_event
+  where event_id = '66660000-0000-0000-0000-000000000001' $$, null, null, 'capability event cannot be deleted');
+
+insert into intel.ci_processing_consent_event(event_id, identity_id, event_type, new_state, notice_version)
+  values ('66660000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','accepted','accepted','v1');
+select throws_ok($$ update intel.ci_processing_consent_event set new_state = 'withdrawn'
+  where event_id = '66660000-0000-0000-0000-000000000002' $$, null, null, 'consent event cannot be updated');
+select throws_ok($$ delete from intel.ci_processing_consent_event
+  where event_id = '66660000-0000-0000-0000-000000000002' $$, null, null, 'consent event cannot be deleted');
+
+insert into intel.ci_profile_visibility_event(event_id, identity_id, field_or_group, tier, new_allowed)
+  values ('66660000-0000-0000-0000-000000000003','11111111-1111-1111-1111-111111111111','rate_card','marketplace_summary', true);
+select throws_ok($$ update intel.ci_profile_visibility_event set new_allowed = false
+  where event_id = '66660000-0000-0000-0000-000000000003' $$, null, null, 'visibility event cannot be updated');
+select throws_ok($$ delete from intel.ci_profile_visibility_event
+  where event_id = '66660000-0000-0000-0000-000000000003' $$, null, null, 'visibility event cannot be deleted');
+
+-- PUBLIC / anon / authenticated cannot execute internal helper functions
+select ok(not has_function_privilege('anon',          'intel.tg_block_mutation()', 'EXECUTE'), 'anon cannot execute tg_block_mutation');
+select ok(not has_function_privilege('authenticated', 'intel.tg_block_mutation()', 'EXECUTE'), 'authenticated cannot execute tg_block_mutation');
+select ok(not has_function_privilege('anon',          'intel.tg_set_updated_at()', 'EXECUTE'), 'anon cannot execute tg_set_updated_at');
+
+-- anon / authenticated lack USAGE on intel and private schemas
+select ok(not has_schema_privilege('anon',          'intel',   'USAGE'), 'anon lacks USAGE on intel');
+select ok(not has_schema_privilege('authenticated', 'intel',   'USAGE'), 'authenticated lacks USAGE on intel');
+select ok(not has_schema_privilege('anon',          'private', 'USAGE'), 'anon lacks USAGE on private');
+select ok(not has_schema_privilege('authenticated', 'private', 'USAGE'), 'authenticated lacks USAGE on private');
+
+-- intentional indexes on FK/join columns
+select has_index('intel','ci_platform_connection','ci_conn_supersedes_idx', 'index on connection.supersedes_connection_id');
+select has_index('intel','ci_creator_brand_experience','brand_exp_brand_idx', 'index on brand_experience.brand_id');
+select has_index('intel','ci_creator_brand_aspiration','aspiration_brand_idx', 'index on aspiration.brand_id');
+select has_index('intel','ci_capability_switch_event','ci_cap_event_identity_idx', 'index on capability event.identity_id');
+
+-- RLS on the new event tables
+select ok((select relrowsecurity from pg_class where oid = 'intel.ci_capability_switch_event'::regclass),
+  'RLS enabled on ci_capability_switch_event');
+
 select * from finish();
 rollback;
