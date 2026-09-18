@@ -94,29 +94,37 @@ data-retention and migration plan** (export + legal/DPO review + change-controll
 personal data and legally-retained records are involved. Schema teardown is **not** the production
 rollback once data exists.
 
-## 6. Verification status — HOLD (execution moved to CI)
+## 6. Verification status — the dark foundation is VERIFIED (by CI)
 
-This environment has **no Docker, no Supabase CLI, no `psql`, no local Postgres**, so none of the
-verification commands can run locally (`supabase --version`, `migration list`, `db reset`,
-`test db`, `db lint`, type-gen, replay were all **NOT RUN locally**). Verification therefore runs
-in the **CI workflow** `.github/workflows/creator-intelligence-db.yml` on a **disposable** Supabase
-stack (GitHub-hosted Docker) with **no production secrets** and **no remote connection** (no
-`link`/`push`/`repair`).
+This environment has **no Docker, no Supabase CLI, no `psql`, no local Postgres**, so nothing ran
+locally. Verification runs in the **CI workflow** `.github/workflows/creator-intelligence-db.yml`
+on a **disposable** Supabase stack (GitHub-hosted Docker) with **no production secrets** and **no
+remote connection** (no `link`/`push`/`repair`).
 
 **CI run history for this pass:**
-- **Run 1** (`35328022109`, commit `3a63c13`) — **FAIL** at `db start`, and this is the value it
-  added: it surfaced **P8** (the legacy baseline is not clean-apply-safe). Fixed by removing the
-  baseline migration and its two pgTAP assertions.
-- **Run 2** (commit after this doc) — pending; must pass `db reset` → `test db` → deterministic
-  replay before Phase 0A is marked **VERIFIED**.
+- **Run 1** (`35328022109`, commit `3a63c13`) — **FAIL** at `db start`; surfaced **P8** (the legacy
+  baseline is not clean-apply-safe). Fixed by removing the baseline migration + its two pgTAP
+  assertions and simplifying the workflow.
+- **Run 2** (`35328653370`, commit `146b4b6`) — **PASS, all steps green:**
+  - `supabase --version` → v2.33.9 (pinned) ✓
+  - `supabase migration list --local` ✓
+  - `supabase db reset` (clean apply of the six CI migrations, no legacy schema) ✓
+  - `supabase test db` → **`Files=1, Tests=90, Result: PASS`** ("All tests successful") ✓
+  - `supabase db lint --level warning` → **"No schema errors found"** (api, extensions, intel,
+    private, public) ✓
+  - `supabase gen types typescript --local` (schema coherence, non-blocking) ✓
+  - `supabase db reset` again (**deterministic replay**) ✓
 
-Phase 0A is **HOLD** until Run 2 (of the corrected commit) is green.
+**The Phase-0A dark database foundation is VERIFIED**: it applies cleanly from an empty database,
+all 90 pgTAP assertions pass (schemas/tables/constraints/RLS/append-only/no-PII/index/privilege),
+the schema lints clean, and replay is deterministic.
 
-## 7. Remaining HOLD reasons
+## 7. Remaining HOLD items (none block the dark foundation)
 
-- **CI green not yet achieved** — Run 1 caught P8; the corrected commit's run must pass end-to-end.
-- **Legacy co-existence deferred** — reproducing legacy + CI migrations together needs
-  `DATABASE_SETUP.sql` made clean-apply-safe first (P8 follow-up); not attempted here.
+- **Legacy co-existence deferred** — reproducing "legacy schema + the six CI migrations together"
+  needs `DATABASE_SETUP.sql` made clean-apply-safe first (P8 follow-up); not attempted here.
 - **Production drift** of the legacy schema unverified (no CLI/creds here; no row data accessed).
-- Standing later-phase gates unchanged: external-KMS review, final legal retention durations, Meta
-  runtime capability verification, pgmq scale test.
+- Standing **later-phase** gates (not Phase-0A blockers): external-KMS review, final legal retention
+  durations, Meta runtime capability verification, pgmq scale test.
+- **Remote application not done and not in scope** — no `db push`/`repair`; the remote project is
+  untouched. Applying Phase 0A to production is a separate, explicitly-approved step.
