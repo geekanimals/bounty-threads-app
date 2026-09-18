@@ -65,6 +65,19 @@ Still bound by the six non-negotiables — in particular, the six measures in §
 
 ---
 
+## Amendment C (2026-09-18, Prompt 1D): Architecture-gate corrections
+
+Design-only corrections from an independent architecture review. **Preserves** the settled one-click, all-five, no-progressive-consent decision (Amendment B) and all six non-negotiables. Where an earlier section conflicted with a correction, that section now carries a "corrected by §19.x" callout and **§19 is authoritative**.
+
+**Sections changed:**
+- **§3.1** — `ci_creator_identity` no longer carries `ig_user_id`/`member_id` (→ §19.1 identity/account/actor/org model).
+- **§3.5 / §11 / §12** — single `ci_consent` (+ `granted_to_org`, `grant_consent(...)`) replaced by the **four-control model** (§19.6).
+- **§6.1** — grant verification not hardcoded to `debug_token` (§19.13).
+- **§8** — append-only made **truly immutable** with idempotency keys + "latest" views (§19.5).
+- **§19 (new)** — the authoritative gate corrections A–M: identity/account/actor/org ERM; audited reversible merges; tenant-scoped brands; corrected audience model (follower/reached/engaged, marginal-vs-joint); append-only/idempotency + media versioning; four control concepts + visibility tiers; missing-data ranking policy; security hardening; campaign-scoped messaging; retention matrix; million-creator ingestion; corrected phases (0A/0B); versioned capability matrix; acceptance tests; unresolved decisions; and the architecture-gate checklist.
+
+---
+
 ## 1. Existing-state findings
 
 ### 1.1 What exists today (inspected, not assumed)
@@ -185,7 +198,7 @@ All new objects live in a dedicated **`intel` schema** (prefixed `ci_` in prose)
 
 ### 3.1 Identity spine
 
-- **`ci_creator_identity`** — the canonical creator. `identity_id uuid pk`, `ig_user_id text unique` (nullable for roster-only "shadow" creators), `member_id uuid null` (→ `auth.users`), `primary_username text`, `display_name text`, `is_claimed bool`, `merged_into uuid null` (soft-merge for de-dupe), `created_at`. **The spine every metric hangs from.**
+- **`ci_creator_identity`** — the canonical **human/talent/creator entity**. **Corrected by Amendment C (§19.1):** it carries **no platform-specific ID and no `member_id`** — those move to `ci_platform_account` and `ci_identity_actor_access`. A creator can exist **without a Geek login** (e.g. an agent-managed celebrity) and can hold **multiple** platform accounts. Fields: `identity_id uuid pk`, `display_name text`, `kind` (`creator`|`celebrity`|`talent`), `is_claimed bool`, `created_at`. Merges are audited/reversible via `ci_identity_merge_event` (§19.2), not a bare `merged_into`. **The spine every metric hangs from.**
 - **`ci_identity_link`** — progressive backfill map. `identity_id`, `entity_schema`, `entity_table`, `entity_id`, `match_method` (`ig_user_id`|`member_id`|`handle_exact`|`name_fuzzy`|`manual`), `confidence numeric`, `linked_by`, `linked_at`. Lets us attach `creators`, `barter_items`, `irm_contacts`, `story_deals` rows to an identity **without** editing them yet, and records *how sure* we are.
 
 ### 3.2 Observed (raw, time-series, append-only)
@@ -214,7 +227,7 @@ All new objects live in a dedicated **`intel` schema** (prefixed `ci_` in prose)
 
 ### 3.5 Consent & governance
 
-- **`ci_consent`** — `identity_id`, `subject_member_id`, `scope text[]` (mirrors granted Meta scopes), `purpose`, `granted_to_org null` (null = own workspace), `granted_at`, `revoked_at null`, `evidence`. Drives ingestion eligibility and read authorisation.
+- **`ci_consent`** — **superseded by Amendment C (§19.6).** The single `ci_consent` conflated three separate concerns; it is replaced by **four independent systems**: `ci_scope_grant` (Meta permission state), `ci_processing_consent` (privacy-notice/purpose/version accepted), `ci_capability_switch` (internal feature controls), and **relationship-based visibility tiers** (not per-brand grants). The `granted_to_org` field and per-brand consent toggles are **removed** (§19.6).
 - **`ci_data_request`** — access/export/delete requests (ties to `data-deletion.html` + Meta data-deletion callback): `identity_id`, `kind`, `status`, `requested_at`, `completed_at`.
 
 ### 3.6 ER summary (text)
@@ -309,7 +322,7 @@ Legend: **Own** = only their own identity's data · **Org** = identities linked 
 |---|---|---|---|
 | **Approved by Meta** | App may *request* this scope in OAuth | App config (constant) | No — necessary, not sufficient |
 | **Requested during OAuth** | The scope is in the live authorize URL's scope string | OAuth config → mirrored to `ci_scope_grant.requested` | No — determines what a creator is *asked* for |
-| **Granted by creator** | This creator approved the scope at connect | `ci_scope_grant.granted_at` (from token exchange / `debug_token`) | Precondition |
+| **Granted by creator** | This creator approved the scope at connect | `ci_scope_grant.granted_at` (from the **grant/scope-verification method supported by the active Instagram Login flow + Graph API version** — *not hardcoded to `debug_token`*, §19.13) | Precondition |
 | **Currently valid** | Granted **and** token unexpired/unrevoked | `ci_scope_grant.valid` (derived from `social_tokens.expires_at` + last check) | **Yes — the real gate** |
 | **Revoked / expired** | Previously valid, now not (creator removed the app, token lapsed, permission deauthorised) | `ci_scope_grant.revoked_at` / `valid=false` | Yes — disables features, triggers reconnect prompt |
 
@@ -373,7 +386,7 @@ Every value in the engine is tagged `tier`:
 **Principle:** append-only, idempotent, provenance-stamped, service-role only.
 
 - **New Edge Function `ci-ingest`** (or extend `instagram-refresh`) writes to `ci_*` snapshot tables using the token in `social_tokens`. Every run opens a `ci_ingest_run` and stamps `run_id` on every row.
-- **Idempotency:** unique `(identity_id, as_of)` / `(media_id, as_of)`; a same-day re-run updates the day's row rather than duplicating, or is a no-op.
+- **Idempotency & immutability — corrected by Amendment C (§19.5):** snapshots are **truly append-only**; historical rows are **never updated**. Each carries `source_observed_at`, `captured_at`, `ingest_run_id`, `source_record_id` (where available), and a `payload_hash`/`idempotency_key`. Duplicate delivery of the *same* observation is ignored via the idempotency key; a second observation the same day whose `source_observed_at` **or** payload differs creates **another immutable row**. Current values are served from **"latest" views/materialized views**, not by overwriting history.
 - **Cadence (per creator, consent-gated):**
   - Account snapshot — **daily** (cron; slow, cheap).
   - Media list + insights — on **new media** and a periodic **backfill** of recent posts (insights mature over ~48h; re-poll a post a few times then freeze).
@@ -452,7 +465,7 @@ All are `SECURITY DEFINER`, re-check `is_platform_admin()`/`my_org()`/`ci_consen
 | `get_creator_intelligence(identity_id)` | RPC | → profile + `ci_metric[]` with envelopes | consent + RLS |
 | `ci_rank(brief jsonb)` | RPC | → `ci_ranking_result[]` with `signal_contributions` | org/consent pool |
 | `nl_search(query text)` | Edge+RPC | LLM → brief → `ci_rank` | org/consent pool |
-| `grant_consent(scope, granted_to_org?)` / `revoke_consent()` | RPC | manage `ci_consent` | self (creator) |
+| `record_processing_consent(notice_version, purposes)` / `set_capability(capability, enabled)` | RPC | four-control model (§19.6) — **replaces** `grant_consent(scope, granted_to_org?)`; **no per-brand grant** | self (creator) |
 | `enter_commercials(campaign_id, identity_id, terms)` | RPC | write `ci_commercials` | agency/corporate |
 | `record_conversion(…)` | Edge | append `ci_conversions` | service role / signed source |
 | `request_data(kind)` | RPC | file `ci_data_request` | self / admin |
@@ -769,4 +782,167 @@ Existing creators were connected under the four-scope string, so they lack a **v
 
 ---
 
-*End of architecture. Implementation is intentionally deferred (constraint #10, Amendments A & B). Amendment A revised §2.2, §3.6, §5, §6, §14 and added §17 (messaging + `ci_scope_grant`). Amendment B (Prompt 1C) revised §6.3, §11, §14, §15 and added §18 — locking the final consent model to a one-time, all-five Instagram connection with post-hoc internal capability switches, a six-measure scoring model where permission withdrawal only lowers Confidence & Coverage, and unavailable-≠-zero throughout. The next step remains review and sign-off on the identity spine (`ci_creator_identity`), the consent model (`ci_scope_grant` + `ci_capability_switch` + `ci_consent`), and the six-measure scoring separation — everything else depends on them.*
+## 19. Architecture-gate corrections (Amendment C / Prompt 1D)
+
+Authoritative over any conflicting earlier text. **Design only — nothing implemented.**
+
+### 19.1 Identity ≠ platform account ≠ authorised user ≠ org relationship (correction A)
+
+The old spine wrongly assumed *one Instagram account and one login per creator*. Split into five entities:
+
+- **`ci_creator_identity`** — the human/talent/creator entity. **No platform ID, no `member_id`.** Can exist with no Geek login; can be an agent-managed celebrity. `identity_id`, `display_name`, `kind`, `is_claimed`, `created_at`.
+- **`ci_platform_account`** — `platform_account_id`, `platform`, `platform_user_id`, `username`, `account_type`, `status`, `first_seen_at`, `last_verified_at`; **`unique(platform, platform_user_id)`**.
+- **`ci_identity_platform_account`** — links identity↔account over time: `identity_id`, `platform_account_id`, `relationship`, `is_primary`, `valid_from`, `valid_to`, `evidence`. One creator → **many** IG/future accounts.
+- **`ci_identity_actor_access`** — who may operate an identity: `identity_id`, `member_id`, `access_role` (`self`|`agent`|`manager`|`authorised_operator`), `granted_by`, `granted_at`, `revoked_at`, `evidence`. **Many users can manage one celebrity; one agent can manage many creators.**
+- **`ci_org_creator_relationship`** — org-scoped CRM: `org_id`, `identity_id`, `relationship_type` (`roster`|`represented`|`managed`|`campaign_only`|`discovered`), `assigned_manager_member_id`, `status`, `source`, `created_at`, `ended_at`.
+
+**Rule:** org-specific notes, commercials, assignments and CRM attach to `ci_org_creator_relationship` (or another org-scoped entity), **never** to the global identity. **One org must never infer another org's private roster relationship, notes or commercials** (RLS on the org-scoped tables; the global identity exposes no org data).
+
+### 19.2 Audited, reversible identity merges (correction B)
+
+Replace bare `merged_into` with an **append-only `ci_identity_merge_event`**: `source_identity_id`, `target_identity_id`, `reason`, `evidence`, `performed_by`, `performed_at`, `reversed_at`, `reversed_by`. Requirements: **automatic merge only after stable platform-ID verification**; **handles/names never auto-prove ownership** (handles change and get recycled); fuzzy matches stay **review candidates**; **prevent merge cycles**; **retain alias history**; **support audited unmerge**; **preserve all original source records**. `ci_identity_link` may remain as a *migration/reconciliation ledger* only — its polymorphic `entity_table/entity_id` shape **must not** become the permanent runtime relationship model (use the typed relations in §19.1).
+
+### 19.3 Tenant-scoped brand relationships (correction C)
+
+`ci_brand` stays the canonical brand identity. Add **`ci_org_brand_relationship`** for org-specific CRM: account ownership, internal notes, commercial history, parent-corporate portfolio, agency/client relationship, visibility boundaries. A corporate account may contain **multiple brands** without exposing one agency's private brand records to another (RLS: `org_id = my_org()`; corporate portfolio via an explicit parent link, not cross-tenant reads).
+
+### 19.4 Corrected audience-intelligence model (correction D)
+
+Replace the generic `ci_audience_snapshots`. The canonical model distinguishes **three audience types** — `follower_demographics`, `reached_audience_demographics`, `engaged_audience_demographics`. Each row: `identity_id`, `platform_account_id`, `metric_name`, `audience_type` (`followers`|`reached`|`engaged`), `breakdown_type` (`age`|`gender`|`country`|`city`), `dimension_key`, `dimension_value`, `value_count` (where supplied), `calculated_percentage` (where calculated), `period`, `timeframe`, `observed_at`, `captured_at`, `source`, `api_version`, `run_id`, `status` (`available`|`suppressed`|`insufficient_audience`|`permission_missing`|`token_expired`|`api_error`), `suppression_reason`, `sample_size`/`audience_total` (where supplied), `raw_payload_reference`/`response_hash`.
+
+**Marginal vs joint:** Meta may return age, gender and city as **separate marginal distributions**. Geek **must not** claim an exact joint intersection ("women 25–34 in Bangalore") **unless Meta explicitly returned that joint breakdown**. If Geek *estimates* a combined segment: **label it `estimated`, record the method, provide confidence, never present it as an observed Meta fact.** No generic `age_gender` field unless the active Meta API explicitly returns a combined dimension. Every metric/period/timeframe/breakdown is validated against the active Graph API version at implementation.
+
+### 19.5 True append-only + idempotency, and media versioning (correction E)
+
+Snapshots are **immutable**; historical rows are never updated. Required columns: `source_observed_at`, `captured_at`, `ingest_run_id`, `source_record_id` (where available), `payload_hash`/`idempotency_key`. Duplicate delivery ⇒ ignored by idempotency key; a differing same-day observation ⇒ **another immutable row**. Serve current values from **"latest" views/materialized views**. **Media** (mutable captions/metadata): stable **`ci_media`** identity + **`ci_media_version`** (or media snapshot) for editable caption/metadata, a **deletion/tombstone** state, and **edit history** where Meta reports changes.
+
+### 19.6 Four separate control concepts + visibility tiers (correction F)
+
+Split the conflated consent model into four independent systems:
+
+1. **`ci_scope_grant`** — technical Meta permission state (§6.1).
+2. **`ci_processing_consent`** — the Geek privacy-notice/purpose/**version** the creator accepted; records the stated processing purposes.
+3. **`ci_capability_switch`** — the creator's internal Geek feature controls (§18.4).
+4. **`ci_profile_visibility` / relationship-based authorisation** — what marketplace users, agencies, managers, brands and campaign participants may see.
+
+**Removed contradictions:** `ci_consent.granted_to_org`, `grant_consent(scope, granted_to_org?)`, and any per-brand consent toggle. **There is no repeated per-brand permission UX.** Visibility is by **explicit tiers**: `creator/private` · `authorised representative` · `organisation roster` · `marketplace summary` · `campaign-specific shared intelligence` · `public media kit`. **Campaign participation may enable campaign-limited brand access; it must not auto-grant unrestricted historical intelligence.** **Existing users:** do **not** infer acceptance of expanded Creator-Intelligence purposes from an old Instagram token — record the **current notice version via a simple in-product acknowledgement** at reconnect/next relevant sign-in. **No extra Meta OAuth flow** for that acknowledgement.
+
+### 19.7 Missing-data ranking policy (correction G)
+
+Resolves the confidence/down-weight/renormalisation contradiction:
+
+1. Missing data **never** becomes zero.
+2. Missing data must **not** silently improve or reduce underlying performance.
+3. A **mandatory hard-filter** signal that is unavailable returns **`insufficient_data`** or **`unknown` requiring explicit brand treatment** (never a pass/fail by default).
+4. **Soft-signal missingness must not be silently renormalised** in a way that inflates a creator.
+5. Ranking returns **separately**: `partial_fit_score`, `verified_coverage`, `ranking_confidence`, `missing_signal_list`.
+6. **Do not compare partial scores as if coverage were identical.**
+7. A brand may set a **minimum Verified Data Coverage** filter, but it must be a **visible brand-selected filter**, never secretly embedded in performance, and every exclusion is **explainable**.
+8. Permission withdrawal may affect confidence, coverage and eligibility for an explicitly requested verification threshold — but must **not** rewrite historical performance or fraud signals.
+   Persist: **ranking-formula version, normalization version, missingness-policy version, and all signal contributions.**
+
+### 19.8 Security hardening (correction H)
+
+- **OAuth:** cryptographically secure `state`; state stored **server-side** (or in a securely bound short-lived transaction), **one-time use**, strict expiry, **bound to the initiating user/session**; exact redirect validation; **PKCE if supported**; **never `Math.random()`** as the security boundary; **`localStorage` alone is not proof** of OAuth state. *(Note: today's `connectInstagram()` uses `Math.random()` state in `localStorage` — this correction supersedes that for the intelligence flow.)*
+- **Tokens:** application-level/envelope **encryption at rest**; keys **outside ordinary application tables**; **key rotation**; **redaction in logs/errors**; least-privilege service access; **revocation & deletion verified**. RLS/no-policy isolation is necessary but **is not encryption**.
+- **`SECURITY DEFINER`:** fixed safe `search_path`; schema-qualified references; explicit JWT/user/org validation; **derive org from the authenticated context, never trust caller-supplied `org_id`**; **`REVOKE EXECUTE FROM PUBLIC`**, grant only to intended roles; minimal return columns; audited sensitive reads; **negative cross-tenant tests**.
+- **Webhooks:** signature verification; replay protection; event idempotency; timestamp tolerance; secret rotation; dead-letter handling; **no raw message content in logs**.
+- **Super-admin "All"** in the §5 matrix means access **only through explicit, audited administrative functions** — **not** direct client-table policies. Message-content access stays break-glass and audited (§17.4).
+
+### 19.9 Campaign-scoped messaging (correction I)
+
+**Not a general private-inbox surveillance system.** A conversation may contribute to intelligence **only** when it is **initiated through a Geek campaign workflow** *or* **explicitly linked to a Geek campaign by an authorised user, with audit evidence**. **Unlinked conversations are never content-classified for intelligence.** Any temporary processing for the operational inbox stays **separate** from intelligence processing. Clarifications: invitation response rate covers **Geek-tracked** invitations; acceptance/decline comes from **explicit campaign state** or a **labelled, confidence-bearing classifier**; agency-member SLA attribution is possible **only** for messages sent **through Geek by an identified member** — natively-sent Instagram messages **cannot** be auto-attributed to an employee; **read/delivery states are nullable capabilities**, never assumed; **ambiguous conversations default to excluded**; **no raw content or participants enter the feature store**. **Sequencing:** campaign links, privacy gates and consent controls must exist **before** messaging-intelligence ingestion is activated (§19.12).
+
+### 19.10 Data-class retention matrix (correction J)
+
+Replaces vague "shortest viable TTL"/"within SLA"/"N cycles". For **each class** specify: default retention · deletion event · anonymisation option · legal/contractual retention · legal hold · backup-deletion window · derived-data invalidation · audit-evidence retained after deletion.
+
+| Data class | Default retention (design intent — confirm with counsel) | Deletion / anonymisation |
+|---|---|---|
+| OAuth transaction records | minutes (one-time state) | expire on use/timeout |
+| Access tokens | life of connection | delete on disconnect; verify revocation |
+| Account snapshots | rolling history (e.g. 24m) then archive | anonymise on disconnect |
+| Audience snapshots | rolling history then archive | anonymise on disconnect |
+| Media insights | life of media + window | tombstone on media delete |
+| Comment text | short (e.g. 30–90d) | delete; keep derived sentiment |
+| Derived comment sentiment | rolling | invalidate on capability off |
+| Message metadata | campaign life + audit window | delete on disconnect (keep audit) |
+| Temporary message content | **shortest** (inbox session/short TTL) | delete on TTL; never to feature store |
+| Campaign records | contractual/financial | **not** auto-deleted on disconnect |
+| Commercials | contractual/financial | retained per contract |
+| Conversion records | contractual/analytics | retained per policy |
+| Ranking results | recompute-cheap; short | recompute, not repair |
+| Audit logs | long (compliance) | retained after subject deletion |
+| Consent evidence | long (compliance) | retained after deletion (proof) |
+| Backups | defined backup-deletion window | purge propagates within window |
+
+**Disconnect** must: stop new collection immediately; **invalidate current serving features immediately**; revoke/delete tokens; delete/anonymise eligible personal intelligence; **retain only necessary contractual/financial/security/audit records**; and **record exactly what was deleted, anonymised or retained, and why**. **Do not blindly cascade-delete** campaign contracts, invoices or legally required transaction records.
+
+### 19.11 Million-creator ingestion (correction K)
+
+A single daily cron loop is insufficient. Design: **durable ingestion queue**; **per-creator/per-token jobs**; **leasing + visibility timeout**; idempotent workers; retry policy; **exponential backoff with jitter**; **dead-letter queue**; **app-level and token-level API budgets**; priority for **active campaigns** and **newly connected creators**; **hot/warm/cold refresh tiers**; **backpressure**; **webhook-triggered work** where available; **job-lag & freshness monitoring**; **circuit breakers**; **partitioning** for snapshot/message-event/metric tables; **archival**; indexes for **latest-per-creator** and **time-window** queries; **cost budgets** for API/storage/NLP/vision. **Honest initial-sync limits:** Meta cannot supply unlimited historical private insights — record **what was requested, what was returned, and the earliest available observation** per creator.
+
+### 19.12 Corrected implementation phases (correction L)
+
+Phase 0 cannot be "no behaviour change" while changing OAuth. Split:
+
+- **Phase 0A — dark foundations:** schemas; identity/account/actor/org relationships (§19.1); merge-event ledger; consent models (§19.6); scope registry; **security hardening** (§19.8); feature flags. **No user-visible change.**
+- **Phase 0B — connection release:** all-five OAuth; disclosure copy; capability settings; **secure OAuth state**; existing-user reconciliation/reconnect + notice-version acknowledgement.
+
+Move **canonical brand, campaign participation, and campaign-conversation links** **before** messaging intelligence. **Do not activate messaging ingestion until** all hold: identity resolved · valid messaging scope · processing consent recorded · capability enabled · campaign-linkage rules exist · privacy filter exists · deletion/retention controls operational.
+
+### 19.13 Versioned Meta capability matrix (correction M)
+
+- Add **follower / reached / engaged** audience demographics as **separate** metrics (§19.4).
+- Treat **`public_profile` and `email` as account/login permissions**, **not** Instagram audience-intelligence permissions.
+- Mark **every** API field as one of: **verified in current production response** · **documented, not yet production-verified** · **unavailable/deprecated** · **optional/nullable**.
+- **Do not hardcode `debug_token`** as the only grant-verification mechanism — use the method supported by the **active Instagram Login flow + Graph API version**.
+- All delivery/read/message and insight fields are **capability-tested** at runtime (Meta may omit fields by account, version, threshold or endpoint).
+
+### 19.14 New & revised acceptance tests (correction M cont.)
+
+- **Identity model:** one identity can hold ≥2 platform accounts; an identity with no `member_id` (agent-managed celebrity) works; ≥2 members can operate one identity; org A cannot read org B's `ci_org_creator_relationship`/notes/commercials.
+- **Merges:** auto-merge only on verified stable platform ID; handle/name never auto-merges; unmerge restores originals; cycles rejected; alias history retained.
+- **Brands:** corporate holds multiple brands; agency A cannot read agency B's `ci_org_brand_relationship`.
+- **Audience:** marginal-only data never rendered as a joint segment; estimated joints labelled `estimated` with method+confidence; status/suppression captured.
+- **Append-only:** re-delivered observation deduped by key; differing same-day observation creates a new immutable row; no historical row is ever updated; latest-view serves current value; media edit/delete produces version/tombstone.
+- **Four controls:** scope grant, processing consent, capability switch and visibility are independently settable; no per-brand consent UX exists; campaign participation grants only campaign-scoped access.
+- **Missing-data ranking:** unavailable mandatory signal ⇒ `insufficient_data`/`unknown` (not zero/pass); soft-missingness not renormalised to inflate; ranking returns partial_fit/coverage/confidence/missing-list; brand coverage-threshold is a visible filter with explainable exclusions; withdrawal never rewrites historical performance/fraud.
+- **Security:** OAuth state is CSPRNG, server-bound, one-time, expiring; PKCE where supported; tokens encrypted at rest with external keys; `SECURITY DEFINER` derives org from auth context and `REVOKE`s PUBLIC; webhook signature/replay/idempotency enforced; no token/message content in logs; negative cross-tenant tests pass.
+- **Messaging scope:** unlinked conversations never classified for intelligence; native IG messages not attributed to an employee; nullable read/delivery states handled; ambiguous ⇒ excluded; no content/participants in feature store; messaging ingestion blocked until all §19.12 gates pass.
+- **Retention/disconnect:** each data class honours its matrix row; disconnect invalidates serving features immediately, verifies token revocation, and does **not** delete contracts/invoices; a deletion report records what was deleted/anonymised/retained and why.
+- **Scale:** queue leasing prevents double-processing; DLQ captures poison jobs; budgets/circuit-breakers trip under load; latest-per-creator/time-window queries hit indexes; initial-sync limits recorded per creator.
+
+### 19.15 Remaining unresolved decisions requiring human sign-off (return N)
+
+1. **Concrete retention durations** per §19.10 (legal/DPO + India DPDP / GDPR / Meta Platform Terms).
+2. **Encryption/KMS choice** and key-custody boundary (Supabase Vault vs external KMS) for tokens/message content.
+3. **Queue/worker technology** (pg-based queue vs external broker) given Supabase-first stack and million-creator target.
+4. **Merge policy thresholds** — what counts as "stable platform-ID verification"; manual-review SLA.
+5. **Visibility-tier defaults** — exactly what a `marketplace summary` exposes vs `campaign-specific shared intelligence`.
+6. **Brand coverage-threshold semantics** — default minimums, and how exclusions are surfaced.
+7. **Estimated-joint-segment policy** — whether Geek estimates joint demographics at all, and the confidence floor to display them.
+8. **Fraud-estimate governance** — model ownership, appeal SLA, human-in-the-loop.
+9. **PKCE / OAuth specifics** — confirm what the current Instagram Login flow supports.
+10. **Legal-hold & backup-deletion windows** — contractual retention that overrides subject deletion.
+
+### 19.16 Architecture-gate checklist
+
+- [ ] Identity, platform account, actor access, and org relationship are **separate** entities (§19.1).
+- [ ] Merges are **append-only, evidence-based, cycle-safe, unmergeable** (§19.2).
+- [ ] Brand CRM is **tenant-scoped**; no cross-agency leakage (§19.3).
+- [ ] Audience model separates **follower/reached/engaged**; marginals never faked as joints (§19.4).
+- [ ] Snapshots are **immutable**; idempotency keys + latest-views; media versioned (§19.5).
+- [ ] **Four control systems** + **visibility tiers**; no per-brand consent UX (§19.6).
+- [ ] Missing-data ranking: **unavailable ≠ zero**, separate coverage/confidence, explainable exclusions (§19.7).
+- [ ] Security: secure OAuth state, token encryption, hardened `SECURITY DEFINER`, webhook verification (§19.8).
+- [ ] Messaging strictly **campaign-scoped**, gated behind the §19.12 preconditions (§19.9).
+- [ ] **Retention matrix** defined; disconnect preserves legal/financial records (§19.10).
+- [ ] **Queue-based** million-creator ingestion; honest initial-sync limits (§19.11).
+- [ ] Phases split into **0A (dark) / 0B (connection)**; messaging last (§19.12).
+- [ ] Capability matrix **versioned & field-status-tagged**; `public_profile`/`email` not audience perms (§19.13).
+- [ ] Acceptance tests updated (§19.14); unresolved decisions logged for sign-off (§19.15).
+
+---
+
+*End of architecture. Implementation is intentionally deferred (constraint #10, Amendments A, B & C). Amendment A added messaging + `ci_scope_grant` (§17). Amendment B (1C) locked the one-time all-five consent model + six-measure scoring (§18). Amendment C (1D) corrected the identity/account/actor/org model, made merges audited/reversible, tenant-scoped brands, split the audience model (follower/reached/engaged) and the four control systems, fixed true append-only + idempotency, defined the missing-data ranking policy, hardened security, campaign-scoped messaging, added the retention matrix and million-creator ingestion, split Phase 0 into 0A/0B, and versioned the capability matrix (§19). The next step remains human sign-off on §19.15, then Phase 0A dark foundations — nothing is implemented.*
