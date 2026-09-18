@@ -1,518 +1,399 @@
-# Creator Intelligence Architecture — Canonical Specification v1.0
+# Creator Intelligence Architecture — v1.1
 
-**Product:** "Bloomberg for Creators" — an additive Creator Intelligence Engine for Geek Influencer OS (Bounty & Threads).
+**Product:** "Bloomberg for Creators" — an additive Creator Intelligence Engine **and Creator Profile system** for Geek Influencer OS (Bounty & Threads).
 
-**Status:** Design only. Canonical, internally consistent v1.0. No migrations, no code, no Edge Functions, no deployment. Readable front-to-back with a single design (no competing models).
+**Status:** Architecture & product specification only. Canonical, internally consistent, readable front-to-back by a new team without any prior amendment. **No migrations, no implementation SQL, no code/Edge-Function/DB/deploy changes. Phase 0A not started.**
 
-**Prime directive:** *Additive and reversible.* Preserve every existing production behaviour. Introduce a stable identity model, immutable time-series, and a provenance-carrying feature store **alongside** today's name/free-text model; backfill; verify; then cut reads over — never a destructive rewrite.
+**Prime directive:** *Additive and reversible.* Preserve all existing production behaviour; introduce the identity model, private/professional profile, immutable time-series and a provenance-carrying feature store **alongside** today's model; backfill; verify; then cut over.
 
-**Changelog (history only — the body below is the single source of truth):**
-- *v0.1 (Prompt 1/1A)* — initial audit + first architecture.
-- *Amendment A (1B)* — added Instagram messaging + per-scope permission model.
-- *Amendment B (1C)* — locked the one-time, all-five connection + internal capability switches + six-measure scoring.
-- *Amendment C (1D)* — split identity/account/actor/org; audited merges; tenant-scoped brands; corrected audience model; true append-only; four control systems; missing-data ranking; security hardening; campaign-scoped messaging; retention matrix; queue ingestion; phased split; versioned capability matrix.
-- **v1.0 (1E)** — all of the above merged into the primary sections; superseded schemas/authorization/API/phases removed.
+**Changelog (history only; the v1.1 body is authoritative):** v0.1 initial audit → messaging + per-scope permissions → one-time all-five connection + capability switches + six-measure scoring → identity/account/actor/org split, audited merges, tenant brands, corrected audience, true append-only, four control systems, retention matrix, queue ingestion → **v1.0 consolidation** → **v1.1: adds the Creator Profile system (private vs professional data), Meta-prefill source-of-truth rules, `api`/`intel`/`private` schema boundary, app-level vs connection-level scope model, reconnection/active-connection model, and the profile-aware phase sequence.**
 
 ---
 
-## 0. Non-negotiables
+## 1. Product objective & non-negotiables
 
-1. **No scraping.** Only official Meta APIs.
-2. **Consented professional-account data only.**
-3. **Tokens never in browser-readable tables or client code.** Server-side only, encrypted at rest (§13).
-4. **A fraud score is never a fact.** It is a labelled *estimate* with evidence, confidence, and appeal.
-5. **No inference of sensitive personal characteristics.**
-6. **No single universal opaque score.** Six separate, explainable measures (§11); any ranking is brief-specific and decomposable.
-7. **Every derived/predicted value carries a provenance envelope:** source(s), method/model version, calculation date, input window, sample size, confidence, status. **Unavailable data is marked `unavailable`, never `0`.**
-8. **Preserve existing production tables** until additive migrations and backfills are verified.
-9. **Authorisation is enforced in the database** (RLS + hardened `SECURITY DEFINER` functions in an unexposed schema), never by UI role visibility.
-10. **No implementation in the design phase.**
+**Objective.** Turn consented Instagram data + Geek campaign history + creator-supplied profile information into a **verified Creator Intelligence profile** — separating what a creator *tells us*, what platforms *verify*, and what Geek *derives or estimates* — so brands evaluate creators on explainable, provenance-tagged signals, and creators keep control of their private data.
 
-**Settled Instagram experience (must be preserved exactly):** one **Connect Instagram** CTA → request **all five** approved permissions together → **no** Geek permission-selection page before Meta OAuth → granted capabilities **default to enabled** → creators may **disable individual capabilities later** (with the agreed warning) → disabling may affect **Verified Data Coverage and Confidence only** (never auto-reduce Performance, never raise Fraud Probability, never label untrustworthy) → **no** repeated per-brand OAuth or progressive-consent flows.
+**Non-negotiables.**
+1. No scraping — official Meta APIs only.
+2. Consented professional-account data only.
+3. Tokens & private message content are server-side only, encrypted at rest; never in browser tables/code.
+4. Fraud is a labelled **estimate**, never a fact.
+5. No inference of sensitive personal characteristics.
+6. **No single universal opaque score** — six separate explainable measures (§19); ranking is brief-specific and decomposable.
+7. Every derived/predicted value carries a provenance envelope (source, method/model version, calc date, window, sample size, confidence, status). **Missing data is `unavailable`, never `0`.**
+8. Preserve production tables until additive migrations + backfills are verified.
+9. Authorisation is DB-enforced (RLS + hardened `SECURITY DEFINER` functions in unexposed schemas + the `api` boundary), never UI role visibility.
+10. Design phase performs no implementation.
 
----
-
-## 1. Existing-state findings
-
-### 1.1 What exists today
-
-Static vanilla-JS frontend (`app.js`, `data.js`, `auth.js`, `login.js`, `consent.js`, `app.html`) + public pages `p.html` (creator media kit), `o.html` (org workspace); Supabase backend (Postgres + RLS, Auth, 6 Edge Functions, Storage bucket `ig-media`).
-
-**Tables (16):** `members`, `invites`, `leads`, `creators`, `campaigns`, `barter_items`, `applications`, `dream_plans`, `story_deals`, `irm_contacts`, `social_accounts`, `org_profiles`, `social_tokens`, `platform_admins`, `ai_usage`, `audit_log`.
-**Edge Functions (6):** `instagram-login`, `instagram-auth`, `instagram-refresh`, `instagram-publish`, `ai-chat`, `whatsapp-send` (+ `_shared/cors.ts`, `_shared/ig.ts`).
-
-### 1.2 Security model (strong — extend, don't weaken)
-
-Per-org RLS (`org_id = my_org()`); members provisioned only by the `handle_new_user` trigger; role/org immutable from client (column locks + `members_guard`); cross-org surfaces are explicit `SECURITY DEFINER` functions; tokens isolated in `social_tokens` (RLS on, no policies → service-role only).
-
-### 1.3 Core gaps the engine must fix
-
-- **No stable creator identity.** `social_accounts` (Meta-authoritative, keyed by `ig_user_id` + `member_id`) and `creators` (agency roster, free-text `name`/`handle`, no link) are disconnected islands.
-- **Snapshots, not time-series.** `instagram-login`/`instagram-refresh` **overwrite** `social_accounts` every sync — history is discarded.
-- **No provenance / feature store.** Derivations (engagement %, `matchScore()`) are ephemeral and client-side.
-- **No brand entity, no campaign↔creator membership, no commercials, no conversions.**
-
-### 1.4 Relationships that rely on names / free-text (migration targets → IDs)
-
-| # | Location | Field(s) | Should reference | Severity |
-|---|---|---|---|---|
-| R1 | `creators` ↔ `social_accounts` | `name`, `handle` | canonical identity / platform account | **Critical** |
-| R2 | `barter_items.creator` | text | identity | **Critical** |
-| R3 | `barter_items.campaign` | text | `campaigns.id` | High |
-| R4 | `applications.creator_name` | text | applicant identity | High |
-| R5 | `campaigns.brand` | text | `ci_brand.brand_id` | High |
-| R6 | `campaigns.creators` | integer count | `ci_campaign_participation` | High |
-| R7–R9 | `story_deals.celebrity/brand/manager` | text | identity / brand / member | Medium |
-| R10 | `irm_contacts.name/handle` | text | identity / platform account | Medium |
-| R11 | `dream_plans.creator_email` | text | member / identity | Medium |
-| R12 | `campaigns.platforms/hashtags` | text | enums / tag entities | Low |
-| R13 | `creators.followers/eng/tier/cat` | text | typed values / enums | Low |
-| R14 | `social_accounts.mentions[].username` | text | brand / identity | Low |
+**Settled Instagram experience (preserved exactly).** One **Connect Instagram** CTA → immediately opens Meta authorization → requests **all five** approved permissions together → **no** Geek permission-selection page before OAuth → granted capabilities **default enabled** → creators may disable individual capabilities later (with the agreed warning) → disabling affects **Verified Data Coverage & Creator Intelligence Confidence only** (never auto-reduces Performance, raises Fraud Probability, or labels a creator untrustworthy) → **no progressive consent**, **no repeated per-brand Meta OAuth** → messaging intelligence is **campaign-scoped and implemented last** → raw Instagram/personal data, messages and tokens are **never** exposed to brands or browser tables.
 
 ---
 
-## 2. Data-flow architecture (target)
+## 2. Existing-state audit
 
-```
-Instagram OAuth (one CTA, all five scopes)
-  → server code exchange (Edge, service role) → token in Vault (never browser)
-  → ci_platform_connection + ci_scope_grant (per-connection grant status)
-  → granted-scope gate ─► durable queue (pgmq) ─► per-connection ingestion workers
-        ├─ ci-ingest (append-only): ci_account_snapshots, ci_media(+versions),
-        │    ci_media_insights, ci_audience_observations (follower/reached/engaged), ci_mentions, ci_comments
-        └─ ci-messaging-sync (campaign-scoped only): ci_ig_conversations/messages (minimised),
-             ci_ig_message_events (text-free ledger)
-  → scheduled feature compute (SQL/materialized + workers, versioned recipes)
-  → ci_metric (feature store: observed→derived→predicted, each with provenance + status)
-  → serving via hardened SECURITY DEFINER functions (visibility-tier + capability gated):
-        get_creator_intelligence() · ci_rank(brief) · nl_search() · get_campaign_inbox()
-  → Browser (never touches raw tables; sees tier-appropriate views/aggregates only)
+**Frontend:** static vanilla-JS app (`app.js`, `data.js`, `auth.js`, `login.js`, `consent.js`) + public `p.html` (media kit), `o.html` (org page). **Backend:** Supabase (Postgres + RLS, Auth, 6 Edge Functions, Storage `ig-media`).
 
-External conversion (UTM/promo/pixel) → ci_conversions → CPA/ROAS
-Agency-entered terms → ci_commercials (org-private) → effective-cost metrics
-```
+**Tables (16):** members, invites, leads, creators, campaigns, barter_items, applications, dream_plans, story_deals, irm_contacts, social_accounts, org_profiles, social_tokens, platform_admins, ai_usage, audit_log. **Edge Functions:** instagram-login, instagram-auth, instagram-refresh, instagram-publish, ai-chat, whatsapp-send.
 
-**Invariants:** raw ingestion is **immutable append-only**, written only by service-role workers; the `intel` schema is **not exposed to the Supabase Data API**; the browser reads only through hardened functions/tier views; tokens & private message content stay server-side.
+**Strengths to keep:** per-org RLS (`org_id = my_org()`); trigger-provisioned members; immutable role/org from client; cross-org access only via `SECURITY DEFINER`; tokens isolated in `social_tokens` (service-role only).
+
+**Gaps the engine fixes:** no stable creator identity (`creators` free-text roster vs `social_accounts` Meta data are unlinked); snapshots overwritten each sync (no history); no provenance/feature store; no brand entity, campaign↔creator membership, commercials, conversions, or profile system.
+
+**Name/free-text relationships to migrate to IDs (targets):** `creators↔social_accounts` (name/handle), `barter_items.creator/campaign`, `applications.creator_name`, `campaigns.brand`, `campaigns.creators` (int count), `story_deals.celebrity/brand/manager`, `irm_contacts.name/handle`, `dream_plans.creator_email`, `campaigns.platforms/hashtags`, `creators.followers/eng/tier/cat`, `social_accounts.mentions[].username`.
 
 ---
 
-## 3. Canonical entity-relationship model
+## 3. User-role model
 
-All new objects live in an **`intel` schema** (prose prefix `ci_`) that is **not exposed via the Data API**; clients reach them only through hardened functions or explicitly-granted `security_invoker` "latest" views (§7). Existing `public` tables gain only **nullable** FK columns (§5).
+Same login, different faces. Roles: **Creator**, **Brand**, **Agency (owner)**, **Corporate (multi-brand)**, **Talent Manager**, **Super Admin** (platform-level, `platform_admins`). Creators onboard instantly; agency-side roles require platform approval (existing behaviour). **Operators** of a creator identity are modelled separately (§6 `ci_identity_actor_access`) so a manager/agent can operate an identity — including an **agent-managed celebrity with no creator login**. Organisation access is **relationship-scoped**, not blanket "Org" (§14.F, §10).
 
-### 3.1 Identity, platform account, authorised actor, org relationship
+---
 
-- **`ci_creator_identity`** — the human/talent/creator entity. **No platform ID, no `member_id`.** Exists without a Geek login (e.g. agent-managed celebrity). `identity_id pk`, `display_name`, `kind` (`creator`|`celebrity`|`talent`), `is_claimed`, `created_at`.
-- **`ci_platform_account`** — a real account on a platform. `platform_account_id pk`, `platform`, `platform_user_id`, `username`, `account_type`, `status`, `first_seen_at`, `last_verified_at`; **`unique(platform, platform_user_id)`**.
-- **`ci_identity_platform_account`** — identity↔account over time. `identity_id`, `platform_account_id`, `relationship`, `is_primary`, `valid_from`, `valid_to`, `evidence`. One identity → **many** accounts.
-- **`ci_platform_connection`** — a specific OAuth/token connection to a specific account. `connection_id pk`, `platform_account_id`, `authorised_by_member_id`, `token_reference` (→ Vault, never a raw token), `connected_at`, `expires_at`, `revoked_at`, `status`. Reconnection creates a **new** connection row; the account and identity persist.
-- **`ci_identity_actor_access`** — who may operate an identity. `identity_id`, `member_id`, `access_role` (`self`|`agent`|`manager`|`authorised_operator`), `granted_by`, `granted_at`, `revoked_at`, `evidence`. Many operators per identity; one operator across many identities.
-- **`ci_org_creator_relationship`** — **all** org-scoped CRM. `org_id`, `identity_id`, `relationship_type` (`roster`|`represented`|`managed`|`campaign_only`|`discovered`), `assigned_manager_member_id`, `status`, `source`, `created_at`, `ended_at`. Org notes/commercials/assignments attach here (or another org-scoped entity) — **never** to the global identity. No org may infer another org's relationship, notes or commercials.
-- **`ci_identity_merge_event`** — append-only merge ledger (§3.4).
-- **`ci_identity_link`** — **migration/reconciliation ledger only**; its polymorphic shape is never the runtime relationship model.
+## 4. End-to-end connection & profile-completion flow
 
-### 3.2 Brands (canonical + tenant-scoped)
+**One click, all five, then a guided profile.**
 
-- **`ci_brand`** — canonical brand identity. `brand_id pk`, `name`, `aliases text[]`, `domain`, `parent_brand_id null`.
-- **`ci_org_brand_relationship`** — org-specific CRM: `org_id`, `brand_id`, account ownership, internal notes, commercial history, parent-corporate portfolio link, agency/client relationship, visibility boundary. A corporate account holds multiple brands without exposing one agency's private brand records to another.
+1. Creator taps **"Connect Instagram & Build My Profile."** Disclosure copy sits beside it (what Geek analyses, Privacy Policy, Data Use Policy, Disconnect Instagram).
+2. Meta authorization opens **immediately**, requesting the five scopes together: `instagram_business_basic, instagram_business_manage_insights, instagram_business_manage_comments, instagram_business_manage_messages, instagram_business_content_publish`. (No pre-OAuth Geek selection page.)
+3. Callback → **server** exchanges the code (Edge Function), stores the token in **Vault**, writes `ci_platform_connection` + `ci_scope_grant` (per-scope, per-connection), verifies which scopes Meta actually granted, and defaults granted capabilities to **enabled**.
+4. **Initial ingestion starts automatically** (queue jobs), independent of profile completion.
+5. Geek **creates/opens the creator's profile draft** and routes to **"Complete Your Creator Profile."**
+6. Fields **legitimately returned by Meta are prefilled**, each showing its **source badge** (§5). Creator **reviews, corrects, confirms**; optional fields may be **skipped** and completed later. Profile completion **never stops ingestion**.
+7. A permanent **"My Creator Profile"** section stays available for edits, export, and deletion of optional data.
 
-### 3.3 Campaign participation & commercials
+**Profile cards (mobile-first, Save & Continue):** A Identity · B Contact · C Delivery Address · D Skills & Resources · E Brand Experience · F Collaboration Preferences (barter) · G Paid Rate Card · H Dream Brands · I Instagram Intelligence & Data Access.
 
-- **`ci_campaign_participation`** — campaign↔identity membership. `campaign_id` (→ `public.campaigns`), `identity_id`, `role`, `status` (`invited`|`applied`|`approved`|`live`|`delivered`|`dropped`), `agreed_deliverables jsonb`, `created_at`.
-- **`ci_commercials`** — **org-private** negotiated terms. `org_id` (owner), `ci_org_creator_relationship` ref, `campaign_id`, `identity_id`, `fee_amount`, `currency`, `fee_basis`, `exclusivity jsonb`, `entered_by`, `entered_at`.
-- **`ci_conversions`** — external outcomes for CPA/ROAS. `org_id`, `campaign_id`, `identity_id`, `source`, `event_type`, `count`, `revenue`, `occurred_on`, `evidence`.
+**Two separate indicators, never merged:**
+- **Profile Completion %** — how much information the creator supplied (transparent field weights).
+- **Verified Data Coverage %** — what Geek can verify via connected platforms + internal campaign history.
 
-### 3.4 Audited, reversible merges
+An incomplete profile **must never** reduce Performance, raise Fraud Probability, or label the creator unreliable.
 
-**`ci_identity_merge_event`** (append-only): `source_identity_id`, `target_identity_id`, `reason`, `evidence`, `performed_by`, `performed_at`, `reversed_at`, `reversed_by`. Rules: **automatic merge only on exact verified stable platform ID**; handles/names **never** auto-prove ownership (they change and get recycled); fuzzy matches stay review candidates; **prevent merge cycles**; retain alias history; **support audited unmerge**; preserve all original source records. **`merged_into` is not a runtime mechanism.**
+---
 
-### 3.5 Observed (raw, immutable, append-only)
+## 5. Source-of-truth & field-provenance model
 
-- **`ci_ingest_run`** — provenance of a run: `run_id`, `source`, `scope`, `connection_id`, `started_at`, `finished_at`, `status`, `api_calls`, `rows_written`, `error`.
-- **`ci_account_snapshots`** — `snapshot_id`, `identity_id`, `platform_account_id`, `source_observed_at`, `captured_at`, `followers_count`, `follows_count`, `media_count`, `reach`, `impressions`, `profile_views`, `accounts_engaged`, `source`, `api_version`, `ingest_run_id`, `payload_hash`. **No `unique(identity_id, as_of)`** (§6).
-- **`ci_media`** — stable post identity: `media_id pk`, `identity_id`, `platform_account_id`, `media_type`, `permalink`, `posted_at`, `first_seen_at`, `deleted_at null` (tombstone).
-- **`ci_media_version`** — immutable caption/metadata versions: `media_id`, `version_no`, `caption`, `metadata jsonb`, `source_observed_at`, `captured_at`, `payload_hash`.
-- **`ci_media_insights`** — `media_id`, `source_observed_at`, `captured_at`, `reach`, `impressions`, `saved`, `likes`, `comments`, `shares`, `plays`, `total_interactions`, `source`, `api_version`, `ingest_run_id`, `payload_hash`.
-- **`ci_audience_observations`** — the corrected audience model (§8).
-- **`ci_mentions`** — organic mentions: `identity_id`, `brand_id null`, `raw_brand`, `media_id null`, `mention_type`, `detected_at`, `source`, `evidence`.
-- **`ci_comments`** + **`ci_comment_sentiment`** — retention-limited comment text; sentiment is *derived* with `model_version`/`confidence`.
+Every profile field carries provenance: `source_type`, `source_reference`, `first_observed_at`, `last_updated_at`, `creator_confirmed_at`, `verification_status`, `verified_by`, `confidence` (where applicable). Stored in **`ci_profile_field_provenance`**; sensitive/commercial fields keep **edit history** (values never silently overwrite each other across sources).
 
-### 3.6 Control & consent (four separate systems — §9)
+**`source_type`:** From Instagram · From Geek account · Creator entered · Detected from content · Verified campaign history · Agency verified.
+**`verification_status`:** API observed · creator confirmed · campaign verified · agency verified · detected/unconfirmed · disputed · unavailable.
 
-- **`ci_scope_grant`** — Meta permission state, **owned by `ci_platform_connection`** (`connection_id` FK).
-- **`ci_capability_switch`** — internal Geek feature controls, **owned by `ci_identity_platform_account`** so they **survive reconnection**.
-- **`ci_processing_consent`** — `identity_id`, `accepting_actor_member_id`, `authority/evidence`, `notice_version`, `purposes jsonb`, `accepted_at`.
-- **`ci_profile_visibility`** — visibility-tier authorisation (§7).
-- **`ci_messaging_consent_events`** — **audit projection only** of processing-consent/capability events for messaging; **not** a fifth consent system.
+**Prefill matrix — prefill *only* where the active production API actually returns the value.**
 
-### 3.7 Messaging (campaign-scoped — §12)
-
-`ci_ig_conversations`, `ci_ig_messages` (minimised), `ci_ig_message_events` (text-free ledger), `conversation_assignments`, `ci_conversation_campaign_links`, `ci_response_metric_snapshots`, `ci_messaging_sync_jobs`.
-
-### 3.8 Feature store, ranking, requests
-
-- **`ci_metric`** — serving feature store (§10), one row per `(identity_id, metric_key, source_observed_at, method_version)` with the full provenance envelope + `status`.
-- **`ci_ranking_run`** / **`ci_ranking_result`** — explainable brief-specific ranking (§11.2).
-- **`ci_data_request`** — access/export/delete requests (retention, §13).
-
-### 3.9 Canonical entity inventory (primary ownership / FKs)
-
-| Entity | Owner / grain | Key FKs |
+| Field group | Prefillable from Instagram (if API returns) | Never auto-prefilled as Instagram fact |
 |---|---|---|
-| `ci_creator_identity` | global human | — |
-| `ci_platform_account` | global account | `unique(platform, platform_user_id)` |
-| `ci_identity_platform_account` | identity↔account | `identity_id`, `platform_account_id` |
-| `ci_platform_connection` | a connection | `platform_account_id`, `authorised_by_member_id`, `token_reference`→Vault |
-| `ci_identity_actor_access` | operator grant | `identity_id`, `member_id` |
-| `ci_org_creator_relationship` | **org** | `org_id`, `identity_id`, `assigned_manager_member_id` |
-| `ci_identity_merge_event` | append-only ledger | `source_identity_id`, `target_identity_id` |
-| `ci_identity_link` | migration ledger only | (polymorphic; non-runtime) |
-| `ci_brand` | global brand | — |
-| `ci_org_brand_relationship` | **org** | `org_id`, `brand_id` |
-| `ci_campaign_participation` | campaign↔identity | `campaign_id`, `identity_id` |
-| `ci_commercials` | **org** | `org_id`, `campaign_id`, `identity_id`, rel ref |
-| `ci_conversions` | **org** | `org_id`, `campaign_id`, `identity_id` |
-| `ci_account_snapshots` / `ci_media*` / `ci_media_insights` / `ci_audience_observations` / `ci_mentions` / `ci_comments*` | identity/account (raw) | `identity_id`, `platform_account_id`, `ingest_run_id` |
-| `ci_scope_grant` | **connection** | `connection_id`, `scope` |
-| `ci_capability_switch` | identity–account rel | `identity_id`, `platform_account_id`, `capability` |
-| `ci_processing_consent` | identity | `identity_id`, `accepting_actor_member_id`, `notice_version` |
-| `ci_profile_visibility` | identity/tier | `identity_id`, `tier` |
-| `ci_ig_*` / `conversation_*` / `ci_response_metric_snapshots` | identity/campaign | `identity_id`, `conversation_id`, `campaign_id` |
-| `ci_metric` | identity | `identity_id`, `metric_key` |
-| `ci_ranking_run` / `ci_ranking_result` | request/identity | `run_id`, `identity_id` |
+| Platform identity | platform_user_id, username, profile link (derived), display name, profile picture, biography, website, account type | — |
+| Counts / media | followers, follows, media counts; public media + timestamps; supported account/media insights; supported audience aggregates | — |
+| Personal identity | — | gender, age, DOB, marital status, anniversary, residential city/state |
+| Contact | (an auth email may be *suggested* from Geek's auth system, clearly labelled "From Geek account") | WhatsApp number, private email, phone |
+| Professional | — | skills, resources, rates, barter willingness, brands worked with, dream brands, residential address |
+
+**Critical rule — audience ≠ creator.** Follower/reached/engaged demographics describe the **audience**: follower gender ≠ creator gender; follower age ≠ creator age; audience city ≠ creator residence; audience country ≠ creator nationality; content language ≠ confirmed creator language; a brand mention ≠ proof of paid collaboration. Meta `name` may be shown as a **suggested** full name but is **not** silently split into verified first/last names — the creator confirms.
 
 ---
 
-## 4. ER summary (text)
+## 6. Canonical ER model
 
-```
-ci_creator_identity 1─* ci_identity_platform_account *─1 ci_platform_account 1─* ci_platform_connection 1─* ci_scope_grant
-ci_creator_identity 1─* ci_identity_actor_access *─1 members
-ci_creator_identity *─* orgs (via ci_org_creator_relationship) 1─* ci_commercials
-ci_creator_identity 1─* ci_identity_merge_event (append-only; audited unmerge)
-ci_identity_platform_account 1─* ci_capability_switch          ci_creator_identity 1─* ci_processing_consent
-ci_creator_identity 1─* ci_profile_visibility
-ci_platform_account 1─* ci_account_snapshots | ci_media(+ci_media_version, tombstone) 1─* ci_media_insights | ci_audience_observations | ci_mentions *─1 ci_brand
-ci_brand 1─* ci_org_brand_relationship (org-scoped)
-ci_creator_identity *─* public.campaigns (via ci_campaign_participation) ; public.campaigns 1─* ci_conversions
-ci_creator_identity 1─* ci_ig_conversations 1─* ci_ig_messages ; ci_ig_conversations 1─* ci_ig_message_events (no text)
-ci_ig_conversations *─1 conversation_assignments (→ members) ; ci_ig_conversations *─* public.campaigns (via ci_conversation_campaign_links)
-ci_creator_identity 1─* ci_metric ; ci_ranking_run 1─* ci_ranking_result *─1 ci_creator_identity
-every raw/derived row ──► ci_ingest_run (provenance)
-```
+New objects live in **unexposed** schemas — `intel` (professional intelligence) and `private` (PII) — reachable by the browser **only** through the `api` schema (§15). Existing `public` tables gain only **nullable** FK columns (§24).
 
----
+### 6.1 Identity, account, connection, operator, org
+- **`ci_creator_identity`** — the human/talent entity. **No platform ID, no `member_id`.** Exists without a Geek login. `identity_id`, `display_name`, `kind`(creator|celebrity|talent), `is_claimed`, `created_at`.
+- **`ci_platform_account`** — a real platform account. `platform_account_id`, `platform`, `platform_user_id`, `username`, `account_type`, `status`, `first_seen_at`, `last_verified_at`; **`unique(platform, platform_user_id)`**.
+- **`ci_identity_platform_account`** — identity↔account over time (`is_primary`, `valid_from/to`, `evidence`). One identity → many accounts.
+- **`ci_platform_connection`** — a specific OAuth/token connection. `connection_id`, `platform_account_id`, `authorised_by_member_id`, `token_reference`→Vault, `connected_at`, `expires_at`, `revoked_at`, `status`, **`supersedes_connection_id`**, `activated_at`, `last_validated_at`. **Only one *active* connection per `platform_account_id + provider_app/environment`** (§14.D).
+- **`ci_identity_actor_access`** — operators of an identity. `identity_id`, `member_id`, `access_role`(self|agent|manager|authorised_operator), `granted_by`, `granted_at`, `revoked_at`, `evidence`.
+- **`ci_org_creator_relationship`** — **all** org CRM. `org_id`, `identity_id`, `relationship_type`(roster|represented|managed|campaign_only|discovered), `access_scope`, `assigned_manager_member_id`, `status`, `source`, `created_at`, `ended_at`. Org notes/commercials/assignments attach **here**, never to the global identity.
+- **`ci_identity_merge_event`** — append-only merge/unmerge ledger (§14.B).
+- **`ci_identity_link`** — migration/reconciliation ledger **only** (never runtime).
 
-## 5. Table-by-table additive migration & seeding
+### 6.2 Brands & campaigns
+- **`ci_brand`** — canonical brand (`brand_id`, `name`, `aliases[]`, `domain`, `parent_brand_id`).
+- **`ci_org_brand_relationship`** — org-scoped brand CRM (ownership, notes, commercial history, portfolio, visibility). No cross-agency leakage.
+- **`ci_campaign_participation`** — campaign↔identity membership (`status`, `agreed_deliverables`).
+- **`ci_commercials`** — **org-private** negotiated terms (references `ci_org_creator_relationship`). Distinct from the creator's rate card (§11).
+- **`ci_conversions`** — external outcomes (UTM/promo/pixel) for CPA/ROAS.
 
-**Rule:** add **nullable** columns only; **dual-write** (keep text, add id when known); **backfill**; **verify**; then switch reads behind a feature flag. **No** `DROP`/`NOT NULL`/type change on legacy columns until ≥ N verified release cycles (a later, separately-approved migration).
+### 6.3 Profile entities (private + professional) — §7–§12
+`private.creator_personal_profile`, `private.creator_contact`, `private.creator_address`; `ci_creator_professional_profile`, `ci_creator_skill`, `ci_creator_resource`, `ci_creator_brand_experience`, `ci_creator_commercial_preference`, `ci_creator_rate_card`, `ci_creator_brand_aspiration`, `ci_profile_field_provenance`, `ci_profile_completion`.
 
-**Identity seeding (Phase 0A/observed):**
-1. Create/upsert **`ci_platform_account`** from the **verified stable platform ID** (`ig_user_id`) in `social_accounts`.
-2. Connect it to a **`ci_creator_identity`** via **`ci_identity_platform_account`** (claimed identity).
-3. For `creators` rows with no verified account → create a **shadow identity** (valid, `is_claimed=false`); **handles/names never auto-merge**. A later verified connection merges via **`ci_identity_merge_event`**.
-4. `ci_identity_link` records provisional/fuzzy links for **reconciliation only**.
+### 6.4 Observed, control, messaging, feature store
+Raw: `ci_ingest_run`, `ci_account_snapshots`, `ci_media`(+`ci_media_version`, tombstone), `ci_media_insights`, `ci_audience_observations`, `ci_mentions`, `ci_comments`(+`ci_comment_sentiment`). Control: `ci_app_scope_capability`, `ci_scope_grant`, `ci_capability_switch`, `ci_processing_consent`, `ci_profile_visibility`, `ci_messaging_consent_events`(audit projection only). Messaging: `ci_ig_conversations`, `ci_ig_messages`, `ci_ig_message_events`, `conversation_assignments`, `ci_conversation_campaign_links`, `ci_response_metric_snapshots`, `ci_messaging_sync_jobs`. Feature store: `ci_metric`, `ci_ranking_run`, `ci_ranking_result`, `ci_data_request`.
 
-| Existing table | Additive column(s) | Backfill | Read cut-over flag |
-|---|---|---|---|
-| `social_accounts` | `identity_id`, `platform_account_id` | `ig_user_id` exact | `ci.identity` |
-| `creators` | `identity_id` | handle_exact → else shadow | `ci.identity` |
-| `campaigns` | `brand_id` | `ci_brand` alias match | `ci.brands` |
-| `campaigns` (participation) | keep `creators` int as cached count | derive from `ci_campaign_participation` | `ci.participation` |
-| `barter_items` | `creator_id`, `campaign_id` | identity/name→id | `ci.barter_ids` |
-| `applications` | `applicant_identity_id` | applicant member→identity | `ci.app_ids` |
-| `story_deals` | `celebrity_identity_id`, `brand_id`, `manager_member_id` | fuzzy + review | `ci.story_ids` |
-| `irm_contacts` | `identity_id` | handle/name→identity | `ci.irm_ids` |
-| `dream_plans` | `member_id` | email→member | `ci.dream_ids` |
+**The creator profile attaches to `ci_creator_identity`, never to an Instagram handle.** Instagram data attaches via `ci_creator_identity → ci_identity_platform_account → ci_platform_account`, supporting multiple accounts, future YouTube/TikTok, agent-managed celebrities, username changes, and reconnection without losing profile data.
 
 ---
 
-## 6. Immutable ingestion & idempotency
+## 7. Private creator profile model (`private` schema)
 
-- **Immutable append-only.** Historical rows are **never updated**. **No `unique(identity_id, as_of)`** — that would forbid legitimate multiple observations per day.
-- **Every raw row carries:** `source_observed_at`, `captured_at`, `ingest_run_id`, `source_record_id` (where available), `payload_hash`/`idempotency_key`.
-- **Dedupe:** a re-delivery of the *same* observation is ignored via the idempotency key. A **different** observation the same day (different `source_observed_at` or payload) creates **another immutable row**.
-- **Serving:** current values come from **"latest" views / materialized views**, not by overwriting history.
-- **Media mutability:** stable `ci_media`; editable caption/metadata as immutable `ci_media_version` rows; **deletion tombstone** (`ci_media.deleted_at`); edit history retained where Meta reports changes.
+**`private.creator_personal_profile`** — `identity_id`, `first_name`, `last_name`, `gender`, `date_of_birth`, `age_band` (nullable, used only if DOB incomplete), `marital_status`, `marriage_anniversary`, private provenance/timestamps.
+- **Age is calculated from DOB**, not independently stored. Gender/DOB/marital status/anniversary are **optional** and **private by default**.
+- These fields are **never inferred** from content, appearance, name, follower demographics or audience insights. Marital status/anniversary **never** affect ranking, fraud, brand-safety, performance or reliability. Instagram `name` may seed a suggested full name; the creator confirms/edits.
 
----
+**`private.creator_contact`** — `identity_id`, `whatsapp_e164`, `whatsapp_verified_at`, `email`, `email_verified_at`, `preferred_contact_method`, `whatsapp_optin`, `email_optin`, communication consent evidence.
+- Store WhatsApp in **E.164**; verify number via **OTP** and email via verification before marking verified. An auth email may be *suggested* from Geek's auth system. **Do not assume Instagram provides private email/phone.** Record communication-consent version/purpose/timestamp/withdrawal. **Contact is never marketplace-public.**
 
-## 7. Authorisation & visibility
-
-Authorisation is DB-enforced. **Visibility tiers** (no per-brand consent, ever):
-
-`creator/private` · `authorised representative` · `organisation roster` · `marketplace summary` · `campaign-specific shared intelligence` · `public media kit`.
-
-- **Campaign participation** enables **campaign-limited** access only — **never** unrestricted historical intelligence.
-- **Commercials & org-private notes** always reference `ci_org_creator_relationship`/`org_id`; no cross-tenant inference.
-- **Super-admin access is via audited administrative functions**, not broad client policies. Raw `intel` tables are **inaccessible to browser roles** entirely.
-
-### 7.1 RLS & visibility matrix
-
-Legend: **Own** = the creator's own identity · **Rep** = an authorised actor (`ci_identity_actor_access`) · **Org** = identities in the reader's `ci_org_creator_relationship` · **Campaign** = only within a shared campaign · **Mktsum** = marketplace summary tier · **Agg** = aggregated indicators only · **—** none · **Admin-fn** = audited admin function only.
-
-| Object | Creator | Brand | Agency | Corporate | Manager | Super Admin |
-|---|---|---|---|---|---|---|
-| identity / platform account | Own/Rep | Mktsum | Org | Org | Org (talent) | Admin-fn |
-| account & media snapshots/insights | Own/Rep | Campaign/Agg | Org | Org | Org | Admin-fn |
-| audience observations (follower/reached/engaged) | Own/Rep | Campaign/Agg | Org | Org | Org | Admin-fn |
-| `ci_metric` (derived signals) | Own/Rep | Mktsum/Campaign/Agg | Org | Org | Org | Admin-fn |
-| `fraud_probability` (estimate) | Own (as estimate) | Agg + evidence | Org | Org | Org | Admin-fn |
-| `ci_commercials` / org notes | Own rows | — | Org (owner) | Org | Org (own talent) | Admin-fn |
-| `ci_campaign_participation` | Own | Own campaigns | Org | Org | Org | Admin-fn |
-| `ci_conversions` | Own | Own campaigns (Agg) | Org | Org | Org | Admin-fn |
-| ranking / NL search | — | Consented+coverage pool | Org pool | Org pool | Org pool | Admin-fn |
-| raw messages **content** | Own/Rep | — | Authorised campaign convs, audited | Org (same) | Org (same) | Admin-fn (break-glass) |
-| message **event ledger / metadata** | Own/Rep | Agg only | Org (campaign) | Org | Org | Admin-fn |
-| responsiveness metrics | Own/Rep | **Agg indicators only** | Org | Org | Org | Admin-fn |
-| control tables (scope/consent/capability/visibility) | Own manage | — | request/view | request/view | request/view | Admin-fn |
-| tokens & private message content at rest | — | — | — | — | — | — (Vault/service only) |
-
-**Notes:** brands never see raw DMs, participants, or message content — only aggregated response/reliability indicators respecting a minimum sample size; unrelated/private conversations never reach any scoring input; every message-content access is audited; message text is never logged.
-
-### 7.2 Supabase-specific controls (defence in depth)
-
-- The **`intel` schema is not exposed through the Data API** (not in the exposed schemas list); browser roles cannot select its tables.
-- **Explicit** `GRANT`s on tables/functions; **RLS enabled** on all as defence in depth.
-- **"latest" views** are `security_invoker` **or** reachable only through hardened functions.
-- **`SECURITY DEFINER` functions live in an unexposed schema**, with **fixed `search_path`**, **schema-qualified** object references, **org derived from the authenticated context** (never caller-supplied `org_id`), **`REVOKE EXECUTE FROM PUBLIC`** then grant to intended roles only, **minimal return columns**, and **audited** sensitive reads.
-- **pgTAP allow/deny tests** for **every role and tenant boundary** (positive and negative).
+**`private.creator_address`** — `address_id`, `identity_id`, line1, line2, landmark, city, state, postal_code, country, delivery_instructions, `label`(Home|Office|Manager|Other), `is_default`, verified/confirmed timestamps.
+- Full address is **private and protected/encrypted**; brands never receive it. Only authorised Geek/agency **logistics** functions may access it, **audited**. Multiple addresses allowed. A confirmed address is required **only before accepting a physical-product/hamper campaign** — never to create a profile. **Audience geography must never prefill residential address.**
 
 ---
 
-## 8. Audience-intelligence model
+## 8. Professional creator profile model (`intel` schema)
 
-**`ci_audience_observations`** distinguishes three audience types and stores **separate marginal breakdown rows**:
+**`ci_creator_professional_profile`** — `identity_id`, `display_name`, coarse `city`/`state`, `categories`, `languages`, `bio`, visibility defaults, provenance. Marketplace-facing; **no** contact/address/personal PII here.
 
-- `audience_type` ∈ {`followers`, `reached`, `engaged`} → follower / reached-audience / engaged-audience demographics.
-- One row per `breakdown_type` ∈ {`age`, `gender`, `country`, `city`} per `dimension_key`/`dimension_value`.
-- Columns: `identity_id`, `platform_account_id`, `metric_name`, `audience_type`, `breakdown_type`, `dimension_key`, `dimension_value`, `value_count` (where supplied), `calculated_percentage` (where calculated), `period`, `timeframe`, `observed_at`, `captured_at`, `source`, `api_version`, `run_id`, `status` (`available`|`suppressed`|`insufficient_audience`|`permission_missing`|`token_expired`|`api_error`), `suppression_reason`, `sample_size`/`audience_total` (where supplied), `raw_payload_reference`/`response_hash`.
+**`ci_creator_skill`** — `identity_id`, `skill_key` (controlled searchable taxonomy + optional custom), `skill_level`, `years_experience`, `portfolio_link`, `creator_confirmed_at`. Taxonomy seed: Acting, Dancing, Singing, Makeup, Styling, Photography, Videography, Editing, Scriptwriting, Comedy, Fitness, Yoga, Cooking, Gaming, Technology, Finance, Parenting, Travel, Public speaking, Regional-language content, Live hosting.
 
-**Marginal vs joint:** Meta may return age, gender and city as **separate marginal distributions**. Geek **must not** claim a joint intersection ("women 25–34 in Bangalore") unless Meta explicitly returned that joint breakdown. **No estimated joint segments at launch.** If ever estimated later: label **`predicted`**, record method, provide confidence, never present as an observed Meta fact. No generic `age_gender` field unless the active API returns a combined dimension. Every metric/period/timeframe/breakdown is validated against the active Graph API version at implementation.
+**`ci_creator_resource`** — `identity_id`, `resource_key` (structured + custom), `evidence` (optional), `creator_confirmed_at`. Seed: Smartphone, Professional camera, Microphone, Lighting, Home studio, Editing setup, Drone, Car/two-wheeler, Kitchen, Fitness space, Travel availability, Makeup/styling support, Content team, Photographer, Videographer, Manager/agent, Unique-location access. **Resources are creator-declared** and not represented as API-verified unless evidence exists.
 
 ---
 
-## 9. Consent & control model (four separate systems)
+## 9. Brand experience model
 
-There is **no `ci_consent`, no `granted_to_org`, no `grant_consent(...)`, and no per-brand permission UX.**
+**`ci_creator_brand_experience`** — `experience_id`, `identity_id`, `brand_id` (nullable), `submitted_brand_name` (nullable), `relationship_type`, `compensation_type`, `campaign_id` (nullable), `start_date`, `end_date`, `deliverables`, `evidence`, `source_type`, `verification_status`, `verified_by`, `creator_confirmed_at`, `created_at`, `updated_at`.
 
-1. **`ci_scope_grant`** — technical Meta permission state, per **connection** (`ci_platform_connection`). Five distinct, non-interchangeable statuses: **approved-by-Meta**, **requested-in-OAuth**, **granted-by-creator**, **currently-valid**, **revoked/expired**. Features gate on **currently-valid**.
-2. **`ci_processing_consent`** — the Geek privacy-notice/purpose the creator accepted: `identity`, `accepting_actor`, `authority/evidence`, `notice_version`, `purposes`, `timestamp`.
-3. **`ci_capability_switch`** — internal Geek feature controls (Performance Insights, Comment Intelligence, Campaign Messaging Intelligence, Publishing & Scheduling), owned by the **identity–platform-account** relationship so they **survive reconnection**. `instagram_business_basic` cannot be disabled independently (removal = Disconnect).
-4. **`ci_profile_visibility` / relationship-based authorisation** — the tiers in §7.
+**`source_type`:** Geek campaign verified · agency verified · creator declared · content-detected suggestion · organic brand mention · imported historical data.
 
-**Existing users:** do **not** infer acceptance of expanded intelligence purposes from an old token. Record the **current notice version via a simple in-product acknowledgement** at reconnect/next relevant sign-in — **no extra Meta OAuth** for that acknowledgement.
-
-**Capability disable semantics:** stop new API calls needing that permission; stop related ingestion; exclude that data from **future** intelligence; record `{date, user, notice/consent version}`; apply the stated retention treatment (§13); never silently re-enable; never claim Meta revocation unless Geek actually revoked via a supported Meta mechanism. **Re-enable:** resume immediately if the grant is still valid; require **one** reauthorization (with explanation) only if missing/expired/revoked.
+**Critical distinction.** A brand detected via caption/hashtag/tag/mention is **not** automatically a "brand worked with." Detected mentions land in a **review area** — *"We found content mentioning these brands. Confirm which ones you have actually collaborated with."* — where the creator classifies each: Paid · Barter · Hybrid · Ambassador · Affiliate · UGC only · Organic mention only · Never worked with · Not sure/review later. **Only confirmed or campaign-verified relationships** enter "Brands Worked With"; organic mentions remain **separate** intelligence signals. Brands/agencies always see the label (**Geek verified / Agency verified / Creator declared / Detected organic mention**); creator-declared experience is **never** shown as independently verified.
 
 ---
 
-## 10. Observed / Derived / Predicted + feature store
+## 10. Barter & commercial-preference model
 
-Every value is tagged `tier` and (for non-observed) carries the full **provenance envelope**: `method`/`model_version`, `computed_at`, `window`, `sample_size`, `confidence`, `is_estimate`, `inputs`, `run_id`, and a `status` (`ok`|`insufficient_data`|`unavailable`|`missing_permission`|`token_expired`|`api_error`).
+**`ci_creator_commercial_preference`** — the prominent checkbox **"I'm open to barter collaborations with established/top brands"** plus optional structured preferences: `accepts_barter`(y/n), `barter_preference`(top/established only | selected brands only | any relevant), `preferred_categories`, `excluded_categories`, `min_product_value`, `product_only`, `product_plus_travel`, `product_plus_production_reimbursement`, `city_only`, `travel_ready`, `notes`, `last_confirmed_at`.
 
-- **Observed** — Meta facts + internal facts (commercials, conversions), stored verbatim & immutable.
-- **Derived** — deterministic, versioned recipes (engagement, avg reach, effective CPM/CPC/CPA/ROAS, category affinity, geo strength, content quality, comment sentiment, reliability).
-- **Predicted** — model outputs with uncertainty (fraud **estimate**, forecasts). `is_estimate=true` mandatory.
-
-**Feature store (`ci_metric`):** compute writes **new** rows (new `source_observed_at`), never mutates history; confidence = f(sample_size, recency, completeness); per-metric freshness SLA; serving is consent/visibility-gated. **Unavailable is `unavailable`, never `0`.**
+Stored as a **creator-declared preference — not an authenticity or performance signal.** "Top brand" is subjective; **no opaque Geek 'top brand' score in Phase 0A** — displayed exactly as selected; editable anytime.
 
 ---
 
-## 11. Scoring, confidence, coverage & ranking
+## 11. Rate-card model
 
-### 11.1 Six separate, explainable measures (never one blend)
+**`ci_creator_rate_card`** — `rate_card_item_id`, `identity_id`, `platform_account_id` (nullable), `deliverable_type`, `amount`, `currency`(default INR), `unit_quantity`, `duration_minutes` (nullable), `negotiable`, `includes_production`, `includes_editing`, `usage_rights_included`, `usage_rights_days` (nullable), `exclusivity_included`, `travel_included`, `taxes_extra`, `notes`, `valid_from`, `valid_until`, `visibility`, `source_type`, `creator_confirmed_at`, `updated_at`. Card-level flags: accepts paid (y/n), rates negotiable (y/n), rate last updated, rate-card visibility, commercial contact (self/agent/manager).
 
-1. **Creator Performance Score** · 2. **Reliability Score** · 3. **Brand-Safety Score** · 4. **Fraud Probability** (labelled estimate) · 5. **Creator Intelligence Confidence** · 6. **Verified Data Coverage**.
+**Deliverable types:** IG Reel, IG Collab Reel, IG Static Post, IG Carousel, IG Story (single), IG Story (set), IG Live, Brand/store/restaurant visit, Event appearance, Event hosting, UGC video (no posting), UGC photo set, Usage-rights add-on, Exclusivity add-on, Travel/outstation add-on, Custom.
 
-**Rules:** disabling a capability / withdrawing a permission may lower **only Confidence and Coverage** — never auto-reduce Performance, raise Fraud, label untrustworthy, or fabricate a zero. Publishing & Scheduling is operational and affects **no** score. Response speed alone is never quality.
-
-### 11.2 Missing-data ranking policy & storage
-
-1. Missing data never becomes zero. 2. It never silently improves/reduces underlying performance. 3. A **mandatory hard-filter** signal that is unavailable returns **`insufficient_data`** or **`unknown` requiring explicit brand treatment**. 4. **Soft-signal missingness is not silently renormalised** to inflate a creator. 5. Ranking returns **separately**: `partial_fit_score`, `verified_coverage`, `ranking_confidence`, `missing_signal_list`, `signal_contributions` (so Σ = partial_fit_score). 6. Partial scores are **not** compared as if coverage were identical. 7. A brand may set a **Verified Data Coverage minimum** — a **visible brand-selected filter**, never embedded in performance, with **explainable** exclusions; **no default coverage exclusion** at launch. 8. Withdrawal may affect confidence/coverage/eligibility for an explicitly requested threshold, but never rewrites historical performance or fraud.
-
-**Persist on every ranking:** `ranking_formula_version`, `normalization_version`, `missingness_policy_version`, and all `signal_contributions`. Fraud is a **separate advisory gate**, never a hidden term.
-
-**Brand-side display when signals are missing:** "Partially verified Instagram profile — some intelligence signals are unavailable," plus Verified Data Coverage %, last successful verification date, available vs unavailable categories, and per-prediction confidence — in **neutral** language that never frames a privacy choice negatively.
-
-**NL search:** an LLM parses the query into the structured brief (filters + weights) and calls the same `ci_rank` pipeline; it **translates intent only**, never invents metrics.
+Rates are **creator-declared commercial expectations** — not Meta facts, not performance scores, not public by default (visible only per creator settings + authorised marketplace/campaign rules). **Rate-card amount ≠ negotiated campaign amount:** historical negotiated commercials (`ci_commercials`) are stored **separately** and neither overwrites the other.
 
 ---
 
-## 12. Messaging & creator responsiveness (campaign-scoped only)
+## 12. Dream-brand model
 
-**Not a general private-inbox surveillance system.** A conversation contributes to intelligence **only** when it is **initiated through a Geek campaign workflow** or **explicitly linked to a Geek campaign by an authorised user, with audit evidence**. **Unlinked conversations are never content-classified for intelligence.** Operational-inbox processing is kept **separate** from intelligence processing.
+**`ci_creator_brand_aspiration`** — `aspiration_id`, `identity_id`, `brand_id` (nullable), `submitted_brand_name` (nullable), `priority_rank`, `preferred_collaboration_type`, `reason/notes` (nullable), `created_at`, `updated_at`, `active`. UX: searchable canonical selector, suggest-missing-brand, optional top-10 drag-to-rank, editable anytime.
 
-- **Gate:** requires a **currently-valid** `instagram_business_manage_messages` grant on the connection; else `missing_permission` (never `no_response`).
-- **Storage — data minimisation default:** store platform message id, direction, timestamp, conversation category, campaign link, response timing, delivery/read state **where available**; **limited encrypted content only if the inbox needs it**, shortest TTL, audited. **No content or participants enter the feature store.**
-- **Response ledger** (`ci_ig_message_events`) is **text-free**; responsiveness metrics derive from timing/events.
-- **Classification:** 10 categories; only campaign-operational ones (invitation, active campaign, commercial negotiation, deliverable, revision/approval, logistics; inbound brand enquiry only once campaign-linked) feed intelligence; **ambiguous → excluded**.
-- **Attribution honesty:** invitation response rate covers **Geek-tracked** invitations; acceptance/decline from explicit campaign state or a **labelled, confidence-bearing** classifier; agency-member SLA attributable **only** to messages sent **through Geek by an identified member** — **native IG messages are not auto-attributed** to an employee; **read/delivery states are nullable capabilities**, never assumed.
-- **Responsiveness metrics** (`ci_metric`, derived, with `status`): invitation response rate, median & p75 first-response time, acceptance/decline rate, follow-ups before response, conversation-to-campaign conversion, unresolved campaign conversations, last campaign response, agency response SLA — each with `sample_size`, `confidence`, `window`, and the **distinct** statuses `no_response` / `missing_permission` / `token_expired` / `sync_error` / `insufficient_data` (never collapsed). Responsiveness enters ranking as **one capped, named sub-signal**, never as quality by itself.
+Dream brands are **creator preferences** — not campaign history, not inferred from mentions, **not** used as proof of brand affinity — useful for opportunity matching and outreach. Brands may later discover creators who explicitly expressed interest, **subject to the creator's visibility preferences**.
 
 ---
 
-## 13. Privacy, retention & disconnect
+## 13. Observed Creator Intelligence model (raw, immutable)
 
-**Minimise** (aggregate demographics only; message timing not content; retention-limited comment text; tokens in Vault). **No sensitive inference.** **Purpose limitation.** Access/export via `ci_data_request`; all ingestion/admin actions audited.
+Raw observations are **immutable append-only**, written only by service-role workers, each carrying the **standard raw-observation fields** (§14.G): `source_observed_at`, `captured_at`, `ingest_run_id`, `source_record_id`, `payload_hash`, `idempotency_key`, `source`, `api_version`, `status`.
 
-### 13.1 Data-class retention matrix (design intent — durations are a legal/DPO gate)
+- **`ci_account_snapshots`** — followers/follows/media counts, reach, impressions, profile_views, accounts_engaged. **No `unique(identity_id, as_of)`** (multiple observations/day are legitimate).
+- **`ci_media`** (stable) + **`ci_media_version`** (immutable caption/metadata versions) + `deleted_at` tombstone.
+- **`ci_media_insights`** — reach, impressions, saved, likes, comments, shares, plays, total_interactions.
+- **`ci_audience_observations`** — the audience model (§17).
+- **`ci_mentions`** — organic mentions (feed the brand-experience review area, §9).
+- **`ci_comments`** + **`ci_comment_sentiment`** (derived).
 
-For each class: default retention · deletion event · anonymisation · legal/contractual retention · legal hold · backup-deletion window · derived-invalidation · audit-evidence retained after deletion.
-
-| Class | Default (confirm w/ counsel) | On deletion |
-|---|---|---|
-| OAuth transaction records | minutes | expire on use/timeout |
-| Access tokens (Vault) | life of connection | delete on disconnect; verify revocation |
-| Account/audience snapshots | rolling history then archive | anonymise on disconnect |
-| Media insights | media life + window | tombstone on media delete |
-| Comment text | short | delete; keep derived sentiment |
-| Derived sentiment | rolling | invalidate on capability off |
-| Message metadata | campaign life + audit | delete on disconnect (keep audit) |
-| Temp message content | shortest (session/short TTL) | delete on TTL; never to feature store |
-| Campaign records / commercials / conversions | contractual/financial | **not** auto-deleted on disconnect |
-| Ranking results | recompute-cheap | recompute, not repair |
-| Audit logs / consent evidence | long (compliance) | retained after subject deletion |
-| Backups | defined window | purge propagates within window |
-
-### 13.2 Disconnect
-
-Stop new collection immediately; **invalidate current serving features immediately**; revoke/delete tokens (verified); delete/anonymise eligible personal intelligence; **retain only necessary contractual/financial/security/audit records**; record exactly what was deleted/anonymised/retained and why. **Do not blindly cascade-delete** campaign contracts, invoices, or legally required records. Fraud estimates are labelled, evidenced, and **appealable/disputable**.
+Dedupe by idempotency key; a differing same-day observation creates **another immutable row**. Current values served via **"latest" views/materialized views** (never overwriting history).
 
 ---
 
-## 14. Security hardening
+## 14. Consent, capability & visibility model + Phase-0A hardening
 
-- **OAuth:** cryptographically secure `state` (CSPRNG, **never `Math.random()`**); state stored **server-side** or in a securely bound short-lived transaction; **one-time use**, strict expiry, **bound to the initiating user/session**; exact redirect validation; **PKCE if supported** by the selected Meta flow; **`localStorage` alone is not proof** of OAuth state.
-- **Tokens:** **Supabase Vault** for secrets; application-level/envelope encryption at rest; keys outside ordinary application tables; **restricted decrypted-view access**; key rotation; **redaction in logs/errors**; least-privilege service access; **revocation & deletion verified**. (RLS/no-policy isolation is necessary but **is not encryption**.)
-- **`SECURITY DEFINER`:** unexposed schema; fixed `search_path`; schema-qualified references; explicit JWT/user/org validation; **org from auth context, never caller-supplied**; `REVOKE EXECUTE FROM PUBLIC`; minimal return columns; audited sensitive reads; negative cross-tenant tests.
-- **Webhooks:** signature verification; replay protection; event idempotency; timestamp tolerance; secret rotation; dead-letter handling; **no raw message content in logs**.
+### 14.1 Four separate control systems (no `ci_consent`, no `granted_to_org`, no per-brand consent UX)
+1. **`ci_app_scope_capability`** — **app-level** Meta approval: `provider`, `app/environment`, `scope`, `app_review_status`, `approved_at`, `last_verified_at`, `api_version`, `evidence`. (Meta approving the app ≠ a creator granting the scope.)
+2. **`ci_scope_grant`** — **connection-level** grant: `connection_id`, `scope`, `requested_at`, `granted_at`, `last_checked_at`, `valid`, `revoked_at`, `status_reason`, `verification_method`. Owned by `ci_platform_connection`.
+3. **`ci_capability_switch`** — internal Geek feature controls, owned by the **identity–platform-account relationship** (survive reconnection): Performance Insights, Comment Intelligence, Campaign Messaging Intelligence, Publishing & Scheduling. `instagram_business_basic` cannot be disabled independently (removal = Disconnect).
+4. **`ci_processing_consent`** — `identity_id`, `accepting_actor_member_id`, `authority/evidence`, `notice_version`, `purposes`, `accepted_at`.
 
----
+**A feature is enabled only when all hold:** valid **app-level** capability **and** valid **active-connection** grant **and** enabled **internal** capability **and** appropriate **processing consent**.
 
-## 15. Million-creator ingestion architecture
+**Capability disable** stops new API calls/ingestion for that permission, excludes its data from **future** intelligence, records `{date, user, notice/consent version}`, applies the retention treatment (§22), never silently re-enables, and never claims Meta revocation unless actually performed. **Re-enable** resumes if the grant is still valid; requires one reauthorization (with explanation) only if missing/expired/revoked. **Existing users:** never infer expanded-purpose acceptance from an old token — record the current notice version via an **in-product acknowledgement** at reconnect/next sign-in (no extra Meta OAuth).
 
-- **Queue:** **Supabase Queues / pgmq** for the first implementation, **subject to load-test gates** (revisit an external broker if gates fail).
-- **Jobs:** durable, **per-creator/per-connection**; **leasing + visibility timeout**; **idempotent workers**; retry policy with **exponential backoff + jitter**; **dead-letter queue**.
-- **Budgets & priority:** app-level and token-level API budgets; priority for **active campaigns** and **newly connected creators**; **hot/warm/cold** refresh tiers; **backpressure**; **webhook-triggered** work where available; **circuit breakers**.
-- **Data:** **partitioning** for snapshot/message-event/metric tables; **archival**; indexes for **latest-per-creator** and **time-window** queries; cost budgets for API/storage/NLP/vision.
-- **Monitoring:** job-lag & freshness metrics.
-- **Honest initial sync:** Meta cannot supply unlimited historical private insights — record **what was requested, what was returned, and the earliest available observation** per connection.
+### 14.2 Visibility model (`ci_profile_visibility`) — field-level tiers
+- **Private only:** WhatsApp number, private email, full DOB, marital status, anniversary, full delivery address, verification documents, OTP state.
+- **Creator-controlled professional:** display name, coarse city/state, skills, resources, categories, languages, barter openness, paid-collaboration openness, rate-card visibility, brands worked with, dream-brand interest.
+- **Marketplace summary:** display name, profile photo, IG handle/link, broad city/state, categories, skills, selected resources, **verified** brand-experience labels, collaboration openness, selected rate range (only if creator allows), marketplace-appropriate intelligence measures, Verified Data Coverage.
+- **Campaign-specific:** only fields necessary for evaluation, commercials, logistics, deliverables, communication, conflict/exclusivity. **A brand never receives the full residential address merely by the creator joining its campaign** — logistics coordinate delivery without exposing unnecessary private details.
+- **Public media kit:** never exposes contact/address/rates unless explicitly permitted.
 
----
-
-## 16. API contracts (design-level)
-
-All are hardened `SECURITY DEFINER` in the unexposed schema; each re-checks auth/org/visibility/capability and returns provenance + `status` on every non-observed value. **No `grant_consent`, no `granted_to_org`.**
-
-| Contract | Kind | Purpose | Auth |
-|---|---|---|---|
-| `ig_oauth_start` / `ig_oauth_callback` | Edge | one-CTA all-five connect; server code exchange; token→Vault; write connection + scope grants | server |
-| `ci_ingest(connection)` / `ci_messaging_sync(connection)` | worker | immutable ingestion (messaging campaign-scoped) | service role |
-| `record_processing_consent(notice_version, purposes)` | RPC | write `ci_processing_consent` | self/rep |
-| `set_capability(capability, enabled)` | RPC | toggle `ci_capability_switch` (+ warning gate client-side) | self/rep |
-| `get_creator_intelligence(identity_id)` | RPC | metrics + provenance, visibility-gated | tiered |
-| `ci_rank(brief)` | RPC | returns partial_fit/coverage/confidence/missing_list/contributions + versions | org/consent pool |
-| `nl_search(query)` | Edge+RPC | LLM→brief→`ci_rank` | org/consent pool |
-| `get_campaign_inbox(campaign_id)` | RPC | audited campaign inbox (metadata + fetch-on-view content) | agency + assignment |
-| `get_creator_responsiveness(identity_id)` | RPC | responsiveness metrics; **brands get aggregates only** | tiered |
-| `request_data(kind)` / `disconnect_platform(connection)` | RPC | access/export/delete; disconnect per §13.2 | self/rep |
-| `dispute_metric(metric_ref)` | RPC | contest a derived/predicted value | self/rep |
+### 14.3 Phase-0A hardening (decided)
+- **A. Supabase API boundary (§15).** Three schemas: `intel` (private, unexposed), `private` (PII, unexposed), **`api`** (the only exposed surface — approved RPCs + minimal safe presentation views, **no raw tables**). Every browser-facing contract states whether it is an **`api` RPC** or an **Edge Function calling an internal routine**; a browser RPC is **never** described as directly calling an unexposed schema.
+- **B. True append-only merge/unmerge.** `ci_identity_merge_event`: `event_id`, `event_type`(merge|unmerge), `source_identity_id`, `target_identity_id`, `reverses_event_id` (nullable), `reason`, `evidence`, `performed_by`, `performed_at`. An unmerge is a **new event**; the original is never updated.
+- **C. App vs connection scope** — §14.1 items 1–2.
+- **D. Active connection & reconnection.** One active connection per `platform_account_id + provider_app/environment`; on reconnect: create new connection → verify token+scopes → **atomically activate + supersede old** → stop old ingestion → revoke/delete old token → retain non-secret audit history → prevent duplicate ingestion. Capability switches stay on the identity–account relationship.
+- **E. Safe identity backfill.** Stable verified platform ID may auto-link an account; unverified roster rows → **shadow identities**; handle/name/email/fuzzy matches create **review candidates only** (never auto-merge / never establish verified ownership); manual review records reviewer/evidence/timestamp/outcome.
+- **F. Relationship-scoped org access.** "Org" is **not** blanket access: `represented`/`managed` → authorised operational + intelligence surfaces; `roster` → agreement/visibility-based; `campaign_only` → campaign-limited; `discovered` → marketplace summary only. `access_scope` stored explicitly.
+- **G. Standard raw-observation fields** — §13.
+- **H. Consent-terminology.** Use **"marketplace-visible eligible pool"**, not "consented+coverage pool"; no repeated per-brand consent.
+- **I. Phase-0A decisions (recorded as decided):** Supabase **Vault** for Phase-0A token secrets; Supabase-managed project **root-key custody** for Phase 0A (external KMS is a later enterprise/compliance review); `intel` & `private` unexposed; `api` the minimal exposed RPC schema; automatic identity merge **only on exact verified platform ID**; **pgmq** initially, subject to load testing.
 
 ---
 
-## 17. Canonical implementation sequence (single phase list)
+## 15. Supabase schema / API / RLS security model
 
-1. **Phase 0A — dark foundations:** `intel` schema (unexposed); identity/account/actor/org relationships + connection; merge-event ledger; **four control systems**; scope registry; **security hardening** (OAuth-state, Vault, `SECURITY DEFINER`, webhooks); feature flags; pgTAP allow/deny. **No user-visible change.**
-2. **Phase 0B — connection release:** one-CTA all-five OAuth; disclosure copy; capability settings (Data Access page); **secure OAuth state**; existing-user reconciliation/reconnect + **notice-version acknowledgement**; seed platform accounts/identities.
-3. **Observed-data ingestion:** immutable append-only snapshots + media versions/tombstones via the queue; latest-views; backfill seed.
-4. **Campaign & brand relationships:** `ci_brand`, `ci_org_brand_relationship`, `ci_campaign_participation`, `ci_conversation_campaign_links`.
-5. **Derived feature store:** `ci_metric` recipes (engagement, reach, category, geo, content quality, sentiment, reliability); six-measure scoring; consent/visibility-gated serving.
-6. **Ranking & search:** `ci_rank` + `nl_search`; effective CPM/CPC; missing-data policy; replace client `matchScore()`.
-7. **Predicted & external:** conversions (CPA/ROAS), fraud **estimate**, exclusivity/conflict.
-8. **Messaging intelligence — LAST, only after** identity is resolved, a valid messaging scope exists, processing consent is recorded, capability is enabled, campaign-linking rules exist, the privacy filter exists, and deletion/retention controls are operational.
-
-**Cut-over:** per table, switch reads to id-paths only after reconciliation passes; retain legacy text columns ≥ N cycles.
+- **Schemas:** `intel` (professional intelligence, unexposed), `private` (PII/addresses, unexposed), **`api`** (only exposed schema — approved RPCs + strictly necessary safe views, **no raw tables**). The exposed-schemas config lists **only** `api` (and existing `public`), never `intel`/`private`.
+- **Grants:** explicit table/function grants; **revoke default privileges**; **`REVOKE EXECUTE FROM PUBLIC`** then grant to intended roles only.
+- **RLS** enabled everywhere as defence in depth.
+- **"latest" views** are `security_invoker` or reachable only through hardened functions.
+- **Hardened `SECURITY DEFINER` functions** live in an unexposed schema: fixed safe `search_path`, schema-qualified references, explicit authenticated identity/org validation, **org derived from auth context (never caller-supplied `org_id`)**, minimal return fields, audit logging on sensitive reads.
+- **Super-admin access** is via **audited administrative functions**, not broad client policies; raw `intel`/`private` tables are inaccessible to `anon` and ordinary `authenticated`.
+- **Tests:** **pgTAP positive and negative** for every role and tenant boundary.
 
 ---
 
-## 18. Meta permission & capability matrix (versioned)
+## 16. Meta capability matrix (versioned)
 
-**`public_profile` and `email` are account/login permissions — not Instagram audience-intelligence permissions** and are **excluded** from the field matrix below.
+`public_profile` and `email` are **account/login** permissions — **excluded** from the audience-intelligence matrix. **Field status:** `verified-in-prod` · `documented-not-verified` · `unavailable/deprecated` · `optional/nullable`. Grant verification uses the method supported by the **active Instagram Login flow + Graph API version** (not hardcoded `debug_token`). All delivery/read/message and insight fields are **capability-tested at runtime**.
 
-**Field status vocabulary:** `verified-in-prod` · `documented-not-verified` · `unavailable/deprecated` · `optional/nullable`. Grant verification uses the method supported by the **active Instagram Login flow + Graph API version** (**not** hardcoded `debug_token`). All delivery/read/message and insight fields are **capability-tested at runtime** (Meta may omit fields by account/version/threshold/endpoint).
-
-| Permission | Endpoint / field | Graph API ver | Prod-verification status | Optional/nullable | Restrictions / thresholds | Last verified | Intelligence use |
+| Permission | Endpoint / field | API ver | Prod status | Optional/nullable | Restrictions | Last verified | Intelligence use |
 |---|---|---|---|---|---|---|---|
-| `instagram_business_basic` | profile (username, account_type, counts, bio, website); media (caption, type, permalink, timestamp, like/comments_count) | *(confirm at impl)* | documented-not-verified | some nullable | — | *(TBD)* | identity, cadence, engagement |
-| `instagram_business_manage_insights` | account insights (reach, impressions, profile_views, accounts_engaged) | *(confirm)* | documented-not-verified | optional | account type/version | *(TBD)* | performance, avg reach |
-| `instagram_business_manage_insights` | media insights (reach, impressions, saved, likes, comments, shares, plays, total_interactions) | *(confirm)* | documented-not-verified | optional | media type-dependent | *(TBD)* | content quality, CPM base |
-| `instagram_business_manage_insights` | **follower** demographics (age / gender / country / city, **marginal**) | *(confirm)* | documented-not-verified | optional | **≥100 followers**, aggregate | *(TBD)* | audience (followers) |
-| `instagram_business_manage_insights` | **reached-audience** demographics | *(confirm)* | documented-not-verified | optional | threshold/version | *(TBD)* | audience (reached) |
-| `instagram_business_manage_insights` | **engaged-audience** demographics | *(confirm)* | documented-not-verified | optional | threshold/version | *(TBD)* | audience (engaged) |
-| `instagram_business_manage_comments` | comments; mentions/tags | *(confirm)* | documented-not-verified | optional | — | *(TBD)* | sentiment, organic mentions |
-| `instagram_business_content_publish` | media containers → publish | *(confirm)* | documented-not-verified | — | publish limits | *(TBD)* | operational only (no score) |
-| `instagram_business_manage_messages` | conversations; messages (id, direction, timestamp); delivery/read state | *(confirm)* | documented-not-verified | **nullable** delivery/read | messaging window/opt-in | *(TBD)* | campaign responsiveness (timing) |
+| basic | profile (username, account_type, counts, bio, website); public media | *(confirm)* | documented-not-verified | some nullable | — | *(TBD)* | identity, cadence, engagement |
+| manage_insights | account insights (reach, impressions, profile_views, accounts_engaged) | *(confirm)* | documented-not-verified | optional | account/version | *(TBD)* | performance |
+| manage_insights | media insights (reach, impressions, saved, likes, comments, shares, plays, total_interactions) | *(confirm)* | documented-not-verified | optional | media-type | *(TBD)* | content quality, CPM base |
+| manage_insights | **follower / reached / engaged** demographics (age/gender/country/city, **marginal**) | *(confirm)* | documented-not-verified | optional | **≥100 followers**, aggregate | *(TBD)* | audience (three types) |
+| manage_comments | comments; mentions/tags | *(confirm)* | documented-not-verified | optional | — | *(TBD)* | sentiment, organic mentions |
+| content_publish | media containers → publish | *(confirm)* | documented-not-verified | — | publish limits | *(TBD)* | operational only (no score) |
+| manage_messages | conversations; messages (id, direction, timestamp); delivery/read | *(confirm)* | documented-not-verified | **nullable** delivery/read | messaging window/opt-in | *(TBD)* | campaign responsiveness (timing) |
 
-*All "documented-not-verified" rows must be moved to `verified-in-prod` (with a real Last-verified date) during implementation before the dependent feature ships.*
+*Every "documented-not-verified" row must become `verified-in-prod` with a real Last-verified date before the dependent feature ships.*
 
 ---
 
-## 19. Acceptance tests (canonical)
+## 17. Audience-intelligence model
 
-- **Identity:** one identity holds ≥2 platform accounts; an identity with no `member_id` (agent-managed celebrity) works; ≥2 operators manage one identity; **connection-level** scope grants (grants live on `ci_platform_connection`, survive account, capabilities survive reconnection); org A cannot read org B's `ci_org_creator_relationship`/notes/commercials.
-- **Merges:** auto-merge only on exact verified stable platform ID; handle/name never auto-merges; unmerge restores originals; cycles rejected; alias history retained; **no `merged_into` runtime path**.
-- **Brands:** corporate holds multiple brands; agency A cannot read agency B's `ci_org_brand_relationship`.
-- **Audience:** marginal-only data never rendered as a joint; **no estimated joints at launch**; status/suppression captured; `platform_account_id` present.
-- **Immutable ingestion:** **no `unique(identity_id, as_of)`**; re-delivered observation deduped by key; a **differing same-day** observation creates a **new immutable row**; no historical row is ever updated; latest-view serves current value; media edit → version, delete → tombstone.
-- **Four controls:** scope/consent/capability/visibility independently settable; **no per-brand consent UX/test**; campaign participation grants only campaign-scoped access.
-- **Visibility tiers:** each tier (creator/private, authorised representative, org roster, marketplace summary, campaign-specific, public kit) exposes exactly its defined surface; **negative cross-tenant** tests pass.
-- **Missing-data ranking:** unavailable mandatory signal ⇒ `insufficient_data`/`unknown` (not zero/pass); soft-missingness not renormalised to inflate; ranking returns partial_fit/coverage/confidence/missing-list + versions; brand coverage-threshold is a visible filter with explainable exclusions; withdrawal never rewrites historical performance/fraud.
-- **Security:** OAuth state CSPRNG/server-bound/one-time/expiring; PKCE where supported; tokens in Vault, encrypted, restricted decrypted view; `SECURITY DEFINER` derives org from auth context and `REVOKE`s PUBLIC; webhook signature/replay/idempotency; no token/message content in logs; pgTAP allow/deny per role & tenant.
-- **Messaging (campaign-scoped):** unlinked conversations never classified for intelligence; native IG messages not attributed to an employee; nullable read/delivery handled; ambiguous ⇒ excluded; no content/participants in feature store; ingestion blocked until all Phase-8 gates pass.
-- **Retention/disconnect:** each data class honours its matrix row; disconnect invalidates serving features immediately, verifies token revocation, and does **not** delete contracts/invoices; deletion report records what/why.
-- **Scoring:** disabling a capability lowers only Confidence + Coverage; Performance/Fraud/trust unchanged; unavailable renders `unavailable`, never `0`; Publishing disable changes no score.
-- **Scale:** queue leasing prevents double-processing; DLQ captures poison jobs; budgets/circuit-breakers trip under load; latest-per-creator/time-window queries hit indexes; initial-sync limits recorded per connection.
+**`ci_audience_observations`** distinguishes **follower / reached / engaged** audiences and stores **separate marginal breakdown rows** (age, gender, country, city). Columns: `identity_id`, `platform_account_id`, `metric_name`, `audience_type`, `breakdown_type`, `dimension_key`, `dimension_value`, `value_count`, `calculated_percentage`, `period`, `timeframe`, `observed_at`, `captured_at`, `source`, `api_version`, `run_id`, `status`(available|suppressed|insufficient_audience|permission_missing|token_expired|api_error), `suppression_reason`, `sample_size`/`audience_total`, `raw_payload_reference`/`response_hash`.
+
+**Marginal vs joint:** Meta may return marginals only. Geek **must not** claim a joint intersection ("women 25–34 in Bangalore") unless Meta explicitly returns it. **No estimated joint segments at launch;** if ever estimated later, label **`predicted`** with method + confidence, never an observed fact. Audience data is **never** written into creator personal demographics (§5).
 
 ---
 
-## 20. Rollback plan
+## 18. Ingestion & queue architecture (millions of creators)
 
-Additive-by-construction: `intel` objects can be disabled/dropped without touching `public`; no legacy column altered/dropped early. Feature flags gate every read cut-over (default off). Queue/workers have a kill switch; raw tables are append-only. Backfill links live in `ci_identity_link` (side ledger). Column retirement is a separate, explicitly-approved later migration. Bad metric versions are rolled back by **recompute from immutable raw**, not data surgery.
-
----
-
-## 21. Remaining decisions, grouped by the phase they block
-
-- **Blocks Phase 0A:** encryption/KMS boundary confirmation (Supabase Vault vs external KMS) and key-custody; final `intel`-schema exposure & grant policy; merge-verification threshold definition.
-- **Blocks Phase 0B:** confirm PKCE/state specifics of the active Instagram Login flow; final privacy/data-use **notice version + copy** (legal/DPO); existing-user acknowledgement wording.
-- **Blocks Observed ingestion / Feature store:** concrete **retention durations** + legal-hold + backup-deletion windows (legal/DPO); which capability-matrix fields are `verified-in-prod` (runtime capability test results).
-- **Blocks Ranking:** visibility-tier exact payloads (marketplace summary vs campaign-shared); brand coverage-threshold defaults & exclusion presentation.
-- **Blocks Predicted:** fraud-estimate governance (ownership, appeal SLA, human-in-the-loop); estimated-joint-segment policy (default: none).
-- **Blocks Messaging (Phase 8):** confirmation that identity/consent/campaign-linking/privacy/deletion/retention gates are operational; messaging window/opt-in constraints verified in production.
-- **Blocks Scale sign-off:** pgmq load-test gate results (fallback broker decision).
+- **Queue:** Supabase **Queues/pgmq** first, subject to load-test gates.
+- **Jobs:** durable, per-creator/per-connection; **leasing + visibility timeout**; **idempotent** workers; retries with **exponential backoff + jitter**; **dead-letter queue**.
+- **Budgets/priority:** app- and token-level API budgets; priority for **active campaigns** and **newly connected creators**; **hot/warm/cold** tiers; backpressure; webhook-triggered work; **circuit breakers**.
+- **Data:** partitioning for snapshot/message-event/metric tables; archival; indexes for **latest-per-creator** and **time-window** queries; cost budgets (API/storage/NLP/vision).
+- **Monitoring:** job-lag & freshness.
+- **Honest initial sync:** record what was requested, returned, and the earliest available observation per connection (Meta cannot supply unlimited history).
 
 ---
 
-## 22. PASS / HOLD architecture-gate checklist
+## 19. Feature store & scoring
+
+Provenance envelope on every non-observed value: `method`/`model_version`, `computed_at`, `window`, `sample_size`, `confidence`, `is_estimate`, `inputs`, `run_id`, `status`(ok|insufficient_data|unavailable|missing_permission|token_expired|api_error). Tiers: **observed / derived / predicted**. `ci_metric` compute writes **new** rows; unavailable is `unavailable`, never `0`.
+
+**Six separate, explainable measures (never one blend):** Creator Performance · Reliability · Brand-Safety · **Fraud Probability** (labelled estimate) · **Creator Intelligence Confidence** · **Verified Data Coverage**. Disabling a capability / withdrawing a permission lowers **only Confidence and Coverage** — never auto-reduces Performance, raises Fraud, labels untrustworthy, or fabricates a zero. **Profile Completion is separate and never influences** Performance/Fraud/Brand-Safety/ROI/authenticity/reliability/Intelligence Confidence. Publishing & Scheduling is operational (no score effect). Response speed alone is never quality.
+
+**Never silently transform:** brand mention → worked-with brand · rate-card rate → historical negotiated rate · address city → audience geographic strength · creator gender → audience gender · audience demographics → creator personal demographics · dream brand → brand affinity · profile completion → intelligence confidence.
+
+---
+
+## 20. Ranking & natural-language search
+
+Brief-specific, decomposable. Candidate pool = **marketplace-visible eligible pool** (§14.H). Scoring = weighted, named sub-signals each pulled from `ci_metric` with its own confidence. **Ranking returns separately:** `partial_fit_score`, `verified_coverage`, `ranking_confidence`, `missing_signal_list`, `signal_contributions` (Σ = partial_fit_score). Persist `ranking_formula_version`, `normalization_version`, `missingness_policy_version`. **Missing-data policy:** unavailable ≠ zero; a missing **mandatory hard-filter** signal returns `insufficient_data`/`unknown` (never a default pass/fail); soft-signal missingness is never renormalised to inflate; partial scores are not compared as if coverage were identical. A brand may set a **visible** Verified-Data-Coverage minimum filter with **explainable** exclusions (**no default exclusion** at launch). Fraud is a **separate advisory gate**, never a hidden term. **NL search:** an LLM parses the query into the structured brief (filters + weights) and calls the same pipeline — it translates intent only, never invents metrics.
+
+---
+
+## 21. Campaign-scoped messaging intelligence (implemented last)
+
+**Not a private-inbox surveillance system.** A conversation contributes to intelligence **only** when **initiated through a Geek campaign workflow** or **explicitly linked to a Geek campaign by an authorised user, with audit evidence**. Unlinked conversations are **never** content-classified for intelligence; operational-inbox processing stays separate. **Gate:** currently-valid `manage_messages` grant, else `missing_permission` (never `no_response`). **Storage (minimisation):** message id, direction, timestamp, category, campaign link, response timing, delivery/read state where available; **limited encrypted content only if the inbox needs it**, shortest TTL, audited — **no content/participants enter the feature store**. The response ledger (`ci_ig_message_events`) is **text-free**. **Attribution honesty:** invitation response rate covers Geek-tracked invitations; acceptance/decline from explicit campaign state or a labelled, confidence-bearing classifier; agency-member SLA only for messages sent **through Geek by an identified member** (native IG messages are not auto-attributed); nullable read/delivery states never assumed; ambiguous → excluded. Responsiveness metrics carry the distinct statuses `no_response`/`missing_permission`/`token_expired`/`sync_error`/`insufficient_data` and enter ranking as **one capped sub-signal**, never quality by itself. Brands receive **aggregated indicators only** — never raw DMs.
+
+---
+
+## 22. Retention & deletion
+
+Per-class matrix (design intent; **final durations are a legal/DPO launch gate**). Classes now include profile data: personal fields, WhatsApp number, email, addresses, communication opt-ins, skills/resources, brand experience, rate cards, brand aspirations, profile field provenance, OTP verification records, profile edit history — plus tokens, account/audience/media observations, comment text/sentiment, message metadata/temp content, campaign records, commercials, conversions, ranking results, audit logs, consent evidence, backups.
+
+**Rules:** personal data is correctable; optional data deletable; withdrawal stops **future** optional processing; addresses deleted/anonymised when no longer necessary (subject to campaign/legal obligations); expired rate cards may be archived but **not shown as current**; historical campaign commercials retained separately where contractually required; **deletion reports** explain what was deleted/anonymised/legally retained; export is human- and machine-readable. **Disconnect** stops new collection, **invalidates serving features immediately**, revokes/deletes tokens (verified), deletes/anonymises eligible personal intelligence, retains only necessary contractual/financial/security/audit records, and records exactly what/why — **without** blindly cascade-deleting contracts/invoices/legally required records.
+
+---
+
+## 23. API contracts (design-level)
+
+All browser-facing contracts are **`api`-schema RPCs** or **Edge Functions calling internal routines** — explicitly labelled; none is a browser RPC into an unexposed schema. Each re-checks auth/org/visibility/capability and returns provenance + `status` on non-observed values.
+
+| Contract | Kind | Purpose |
+|---|---|---|
+| `ig_oauth_start` / `ig_oauth_callback` | Edge → internal | one-CTA all-five connect; code exchange; token→Vault; connection + scope grants; start ingestion; create profile draft |
+| `api.get_profile_draft()` / `api.save_profile_section(section, payload)` | api RPC | profile completion (per card), provenance-stamped |
+| `api.verify_contact_otp(...)` / `api.verify_email(...)` | Edge/api | OTP + email verification (independent states) |
+| `api.set_capability(capability, enabled)` / `api.record_processing_consent(notice_version, purposes)` | api RPC | four-control model (warning gate client-side) |
+| `api.get_creator_intelligence(identity_id)` | api RPC | metrics + provenance, visibility-gated |
+| `api.rank_creators(brief)` / `api.nl_search(query)` | api RPC / Edge | partial_fit/coverage/confidence/missing_list/contributions + versions |
+| `api.get_marketplace_profile(identity_id)` | api RPC | marketplace summary tier only |
+| `api.get_campaign_inbox(campaign_id)` / `api.get_creator_responsiveness(identity_id)` | api RPC | audited inbox; brands get aggregates only |
+| `api.request_data(kind)` / `api.disconnect_platform(connection_id)` / `api.dispute_field(ref)` | api RPC | export/delete; disconnect (§22); dispute inferred/agency data |
+
+---
+
+## 24. Migration / backfill
+
+Additive: nullable FK columns on `public` tables; dual-write; backfill; verify; flag-gated read cut-over; no destructive change to legacy columns until ≥ N verified cycles. **Identity seeding:** upsert `ci_platform_account` from the verified stable `ig_user_id`; connect to `ci_creator_identity` via `ci_identity_platform_account`; shadow identities for unverified roster rows; handle/name never auto-merge; merges via `ci_identity_merge_event`; `ci_identity_link` reconciliation-only. Targets: `social_accounts.identity_id/platform_account_id`, `creators.identity_id`, `campaigns.brand_id`, `barter_items.creator_id/campaign_id`, `applications.applicant_identity_id`, `story_deals.*_id`, `irm_contacts.identity_id`, `dream_plans.member_id`.
+
+---
+
+## 25. Implementation phases (single canonical sequence)
+
+- **Phase 0A — Dark foundations:** `intel`/`private`/`api` schemas; identity/account/connection/operator/org model; **private profile model**; **professional profile model**; merge ledger; permission/control model (`ci_app_scope_capability` + `ci_scope_grant` + `ci_capability_switch` + `ci_processing_consent`); Vault; API boundary; RLS; pgTAP; feature flags. *No user-visible change.*
+- **Phase 0B — Instagram connection release:** one-click all-five OAuth; secure state; connection creation; permission verification; **initial ingestion**; **profile-draft creation**; **Meta prefill**; **profile-completion experience**; Data Access settings; existing-user reconnect/acknowledgement.
+- **Phase 1 — Creator Profile:** personal/contact profile; OTP/email verification; address book; skills/resources; brand history (+ mention review); barter preferences; paid rate card; dream brands; provenance badges; profile completion.
+- **Phase 2 — Observed intelligence ingestion:** immutable account/media/audience observations; queue; latest views; capability verification.
+- **Phase 3 — Brand & campaign relationships:** canonical brands; org-brand relationships; campaign participation; campaign-verified brand experience; commercials.
+- **Phase 4 — Derived feature store:** performance, audience, content, sentiment, reliability, confidence, coverage.
+- **Phase 5 — Ranking & NL search.**
+- **Phase 6 — External outcomes & predictions** (conversions/CPA/ROAS, fraud estimate).
+- **Phase 7 — Campaign-scoped messaging intelligence — last**, only after identity/consent/campaign-linking/privacy/deletion/retention gates are operational.
+
+---
+
+## 26. Acceptance tests (design-level)
+
+1. Successful IG connection creates a profile draft. 2. Only actual API-returned fields are prefilled. 3. Creator must confirm suggested personal identity fields. 4. Audience demographics never populate creator demographics. 5. Brand mention never auto-becomes brand experience. 6. Verified campaign history is distinguished from creator-declared. 7. WhatsApp/email verification states work independently. 8. Full address inaccessible to brands. 9. Logistics access narrow and audited. 10. Barter preference has no scoring effect. 11. Rate card has no performance/fraud effect. 12. Dream brands don't become brand affinity. 13. Profile Completion and Verified Data Coverage stay separate. 14. DOB and anniversary remain private. 15. Rate cards respect visibility. 16. Creator can edit/export/delete optional profile data. 17. Agent-managed celebrity profiles work without creator login. 18. Authorised agent completes a profile only with documented authority. 19. Multiple IG accounts attach to one creator profile. 20. Reconnection doesn't duplicate/erase profile information. 21. Cross-tenant access to private profile info fails. 22. `anon`/ordinary `authenticated` access to `private`/`intel` fails. 23. Public/media-kit output never exposes contact/address/rates unless explicitly permitted. 24. Handle/name matches create review candidates only. 25. Merge/unmerge fully append-only. 26. Only one active connection per account/app-environment.
+
+*Plus carried-forward suites:* connection-level scope grants; immutable same-day observations (no `unique(identity_id, as_of)`); four-control independence & no per-brand consent; visibility-tier payloads; missing-data ranking; security (OAuth state/Vault/`SECURITY DEFINER`/webhooks/pgTAP); campaign-scoped messaging; retention/disconnect preserving legal records; scale (queue leasing/DLQ/budgets/indexes).
+
+---
+
+## 27. Rollback plan
+
+Additive-by-construction: `intel`/`private`/`api` objects can be disabled/dropped without touching `public`; no legacy column altered/dropped early. Feature flags gate every read cut-over (default off). Queue/workers have a kill switch; raw tables are append-only. Backfill links live in `ci_identity_link`. Column retirement is a later, separately-approved migration. Bad metric versions roll back by **recompute from immutable raw**, not data surgery. Profile is additive — disabling the profile flag reverts to today's media-kit behaviour.
+
+---
+
+## 28. Remaining legal / runtime gates
+
+- **Legal/DPO:** final retention durations (incl. profile PII, addresses, OTP records, edit history), legal-hold & backup-deletion windows; final privacy/data-use **notice version + copy**; export format sign-off.
+- **Runtime/Meta:** confirm PKCE/OAuth-state specifics of the active Instagram Login flow; move capability-matrix fields from `documented-not-verified` to `verified-in-prod` (runtime capability tests); messaging window/opt-in constraints.
+- **Infra:** external-KMS custody decision (post-Phase-0A); pgmq load-test gate result (fallback broker decision).
+- **Product/policy:** marketplace-summary vs campaign-shared exact payloads; brand coverage-threshold defaults & exclusion presentation; fraud-estimate governance (ownership, appeal SLA, human-in-the-loop); "top brand" definition beyond self-declaration.
+
+---
+
+## 29. PASS / HOLD checklist
 
 | # | Gate | State |
 |---|---|---|
-| 1 | Identity, platform account, connection, actor access, org relationship are separate; identity has no platform ID / `member_id` | **PASS** (design) |
-| 2 | Merges append-only, evidence-based, cycle-safe, unmergeable; no `merged_into` runtime | **PASS** |
-| 3 | Brands tenant-scoped; no cross-agency leakage | **PASS** |
-| 4 | Audience split follower/reached/engaged; marginals never faked as joints; no estimated joints at launch | **PASS** |
-| 5 | Ingestion immutable; no `unique(identity_id, as_of)`; idempotency keys + latest-views; media versioned/tombstoned | **PASS** |
-| 6 | Four control systems + visibility tiers; no `ci_consent`/`granted_to_org`/per-brand UX | **PASS** |
-| 7 | Missing-data ranking: unavailable≠zero; separate coverage/confidence/missing-list + versions | **PASS** |
-| 8 | Security: secure OAuth state, Vault token encryption, hardened `SECURITY DEFINER`, webhook verification, pgTAP | **PASS** (design) |
-| 9 | Messaging strictly campaign-scoped; ingestion gated to Phase 8 | **PASS** |
-| 10 | Retention matrix defined; disconnect preserves legal/financial records | **PASS** (durations: **HOLD** — legal/DPO) |
-| 11 | Queue-based (pgmq) million-creator ingestion; honest initial-sync limits | **PASS** (load-test: **HOLD**) |
-| 12 | Single canonical phase list; messaging last | **PASS** |
-| 13 | Capability matrix versioned & field-status-tagged; `public_profile`/`email` excluded from audience matrix | **PASS** (field verification: **HOLD** — runtime) |
-| 14 | Encryption/KMS custody, retention durations, notice copy, PKCE specifics signed off | **HOLD** — see §21 |
+| 1 | Identity/account/connection/operator/org separate; identity carries no platform ID / `member_id` | **PASS** (design) |
+| 2 | Private vs professional profile schemas separated; PII in `private`, marketplace data in `intel` | **PASS** |
+| 3 | Profile attaches to identity, not handle; multiple accounts / agent-managed / reconnect supported | **PASS** |
+| 4 | Meta prefill only where API returns; audience ≠ creator; provenance on every field | **PASS** |
+| 5 | Brand mention ≠ brand experience; verified vs declared labelled | **PASS** |
+| 6 | Barter/rate-card/dream-brands are declared preferences, no scoring effect | **PASS** |
+| 7 | Profile Completion ≠ Verified Data Coverage ≠ Confidence; no cross-contamination | **PASS** |
+| 8 | Four control systems (app/connection/capability/consent) + visibility tiers; no per-brand consent | **PASS** |
+| 9 | `api`/`intel`/`private` boundary; RLS + pgTAP + hardened defs; `anon`/`authenticated` blocked from private/intel | **PASS** (design) |
+| 10 | Immutable ingestion; no `unique(identity_id, as_of)`; latest-views; media versioned/tombstoned | **PASS** |
+| 11 | Append-only merge/unmerge; exact-verified-ID auto-merge only; review candidates otherwise | **PASS** |
+| 12 | Audience split follower/reached/engaged; marginals never faked as joints; no estimated joins at launch | **PASS** |
+| 13 | Six-measure scoring; missing-data ranking (unavailable≠zero, separate coverage/confidence) | **PASS** |
+| 14 | Messaging strictly campaign-scoped; Phase-7 last | **PASS** |
+| 15 | Retention matrix incl. profile PII; disconnect preserves legal/financial records | **PASS** (durations: **HOLD** — legal/DPO) |
+| 16 | Queue (pgmq) ingestion; honest initial-sync limits | **PASS** (load-test: **HOLD**) |
+| 17 | Capability matrix versioned; `public_profile`/`email` excluded from audience | **PASS** (field verification: **HOLD** — runtime) |
+| 18 | KMS custody / notice copy / PKCE specifics / product-policy defaults | **HOLD** — §28 |
 
-**Overall:** architecture is **PASS to enter Phase 0A** once the §21 Phase-0A blockers (KMS custody, grant/exposure policy, merge threshold) are signed off. All remaining **HOLD** items are legal/DPO or runtime-verification gates tied to specific later phases.
+**Overall: PASS to enter Phase 0A** once §28 Phase-0A infra items (KMS custody decision recorded as Vault-for-now, `api` grant/exposure policy, merge threshold) are signed off. All other **HOLD** items are legal/DPO or runtime-verification gates bound to specific later phases.
 
-*End of specification. Implementation is intentionally deferred. This is the single canonical design; there is no competing model elsewhere in this document.*
+*End of specification. This is the single canonical v1.1 design; there is no competing model elsewhere in this document. Implementation is intentionally deferred.*
