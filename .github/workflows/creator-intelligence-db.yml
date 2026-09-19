@@ -11,12 +11,14 @@ on:
       - 'supabase/migrations/**'
       - 'supabase/tests/**'
       - 'supabase/tests-integration/**'
+      - 'supabase/functions/**'
       - '.github/workflows/creator-intelligence-db.yml'
   pull_request:
     paths:
       - 'supabase/migrations/**'
       - 'supabase/tests/**'
       - 'supabase/tests-integration/**'
+      - 'supabase/functions/**'
   workflow_dispatch:
 
 permissions:
