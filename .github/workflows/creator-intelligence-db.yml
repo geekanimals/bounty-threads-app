@@ -77,7 +77,7 @@ jobs:
         with:
           deno-version: v2.x
       - name: Deno unit tests (Meta OAuth boundary — mocked, no network)
-        run: deno test --allow-none supabase/functions/_shared/meta_oauth_test.ts
+        run: deno test supabase/functions/_shared/meta_oauth_test.ts
       - name: Secret-leak guard (fixtures must be synthetic; no real tokens/secrets committed)
         run: |
           set -e

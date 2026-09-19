@@ -149,12 +149,17 @@ select ok( not has_schema_privilege('authenticated','vault','USAGE'), 'K: authen
 select ok( not has_schema_privilege('anon','vault','USAGE'),          'K: anon cannot use vault schema');
 select ok( not has_table_privilege('authenticated','intel.ci_platform_connection','SELECT'), 'K: authenticated cannot select connections directly');
 
--- ===== V. one creator cannot inspect another's connection =====
+-- ===== V. one creator cannot inspect another's connection (checked by identity_id, which IS output) =====
+insert into _v values ('idA', (select identity_id::text from intel.ci_identity_actor_access
+  where member_id='a0c00000-0000-0000-0000-00000000000a' and access_role='self' order by granted_at limit 1));
+insert into _v values ('idB', (select identity_id::text from intel.ci_identity_actor_access
+  where member_id='b0c00000-0000-0000-0000-00000000000b' and access_role='self' order by granted_at limit 1));
 set local request.jwt.claims = '{"sub":"a0c00000-0000-0000-0000-00000000000a","role":"authenticated"}';
-select ok( position('STABLE_2' in api.get_my_connections()::text) = 0, 'V: A cannot see B''s connection');
+select ok(     api.get_my_connections()::text like '%'||(select v from _v where k='idA')||'%',       'V: A sees own connection');
+select ok( not(api.get_my_connections()::text like '%'||(select v from _v where k='idB')||'%'),      'V: A cannot see B''s connection');
 set local request.jwt.claims = '{"sub":"b0c00000-0000-0000-0000-00000000000b","role":"authenticated"}';
-select ok( position('STABLE_1' in api.get_my_connections()::text) = 0, 'V: B cannot see A''s connection');
-select ok( position('STABLE_2' in api.get_my_connections()::text) > 0, 'V: B sees its own connection');
+select ok(     api.get_my_connections()::text like '%'||(select v from _v where k='idB')||'%',       'V: B sees own connection');
+select ok( not(api.get_my_connections()::text like '%'||(select v from _v where k='idA')||'%'),      'V: B cannot see A''s connection');
 
 -- ===== X. successful connection prepared the profile-draft linkage (Phase 2B works for the creator) =====
 set local request.jwt.claims = '{"sub":"a0c00000-0000-0000-0000-00000000000a","role":"authenticated"}';
