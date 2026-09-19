@@ -300,3 +300,62 @@ mutations. The coexistence job re-asserts public RLS/policies/`authenticated` ac
 **P. Remaining HOLDs:** production drift NOT VERIFIED; linked-project advisors NOT RUN; `api` not yet
 exposed to the Data API (intentional — dark); Phase 0B/OAuth still gates real actor-access creation.
 **Q. Commits:** `10a4882` (Phase 2B). **R. CI run:** `35423434494` — both jobs green.
+
+---
+
+# Part IV — Phase 2C: Secure Instagram connection / OAuth foundation (local/dark)
+
+**A. Migrations (all `20260919_1000…`):** `100001_ci_oauth_connection_foundation.sql`,
+`100002_ci_oauth_rpcs.sql`, `100003_ci_oauth_grants.sql`.
+
+**B. Server/Edge:** dark Edge shells `ig-oauth-start`, `ig-oauth-callback` + `_shared/meta_oauth.ts`
+(pure helpers + `MetaOAuthClient` mock seam). Not deployed; not exposed to the Data API.
+
+**C. OAuth-start contract** (`api.ig_connect_start`, authenticated): flag-gated (`creator_ig_connect`,
+default OFF), derives `auth.uid()`, creates a one-time state, returns only the Meta authorize URL.
+
+**D. OAuth-callback contract** (`intel.ci_ig_complete_connection`, **service_role only**): consumes
+state atomically; anchors the account on the **stable platform_user_id** (never the handle); fails
+closed on conflicting ownership; stores the token to **Vault** (reference only in the row); records
+scope grants from the **actually-returned** scopes; initialises capabilities for granted scopes;
+records processing consent (notice version); opens the profile-draft linkage; audits — never returns
+the token.
+
+**E. State security:** CSPRNG (`gen_random_bytes`), **sha256-hashed** in `ci_oauth_state` (raw never
+stored), 10-minute expiry, single-use (atomic consume), actor-bound (`member_id`). Proven: valid
+consumes once; replay of a consumed state is idempotent (no duplicate connection); expired/invalid
+fail closed.
+
+**F. Token/Vault:** `supabase_vault`; `intel.ci_vault_store` returns a reference; no plaintext-token
+column; `anon`/`authenticated` have no `vault` usage and cannot select `ci_platform_connection`; the
+token never appears in `get_my_connections` output. Legacy `social_tokens` untouched. Test fixtures
+use synthetic `SYNTH_TOKEN_*` values.
+
+**G. Identity/account linking:** stable-id anchor; username change does **not** create a new account;
+same handle + different stable id are **separate** accounts (no auto-merge); ambiguous/conflicting
+ownership fails closed; caller gets a `self` actor-access enabling the Phase 2B profile draft.
+
+**H. Scope verification:** grants recorded per connection; only returned scopes `valid=true`; declined
+scopes recorded but `valid=false`. **I. Capability init:** granted scope → mapped capability enabled;
+declined scope → capability not enabled; scope and capability stay distinct concepts.
+
+**J. Idempotency/reconnect:** one active connection per (account, app-env) (old superseded); retries
+create no duplicate account/identity/edge/connection/grant/capability rows.
+
+**K. Profile-draft hook:** after connect, `professional_profile` + completion rows + `self`
+actor-access exist so `api.get_my_profile_draft()` works — no UI, no Meta prefill, creator
+confirmation intact.
+
+**L. Audit/secret:** append-only `ci_connection_event` (metadata only); no token/code/state columns;
+no token value in audit rows. Deno redaction unit-tested.
+
+**M. Tests:** Phase 2C pgTAP **52 assertions** (`02_phase2c_oauth_connection_test.sql`) + Deno **5**
+(mock Meta boundary, scope selection, redaction). **N. Foundation total: Files=3, Tests=201.**
+**O. Combined coexistence: Files=4, Tests=249.** **P. db lint:** No schema errors found.
+**Q. Deterministic replay:** green. **R. Public grants/RLS regression:** unchanged — **zero
+executable Phase 2C statements modify legacy public-schema objects** (grants target only
+`intel`/`api` + roles); coexistence job re-asserts public intact. **S. Secret-leak scan:** CI guard
+= "no committed secrets detected"; self-scan clean. **T. Production drift:** NOT VERIFIED.
+**U. Advisors:** NOT RUN. **V. Notice copy / legal retention:** remain HOLD (only the notice-version
+identifier is recorded). **W. Commits:** `dad9ff2`, `a6c47ec`, `22a0af8`, `2bd45b4`.
+**X. CI:** run `35425572631` — all three jobs green.
