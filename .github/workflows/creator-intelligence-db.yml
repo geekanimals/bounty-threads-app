@@ -68,6 +68,27 @@ jobs:
         if: always()
         run: supabase stop || true
 
+  edge-unit:
+    name: edge OAuth unit tests + secret-leak guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Deno unit tests (Meta OAuth boundary — mocked, no network)
+        run: deno test --allow-none supabase/functions/_shared/meta_oauth_test.ts
+      - name: Secret-leak guard (fixtures must be synthetic; no real tokens/secrets committed)
+        run: |
+          set -e
+          # Fail on obvious real credentials in migrations/functions (JWTs, Meta tokens, sk- keys,
+          # or a hardcoded app secret value). Synthetic SYNTH_*/__SET_VIA_CONFIG__ placeholders are fine.
+          if grep -rInE 'eyJ[A-Za-z0-9_-]{20,}|\bIGQ[A-Za-z0-9_-]{20,}|\bsk-[A-Za-z0-9]{20,}|(APP_SECRET|CLIENT_SECRET|SERVICE_ROLE_KEY)\s*[:=]\s*["'"'"'][A-Za-z0-9_-]{16,}' \
+                supabase/migrations supabase/functions supabase/tests supabase/tests-integration ; then
+            echo "::error::possible committed secret detected"; exit 1
+          fi
+          echo "no committed secrets detected"
+
   legacy-coexistence:
     name: legacy fixture + CI migrations + coexistence pgTAP
     runs-on: ubuntu-latest
@@ -112,6 +133,7 @@ jobs:
             pg_prove --ext .sql -d "$DB_URL" \
               /supabase/tests/00_phase0a_dark_foundation_test.sql \
               /supabase/tests/01_phase2b_profile_api_test.sql \
+              /supabase/tests/02_phase2c_oauth_connection_test.sql \
               /supabase/tests-integration/01_legacy_coexistence_test.sql
 
       - name: Stop stack

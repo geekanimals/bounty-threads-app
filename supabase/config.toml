@@ -22,3 +22,10 @@ verify_jwt = true
 # WhatsApp sender — signed-in users only (automated sending; app falls back to wa.me links).
 [functions.whatsapp-send]
 verify_jwt = true
+
+# Phase 2C (DARK, not deployed): Instagram connection OAuth. Start requires a signed-in creator;
+# callback is the Meta redirect (no user JWT — the one-time state is the security boundary).
+[functions.ig-oauth-start]
+verify_jwt = true
+[functions.ig-oauth-callback]
+verify_jwt = false
