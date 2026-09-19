@@ -111,6 +111,7 @@ jobs:
             -v "$PWD/supabase:/supabase" ghcr.io/supabase/pg_prove:3.36 \
             pg_prove --ext .sql -d "$DB_URL" \
               /supabase/tests/00_phase0a_dark_foundation_test.sql \
+              /supabase/tests/01_phase2b_profile_api_test.sql \
               /supabase/tests-integration/01_legacy_coexistence_test.sql
 
       - name: Stop stack
