@@ -233,5 +233,28 @@ select has_index('intel','ci_capability_switch_event','ci_cap_event_identity_idx
 select ok((select relrowsecurity from pg_class where oid = 'intel.ci_capability_switch_event'::regclass),
   'RLS enabled on ci_capability_switch_event');
 
+-- private edit-event holds NO PII and NO value hashes (Prompt 2A-I §2)
+select hasnt_column('private','creator_profile_edit_event','old_value',      'edit-event has no old_value');
+select hasnt_column('private','creator_profile_edit_event','new_value',      'edit-event has no new_value');
+select hasnt_column('private','creator_profile_edit_event','old_value_hash', 'edit-event has no old_value_hash');
+select hasnt_column('private','creator_profile_edit_event','new_value_hash', 'edit-event has no new_value_hash');
+select hasnt_column('private','creator_profile_edit_event','whatsapp_e164',  'edit-event has no phone');
+select hasnt_column('private','creator_profile_edit_event','email',          'edit-event has no email');
+select hasnt_column('private','creator_profile_edit_event','date_of_birth',  'edit-event has no DOB');
+select hasnt_column('private','creator_profile_edit_event','postal_code',    'edit-event has no postal code');
+select has_column('private','creator_profile_edit_event','operation',        'edit-event has operation');
+select has_column('private','creator_profile_edit_event','record_table',     'edit-event has record_table');
+select has_column('private','creator_profile_edit_event','correlation_id',   'edit-event has correlation_id');
+-- operation is constrained
+insert into intel.ci_creator_identity(identity_id, display_name) values ('bbbb0000-0000-0000-0000-000000000001','edit ev');
+select lives_ok($$ insert into private.creator_profile_edit_event(identity_id, record_table, field_key, operation)
+  values ('bbbb0000-0000-0000-0000-000000000001','creator_contact','whatsapp_e164','changed') $$,
+  'valid edit event (metadata only) accepted');
+select throws_ok($$ insert into private.creator_profile_edit_event(identity_id, record_table, field_key, operation)
+  values ('bbbb0000-0000-0000-0000-000000000001','creator_contact','email','leaked') $$,
+  '23514', null, 'invalid operation rejected');
+select throws_ok($$ update private.creator_profile_edit_event set reason = 'x'
+  where identity_id = 'bbbb0000-0000-0000-0000-000000000001' $$, null, null, 'edit event cannot be updated');
+
 select * from finish();
 rollback;

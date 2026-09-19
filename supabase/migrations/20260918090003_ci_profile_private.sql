@@ -105,18 +105,26 @@ create index private_prov_identity_field_idx
   on private.creator_profile_field_provenance(identity_id, field_key);
 
 -- ---------- append-only edit-event log for sensitive private fields ----------
--- Minimisation: this log records THAT a field changed, never the raw PII value. Store an
--- opaque reference and/or a one-way hash of the value, not the phone/email/address/DOB itself.
+-- Minimisation (Prompt 2A-I §2): this log records ONLY THAT a field changed — never the value,
+-- and never a plain/unsalted hash of a value (phone/email/DOB/postal/address are low-entropy and
+-- trivially reversible by a rainbow/enumeration attack, so plain hashes are treated as PII).
+-- No old/new value columns and no value-hash columns exist. Value-change vs no-op is determined
+-- server-side BEFORE the event is written and reflected in `operation`.
+-- If a value-comparison fingerprint is ever genuinely required (e.g. dedup of identical re-submits
+-- without reading the value), it MUST be a keyed HMAC computed server-side with a rotatable secret
+-- held outside any browser-reachable table — added later under review, never as a plain hash here.
 create table private.creator_profile_edit_event (
-  event_id       uuid primary key default gen_random_uuid(),
-  identity_id    uuid not null references intel.ci_creator_identity(identity_id) on delete cascade,
-  field_key      text not null,
-  change_type    text not null default 'update',
-  old_value_hash text,                 -- one-way hash / opaque ref only — NEVER raw PII
-  new_value_hash text,
-  changed_by     uuid references auth.users(id) on delete set null,
-  change_reason  text,
-  changed_at     timestamptz not null default now()
+  event_id         uuid primary key default gen_random_uuid(),
+  identity_id      uuid not null references intel.ci_creator_identity(identity_id) on delete cascade,
+  record_table     text not null,      -- which private table changed (e.g. 'creator_contact')
+  record_id        uuid,               -- row reference where applicable (e.g. address_id)
+  field_key        text not null,
+  operation        text not null check (operation in ('created','changed','cleared')),
+  acting_member_id uuid references auth.users(id) on delete set null,
+  authority_source text,               -- self | agent | manager | authorised_operator | system
+  reason           text,
+  correlation_id   text,               -- request/correlation id for tracing (not PII)
+  occurred_at      timestamptz not null default now()
 );
 create index private_edit_identity_idx on private.creator_profile_edit_event(identity_id);
 drop trigger if exists private_edit_append_only on private.creator_profile_edit_event;
