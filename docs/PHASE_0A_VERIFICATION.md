@@ -250,3 +250,53 @@ Intelligence data exists.**
 (§13); legacy co-existence *as a numbered migration* deferred (the fixture is a test artifact, not a
 migration — making `DATABASE_SETUP.sql` itself clean-apply-safe is a separate follow-up); standing
 later-phase gates (external-KMS, legal retention durations, Meta runtime capability, pgmq scale).
+
+---
+
+# Part III — Phase 2B: Secure Creator Profile API boundary (local/dark)
+
+**A. Migrations added** (additive; all `20260919…`): `…090001_ci_feature_flags_and_api_helpers.sql`
+(`intel.ci_feature_flag` + hardened helpers), `…090002_ci_profile_api.sql` (10 `api` RPCs),
+`…090003_ci_api_grants.sql` (controlled grants).
+
+**B. API RPCs created (api schema, SECURITY DEFINER, `search_path=''`, fail-closed):**
+`creator_profile_api_enabled()`, `get_my_profile_draft()`, `get_professional_profile(uuid)`,
+`save_profile_section(text,jsonb,text)`, `upsert_address(jsonb,text)`, `delete_address(uuid,text)`,
+`upsert_skill(jsonb,text)`, `upsert_brand_experience(jsonb,text)`, `upsert_dream_brand(jsonb,text)`,
+`save_rate_card_item(jsonb,text)` — covering all 10 profile domains (draft, personal, contact,
+address, professional, skills, brand experience, barter preference, rate cards, dream brands).
+
+**C. Authorization model:** every RPC asserts the `creator_profile_api` flag, then derives the caller
+via `auth.uid()` → `intel.ci_identity_actor_access` (`access_role='self'`, un-revoked) →
+`identity_id`. Client-supplied identity is never trusted (and rejected as an unsupported field).
+Representative reads use any un-revoked actor access; there is no path for one creator to read/mutate
+another's data. `intel`/`private` stay locked — the definer functions reach them as owner.
+
+**D. Feature flag:** `intel.ci_feature_flag('creator_profile_api')`, **default OFF** (seeded false;
+missing ⇒ false ⇒ fail-closed). Proven: flag OFF ⇒ reads/writes raise `0A000`; authorized flag ON ⇒
+valid caller reaches only their permitted surface.
+
+**E. Private vs professional boundary:** `get_my_profile_draft()` returns the owner's own data
+(theirs to see). `get_professional_profile()` returns **professional-only** — pgTAP proves the output
+has no `contact`/`personal`/`addresses` keys and never contains the creator's private email.
+
+**F. Audit behaviour:** every write emits **metadata-only** events into
+`private.creator_profile_edit_event` (`record_table/record_id/field_key/operation/acting_member_id/
+authority_source/correlation_id/occurred_at`) — `created`/`changed`/`cleared`. No value or hash
+columns exist (pgTAP-asserted).
+
+**G. Phase 2B pgTAP test count:** **45** (`supabase/tests/01_phase2b_profile_api_test.sql`).
+**H. New foundation total:** **149** (Files=2 = 104 foundation + 45 Phase 2B).
+**I. New combined coexistence total:** **197** (Files=3 = 104 + 45 + 48).
+**J. db lint:** "No schema errors found".
+**K. Deterministic replay:** green (second `db reset`).
+**L. Legacy grant/RLS before-vs-after:** unchanged — **zero executable Phase 2B statements modify
+legacy public-schema objects** (every grant/revoke/alter targets only `intel`/`private`/`api` +
+the PUBLIC pseudo-role / `anon`/`authenticated`/`service_role`); comments/soft-references are not
+mutations. The coexistence job re-asserts public RLS/policies/`authenticated` access intact — green.
+**M. Substantive legacy behaviour change:** none.
+**N. Production drift:** still NOT VERIFIED (no CLI/creds; nothing applied remotely).
+**O. Advisors:** security/performance advisors still NOT RUN (need a linked project).
+**P. Remaining HOLDs:** production drift NOT VERIFIED; linked-project advisors NOT RUN; `api` not yet
+exposed to the Data API (intentional — dark); Phase 0B/OAuth still gates real actor-access creation.
+**Q. Commits:** `10a4882` (Phase 2B). **R. CI run:** `35423434494` — both jobs green.
