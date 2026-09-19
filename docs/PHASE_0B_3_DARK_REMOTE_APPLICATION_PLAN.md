@@ -3,8 +3,18 @@
 **Type:** DESIGN / AUDIT ONLY. No remote execution. No `db push`, no `migration repair`, no DDL/DML,
 no Edge deploy, no secrets, no flag changes, no Data API exposure. No migration SQL edited.
 
-**Purpose:** define the safest first remote application of the 12 Creator Intelligence migrations to a
+**Purpose:** define the safest first remote application of the Creator Intelligence migrations to a
 production database that already holds the legacy app schema but has **no app migration ledger**.
+
+> **Update (Phase 0B.3A, applied):** the §P Meta app-approval seed defect is **RESOLVED** by a new
+> additive corrective migration `20260919100004_ci_meta_app_approval_status_correction.sql`. The
+> authoritative chain is now **13 migrations** (`20260918090001 … 20260919100004`). The full disposable
+> compatibility test was **re-run on the 13-chain** (VERIFIED — see
+> `docs/PHASE_0B_2_REVERIFICATION_13_MIGRATIONS.md`): all 13 apply, legacy `public` byte-identical
+> (`a4ec0fc6…770fd`), pgTAP 264/264 (0A 104 + 2B 45 + 2C 52 + corrective 15 + coexistence 48),
+> deterministic on replay, app-approval now `documented-not-verified`/`approved_at NULL`. Every "12"
+> below should be read as **13**, and the first-apply ledger/dry-run/post-apply checks must include
+> `…100004`.
 
 ---
 
@@ -34,6 +44,7 @@ migration ledger.
 10 20260919100001_ci_oauth_connection_foundation intel + supabase_vault(no-op) (+ flag creator_ig_connect=false)
 11 20260919100002_ci_oauth_rpcs                 intel/api
 12 20260919100003_ci_oauth_grants               api/intel (grants)
+13 20260919100004_ci_meta_app_approval_status_correction  intel (data-truth: app scopes -> documented-not-verified)  [Phase 0B.3A]
 ```
 No baseline/legacy migration file exists; `DATABASE_SETUP.sql` is **not** represented as a migration;
 no unrelated migration is mixed in. **Zero statements create/alter/drop/grant on any `public.` object**
@@ -170,14 +181,16 @@ contradicts the architecture.
 - But the row is a latent correctness defect: when the flag is later enabled, capability gating would
   trust `approved` without a real check.
 
-**Recommendation → HOLD — MIGRATION CORRECTION REQUIRED before first production apply.** Do **not** edit
-the immutable, 0B.2-verified migration 10. Add a **new corrective migration**
-`20260919100004_ci_app_scope_status_unverified.sql` that updates the five rows to
-`app_review_status='documented-not-verified'`, `approved_at=NULL` (aligning with §16/§28), then re-run
-the 0B.2 disposable compatibility test on the **13**-migration chain. This keeps the very first tracked
-production state truthful. (If the business instead has real, documented Meta approval, the corrective
-migration should set the true verified value + real date + evidence reference — but that external fact
-must be produced first.)
+**RESOLVED (Phase 0B.3A).** New additive migration
+`20260919100004_ci_meta_app_approval_status_correction.sql` updates the five rows to
+`app_review_status='documented-not-verified'`, `approved_at=NULL`, `last_verified_at=NULL`, with an
+`evidence` note that Meta app approval is not externally verified (aligning with §16/§28). Migration 10
+was **not** edited (immutable). The 13-chain was re-verified on the actual production snapshot (264/264
+pgTAP, public byte-identical, deterministic). Tests assert none of the five is `approved`, all are
+`documented-not-verified`, `approved_at` is NULL, and — since **no function reads
+`ci_app_scope_capability`** — the value cannot satisfy any live gate today; the future app-level gate
+must remain fail-closed. Real documented Meta approval, when externally confirmed, is recorded by a
+further migration with a real date + evidence.
 
 ## Q. Feature-flag proof
 After apply: `creator_profile_api=false`, `creator_ig_connect=false` (only these two flags exist;
@@ -280,7 +293,8 @@ This design document only. No migration/app/CI/remote change.
 **DIRECT FIRST PUSH OF 12 CI MIGRATIONS: RECOMMENDED**
 **LEGACY BASELINE MIGRATION REQUIRED: NO**
 **MIGRATION REPAIR REQUIRED: NO**
-**DARK REMOTE FOUNDATION APPLY PLAN: READY** (design complete)
-**SAFE TO EXECUTE PHASE 0B.3 DARK APPLY: NO** — pending the §P app-scope-status corrective migration
-(new `…100004`) + a 0B.2 re-verification of the extended chain.
+**DARK REMOTE FOUNDATION APPLY PLAN: READY** (design complete; 13-chain re-verified in Phase 0B.3A)
+**§P BLOCKER: RESOLVED** — corrective migration `…100004` applied to the chain and re-verified.
+**SAFE TO SEEK EXPLICIT AUTHORIZATION FOR THE DARK APPLY: YES** (this is NOT authorization to execute).
+**SAFE TO EXECUTE PHASE 0B.3 DARK APPLY WITHOUT EXPLICIT AUTHORIZATION: NO.**
 **SAFE FOR PUBLIC RELEASE: NO**
