@@ -101,9 +101,14 @@ jobs:
             psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$f"
           done
 
+      - name: Ensure pgTAP is installed (direct pg_prove needs it on the path)
+        run: psql "$DB_URL" -v ON_ERROR_STOP=1 -c "create extension if not exists pgtap with schema public;"
+
       - name: Run pgTAP (foundation + coexistence) against combined schema
         run: |
-          docker run --rm --network host -v "$PWD/supabase:/supabase" ghcr.io/supabase/pg_prove:3.36 \
+          docker run --rm --network host \
+            -e PGOPTIONS="-c search_path=public,extensions" \
+            -v "$PWD/supabase:/supabase" ghcr.io/supabase/pg_prove:3.36 \
             pg_prove --ext .sql -d "$DB_URL" \
               /supabase/tests/00_phase0a_dark_foundation_test.sql \
               /supabase/tests-integration/01_legacy_coexistence_test.sql
