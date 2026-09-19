@@ -128,3 +128,125 @@ the schema lints clean, and replay is deterministic.
   durations, Meta runtime capability verification, pgmq scale test.
 - **Remote application not done and not in scope** — no `db push`/`repair`; the remote project is
   untouched. Applying Phase 0A to production is a separate, explicitly-approved step.
+
+> **Update (Prompt 2A-I):** legacy coexistence has since been **VERIFIED** by CI (Part II below);
+> the "co-existence deferred" line above is superseded — reproducing it as a *numbered migration*
+> (vs the test fixture) is what remains deferred.
+
+---
+
+# Part II — Legacy coexistence & production-compatibility (Prompt 2A-I)
+
+## 8. Toolchain update
+
+Pinned Supabase CLI **v2.117.0** (current stable at 2026-09-19; v2.118.x are betas). CI now runs
+`actions/setup-node@v4` (Node 22) and a **capability-discovery** step (`supabase --version`,
+`--help`, `db --help`, `test --help`) so we don't assume older syntax. Foundation tests re-run
+green under v2.117.0 (see §15).
+
+## 9. PII audit-log correction
+
+`private.creator_profile_edit_event` was redesigned to **metadata-only** — it records *that* a
+field changed, never a value and **never a plain/unsalted value hash** (phone/email/DOB/postal/
+address are low-entropy and trivially reversible, so a plain hash is treated as PII). Columns now:
+`event_id, identity_id, record_table, record_id, field_key, operation(created|changed|cleared),
+acting_member_id, authority_source, reason, correlation_id, occurred_at`. It is append-only.
+Value-change vs no-op is decided **server-side** before writing and reflected in `operation`. If a
+value-comparison fingerprint is ever required it must be a **keyed HMAC** computed server-side with
+a rotatable secret held outside any browser-reachable table (never a plain hash here) — documented
+in the migration; not implemented. pgTAP proves the table has no `old_value`/`new_value`/
+`*_value_hash`/phone/email/DOB/postal columns and that `operation` is constrained.
+
+## 10. Legacy fixture & corrections
+
+`supabase/tests-integration/fixtures/legacy_schema.sql` reconstructs the existing Geek schema on an
+empty DB for the coexistence job. **Production `DATABASE_SETUP.sql` is unchanged.** Corrections made
+in the fixture only:
+
+| Correction | Class | Detail |
+|---|---|---|
+| Relocated `my_applications()` and `campaign_applications()` to **after** `public.applications` | **Ordering-only** | Both are `language sql` (body resolved at CREATE); defined before the table they read, a clean apply fails `42P01`. |
+
+No syntax corrections, no obsolete-statement removals, and **no substantive behaviour changes**
+(same functions, grants, RLS/authorization semantics). No demo/row seed exists to separate; the only
+INSERT is the idempotent `storage.buckets` infra seed required by the storage policies. **No HOLD.**
+
+## 11. Existing identity/type compatibility matrix (verified, not assumed)
+
+| Object | Type | Relationship |
+|---|---|---|
+| `auth.users.id` | `uuid` | root auth identity |
+| `public.members.id` | `uuid` | **PK that references `auth.users(id)`** → **identical** to the auth user id (1:1) |
+| `public.members.org_id` | `uuid` | org identifier (not null, no FK — org is implicit) |
+| `public.social_accounts.member_id` | `uuid` | **references `auth.users(id)`** → identical to the auth user id |
+| `public.social_accounts.ig_user_id` | `text` | stable Instagram user id |
+| `public.campaigns.id` | `uuid` | campaign id |
+| `intel.ci_creator_identity.identity_id` | `uuid` | NEW canonical human id (unlinked in Phase 0A) |
+| `intel.ci_identity_actor_access.member_id` | `uuid` → `auth.users(id)` | operator link |
+| `intel.ci_platform_account.platform_user_id` | `text` | maps to `social_accounts.ig_user_id` (text↔text ✓) |
+| `intel.…brand_experience.campaign_id` | `uuid` (soft ref) | maps to `campaigns.id` (uuid↔uuid ✓) |
+
+**`member_id` vs `auth.users.id`: identical, verified from the schema** — `members.id` is a primary
+key defined `references auth.users(id)`, and `social_accounts.member_id references auth.users(id)`.
+So "member_id" across the legacy app **is** the auth user id (not merely related). All new UUID/FK
+types are compatible with the legacy types; `platform_user_id text` matches `ig_user_id text`.
+
+**Future mapping plan (NO backfill performed):**
+`auth.users` → `public.members` (id == id) → `intel.ci_identity_actor_access` (`member_id`,
+`access_role='self'`) → `intel.ci_creator_identity` → `intel.ci_identity_platform_account` →
+`intel.ci_platform_account` (`platform_user_id` = `social_accounts.ig_user_id`). Backfill is a later
+phase and is not started.
+
+## 12. Public grants / RLS — before vs after
+
+The six CI migrations contain **no statement referencing any legacy `public`-schema object** (the
+only `public.` occurrences are comments; every `grant`/`revoke`/`alter default privileges` targets
+`intel`/`private`/`api`, their functions, and the PUBLIC pseudo-role / `anon`/`authenticated`/
+`service_role`). Therefore **all existing `public` grants, RLS policies, and role access are
+unchanged by construction.** The coexistence job asserts this live: `public.{members,campaigns,
+social_accounts,applications}` still have RLS enabled and policies present, `authenticated` retains
+`SELECT` on `public.members`, `anon`/`authenticated` gain **no** access to `intel`/`private`, and
+`service_role` remains the only reachable role for the internal schemas — all green.
+
+## 13. Advisors
+
+`supabase db lint --level warning` → **"No schema errors found"** (api/extensions/intel/private/
+public). **`db lint` is NOT the security/performance advisors.** Those **require a linked (remote)
+project** and cannot run on a purely local stack; they were **NOT RUN** (and must not use production
+credentials in CI). They remain a gate for the eventual linked-project review.
+
+## 14. Production drift — NOT VERIFIED
+
+No Supabase CLI/credentials are available here and production credentials must not be placed in
+GitHub Actions, so migration status / schema-only metadata / structure comparison against
+`DATABASE_SETUP.sql` were **NOT performed**. Production drift is **NOT VERIFIED**. (No production row
+data accessed; nothing applied; no `db push`/`repair`.)
+
+## 15. Coexistence CI results & rollback
+
+CI run `35420059599` (commit `20252cc`) — **both jobs green**:
+- **foundation** — `db reset` → `supabase test db` **Files=1, Tests=104, Result: PASS** → lint clean
+  → type-gen → deterministic replay. (CLI v2.117.0 confirmed in-log.)
+- **legacy-coexistence** — legacy fixture applied FIRST, then the six CI migrations, then `pg_prove`
+  over foundation + coexistence tests: **Files=2, Tests=152, Result: PASS** (104 foundation + 48
+  coexistence).
+
+**Rollback confirmed:** Creator Intelligence can be disabled/removed by acting only on
+`intel`/`private`/`api`; the coexistence tests prove the legacy `public` schema is fully intact
+after the migrations. Modes A/B per §5 stand; **no `DROP SCHEMA` rollback once real Creator
+Intelligence data exists.**
+
+## 16. Final status
+
+- **PHASE 0A CORE: VERIFIED** (foundation job green; 104 pgTAP; deterministic replay; lint clean).
+- **LEGACY COEXISTENCE: VERIFIED** (coexistence job green; legacy + CI migrations in production
+  direction; 152 combined pgTAP; legacy public objects/RLS/grants intact; new schemas isolated).
+- **SAFE TO BEGIN PHASE 2B: YES** (foundation + coexistence verified; 2B is additive in the `api`
+  schema) — with two conditions gating any *remote* application (not local/dark work):
+  production-drift verification and the security/performance advisors on a linked project. Phase 2B
+  is **not** started in this pass.
+
+**Remaining HOLDs:** production drift NOT VERIFIED (§14); security/performance advisors NOT RUN
+(§13); legacy co-existence *as a numbered migration* deferred (the fixture is a test artifact, not a
+migration — making `DATABASE_SETUP.sql` itself clean-apply-safe is a separate follow-up); standing
+later-phase gates (external-KMS, legal retention durations, Meta runtime capability, pgmq scale).
