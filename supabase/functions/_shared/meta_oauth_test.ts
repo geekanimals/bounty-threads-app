@@ -46,12 +46,12 @@ Deno.test("redaction hides tokens/codes/state in objects and urls", () => {
 // ---- mockable Meta boundary: emulate success / subset / malformed / stable-id-unchanged ----
 class MockMeta implements MetaOAuthClient {
   constructor(private mode: string) {}
-  exchangeCode(): Promise<TokenExchangeResult> {
+  exchangeCode(_code: string, _redirectUri: string): Promise<TokenExchangeResult> {
     if (this.mode === "exchange_fail") return Promise.reject(new Error("meta_code_exchange_failed"));
     if (this.mode === "subset") return Promise.resolve({ accessToken: "SYNTH", grantedScopes: ["instagram_business_basic"] });
     return Promise.resolve({ accessToken: "SYNTH", grantedScopes: cfg.scopes });
   }
-  fetchAccount(): Promise<AccountIdentity> {
+  fetchAccount(_accessToken: string): Promise<AccountIdentity> {
     if (this.mode === "malformed") return Promise.reject(new Error("meta_missing_stable_user_id"));
     if (this.mode === "renamed") return Promise.resolve({ platformUserId: "STABLE_1", username: "new_handle", accountType: "BUSINESS" });
     return Promise.resolve({ platformUserId: "STABLE_1", username: "old_handle", accountType: "BUSINESS" });
