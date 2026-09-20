@@ -2,7 +2,7 @@
 // client + the service-role RPCs to these functions; tests drive them with fixtures. Core guarantees:
 // per-metric INDEPENDENCE (one bad metric never fails others), unavailable => reasoned status + NULL
 // (never 0), and audience follower/engaged kept distinct with Meta's exact buckets preserved.
-import { AUDIENCE_METRICS, ACCOUNT_INSIGHTS, SCOPE_CAPABILITY, UNSUPPORTED_AUDIENCE } from "./meta_capabilities.ts";
+import { DEMOGRAPHICS, ACCOUNT_INSIGHTS, SCOPE_CAPABILITY, UNSUPPORTED_AUDIENCE } from "./meta_capabilities.ts";
 
 export type Avail =
   | "available" | "insufficient_audience" | "threshold_not_met" | "suppressed"
@@ -33,10 +33,10 @@ export function enabledCapabilities(grantedScopes: readonly string[]): string[] 
 
 // Never request a deprecated/unsupported metric.
 export function requestableAudienceMetrics(): string[] {
-  return AUDIENCE_METRICS.filter((m) => m.verify !== "deprecated" && !UNSUPPORTED_AUDIENCE.includes(m.metric)).map((m) => m.metric);
+  return DEMOGRAPHICS.filter((m) => m.doc === "documented_supported" && !UNSUPPORTED_AUDIENCE.includes(m.metric)).map((m) => m.metric);
 }
 export function requestableAccountMetrics(): string[] {
-  return ACCOUNT_INSIGHTS.filter((m) => m.verify !== "deprecated").map((m) => m.metric);
+  return ACCOUNT_INSIGHTS.filter((m) => m.doc !== "documented_deprecated").map((m) => m.metric);
 }
 
 // Parse Meta's demographic response for ONE metric+breakdown into append-ready rows. Preserves Meta's

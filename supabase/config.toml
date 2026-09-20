@@ -34,3 +34,7 @@ verify_jwt = false
 # are the security boundary (no user JWT). NOT registered in the Meta dashboard.
 [functions.ig-webhook]
 verify_jwt = false
+
+# Phase 1B-fix (DARK, not deployed/scheduled): ingestion worker. Authorized invocation only.
+[functions.ig-ingest-worker]
+verify_jwt = true
