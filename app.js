@@ -45,6 +45,9 @@ function initRoles(){
 function renderNav(){
   const nav = $("#nav"); nav.innerHTML="";
   const keys = ROLES[currentRole].nav.slice();
+  // Creator Profile nav is DARK: shown only when the api.creator_profile_api feature is enabled
+  // (in production the api schema is unexposed, so this stays hidden and legacy nav is unchanged).
+  if(currentRole==="creator" && window.__ciProfileEnabled && !keys.includes("profile")) keys.splice(1,0,"profile");
   if(window.__isAdmin) keys.push("admin");
   keys.forEach(key=>{
     const m = NAV_META[key] || {ic:"🛡", label:key};
@@ -2146,6 +2149,7 @@ function fmtDate(d){ if(!d) return "—"; try{ return new Date(d).toLocaleDateSt
 function fmtDateTime(d){ if(!d) return "—"; try{ return new Date(d).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(e){ return String(d); } }
 
 const PAGES = {
+  profile: (typeof renderProfile==="function"?renderProfile:()=>""),
   dashboard:renderDashboard, barter:renderBarter, creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit, admin:renderAdmin,
   campaigns:renderCampaigns, reports:renderReports, growth:renderGrowth, settings:renderSettings,
   celebrity:renderCelebrity, approvals:renderApprovals, marketplace:renderMarketplace,
@@ -2526,6 +2530,7 @@ function renderContent(){
   if(currentPage==="finance") loadFinance();
   if(currentPage==="logistics") loadLogistics();
   if(currentPage==="mediakit") loadMediaKit();
+  if(currentPage==="profile" && window.ciProfile) window.ciProfile.load();
   if(currentPage==="growth") loadGrowth();
   if(currentPage==="admin") loadAdmin();
   if(currentPage==="campaigns"){
