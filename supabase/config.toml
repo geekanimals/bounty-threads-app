@@ -29,3 +29,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.ig-oauth-callback]
 verify_jwt = false
+
+# Phase 1B (DARK, not deployed): Instagram webhook. GET verify handshake + POST signature validation
+# are the security boundary (no user JWT). NOT registered in the Meta dashboard.
+[functions.ig-webhook]
+verify_jwt = false
