@@ -140,6 +140,7 @@ jobs:
               /supabase/tests/04_phase1a_creator_profile_test.sql \
               /supabase/tests/05_phase1b_ingestion_test.sql \
               /supabase/tests/06_phase1bfix_test.sql \
+              /supabase/tests/07_phase1bfix2_worker_grants_test.sql \
               /supabase/tests-integration/01_legacy_coexistence_test.sql
 
       - name: Stop stack

@@ -35,6 +35,8 @@ verify_jwt = false
 [functions.ig-webhook]
 verify_jwt = false
 
-# Phase 1B-fix (DARK, not deployed/scheduled): ingestion worker. Authorized invocation only.
+# Phase 1B-fix2 (DARK, not deployed/scheduled): ingestion worker. verify_jwt=false because a valid
+# user JWT must NOT authorize this internal endpoint; the handler verifies CI_WORKER_SECRET
+# (constant-time) before any service-role/Vault/claim/Meta operation.
 [functions.ig-ingest-worker]
-verify_jwt = true
+verify_jwt = false
