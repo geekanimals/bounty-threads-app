@@ -41,7 +41,8 @@ Deno.test("anon-key-like bearer / ordinary user JWT => 401, zero privileged init
 });
 
 Deno.test("malformed / wrong worker secret => 401, zero privileged init", async () => {
-  for (const h of [{ "x-ci-worker-secret": "" }, { "x-ci-worker-secret": "wrong" }, { authorization: "Basic xyz" }]) {
+  const cases: Record<string, string>[] = [{ "x-ci-worker-secret": "" }, { "x-ci-worker-secret": "wrong" }, { authorization: "Basic xyz" }];
+  for (const h of cases) {
     const s = spyDeps();
     const res = await handleWorkerRequest(reqWith(h), s.deps);
     assertEquals(res.status, 401);
