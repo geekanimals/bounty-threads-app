@@ -57,6 +57,7 @@
       }
       DATA = p.data || {};
       var c = await api("get_profile_completion"); COMP = (c && !c.error) ? c.data : null;
+      try { var ing = await api("get_my_ingestion_status"); window.__ciIngest = (ing && !ing.error) ? ing.data : null; } catch(e){ window.__ciIngest = null; }
       renderAll();
     }catch(e){
       var err = document.getElementById("cpErr");
@@ -110,6 +111,9 @@
     document.getElementById("cpHead").outerHTML = header();
     var d = DATA, personal = d.personal||{}, contact = d.contact||{}, pro = d.professional||{}, conn = d.connection;
     var body = "";
+
+    // Phase 1B connect disclosure/CTA (not connected) or first-run ingestion progress (connected).
+    if(window.ciConnect){ body += window.ciConnect.panelHtml(!!(conn && conn.connected), window.__ciIngest); }
 
     // connection (verified IG) — read-only, live
     if(conn && conn.connected){
@@ -337,6 +341,7 @@
     // add/remove collections
     document.querySelectorAll("[data-add]").forEach(function(b){ b.onclick=function(){ addItem(b.getAttribute("data-add")); }; });
     hookDel();
+    if(window.ciConnect) window.ciConnect.wire();
     var rc=document.getElementById("cpReconnect"); if(rc) rc.onclick=function(e){ e.preventDefault(); currentPage="mediakit"; renderShell(); };
     // visibility toggles
     var vr=document.getElementById("cp_vis_rate"); if(vr) vr.onchange=function(){ api("set_profile_visibility",{p_field_or_group:"rate_card",p_tier:"marketplace_summary",p_allowed:vr.checked,p_correlation:"ui"}); };

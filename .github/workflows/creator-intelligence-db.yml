@@ -79,7 +79,7 @@ jobs:
         with:
           deno-version: v2.x
       - name: Deno unit tests (Meta OAuth boundary — mocked, no network)
-        run: deno test supabase/functions/_shared/meta_oauth_test.ts
+        run: deno test supabase/functions/_shared/
       - name: Secret-leak guard (fixtures must be synthetic; no real tokens/secrets committed)
         run: |
           set -e
@@ -138,6 +138,9 @@ jobs:
               /supabase/tests/02_phase2c_oauth_connection_test.sql \
               /supabase/tests/03_phase0b3a_app_approval_correction_test.sql \
               /supabase/tests/04_phase1a_creator_profile_test.sql \
+              /supabase/tests/05_phase1b_ingestion_test.sql \
+              /supabase/tests/06_phase1bfix_test.sql \
+              /supabase/tests/07_phase1bfix2_worker_grants_test.sql \
               /supabase/tests-integration/01_legacy_coexistence_test.sql
 
       - name: Stop stack
