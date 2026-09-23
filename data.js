@@ -40,7 +40,9 @@ const NAV_META = {
   finance:{ic:"💰",label:"Finance"}, reports:{ic:"📊",label:"Reports"},
   approvals:{ic:"✅",label:"Approvals"}, growth:{ic:"🚀",label:"Growth"},
   settings:{ic:"⚙️",label:"Settings"},
-  profile:{ic:"🧬",label:"Creator Profile"}
+  profile:{ic:"🧬",label:"Creator Profile"},
+  intelligence:{ic:"📈",label:"My Intelligence"},
+  cintel:{ic:"🔎",label:"Creator Intelligence"}
 };
 
 // Which KPI cards each role shows. Values are computed live in app.js realKPIs().

@@ -419,3 +419,58 @@ tbody tr:hover{background:var(--panel-2)}
 .cp-prow>.muted{margin-left:auto;font-size:12px}
 .cp-pdot{width:10px;height:10px;border-radius:50%;flex:0 0 auto;background:rgba(120,130,150,.3)}
 .cp-pdot.done{background:#2e9e5b}.cp-pdot.wait{background:#b5851f}.cp-pdot.skip{background:rgba(120,130,150,.5)}.cp-pdot.err{background:#c0392b}
+
+/* ---------- Creator Intelligence — serving + explainable matching (Phase 1D, dark) ---------- */
+.ci{display:flex;flex-direction:column;gap:14px}
+.ci-intro h3,.ci-intro h4{margin:0 0 6px}
+.ci-two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:760px){.ci-two{grid-template-columns:1fr}}
+.ci-mh{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.ci-mh h3,.ci-mh h4{margin:0}
+.ci-pill{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;margin-left:auto}
+.ci-ok{background:rgba(18,183,106,.16);color:var(--good,#12b76a)}
+.ci-warn{background:rgba(247,144,9,.16);color:var(--warn,#f79009)}
+.ci-na{background:rgba(120,130,150,.16);color:var(--muted,#8b90b8)}
+.ci-measure .ci-pill,.ci-match .ci-pill,.ci-cardrow .ci-pill{margin-left:0}
+.ci-measure .ci-mh .ci-pill{margin-left:auto}
+.ci-exp{font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:8px}
+.ci-sub{font-size:12px;font-weight:600;margin:10px 0 6px;color:var(--ink)}
+.ci-hint{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5}
+.ci-meta{display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:var(--muted);margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+.ci-meta b{color:var(--ink);font-weight:600}
+.ci-tag{font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:var(--chip);color:var(--muted);text-transform:uppercase;letter-spacing:.02em}
+.ci-chips{display:flex;flex-wrap:wrap;gap:6px}
+.ci-chip{font-size:12px;padding:3px 9px;border-radius:10px;background:var(--chip);color:var(--ink)}
+.ci-metrics{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.ci-metric{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--panel-2)}
+.ci-metric-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ci-metric-v{font-size:18px;font-weight:700;margin:4px 0}
+.ci-evrow{display:flex;align-items:center;gap:10px;margin-top:6px}
+.ci-ev-badge{font-size:10px;text-transform:uppercase;letter-spacing:.02em}
+.ci-ev{margin-top:8px}
+.ci-evbox{font-size:12px;line-height:1.7;background:var(--chip);border-radius:10px;padding:10px 12px}
+.ci-evbox b{color:var(--ink)}
+.ci-err{padding:14px;border-radius:10px;background:rgba(240,68,56,.1);color:var(--bad,#f04438)}
+.ci-err-inline{color:var(--bad,#f04438);font-size:13px}
+/* brief + matching */
+.ci-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+@media (max-width:760px){.ci-grid{grid-template-columns:1fr}}
+.ci-f{display:flex;flex-direction:column;gap:5px;font-size:12px}
+.ci-f>span{color:var(--muted);font-weight:600}
+.ci-f input,.ci-f select,.ci-addrow input{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;color:var(--ink);font:inherit;font-size:13px}
+.ci-note{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5}
+.ci-addrow{display:flex;gap:8px;flex-wrap:wrap}
+.ci-addrow input{flex:1;min-width:220px}
+.ci-signals{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 12px}
+@media (max-width:760px){.ci-signals{grid-template-columns:1fr}}
+.ci-sig{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--panel-2)}
+.ci-sig.ok{border-color:rgba(18,183,106,.3)}
+.ci-sig.na{border-color:rgba(120,130,150,.25)}
+.ci-sig-h{font-size:12px;font-weight:700;margin-bottom:6px}
+.ci-sig.ok .ci-sig-h{color:var(--good,#12b76a)}
+.ci-sig.na .ci-sig-h{color:var(--muted)}
+.ci-sig ul{margin:0;padding-left:18px;font-size:13px;line-height:1.6}
+.ci-id{font-size:12px;color:var(--muted);font-weight:600}
+.ci-cardrow{border-top:1px solid var(--line);padding:12px 0}
+.ci-cardrow:first-of-type{border-top:none}
+.ci-card .ci-two{margin-top:4px}
