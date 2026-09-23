@@ -37,11 +37,23 @@ select is( (select count(*)::int from information_schema.columns where table_sch
 --   B  = brand user with a relationship to R and N
 --   U  = unrelated brand user (no relationship)
 -- ============================================================================
+-- The org directory `public.members` is part of the legacy app (present in the coexistence run). The
+-- foundation run applies ONLY the CI migrations, so it may be absent — provide a minimal, compatible
+-- shim when it is. Both branches leave the real legacy table untouched (IF NOT EXISTS is a no-op there).
+create table if not exists public.members(
+  id uuid primary key, org_id uuid not null default gen_random_uuid(), role text, name text);
+
 insert into auth.users(instance_id,id,aud,role,email,created_at,updated_at) values
   ('00000000-0000-0000-0000-000000000000','c1000000-0000-0000-0000-0000000000c1','authenticated','authenticated','r@t.local',now(),now()),
   ('00000000-0000-0000-0000-000000000000','c2000000-0000-0000-0000-0000000000c2','authenticated','authenticated','n@t.local',now(),now()),
   ('00000000-0000-0000-0000-000000000000','b3000000-0000-0000-0000-0000000000b3','authenticated','authenticated','brand@t.local',now(),now()),
   ('00000000-0000-0000-0000-000000000000','d4000000-0000-0000-0000-0000000000d4'::uuid,'authenticated','authenticated','other@t.local',now(),now());
+-- Guarantee each brand user has a members row + org in BOTH envs. In coexistence the legacy
+-- handle_new_user trigger already created these on the auth.users insert, so this is a no-op there.
+insert into public.members(id, role, name) values
+  ('b3000000-0000-0000-0000-0000000000b3','brand','Brand B'),
+  ('d4000000-0000-0000-0000-0000000000d4'::uuid,'brand','Brand X')
+  on conflict (id) do nothing;
 update intel.ci_feature_flag set enabled=true where flag in ('creator_ig_connect','creator_profile_api');
 create temp table _v(k text primary key, v text);
 insert into _v values ('asof', '2026-09-22 00:00:00+00');
