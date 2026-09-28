@@ -182,3 +182,64 @@ path; running it against the live project requires the access token (blocked, be
    `pilot_cohort_enforced=true`. Roll back = set `creator_profile_api=false` (instant, non-destructive).
 5. **Consenting IG account** connects; capture the real granted scopes, ingestion run, observed/unavailable
    fields, and creator+brand screenshots for the live GO report.
+
+---
+
+## 10. Pilot Activation build (2026-09-29) — Phases 1–5 results
+
+Built the **minimum** product surface to answer the pilot question — *can a brand make a creator selection
+decision using Geek Creator Intelligence instead of spreadsheets?* — without adding out-of-scope features.
+**No production change**; everything is on `pilot-integration`, dark and flag+cohort gated.
+
+### Phase 1 — controlled activation (prepared)
+- **Merge:** `pilot-integration` → `main` is the single reversible activation code step (dark frontend; no
+  auto-migrate). PR/merge handled separately in this session; production migrate + flag flip stay the gated
+  human step (needs the Supabase token — see §7/§9).
+- **Cohort gate (migration 25):** `pilot_cohort_enforced` restricts the whole api surface to the named
+  allowlist server-side. Activation flags: `creator_profile_api=true`, `creator_ig_connect=true`,
+  `pilot_cohort_enforced=true` + two `ci_pilot_cohort` rows (the named creator + named brand org).
+
+### Phase 2 — creator experience (built)
+Creator "My Intelligence" now shows, each with **Observed / Derived / Unavailable / Insufficient data**:
+profile intelligence (performance, audience marginals, freshness, coverage, confidence — 1C/1D) **plus** a new
+"Category, brand history, barter & rates" section (`get_my_commercial_readiness`) covering category signals,
+content formats, brand history, barter readiness and rate indication. No invented numbers.
+
+### Phase 3 — brand experience (built — the core workflow)
+Brand enters a brief (with a **Snuggles-launch prefill**: pets · Bangalore · ₹15L · barter+paid hybrid) →
+match → shortlist → **side-by-side comparison** with, per creator: identity, **category fit vs the brief**,
+audience geography (marginals), content formats, **historical brand experience**, **barter readiness**,
+**rate indication (range)**, and confidence/coverage. Browser-verified: creator A *"pets, lifestyle — fits
+brief"*, brand history *"2 confirmed"*, barter *"Yes · any_relevant · min ₹2000"*, rate *"₹12,000–₹40,000"*;
+creator B *"fitness — no overlap"*, brand history/rate *"Not shared"*, barter *"Insufficient data"*.
+**Not shown:** private personal data, raw comments, DMs, personal contact; rates/brand-history appear only when
+the creator opted in (visibility = the approved workflow). Predictions are marked estimates; no conversion/ROI
+is claimed.
+
+### Phase 4 — feedback capture (built)
+`ci_pilot_feedback` (service-role only) + `api.submit_pilot_feedback`. **Creator** form: was the profile easy /
+what's incorrect / what would increase trust. **Brand** form (below the comparison): would you shortlist /
+what's missing / would you pay. Stored **separately** by `subject_kind`.
+
+### Phase 5 — did NOT build
+No AI search, chatbot, universal creator score, ROI prediction, fraud scoring, or campaign import. (The six
+measures keep reliability/fraud/conversion at `insufficient_data`/absent; no `*_score` exists — enforced by
+test 12/V12.)
+
+### Final-report metrics — instrumentation ready; **actual numbers require the live run**
+I cannot produce real onboarding/usage numbers (no production access, no consenting accounts). Each metric below
+is **instrumented and queryable** once the pilot runs:
+
+| # | Metric | Source once live |
+|---|---|---|
+| 1 | Users onboarded | `intel.ci_pilot_cohort` (allowlist) vs `ci_identity_actor_access` (bootstrapped) |
+| 2 | Creator connection success rate | `ci_platform_connection` active / cohort creators; `ci_ingest_run` status |
+| 3 | Available vs unavailable intelligence fields | per-run `ci_feature_value.value_status` + measure statuses; served payload statuses |
+| 4 | Brand shortlist behaviour | `ci_matching_request` / `ci_match_result` + brand `ci_pilot_feedback.answers->>'would_shortlist'` |
+| 5 | Missing-data patterns | aggregate `value_status<>'available'` by `feature_key`; `not_shared`/`insufficient_data` in commercial payloads |
+| 6 | Product decisions from feedback | `ci_pilot_feedback` (creator + brand), reviewed out-of-band |
+
+**Success question readout (pre-live):** the brand comparison already presents a decision-grade, evidence-backed,
+side-by-side view (category fit, audience, formats, brand history, barter, rate, confidence/coverage) with honest
+gaps — i.e. the surface a brand needs to choose **without a spreadsheet**. Whether it changes real behaviour is
+what the live pilot + feedback will measure.
