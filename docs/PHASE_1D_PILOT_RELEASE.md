@@ -112,3 +112,73 @@ one gated step (do **not** flip flags before that):
 
 *Scope guard: this pilot is the Instagram-powered creator→brand journey only. It does not import historical
 campaigns (1E stays a separate, pending evidence track) and adds no AI chat interface.*
+
+---
+
+## 9. Restricted Live Pilot — preparation results & GO/BLOCKED (2026-09-29)
+
+All **reversible** preparation is complete and verified. The **live** steps (production migrate, Edge deploy,
+real-Meta OAuth, worker run) are **BLOCKED** on production access + a consenting Instagram account, which this
+session does not have. No live pilot is claimed to have passed, and no production change was made.
+
+### 9.1 Commit ancestry & pending migrations (step 1) — DONE
+- **1C ⊆ 1D ⊆ pilot-integration** (git ancestry verified).
+- Branch tips: `main 8c4f85d` · `phase-1c f231b92` · `phase-1d a6ac132` · **`pilot-integration 12b0e75`**.
+- **Pending migrations (branch − main), with blob hashes:**
+  - `fbd7ed6…` `20260922080737_ci_1c_feature_store.sql`
+  - `ad1559a…` `20260922080739_ci_1c_fk_indexes.sql`
+  - `acc433e…` `20260923054333_ci_1d_serving_matching.sql`
+  - **new** `20260929090000_ci_pilot_cohort.sql` (server-enforced cohort gate)
+- **No tracked temporary preview files** (the browser harnesses were disk-only and removed; tree clean).
+- **CI:** 1C/1D migration blobs are byte-identical to the green 1D run (`35826812362`); the cohort push
+  triggered a fresh run (`36480619936`). Local full suite **00–11 + coexistence = 510/510**.
+
+### 9.2 Server-enforced cohort authorization (step 4) — DONE (reversible)
+Migration 25 adds `intel.ci_pilot_cohort` (service-role only) + `ci_in_pilot_cohort()`, and extends the shared
+`ci_assert_api_enabled` so that — when `pilot_cohort_enforced` is on — the **entire** api surface (creator
+intelligence *and* Instagram connect) requires an allowlisted creator (`member_id`) or brand org (`org_id`),
+raising `42501` otherwise. It is **database-enforced**, not nav-hiding. Default **OFF** ⇒ zero behaviour change
+until activation. **Immediate shutoff** = flip `creator_profile_api` off (proven to override cohort membership);
+deactivating a cohort row revokes instantly. 13/13 pgTAP; 08/09 unaffected.
+
+### 9.3 Production dry-run (step 2) — DONE on a restore-equivalent (NOT against prod)
+On a fresh DB seeded with the legacy schema + **exactly the 21 `main` migrations** (the production baseline),
+the **4 pending** migrations apply **cleanly and in order**; intel tables 43→52; feature-store + matching +
+cohort present; **all flags remain OFF** (`creator_profile_api=false, creator_ig_connect=false,
+pilot_cohort_enforced=false`). Re-applying the cohort migration is **idempotent**. This is the exact upgrade
+path; running it against the live project requires the access token (blocked, below).
+
+### 9.4 Worker path & retention (step 6) — VERIFIED (code + local)
+- **Secure worker invocation:** `_shared/worker_auth.ts` requires a high-entropy `CI_WORKER_SECRET`, checked
+  **constant-time before** any service-role client — no anon/JWT path into the worker.
+- **Retention:** `ci_destroy_connection_secret` (secret destroyed on disconnect — E2E showed
+  `secret_destroyed:true`), `ci_vault_destroy`, and `ci_purge_expired` (purges `private.ci_comment_raw` past
+  retention) exist and are service-role only. *Operational* purge needs a schedule (deploy step, B3′ below).
+- **No raw in brand payload:** serving explicitly excludes contact/address/DOB/WhatsApp/email/rates/
+  commercials/raw comments/messages/tokens; brand tier returns `metrics:[]`; PII guard = clean.
+
+### 9.5 GO / BLOCKED matrix
+
+| Step | State | Evidence / blocked action |
+|---|---|---|
+| 1 Ancestry, hashes, cleanup, defect-fix | **GO** | §9.1; tree clean; 510/510 local |
+| 2 Combined release **procedure + dry-run** | **GO (prepared)** | §9.3 dry-run clean on the 21-baseline; runbook §8/§9.6 |
+| 2 **Apply 22–25 to production** | **BLOCKED** | needs `SUPABASE_ACCESS_TOKEN` on a trusted runner: `supabase db push` (no repair, no history edits). Not doable from this session. |
+| 3 Deploy Edge Functions + Meta secrets + verify live scopes | **BLOCKED** | deploy `ig-oauth-start`, `ig-oauth-callback`, `ig-ingest-worker`, `ig-webhook`; set `CI_WORKER_SECRET`, Meta `CLIENT_ID`/`CLIENT_SECRET`/redirect/Graph version; then read the **actual** scopes at OAuth. Needs project + Meta app admin. |
+| 4 Server-enforced cohort | **GO** | §9.2, migration 25, 13/13 |
+| 5 Real IG journey (connect→…→disconnect) | **BLOCKED** | needs a consenting professional IG account + steps 2–3 live. Contract proven on synthetic data only (never presented as live). |
+| 6 Worker secret path + retention + no-raw | **GO (verified)** | §9.4 |
+| 7 GO/BLOCKED report | **GO** | this section |
+
+### 9.6 Minimum human input to unblock (in order)
+1. **Provide a trusted runner with `SUPABASE_ACCESS_TOKEN`** (or run yourself): `supabase link --project-ref
+   edibibytqfrrxfztukpm`; `supabase db push` to apply 22–25; capture `supabase migration list` + Advisors.
+2. **Set Edge secrets** in the project: `CI_WORKER_SECRET`, Meta `CLIENT_ID`/`CLIENT_SECRET`, OAuth redirect,
+   Graph version; **deploy** the 4 IG functions; schedule `ci_purge_expired`.
+3. **Name the pilot subjects** and insert them (service role):
+   `insert into intel.ci_pilot_cohort(subject_kind,member_id,label) values('creator','<auth uid>','<name>');`
+   and `insert into intel.ci_pilot_cohort(subject_kind,org_id,label) values('brand','<org_id>','<brand>');`
+4. **Activate** (single decision): set `creator_profile_api=true`, `creator_ig_connect=true`,
+   `pilot_cohort_enforced=true`. Roll back = set `creator_profile_api=false` (instant, non-destructive).
+5. **Consenting IG account** connects; capture the real granted scopes, ingestion run, observed/unavailable
+   fields, and creator+brand screenshots for the live GO report.
