@@ -474,3 +474,13 @@ tbody tr:hover{background:var(--panel-2)}
 .ci-cardrow{border-top:1px solid var(--line);padding:12px 0}
 .ci-cardrow:first-of-type{border-top:none}
 .ci-card .ci-two{margin-top:4px}
+
+/* ---------- Creator Intelligence — brand shortlist + side-by-side comparison (Phase 1D pilot) ---------- */
+.ci-pick{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:600;margin-right:auto}
+.ci-pick input{accent-color:var(--brand)}
+.ci-compare .ci-cmp-scroll{overflow-x:auto}
+table.ci-cmp{border-collapse:collapse;width:100%;font-size:13px;min-width:520px}
+table.ci-cmp th,table.ci-cmp td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+table.ci-cmp thead th{background:var(--panel-2);font-weight:700}
+table.ci-cmp .ci-cmp-dim{background:var(--panel-2);font-weight:600;color:var(--muted);white-space:nowrap}
+table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}

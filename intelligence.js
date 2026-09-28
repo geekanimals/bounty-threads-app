@@ -181,6 +181,7 @@
       + '<div class="muted">Match creators to a specific brief and read an evidence-backed card for creators you have a relationship with. There is no global ranking and no opaque score — every match is explained by the signals it did and didn\'t meet, for this brief only.</div></div>'
       + matchForm()
       + '<div id="ciMatchOut"></div>'
+      + '<div id="ciCompareOut"></div>'
       + '<div class="card ci-lookup"><h4>Look up a creator card</h4>'
       + '<div class="ci-addrow"><input id="ciLookupId" placeholder="Creator identity ID (creators you manage)"><button class="btn sm" id="ciLookupBtn">Open card</button></div>'
       + '<div class="ci-note">Access is limited to creators your organisation has a relationship with. Cards never expose private contact details, unauthorised rates, or raw messages.</div></div>'
@@ -223,16 +224,23 @@
   var MSTATUS  = { match:["Match","ok"], partial:["Partial match","warn"], no_match:["Not a fit for this brief","na"], insufficient_data:["Insufficient data","na"] };
   function tagOf(map,k){ var s=map[k]||[k||"—","na"]; return '<span class="ci-pill ci-'+s[1]+'">'+esc(s[0])+'</span>'; }
 
+  // shortlist state: id -> the match result row (kept so the comparison shows the brief's reasons alongside evidence)
+  var _shortlist = {};
+  function shortlistCount(){ return Object.keys(_shortlist).length; }
+
   function renderMatches(d){
     var out = document.getElementById("ciMatchOut");
+    _shortlist = {};                        // a new brief resets the shortlist
     var results = d.results||[];
-    if(!results.length){ out.innerHTML='<div class="card"><div class="muted">No creators in your managed set match this brief. (This is scoped to your organisation — there is no global creator pool here.)</div></div>'; return; }
-    var head = '<div class="card ci-intro"><h4>Match explanation — for this brief only</h4>'
-      + '<div class="muted">'+esc(results.length)+' creator(s) evaluated · '+fmtDT(d.generated_at)+'. Each is explained by the signals it met (✓) and didn\'t (−). No creator is called “best” or given a score.</div></div>';
+    if(!results.length){ out.innerHTML='<div class="card"><div class="muted">No creators in your managed set match this brief. (This is scoped to your organisation — there is no global creator pool here.)</div></div>'; document.getElementById("ciCompareOut").innerHTML=""; return; }
+    var head = '<div class="card ci-intro"><div class="ci-mh"><h4>Match explanation — for this brief only</h4>'
+      + '<button class="btn sm" id="ciCompareBtn" disabled>Compare shortlist (0)</button></div>'
+      + '<div class="muted">'+esc(results.length)+' creator(s) evaluated · '+fmtDT(d.generated_at)+'. Each is explained by the signals it met (✓) and didn\'t (−). Tick creators to shortlist, then compare them side by side. No creator is called “best” or given a score.</div></div>';
     var cards = results.map(function(e){
       var matched = (e.matched_signals||[]), missing = (e.missing_signals||[]);
       return '<div class="card ci-match">'
-        + '<div class="ci-mh"><h4>Creator <span class="ci-id">'+esc(shortId(e.creator_identity_id))+'</span></h4>'
+        + '<div class="ci-mh"><label class="ci-pick"><input type="checkbox" data-pick="'+esc(e.creator_identity_id)+'"> Shortlist</label>'
+        + '<h4>Creator <span class="ci-id">'+esc(shortId(e.creator_identity_id))+'</span></h4>'
         + tagOf(MSTATUS, e.match_status)+(e.match_strength?tagOf(STRENGTH, e.match_strength):'')+'</div>'
         + '<div class="ci-signals">'
         +   '<div class="ci-sig ok"><div class="ci-sig-h">✓ Strong signals</div>'+(matched.length?('<ul>'+matched.map(function(s){return '<li>'+esc(s)+'</li>';}).join("")+'</ul>'):'<div class="muted">None evidenced for this brief</div>')+'</div>'
@@ -242,8 +250,57 @@
     }).join("");
     out.innerHTML = head + cards;
     out.querySelectorAll("[data-card]").forEach(function(b){ b.onclick=function(){ openCard(b.getAttribute("data-card")); }; });
+    var byId = {}; results.forEach(function(e){ byId[e.creator_identity_id]=e; });
+    out.querySelectorAll("[data-pick]").forEach(function(cb){ cb.onchange=function(){
+      var id=cb.getAttribute("data-pick");
+      if(cb.checked) _shortlist[id]=byId[id]; else delete _shortlist[id];
+      var btn=document.getElementById("ciCompareBtn");
+      btn.textContent="Compare shortlist ("+shortlistCount()+")"; btn.disabled = shortlistCount()<2;
+    };});
+    document.getElementById("ciCompareBtn").onclick = compareShortlist;
   }
   function shortId(id){ return id?String(id).slice(0,8)+"…":"—"; }
+
+  // Side-by-side comparison of shortlisted creators — composes the SAME authorised brand payloads.
+  // No new data source, no ranking, no score; just the evidence laid out for a human decision.
+  async function compareShortlist(){
+    var out = document.getElementById("ciCompareOut");
+    var ids = Object.keys(_shortlist);
+    if(ids.length<2){ return; }
+    out.innerHTML = '<div class="card"><div class="muted">Loading '+ids.length+' cards for comparison…</div></div>';
+    try{
+      var cards = await Promise.all(ids.map(function(id){ return api("get_creator_intelligence",{p_identity_id:id}).then(function(r){ return r.error?{__err:r.error,id:id}:{id:id,d:r.data,m:_shortlist[id]}; }); }));
+      renderComparison(cards);
+    }catch(e){ out.innerHTML='<div class="card ci-err-inline">Couldn\'t build the comparison: '+esc(e.message||e)+'</div>'; }
+  }
+
+  function firstKey(obj){ if(!obj) return "—"; var ks=Object.keys(obj); return ks.length?(ks[0]+": "+obj[ks[0]]):"—"; }
+  function renderComparison(cards){
+    var out = document.getElementById("ciCompareOut");
+    // rows are evidence dimensions; each dimension shows its own status/insufficiency per creator (never zeroed)
+    var rows = [
+      ["Match (this brief)", function(c){ return c.m? (MSTATUS[c.m.match_status]?MSTATUS[c.m.match_status][0]:c.m.match_status)+(c.m.match_strength?" · "+c.m.match_strength:"") : "—"; }],
+      ["Strong signals",     function(c){ return c.m&&(c.m.matched_signals||[]).length? '<ul class="ci-cmpul">'+c.m.matched_signals.map(function(s){return '<li>'+esc(s)+'</li>';}).join("")+'</ul>' : '<span class="muted">none</span>'; }],
+      ["Missing / unknown",  function(c){ return c.m&&(c.m.missing_signals||[]).length? '<ul class="ci-cmpul">'+c.m.missing_signals.map(function(s){return '<li>'+esc(s)+'</li>';}).join("")+'</ul>' : '—'; }],
+      ["Performance",        function(c){ var p=(c.d||{}).performance||{}; return pill(p.status||"insufficient_data")+' <span class="muted">'+esc(p.reels_analysed!=null?("· "+p.reels_analysed+" reels"):"")+'</span>'; }],
+      ["Confidence band",    function(c){ var p=(c.d||{}).performance||{}; return esc(p.confidence_band||"—"); }],
+      ["Top country",        function(c){ return esc(firstKey(((c.d||{}).audience||{}).country)); }],
+      ["Top city",           function(c){ return esc(firstKey(((c.d||{}).audience||{}).city)); }],
+      ["Audience freshness", function(c){ return esc(((c.d||{}).audience||{}).freshness||"—"); }],
+      ["Reliability",        function(c){ return pill(((c.d||{}).reliability||{}).status||"insufficient_data"); }],
+      ["Fraud (estimate)",   function(c){ return pill(((c.d||{}).fraud_probability||{}).status||"insufficient_data"); }],
+      ["Verified coverage",  function(c){ var v=((c.d||{}).coverage||{}); return v.value!=null?esc(v.value)+"%":pill(v.status||"insufficient_data"); }],
+      ["Confidence",         function(c){ var v=((c.d||{}).confidence||{}); return v.value!=null?esc(v.value):pill(v.status||"insufficient_data"); }]
+    ];
+    var heads = cards.map(function(c){ return '<th>'+(c.__err?'<span class="ci-err-inline">no access</span>':('Creator <span class="ci-id">'+esc(shortId(c.id))+'</span>'))+'</th>'; }).join("");
+    var body = rows.map(function(r){
+      return '<tr><th class="ci-cmp-dim">'+esc(r[0])+'</th>'+cards.map(function(c){ return '<td>'+(c.__err?'—':r[1](c))+'</td>'; }).join("")+'</tr>';
+    }).join("");
+    out.innerHTML = '<div class="card ci-compare"><div class="ci-mh"><h4>Side-by-side comparison</h4></div>'
+      + '<div class="ci-note">Authorised evidence only — no private contact, rates, or messages. Blanks are shown as their real status (e.g. “Insufficient data”), never as zero, and nothing here is an overall score.</div>'
+      + '<div class="ci-cmp-scroll"><table class="ci-cmp"><thead><tr><th></th>'+heads+'</tr></thead><tbody>'+body+'</tbody></table></div></div>';
+    out.scrollIntoView({behavior:"smooth", block:"start"});
+  }
 
   async function openCard(identityId){
     var out = document.getElementById("ciCardOut");
