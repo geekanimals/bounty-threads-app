@@ -56,13 +56,38 @@
   async function loadSelf(){
     var root = document.getElementById("ciSelf"); if(!root) return;
     try{
-      var r = await api("get_my_creator_intelligence");
-      if(r.error) throw r.error;
-      renderSelf(r.data || {});
+      var rr = await Promise.all([ api("get_my_creator_intelligence"), api("get_my_commercial_readiness") ]);
+      if(rr[0].error) throw rr[0].error;
+      renderSelf(rr[0].data || {}, (rr[1]&&!rr[1].error?rr[1].data:null));
     }catch(e){
       var err = document.getElementById("ciSelfErr");
       if(err){ err.style.display="block"; err.textContent = "Couldn't load your intelligence. "+(e.message||e); }
     }
+  }
+  // creator-facing view of the same decision fields brands will see (category/formats/brand history/barter/rate)
+  function selfCommercialSection(cm){
+    if(!cm) return '';
+    function r(title, html, note){ return '<div class="ci-cardrow"><div class="ci-mh"><b>'+esc(title)+'</b></div><div>'+html+'</div>'+(note?'<div class="ci-hint">'+esc(note)+'</div>':'')+'</div>'; }
+    return '<div class="card ci-measure"><div class="ci-mh"><h4>Category, brand history, barter &amp; rates</h4></div>'
+      + '<div class="ci-exp">What a brand can see about your commercial fit. Rates and brand history appear to brands only when you switch them on in your profile visibility.</div>'
+      + r("Category signals", fCategory(cm))
+      + r("Content formats", fFormats(cm))
+      + r("Brand history", fBrandHist(cm), "Shown to brands only if you enable 'brand experience' visibility.")
+      + r("Barter readiness", fBarter(cm))
+      + r("Rate indication", fRate(cm), "Shown to brands only if your rate card is not private.")
+      + '</div>';
+  }
+  function creatorFeedbackForm(){
+    return '<div class="card ci-feedback" id="ciCreatorFb"><h4>Pilot feedback</h4>'
+      + '<div class="ci-note">Two minutes helps shape the product. Stored separately for the pilot review.</div>'
+      + '<label class="ci-f"><span>Was your profile easy to complete?</span><select id="cfbEasy"><option value="">—</option><option>Yes</option><option>Somewhat</option><option>No</option></select></label>'
+      + '<label class="ci-f"><span>What data here is incorrect?</span><textarea id="cfbWrong" rows="2"></textarea></label>'
+      + '<label class="ci-f"><span>What data would increase your trust?</span><textarea id="cfbTrust" rows="2"></textarea></label>'
+      + '<button class="btn sm" id="cfbSend">Submit feedback</button><span id="cfbMsg" class="ci-hint"></span></div>';
+  }
+  function wireCreatorFeedback(){
+    var b=document.getElementById("cfbSend"); if(!b) return;
+    b.onclick=function(){ submitFeedback('creator', { profile_easy: valOf("cfbEasy"), incorrect: valOf("cfbWrong"), trust: valOf("cfbTrust") }, "cfbMsg"); };
   }
 
   function measureCard(title, status, explanation, meta, extra){
@@ -72,12 +97,14 @@
       + meta + '</div>';
   }
 
-  function renderSelf(d){
+  function renderSelf(d, cm){
     var gen = fmtDT(d.generated_at);
     if(d.status === "insufficient_data" && !d.performance){
       document.getElementById("ciSelfBody").innerHTML =
         '<div class="card ci-measure"><div class="ci-mh"><h4>Intelligence not computed yet</h4>'+pill("insufficient_data")+'</div>'
-        + '<div class="ci-exp">We haven\'t computed your intelligence yet. Connect your account and keep your profile updated — measures appear as evidence accumulates. Nothing is estimated as zero in the meantime.</div></div>';
+        + '<div class="ci-exp">We haven\'t computed your intelligence yet. Connect your account and keep your profile updated — measures appear as evidence accumulates. Nothing is estimated as zero in the meantime.</div></div>'
+        + selfCommercialSection(cm) + creatorFeedbackForm();
+      wireCreatorFeedback();
       return;
     }
     var perf = d.performance||{}, aud = d.audience||{}, rel = d.reliability||{}, bs = d.brand_safety||{}, fr = d.fraud_probability||{}, conf = d.confidence||{}, cov = d.coverage||{};
@@ -138,8 +165,10 @@
           metaLine("Derived", gen, cov.value!=null?(cov.value+"%"):"—"), "")
       + '</div>';
 
+    body += selfCommercialSection(cm) + creatorFeedbackForm();
     document.getElementById("ciSelfBody").innerHTML = body;
     wireEvidence(document.getElementById("ciSelfBody"));
+    wireCreatorFeedback();
   }
 
   function prettyFeature(k){ if(!k) return ""; return String(k).replace(/^content\./,"").replace(/^audience\./,"").replace(/^account\./,"").replace(/_/g," ").replace(/\b\w/g,function(c){return c.toUpperCase();}); }
@@ -190,29 +219,45 @@
   };
 
   function matchForm(){
-    return '<div class="card ci-brief"><h4>Campaign brief</h4>'
+    return '<div class="card ci-brief"><div class="ci-mh"><h4>Campaign brief</h4><button class="btn sm ghost" id="ciPrefill">Prefill example</button></div>'
       + '<div class="ci-grid">'
-      + '<label class="ci-f"><span>Categories (comma separated)</span><input id="ciReqCat" placeholder="e.g. fitness, wellness"></label>'
-      + '<label class="ci-f"><span>Locations (comma separated)</span><input id="ciReqLoc" placeholder="e.g. IN, Bengaluru"></label>'
+      + '<label class="ci-f"><span>Campaign name</span><input id="ciReqName" placeholder="e.g. Snuggles launch"></label>'
+      + '<label class="ci-f"><span>Categories / need (comma separated)</span><input id="ciReqCat" placeholder="e.g. pets, lifestyle"></label>'
+      + '<label class="ci-f"><span>Locations (comma separated)</span><input id="ciReqLoc" placeholder="e.g. Bangalore, IN"></label>'
       + '<label class="ci-f"><span>Content formats (comma separated)</span><input id="ciReqFmt" placeholder="e.g. reels"></label>'
+      + '<label class="ci-f"><span>Budget (₹)</span><input id="ciReqBudget" type="number" placeholder="e.g. 1500000"></label>'
+      + '<label class="ci-f"><span>Compensation preference</span><select id="ciReqComp"><option value="">Any</option><option value="barter">Barter</option><option value="paid">Paid</option><option value="hybrid">Barter + paid hybrid</option></select></label>'
       + '<label class="ci-f"><span>Platform</span><select id="ciReqPlat"><option value="instagram">Instagram</option></select></label>'
       + '</div>'
       + '<button class="btn" id="ciMatchBtn">Find matches for this brief</button>'
       + '<div class="ci-note">Matching runs only over creators your organisation manages, for this brief. It ranks nothing globally and invents no facts.</div></div>';
   }
+  function prefillSnuggles(){
+    var set=function(id,v){ var e=document.getElementById(id); if(e) e.value=v; };
+    set("ciReqName","Snuggles launch"); set("ciReqCat","pets"); set("ciReqLoc","Bangalore");
+    set("ciReqFmt","reels"); set("ciReqBudget","1500000");
+    var c=document.getElementById("ciReqComp"); if(c) c.value="hybrid";
+  }
 
   async function loadBrand(){
     var root = document.getElementById("ciBrand"); if(!root) return;
     var mb = document.getElementById("ciMatchBtn"); if(mb) mb.onclick = runMatch;
+    var pf = document.getElementById("ciPrefill"); if(pf) pf.onclick = prefillSnuggles;
     var lb = document.getElementById("ciLookupBtn"); if(lb) lb.onclick = function(){ var id=(document.getElementById("ciLookupId").value||"").trim(); if(id) openCard(id); };
   }
 
   function csv(id){ var v=(document.getElementById(id).value||"").trim(); return v?v.split(",").map(function(s){return s.trim();}).filter(Boolean):[]; }
+  function valOf(id){ var e=document.getElementById(id); return e?(e.value||"").trim():""; }
 
+  var _lastReq = null;
   async function runMatch(){
     var out = document.getElementById("ciMatchOut");
-    var req = { category: csv("ciReqCat"), location: csv("ciReqLoc"), content_formats: csv("ciReqFmt"), platform: document.getElementById("ciReqPlat").value };
+    var req = { campaign: valOf("ciReqName"), category: csv("ciReqCat"), location: csv("ciReqLoc"),
+                content_formats: csv("ciReqFmt"), platform: document.getElementById("ciReqPlat").value,
+                budget: valOf("ciReqBudget")? Number(valOf("ciReqBudget")):null, compensation: valOf("ciReqComp")||null };
+    _lastReq = req;
     out.innerHTML = '<div class="card"><div class="muted">Matching against your managed creators…</div></div>';
+    document.getElementById("ciCompareOut").innerHTML="";
     try{
       var r = await api("match_creators", { p_requirements: req });
       if(r.error) throw r.error;
@@ -223,6 +268,18 @@
   var STRENGTH = { strong:["Strong","ok"], moderate:["Moderate","warn"], weak:["Weak","na"] };
   var MSTATUS  = { match:["Match","ok"], partial:["Partial match","warn"], no_match:["Not a fit for this brief","na"], insufficient_data:["Insufficient data","na"] };
   function tagOf(map,k){ var s=map[k]||[k||"—","na"]; return '<span class="ci-pill ci-'+s[1]+'">'+esc(s[0])+'</span>'; }
+  // commercial/decision-field status → label (Observed/Derived/Not shared/Insufficient data)
+  var CSTAT = { observed:["Observed","ok"], derived:["Derived","ok"], not_shared:["Not shared","na"], insufficient_data:["Insufficient data","na"], unavailable:["Unavailable","na"] };
+  function cpill(s){ var x=CSTAT[s]||[s||"—","na"]; return '<span class="ci-pill ci-'+x[1]+'">'+esc(x[0])+'</span>'; }
+  function briefNeed(){ return ((_lastReq&&_lastReq.category)||[]).map(function(n){return String(n).toLowerCase();}); }
+  // decision-field renderers shared by the card and the comparison (respect the served status; never invent)
+  function fCategory(cm){ var cs=(cm||{}).category_signals||{}; if(cs.status!=='observed') return cpill(cs.status||'insufficient_data');
+    var cats=cs.categories||[], need=briefNeed(); var fit=cats.some(function(x){return need.indexOf(String(x).toLowerCase())>=0;});
+    return esc(cats.join(", "))+(need.length?(' '+(fit?'<span class="ci-pill ci-ok">fits brief</span>':'<span class="ci-pill ci-na">no overlap</span>')):''); }
+  function fFormats(cm){ var f=(cm||{}).content_formats||{}; return f.status==='observed'? esc((f.formats||[]).join(", ")) : cpill(f.status); }
+  function fBrandHist(cm){ var b=(cm||{}).brand_history||{}; return b.status==='observed'? (esc(b.confirmed_count)+' confirmed') : cpill(b.status); }
+  function fBarter(cm){ var b=(cm||{}).barter_readiness||{}; return b.status==='observed'? ((b.accepts_barter?'Yes':'No')+(b.preference?(' · '+esc(b.preference)):'')+(b.min_product_value!=null?(' · min ₹'+esc(b.min_product_value)):'')) : cpill(b.status); }
+  function fRate(cm){ var r=(cm||{}).rate_indication||{}; return r.status==='derived'? ('₹'+esc(r.indicative_min)+'–₹'+esc(r.indicative_max)+(r.negotiable?' <span class="muted">(negotiable)</span>':'')) : cpill(r.status); }
 
   // shortlist state: id -> the match result row (kept so the comparison shows the brief's reasons alongside evidence)
   var _shortlist = {};
@@ -269,7 +326,10 @@
     if(ids.length<2){ return; }
     out.innerHTML = '<div class="card"><div class="muted">Loading '+ids.length+' cards for comparison…</div></div>';
     try{
-      var cards = await Promise.all(ids.map(function(id){ return api("get_creator_intelligence",{p_identity_id:id}).then(function(r){ return r.error?{__err:r.error,id:id}:{id:id,d:r.data,m:_shortlist[id]}; }); }));
+      var cards = await Promise.all(ids.map(function(id){
+        return Promise.all([ api("get_creator_intelligence",{p_identity_id:id}), api("get_creator_commercial_readiness",{p_identity_id:id}) ])
+          .then(function(rr){ var r=rr[0], rc=rr[1]; return r.error?{__err:r.error,id:id}:{id:id,d:r.data,cm:(rc&&!rc.error?rc.data:null),m:_shortlist[id]}; });
+      }));
       renderComparison(cards);
     }catch(e){ out.innerHTML='<div class="card ci-err-inline">Couldn\'t build the comparison: '+esc(e.message||e)+'</div>'; }
   }
@@ -280,13 +340,18 @@
     // rows are evidence dimensions; each dimension shows its own status/insufficiency per creator (never zeroed)
     var rows = [
       ["Match (this brief)", function(c){ return c.m? (MSTATUS[c.m.match_status]?MSTATUS[c.m.match_status][0]:c.m.match_status)+(c.m.match_strength?" · "+c.m.match_strength:"") : "—"; }],
+      ["Category fit",       function(c){ return fCategory(c.cm); }],
+      ["Content formats",    function(c){ return fFormats(c.cm); }],
       ["Strong signals",     function(c){ return c.m&&(c.m.matched_signals||[]).length? '<ul class="ci-cmpul">'+c.m.matched_signals.map(function(s){return '<li>'+esc(s)+'</li>';}).join("")+'</ul>' : '<span class="muted">none</span>'; }],
       ["Missing / unknown",  function(c){ return c.m&&(c.m.missing_signals||[]).length? '<ul class="ci-cmpul">'+c.m.missing_signals.map(function(s){return '<li>'+esc(s)+'</li>';}).join("")+'</ul>' : '—'; }],
-      ["Performance",        function(c){ var p=(c.d||{}).performance||{}; return pill(p.status||"insufficient_data")+' <span class="muted">'+esc(p.reels_analysed!=null?("· "+p.reels_analysed+" reels"):"")+'</span>'; }],
-      ["Confidence band",    function(c){ var p=(c.d||{}).performance||{}; return esc(p.confidence_band||"—"); }],
       ["Top country",        function(c){ return esc(firstKey(((c.d||{}).audience||{}).country)); }],
       ["Top city",           function(c){ return esc(firstKey(((c.d||{}).audience||{}).city)); }],
       ["Audience freshness", function(c){ return esc(((c.d||{}).audience||{}).freshness||"—"); }],
+      ["Performance",        function(c){ var p=(c.d||{}).performance||{}; return pill(p.status||"insufficient_data")+' <span class="muted">'+esc(p.reels_analysed!=null?("· "+p.reels_analysed+" reels"):"")+'</span>'; }],
+      ["Confidence band",    function(c){ var p=(c.d||{}).performance||{}; return esc(p.confidence_band||"—"); }],
+      ["Brand history",      function(c){ return fBrandHist(c.cm); }],
+      ["Barter readiness",   function(c){ return fBarter(c.cm); }],
+      ["Rate indication",    function(c){ return fRate(c.cm); }],
       ["Reliability",        function(c){ return pill(((c.d||{}).reliability||{}).status||"insufficient_data"); }],
       ["Fraud (estimate)",   function(c){ return pill(((c.d||{}).fraud_probability||{}).status||"insufficient_data"); }],
       ["Verified coverage",  function(c){ var v=((c.d||{}).coverage||{}); return v.value!=null?esc(v.value)+"%":pill(v.status||"insufficient_data"); }],
@@ -298,7 +363,9 @@
     }).join("");
     out.innerHTML = '<div class="card ci-compare"><div class="ci-mh"><h4>Side-by-side comparison</h4></div>'
       + '<div class="ci-note">Authorised evidence only — no private contact, rates, or messages. Blanks are shown as their real status (e.g. “Insufficient data”), never as zero, and nothing here is an overall score.</div>'
-      + '<div class="ci-cmp-scroll"><table class="ci-cmp"><thead><tr><th></th>'+heads+'</tr></thead><tbody>'+body+'</tbody></table></div></div>';
+      + '<div class="ci-cmp-scroll"><table class="ci-cmp"><thead><tr><th></th>'+heads+'</tr></thead><tbody>'+body+'</tbody></table></div></div>'
+      + brandFeedbackForm();
+    wireBrandFeedback();
     out.scrollIntoView({behavior:"smooth", block:"start"});
   }
 
@@ -306,9 +373,9 @@
     var out = document.getElementById("ciCardOut");
     out.innerHTML = '<div class="card"><div class="muted">Loading creator card…</div></div>';
     try{
-      var r = await api("get_creator_intelligence", { p_identity_id: identityId });
-      if(r.error) throw r.error;
-      renderCard(r.data||{});
+      var rr = await Promise.all([ api("get_creator_intelligence", { p_identity_id: identityId }), api("get_creator_commercial_readiness", { p_identity_id: identityId }) ]);
+      if(rr[0].error) throw rr[0].error;
+      renderCard(rr[0].data||{}, (rr[1]&&!rr[1].error?rr[1].data:null));
     }catch(e){
       var msg = (e && (e.message||e.hint||e.details)) || e;
       // authorisation errors surface as a clear, non-leaky message
@@ -316,7 +383,17 @@
     }
   }
 
-  function renderCard(d){
+  function commercialRows(cm){
+    if(!cm) return '';
+    function r(title, html){ return '<div class="ci-cardrow"><div class="ci-mh"><b>'+esc(title)+'</b></div><div>'+html+'</div></div>'; }
+    return '<div class="ci-sub" style="margin-top:6px">Campaign decision fields</div>'
+      + r("Category fit", fCategory(cm))
+      + r("Content formats", fFormats(cm))
+      + r("Historical brand experience", fBrandHist(cm))
+      + r("Barter readiness", fBarter(cm))
+      + r("Rate indication", fRate(cm));
+  }
+  function renderCard(d, cm){
     var out = document.getElementById("ciCardOut");
     var gen = fmtDT(d.generated_at);
     var perf = d.performance||{}, aud = d.audience||{}, rel = d.reliability||{}, bs = d.brand_safety||{}, fr = d.fraud_probability||{}, conf = d.confidence||{}, cov = d.coverage||{};
@@ -326,6 +403,7 @@
     }
     out.innerHTML = '<div class="card ci-card"><div class="ci-mh"><h3>Creator Intelligence Card</h3><span class="ci-id">'+esc(shortId((d.creator_identity||{}).identity_id))+'</span></div>'
       + '<div class="ci-note">Restricted view. Evidence summaries only — no private personal data, no private contact, no unauthorised rates, no raw messages.</div>'
+      + commercialRows(cm)
       + row("Performance", perf.status||"insufficient_data", "Content performance summary ("+esc(perf.window||"recent")+").",
             metaLine("Feature store", gen, "Band: "+confBand({confidence_band:perf.confidence_band})),
             '<div class="ci-sub">Reels analysed: <b>'+esc(num(perf.reels_analysed))+'</b></div>')
@@ -349,6 +427,28 @@
     var c=d(aud.country), ci=d(aud.city);
     if(!c && !ci) return '<span class="muted">Insufficient data</span>';
     return c+ci;
+  }
+
+  // ---------- pilot feedback (stored separately via api.submit_pilot_feedback) ----------
+  function brandFeedbackForm(){
+    return '<div class="card ci-feedback" id="ciBrandFb"><h4>Pilot feedback</h4>'
+      + '<div class="ci-note">Help us validate this replaces spreadsheets. Stored separately for the pilot review.</div>'
+      + '<label class="ci-f"><span>Would you shortlist from this comparison?</span><select id="fbShortlist"><option value="">—</option><option>Yes</option><option>No</option><option>Maybe</option></select></label>'
+      + '<label class="ci-f"><span>What information is missing to decide?</span><textarea id="fbMissing" rows="2"></textarea></label>'
+      + '<label class="ci-f"><span>Would you pay for this intelligence?</span><select id="fbPay"><option value="">—</option><option>Yes</option><option>No</option><option>Maybe</option></select></label>'
+      + '<button class="btn sm" id="fbBrandSend">Submit feedback</button><span id="fbBrandMsg" class="ci-hint"></span></div>';
+  }
+  function wireBrandFeedback(){
+    var b=document.getElementById("fbBrandSend"); if(!b) return;
+    b.onclick=function(){ submitFeedback('brand', {
+      would_shortlist: valOf("fbShortlist"), missing: valOf("fbMissing"), would_pay: valOf("fbPay"),
+      campaign: (_lastReq&&_lastReq.campaign)||null }, "fbBrandMsg"); };
+  }
+  async function submitFeedback(role, answers, msgId){
+    var m=document.getElementById(msgId); if(m) m.textContent="Sending…";
+    try{ var r=await api("submit_pilot_feedback",{p_role:role, p_answers:answers}); if(r.error) throw r.error;
+      if(m) m.textContent="Thanks — feedback recorded ✓"; }
+    catch(e){ if(m) m.textContent="Couldn't submit: "+(e.message||e); }
   }
 
   window.ciIntel = { boot: boot, loadSelf: loadSelf, loadBrand: loadBrand };

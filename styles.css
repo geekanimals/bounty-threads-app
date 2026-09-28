@@ -484,3 +484,8 @@ table.ci-cmp th,table.ci-cmp td{border:1px solid var(--line);padding:8px 10px;te
 table.ci-cmp thead th{background:var(--panel-2);font-weight:700}
 table.ci-cmp .ci-cmp-dim{background:var(--panel-2);font-weight:600;color:var(--muted);white-space:nowrap}
 table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
+
+/* ---------- pilot feedback + decision-field cards ---------- */
+.ci-feedback .ci-f{margin:8px 0}
+.ci-feedback textarea,.ci-feedback select{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;color:var(--ink);font:inherit;font-size:13px}
+.ci-feedback #fbBrandMsg,.ci-feedback #cfbMsg{margin-left:10px}
