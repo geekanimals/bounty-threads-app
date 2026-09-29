@@ -145,6 +145,7 @@ jobs:
               /supabase/tests/09_phase1d_serving_test.sql \
               /supabase/tests/11_pilot_cohort_test.sql \
               /supabase/tests/12_pilot_commercial_feedback_test.sql \
+              /supabase/tests/13_phase1e_operations_test.sql \
               /supabase/tests-integration/01_legacy_coexistence_test.sql
 
       - name: Stop stack
