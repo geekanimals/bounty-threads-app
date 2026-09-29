@@ -20,9 +20,11 @@ insert into auth.users(instance_id,id,aud,role,email,created_at,updated_at) valu
   ('00000000-0000-0000-0000-000000000000','0d000000-0000-0000-0000-00000000000d','authenticated','authenticated','op@t.local',now(),now()),
   ('00000000-0000-0000-0000-000000000000','c1000000-0000-0000-0000-0000000000c1','authenticated','authenticated','c1@t.local',now(),now()),
   ('00000000-0000-0000-0000-000000000000','c2000000-0000-0000-0000-0000000000c2','authenticated','authenticated','c2@t.local',now(),now()),
-  ('00000000-0000-0000-0000-000000000000','b3000000-0000-0000-0000-0000000000b3','authenticated','authenticated','b3@t.local',now(),now());
+  ('00000000-0000-0000-0000-000000000000','b3000000-0000-0000-0000-0000000000b3','authenticated','authenticated','b3@t.local',now(),now()),
+  ('00000000-0000-0000-0000-000000000000','e5000000-0000-0000-0000-0000000000e5','authenticated','authenticated','e5@t.local',now(),now());
 create table if not exists public.members(id uuid primary key, org_id uuid not null default gen_random_uuid(), role text, name text);
-insert into public.members(id,role,name) values ('0d000000-0000-0000-0000-00000000000d','agency','Op'),('b3000000-0000-0000-0000-0000000000b3','brand','Br') on conflict (id) do nothing;
+-- op + owning brand (b3) + an UNRELATED brand (e5) in its own org
+insert into public.members(id,role,name) values ('0d000000-0000-0000-0000-00000000000d','agency','Op'),('b3000000-0000-0000-0000-0000000000b3','brand','Br'),('e5000000-0000-0000-0000-0000000000e5','brand','OtherBrand') on conflict (id) do nothing;
 update intel.ci_feature_flag set enabled=true where flag in ('creator_ig_connect','creator_profile_api');
 create temp table _v(k text primary key, v text);
 insert into intel.ci_agency_operator(member_id,label) values ('0d000000-0000-0000-0000-00000000000d','geek op');
@@ -111,15 +113,26 @@ select is( (select identity_id::text from intel.ci_campaign_participation where 
 -- vocab getter
 select ok( jsonb_array_length(api.ops_vocab()->'content_formats') > 0, 'ops_vocab returns content formats');
 
--- ===== get_campaign_detail: operator read exposes participations + event ledger; no PII =====
+-- ===== get_campaign_detail security contract (read-only): operator + owning-brand allowed; others denied; no PII =====
+-- (the campaign's org_id was set to the owning brand's org above, so b3 is the owning brand.)
+-- operator ALLOWED — exposes participations + the event-ledger timeline
 set local request.jwt.claims = '{"sub":"0d000000-0000-0000-0000-00000000000d","role":"authenticated"}';
-select is( (api.get_campaign_detail((select v::uuid from _v where k='camp'))->'campaign'->>'name'), 'Snuggles launch', 'campaign detail returns the campaign');
-select ok( jsonb_array_length(api.get_campaign_detail((select v::uuid from _v where k='camp'))->'participations') = 1, 'campaign detail lists participations');
+select is( (api.get_campaign_detail((select v::uuid from _v where k='camp'))->'campaign'->>'name'), 'Snuggles launch', 'operator is allowed to read campaign detail');
+select ok( jsonb_array_length(api.get_campaign_detail((select v::uuid from _v where k='camp'))->'participations') = 1, 'campaign detail lists participation status');
 select ok( jsonb_array_length(api.get_campaign_detail((select v::uuid from _v where k='camp'))->'events') >= 8, 'campaign detail returns the event-ledger timeline');
-select ok( api.get_campaign_detail((select v::uuid from _v where k='camp'))::text !~* '(whatsapp|"phone"|"email"|date_of_birth|address|access_token|refresh_token)', 'campaign detail leaks no PII/tokens');
--- unrelated creator cannot read campaign detail
+-- PII ABSENT from the payload (no email/whatsapp/address/private profile/rate/contact/token)
+select ok( api.get_campaign_detail((select v::uuid from _v where k='camp'))::text !~* '(whatsapp|"phone"|"email"|date_of_birth|address|postal|rate_card|"contact"|access_token|refresh_token)', 'campaign detail payload contains no PII / private contact / commercials / tokens');
+-- owning brand ALLOWED
+set local request.jwt.claims = '{"sub":"b3000000-0000-0000-0000-0000000000b3","role":"authenticated"}';
+select is( (api.get_campaign_detail((select v::uuid from _v where k='camp'))->'campaign'->>'name'), 'Snuggles launch', 'owning brand org is allowed to read its campaign detail');
+-- unrelated BRAND (different org) DENIED
+set local request.jwt.claims = '{"sub":"e5000000-0000-0000-0000-0000000000e5","role":"authenticated"}';
+select throws_ok( format($$ select api.get_campaign_detail(%L::uuid) $$,(select v from _v where k='camp')), '42501', 'not authorised for this campaign', 'an unrelated brand (different org) is denied campaign detail');
+-- unrelated CREATOR DENIED
 set local request.jwt.claims = '{"sub":"c2000000-0000-0000-0000-0000000000c2","role":"authenticated"}';
-select throws_ok( format($$ select api.get_campaign_detail(%L::uuid) $$,(select v from _v where k='camp')), '42501', 'not authorised for this campaign', 'a non-operator/non-owning user cannot read campaign detail');
+select throws_ok( format($$ select api.get_campaign_detail(%L::uuid) $$,(select v from _v where k='camp')), '42501', 'not authorised for this campaign', 'an unrelated creator is denied campaign detail');
+-- read contract only: no mutating counterpart exists on this RPC (it is STABLE / SELECT-only)
+select is( (select provolatile from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='api' and p.proname='get_campaign_detail'), 's', 'get_campaign_detail is STABLE (a read contract, cannot mutate)');
 
 select * from finish();
 rollback;
