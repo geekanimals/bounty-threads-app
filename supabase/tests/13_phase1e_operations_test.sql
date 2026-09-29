@@ -111,5 +111,15 @@ select is( (select identity_id::text from intel.ci_campaign_participation where 
 -- vocab getter
 select ok( jsonb_array_length(api.ops_vocab()->'content_formats') > 0, 'ops_vocab returns content formats');
 
+-- ===== get_campaign_detail: operator read exposes participations + event ledger; no PII =====
+set local request.jwt.claims = '{"sub":"0d000000-0000-0000-0000-00000000000d","role":"authenticated"}';
+select is( (api.get_campaign_detail((select v::uuid from _v where k='camp'))->'campaign'->>'name'), 'Snuggles launch', 'campaign detail returns the campaign');
+select ok( jsonb_array_length(api.get_campaign_detail((select v::uuid from _v where k='camp'))->'participations') = 1, 'campaign detail lists participations');
+select ok( jsonb_array_length(api.get_campaign_detail((select v::uuid from _v where k='camp'))->'events') >= 8, 'campaign detail returns the event-ledger timeline');
+select ok( api.get_campaign_detail((select v::uuid from _v where k='camp'))::text !~* '(whatsapp|"phone"|"email"|date_of_birth|address|access_token|refresh_token)', 'campaign detail leaks no PII/tokens');
+-- unrelated creator cannot read campaign detail
+set local request.jwt.claims = '{"sub":"c2000000-0000-0000-0000-0000000000c2","role":"authenticated"}';
+select throws_ok( format($$ select api.get_campaign_detail(%L::uuid) $$,(select v from _v where k='camp')), '42501', 'not authorised for this campaign', 'a non-operator/non-owning user cannot read campaign detail');
+
 select * from finish();
 rollback;

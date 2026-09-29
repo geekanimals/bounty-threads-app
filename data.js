@@ -42,7 +42,11 @@ const NAV_META = {
   settings:{ic:"⚙️",label:"Settings"},
   profile:{ic:"🧬",label:"Creator Profile"},
   intelligence:{ic:"📈",label:"My Intelligence"},
-  cintel:{ic:"🔎",label:"Creator Intelligence"}
+  cintel:{ic:"🔎",label:"Creator Intelligence"},
+  campaignops:{ic:"🗂",label:"Campaign Ops"},
+  brandsetup:{ic:"🏷",label:"Brand Setup"},
+  mycampaigns:{ic:"🎯",label:"My Campaigns"},
+  onboarding:{ic:"🚦",label:"Get Campaign-Ready"}
 };
 
 // Which KPI cards each role shows. Values are computed live in app.js realKPIs().

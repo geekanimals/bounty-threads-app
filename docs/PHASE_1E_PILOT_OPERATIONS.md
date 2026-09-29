@@ -361,3 +361,40 @@ reuses visibility rules; (5) existing intelligence models untouched — additive
 
 *Design only. On approval, implementation proceeds migration-by-migration per §4 — additive, dark, disposable-DB
 verified with the §6 plan, CI green — before any commit, and with no production change until explicitly approved.*
+
+---
+
+## 10. Frontend operational layer (built 2026-09-29) — dark, existing RPCs only
+
+Delivered `operations.js` (flag-gated like `intelligence.js`/`profile.js`), wired into
+`app.html`/`app.js`/`data.js`/`styles.css`. Boots by probing `api.ops_vocab()` (enabled = `operational_pilot`
+on + caller in the pilot cohort) and `api.get_campaign_pipeline` (operator?). Hidden entirely in production.
+**No fake data; missing data renders as "unavailable"/"—"; no scores/ranking; private creator data never shown.**
+
+Four experiences (all via existing RPCs; one additive **read-only** RPC `api.get_campaign_detail` was needed
+for the operator detail/actions — flagged for review, no table/contract redesign):
+
+1. **Agency Operations** (`campaignops`, operators): a **10-column pipeline board** (Draft · Creator discovery ·
+   Creators invited · Creators confirmed · Product dispatched · Content pending · Content submitted · Brand
+   approval · Live · Completed) with totals; **Create campaign**; **campaign detail** (overview · creators &
+   execution with shipment/submission/approval · **event-ledger timeline**) and actions — move stage
+   (`set_campaign_status`), add creator (`add_campaign_participant`), record shipment (`record_shipment`),
+   advance (`advance_participation`), approve/request-changes/reject (`approve_content`).
+2. **Creator "My Campaigns"** (`mycampaigns`): cards grouped Upcoming / Active / Completed; **Accept / Reject**
+   (`respond_to_campaign`), **Upload content link** with a note-to-Geek field (`submit_content`). Shows only the
+   creator's own campaigns; no other creators, no brand-private data, no internal notes. Post-completion feedback
+   (brief clear? execution smooth? participate again?) via `submit_pilot_feedback`.
+3. **Creator Onboarding funnel** (`onboarding`): STARTED → PROFILE COMPLETE → CAMPAIGN READY funnel + an
+   8-item checklist (Instagram connected · profile complete · categories · languages · location · brands · barter
+   preference · rate card) from `get_my_onboarding_status` + existing `get_my_profile`. No duplicate fields.
+4. **Brand Setup** (`brandsetup`, operators): company + campaign brief form → `create_campaign` (company/
+   website/contact persisted inside the brief `requirements`, not a new store). Brand feedback
+   (recommendations useful? faster? what was missing?) via `submit_pilot_feedback`.
+
+**Browser-verified** (stubbed RPCs): 10 board columns render and place campaigns by stage; detail opens with
+2 creators, shipment, submission link, 3-event ledger, and approve/advance actions; My Campaigns shows accept;
+onboarding shows 8/8 checks at "campaign ready"; brand form renders. No `operations.js` console errors.
+
+**Testing:** pgTAP `13` extended to **37** (adds `get_campaign_detail` operator read + unrelated-denied + no-PII);
+full suite **00–13 + coexistence = 568/568**; 32 migrations apply clean; legacy `public` fingerprint unchanged;
+all flags OFF. Not merged; no production migration.

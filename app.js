@@ -51,6 +51,9 @@ function renderNav(){
   // Phase 1D — Creator Intelligence serving/matching nav is DARK (same api flag; hidden in production).
   if(currentRole==="creator" && window.__ciIntelEnabled && !keys.includes("intelligence")) keys.splice(2,0,"intelligence");
   if(currentRole!=="creator" && window.__ciIntelEnabled && !keys.includes("cintel")) keys.splice(2,0,"cintel");
+  // Phase 1E — Campaign Operations nav is DARK (operational_pilot flag + pilot cohort; hidden in production).
+  if(currentRole==="creator" && window.__ciOpsEnabled){ if(!keys.includes("mycampaigns")) keys.splice(2,0,"mycampaigns"); if(!keys.includes("onboarding")) keys.splice(3,0,"onboarding"); }
+  if(currentRole!=="creator" && window.__ciOpsEnabled){ if(!keys.includes("campaignops")) keys.splice(2,0,"campaignops"); if(!keys.includes("brandsetup")) keys.splice(3,0,"brandsetup"); }
   if(window.__isAdmin) keys.push("admin");
   keys.forEach(key=>{
     const m = NAV_META[key] || {ic:"🛡", label:key};
@@ -2155,6 +2158,10 @@ const PAGES = {
   profile: (typeof renderProfile==="function"?renderProfile:()=>""),
   intelligence: (typeof renderIntelligence==="function"?renderIntelligence:()=>""),
   cintel: (typeof renderBrandIntel==="function"?renderBrandIntel:()=>""),
+  campaignops: (typeof renderAgencyOps==="function"?renderAgencyOps:()=>""),
+  brandsetup: (typeof renderBrandSetup==="function"?renderBrandSetup:()=>""),
+  mycampaigns: (typeof renderMyCampaigns==="function"?renderMyCampaigns:()=>""),
+  onboarding: (typeof renderOnboarding==="function"?renderOnboarding:()=>""),
   dashboard:renderDashboard, barter:renderBarter, creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit, admin:renderAdmin,
   campaigns:renderCampaigns, reports:renderReports, growth:renderGrowth, settings:renderSettings,
   celebrity:renderCelebrity, approvals:renderApprovals, marketplace:renderMarketplace,
@@ -2538,6 +2545,10 @@ function renderContent(){
   if(currentPage==="profile" && window.ciProfile) window.ciProfile.load();
   if(currentPage==="intelligence" && window.ciIntel) window.ciIntel.loadSelf();
   if(currentPage==="cintel" && window.ciIntel) window.ciIntel.loadBrand();
+  if(currentPage==="campaignops" && window.ciOps) window.ciOps.loadAgencyOps();
+  if(currentPage==="brandsetup" && window.ciOps) window.ciOps.loadBrandSetup();
+  if(currentPage==="mycampaigns" && window.ciOps) window.ciOps.loadMyCampaigns();
+  if(currentPage==="onboarding" && window.ciOps) window.ciOps.loadOnboarding();
   if(currentPage==="growth") loadGrowth();
   if(currentPage==="admin") loadAdmin();
   if(currentPage==="campaigns"){
