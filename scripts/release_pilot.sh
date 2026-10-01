@@ -1,30 +1,31 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Creator Intelligence restricted pilot — one executable release script.
+# Creator Intelligence restricted pilot — release script (modal, gated).
 #
-# RUN ON A TRUSTED RUNNER ONLY (not from CI auto-mode, not from the sandbox):
-#   - supabase CLI installed and authenticated (SUPABASE_ACCESS_TOKEN in env)
-#   - git checkout of the MERGED main commit (AFTER PR #1 is merged by a human)
-#   - psql available; a direct DB connection string in $PROD_DB_URL for the
-#     service-role-only steps (cohort seed, flag flips, verification)
+# MODES (a single invocation NEVER silently proceeds from preflight to activation):
+#   preflight   (DEFAULT, READ-ONLY)  CLI discovery, integrity, drift/ledger, backup+restore-verify, dry-run
+#   deploy      (mutating, DARK)       apply 11 migrations, expose api, set secrets, deploy fns, schedule worker+retention — flags STAY OFF
+#   activate    (mutating)             seed operator + ONE internal creator, enforce cohort, enable creator-facing — then STOP for live E2E
+#   admit       (mutating)             after the real Meta E2E passes, admit the remaining cohort (brand org + other creators)
+#   rollback    (mutating)             disable creator_profile_api/creator_ig_connect/operational_pilot; KEEP pilot_cohort_enforced=true;
+#                                      stop ingestion invocation; keep retention cleanup; prove ingestion cannot restart
 #
-# SECRETS: read from environment variables only. This script never prints or
-# commits a secret value. It generates CI_WORKER_SECRET / webhook token locally
-# and sets them without echoing.
-#
-# SAFETY: every destructive phase is gated by an explicit typed confirmation and
-# by a preceding verification that must pass. It never applies from an unverified
-# working tree (blob hashes are checked), never runs migration repair, never
-# drops/resets data, never exposes intel/private.
+# RUN ON A TRUSTED RUNNER ONLY: supabase CLI authenticated (SUPABASE_ACCESS_TOKEN),
+# git checkout of the MERGED main commit (after a human merges PR #1), psql + $PROD_DB_URL
+# (service-role connection) for the DB-level steps. Secrets come from env; never printed or committed.
+# Activation order (item 2): deploy dark -> verify -> enforce cohort -> ONE creator -> real Meta E2E -> admit rest.
 # =============================================================================
 set -euo pipefail
 
 PROJECT_REF="edibibytqfrrxfztukpm"
-PROD_BASELINE_MIGRATIONS=21        # reported production baseline (CONFIRM in Phase 2, not by anon probe)
-EXPECTED_TOTAL_MIGRATIONS=32       # baseline 21 + 11 pending
+PROD_BASELINE_MIGRATIONS=21
+EXPECTED_TOTAL_MIGRATIONS=32
 CALLBACK_URL="https://${PROJECT_REF}.functions.supabase.co/ig-oauth-callback"
 
-# The 11 pending migrations and their expected git blob hashes (integrity gate).
+# The 11 pending migrations and their expected GIT BLOB object names.
+# NOTE: these are git blob ids = SHA-1 over the git blob ("blob <len>\0" + bytes). They pin exact file
+# content IN GIT. They are NOT SHA-256 content digests. For an independent content digest use sha256sum
+# (printed in preflight). Do not conflate the two.
 PENDING=(
   "20260922080737_ci_1c_feature_store.sql:fbd7ed609bac"
   "20260922080739_ci_1c_fk_indexes.sql:ad1559aae394"
@@ -42,244 +43,176 @@ PENDING=(
 confirm(){ read -r -p "$1 (type $2 to proceed): " _c; [ "$_c" = "$2" ] || { echo "aborted."; exit 1; }; }
 need(){ : "${!1:?missing required env var $1}"; }
 
-# -----------------------------------------------------------------------------
-# PHASE 0 — discover supported CLI syntax (read-only; adapt below to your version)
-# -----------------------------------------------------------------------------
-phase0_help(){
-  supabase --version
-  supabase --help
-  supabase db --help
-  supabase db push --help
-  supabase db dump --help
-  supabase migration list --help
-  supabase functions deploy --help
-  supabase secrets set --help
-  echo ">> Review the help above; if any subcommand/flag below differs in your CLI version, adjust before continuing."
+# ------------------------------- PREFLIGHT (read-only) ------------------------------
+phase_help(){
+  supabase --version; supabase --help; supabase db --help; supabase db push --help
+  supabase db dump --help; supabase migration list --help; supabase functions deploy --help; supabase secrets --help
+  echo ">> Adjust any subcommand/flag below if your CLI version differs."
 }
-
-# -----------------------------------------------------------------------------
-# PHASE 1 — integrity: working tree must equal the approved merged release
-# -----------------------------------------------------------------------------
-phase1_integrity(){
-  echo ">> HEAD: $(git rev-parse HEAD)  branch: $(git rev-parse --abbrev-ref HEAD)"
-  echo ">> Confirm this HEAD is the main commit produced by merging PR #1."
+phase_integrity(){
+  echo ">> HEAD $(git rev-parse HEAD) ($(git rev-parse --abbrev-ref HEAD)) — must be the main commit from merging PR #1."
   local f h got
-  for p in "${PENDING[@]}"; do
-    f="${p%%:*}"; h="${p##*:}"
+  for p in "${PENDING[@]}"; do f="${p%%:*}"; h="${p##*:}"
     got="$(git ls-tree HEAD -- "supabase/migrations/$f" | awk '{print substr($3,1,12)}')"
-    [ "$got" = "$h" ] || { echo "HASH MISMATCH $f: got ${got:-<absent>} expected $h"; exit 1; }
-  done
+    [ "$got" = "$h" ] || { echo "GIT-BLOB MISMATCH $f: got ${got:-<absent>} want $h"; exit 1; }; done
   local total; total="$(git ls-tree -r HEAD -- supabase/migrations | wc -l | tr -d ' ')"
   [ "$total" = "$EXPECTED_TOTAL_MIGRATIONS" ] || { echo "migration count $total != $EXPECTED_TOTAL_MIGRATIONS"; exit 1; }
-  echo ">> Integrity OK: 11 pending hashes match, $total migrations total. All old migrations preserved."
+  echo ">> git-blob integrity OK (11 pinned, $total total, old migrations preserved)."
+  echo ">> Independent SHA-256 content digests (distinct from the git blob ids above):"
+  for p in "${PENDING[@]}"; do f="${p%%:*}"; sha256sum "supabase/migrations/$f" 2>/dev/null || shasum -a 256 "supabase/migrations/$f"; done
 }
-
-# -----------------------------------------------------------------------------
-# PHASE 2 — link + production drift / ledger check (AUTHENTICATED, not anon)
-# -----------------------------------------------------------------------------
-phase2_drift(){
+phase_drift(){
   supabase link --project-ref "$PROJECT_REF"
-  echo ">> Remote vs local migration ledger (confirm remote applied == $PROD_BASELINE_MIGRATIONS, local adds exactly the 11):"
+  echo ">> Remote vs local ledger (confirm remote applied == $PROD_BASELINE_MIGRATIONS; local adds exactly the 11):"
   supabase migration list
-  echo ">> Confirm with the service role that Creator Intelligence is currently OFF and unexposed:"
-  psql "$PROD_DB_URL" -v ON_ERROR_STOP=1 -c \
-    "select flag, enabled from intel.ci_feature_flag where flag in ('creator_profile_api','creator_ig_connect','pilot_cohort_enforced','operational_pilot') order by flag;"
-  confirm "Does the ledger show exactly the 21 baseline applied and the 4 flags present+false?" YES
+  echo ">> Service-role flag check (authenticated — NOT anon probes):"
+  psql "$PROD_DB_URL" -v ON_ERROR_STOP=1 -c "select flag,enabled from intel.ci_feature_flag where flag in ('creator_profile_api','creator_ig_connect','pilot_cohort_enforced','operational_pilot') order by flag;"
 }
-
-# -----------------------------------------------------------------------------
-# PHASE 3 — fresh backup + restore verification (prove the backup restores)
-# -----------------------------------------------------------------------------
-phase3_backup(){
+phase_backup(){
   local ts; ts="$(date +%Y%m%d%H%M%S)"
-  supabase db dump --linked -f "backup_roles_${ts}.sql" --role-only || true
   supabase db dump --linked -f "backup_schema_${ts}.sql"
   supabase db dump --linked -f "backup_data_${ts}.sql" --data-only
   echo ">> Restore-verify into a DISPOSABLE local stack (never against prod):"
-  supabase start >/dev/null
-  local LOCAL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
-  psql "$LOCAL" -v ON_ERROR_STOP=1 -c "drop schema if exists public cascade; create schema public;" >/dev/null
-  psql "$LOCAL" -v ON_ERROR_STOP=1 -f "backup_schema_${ts}.sql" >/dev/null
-  psql "$LOCAL" -v ON_ERROR_STOP=1 -f "backup_data_${ts}.sql" >/dev/null
-  echo ">> Restore OK (schema+data loaded into local). Spot check a legacy table:"
-  psql "$LOCAL" -c "select count(*) as members_rows from public.members;"
-  supabase stop >/dev/null
-  echo ">> Keep backup_*_${ts}.sql off the repo and in secure storage."
+  supabase start >/dev/null; local L="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+  psql "$L" -v ON_ERROR_STOP=1 -f "backup_schema_${ts}.sql" >/dev/null
+  psql "$L" -v ON_ERROR_STOP=1 -f "backup_data_${ts}.sql" >/dev/null
+  psql "$L" -c "select count(*) as members_rows from public.members;"; supabase stop >/dev/null
+  echo ">> Restore verified. Store backup_*_${ts}.sql securely, OUT of the repo."
 }
+phase_dryrun(){ echo ">> DRY-RUN — exactly these 11 will apply:"; supabase migration list; supabase db push --dry-run; }
 
-# -----------------------------------------------------------------------------
-# PHASE 4 — DRY-RUN: propose EXACTLY the 11 migrations (no apply)
-# -----------------------------------------------------------------------------
-phase4_dryrun(){
-  echo ">> Pending migrations the push WILL apply (must be exactly these 11):"
-  supabase migration list
-  supabase db push --dry-run     # if your CLI lacks --dry-run, 'migration list' above is the proposal
-}
+preflight(){ phase_help; phase_integrity; phase_drift; phase_backup; phase_dryrun
+  echo ">> PREFLIGHT complete (read-only). Nothing applied. Next: './release_pilot.sh deploy' when GO on §Phase2/3."; }
 
-# -----------------------------------------------------------------------------
-# PHASE 5 — APPLY migrations (gated). No repair, no history edits.
-# -----------------------------------------------------------------------------
-phase5_apply(){
-  confirm "Apply the 11 pending migrations to PRODUCTION ${PROJECT_REF}?" APPLY
-  supabase db push
-  echo ">> Confirm 32 applied:"; supabase migration list
-}
-
-# -----------------------------------------------------------------------------
-# PHASE 6 — expose ONLY the api schema (keep intel/private unexposed)
-# -----------------------------------------------------------------------------
-phase6_expose(){
-  cat <<'NOTE'
->> HUMAN/CONFIG STEP (api schema is reachable only when it is in the Data API's exposed list):
-   Dashboard: Project Settings > API > Exposed schemas  ->  add "api"  (public already there).
-   DO NOT add intel or private. (Function EXECUTE grants already exist from the migrations.)
-   If you manage config as code, set in config.toml:  [api]\n  schemas = ["public", "api"]
-   then push the config per your CLI (`supabase config push --help`).
+# ------------------------------- DEPLOY (dark; flags stay off) ----------------------
+phase_apply(){ confirm "Apply the 11 pending migrations to PRODUCTION ${PROJECT_REF}?" APPLY
+  supabase db push; echo ">> confirm 32:"; supabase migration list; }
+phase_expose(){ cat <<'NOTE'
+>> Add "api" to the Data API Exposed schemas (Settings>API, or config.toml [api] schemas=["public","api"] then config push).
+   DO NOT expose intel or private. Grants (usage on api, execute on the api fns) already ship in the migrations.
 NOTE
-  confirm "Has 'api' been added to Exposed schemas (and intel/private NOT added)?" YES
-  echo ">> Verify exposure boundary (api reachable; intel/private absent) AFTER flags are on, in Phase 11."
-}
-
-# -----------------------------------------------------------------------------
-# PHASE 7 — secrets (generated/consumed from env; never printed)
-# -----------------------------------------------------------------------------
-phase7_secrets(){
-  need INSTAGRAM_APP_ID; need INSTAGRAM_APP_SECRET   # already valid in prod; re-set only if you must
+  confirm "Is 'api' exposed and intel/private NOT exposed?" YES; }
+phase_secrets(){
+  echo ">> Reusing existing Instagram secrets; only set if genuinely missing."
+  local have; have="$(supabase secrets list --project-ref "$PROJECT_REF" 2>/dev/null || true)"
+  if ! grep -q "INSTAGRAM_APP_ID" <<<"$have" || ! grep -q "INSTAGRAM_APP_SECRET" <<<"$have"; then
+    need INSTAGRAM_APP_ID; need INSTAGRAM_APP_SECRET
+    supabase secrets set INSTAGRAM_APP_ID="$INSTAGRAM_APP_ID" INSTAGRAM_APP_SECRET="$INSTAGRAM_APP_SECRET" --project-ref "$PROJECT_REF"
+    echo ">> set missing INSTAGRAM_APP_ID/SECRET (values not printed)."
+  else echo ">> INSTAGRAM_APP_ID/SECRET already present — left untouched (confirmed valid earlier)."; fi
   local CI_WORKER_SECRET IG_WEBHOOK_VERIFY_TOKEN
-  CI_WORKER_SECRET="$(openssl rand -base64 48)"          # >=32 cryptographically-random bytes
+  CI_WORKER_SECRET="$(openssl rand -base64 48)"            # >=32 cryptographically-random bytes
   IG_WEBHOOK_VERIFY_TOKEN="$(openssl rand -hex 24)"
-  echo ">> Callback URL to be set and registered: ${CALLBACK_URL}"
-  supabase secrets set \
-    IG_REDIRECT_URI="${CALLBACK_URL}" \
-    CI_WORKER_SECRET="${CI_WORKER_SECRET}" \
-    IG_WEBHOOK_VERIFY_TOKEN="${IG_WEBHOOK_VERIFY_TOKEN}" \
-    --project-ref "${PROJECT_REF}"
+  supabase secrets set IG_REDIRECT_URI="$CALLBACK_URL" CI_WORKER_SECRET="$CI_WORKER_SECRET" IG_WEBHOOK_VERIFY_TOKEN="$IG_WEBHOOK_VERIFY_TOKEN" --project-ref "$PROJECT_REF"
   unset CI_WORKER_SECRET IG_WEBHOOK_VERIFY_TOKEN
-  echo ">> Secrets set (values not printed). INSTAGRAM_APP_ID/SECRET left as-is (confirmed valid)."
-  cat <<NOTE
->> HUMAN: in the Meta app (Instagram Business login) register this EXACT redirect:
-     ${CALLBACK_URL}
-   Then verify three-way match: deployed function URL == IG_REDIRECT_URI secret ==
-   the redirect_uri that ig-oauth-start actually sends == the URI registered in Meta.
+  echo ">> HUMAN: register ${CALLBACK_URL} in Meta; verify deployed URL == IG_REDIRECT_URI == ig-oauth-start redirect == Meta."
+}
+phase_functions(){ supabase functions deploy ig-oauth-start ig-oauth-callback ig-ingest-worker ig-webhook --project-ref "$PROJECT_REF"
+  echo ">> deployed (legacy instagram-login/auth untouched)."; }
+phase_schedule(){ cat <<'NOTE'
+>> Schedule (service role; secret from Vault, never inline):
+   select cron.schedule('ci-ingest-worker','*/2 * * * *', $$ select net.http_post(
+     url:='https://edibibytqfrrxfztukpm.functions.supabase.co/ig-ingest-worker',
+     headers:=jsonb_build_object('x-ci-worker-secret', vault_read('CI_WORKER_SECRET')), body:='{}'::jsonb);$$);
+   select cron.schedule('ci-retention-purge','17 3 * * *', $$ select intel.ci_purge_expired(1000); $$);
 NOTE
+  confirm "Worker + retention schedules created?" YES; }
+phase_verify_dark(){
+  echo ">> Verify (flags still OFF): migrations=32, api exposed/intel-private not, worker processes a queued run without error."
+  echo ">> Confirm exposure with an AUTHENTICATED creator JWT (api.* reachable; intel/private absent from reflection)."
 }
+deploy(){ confirm "DEPLOY dark to PROD (apply migrations, expose api, secrets, functions, schedules; flags stay OFF)?" DEPLOY
+  phase_integrity; phase_apply; phase_expose; phase_secrets; phase_functions; phase_schedule; phase_verify_dark
+  echo ">> DEPLOY complete and DARK. Next: './release_pilot.sh activate' with OP_AUTH_UID + CREATOR_AUTH_UID."; }
 
-# -----------------------------------------------------------------------------
-# PHASE 8 — deploy Edge Functions (pilot OAuth + ingestion worker + webhook)
-# -----------------------------------------------------------------------------
-phase8_functions(){
-  supabase functions deploy ig-oauth-start ig-oauth-callback ig-ingest-worker ig-webhook --project-ref "${PROJECT_REF}"
-  echo ">> Deployed. (instagram-login/instagram-auth already deployed for the legacy app — untouched.)"
-}
-
-# -----------------------------------------------------------------------------
-# PHASE 9 — schedule worker (drains queued ingestion) + retention cleanup
-# -----------------------------------------------------------------------------
-phase9_schedule(){
-  cat <<'NOTE'
->> Worker invocation + retention are scheduled via pg_cron calling the Edge endpoints with the
-   CI_WORKER_SECRET header (store the secret in Vault; never inline). Example (run once, service role):
-     select cron.schedule('ci-ingest-worker','*/2 * * * *', $$
-       select net.http_post(
-         url := 'https://edibibytqfrrxfztukpm.functions.supabase.co/ig-ingest-worker',
-         headers := jsonb_build_object('x-ci-worker-secret', vault_read('CI_WORKER_SECRET')),
-         body := '{}'::jsonb);$$);
-     select cron.schedule('ci-retention-purge','17 3 * * *', $$ select intel.ci_purge_expired(1000); $$);
-   Confirm pg_cron + pg_net (or supabase schedules) are enabled for the project.
-NOTE
-  confirm "Worker schedule + retention-purge schedule created?" YES
-}
-
-# -----------------------------------------------------------------------------
-# PHASE 10 — seed operators + cohort (idempotent, CORRECT identifier types)
-#   member_id = AUTH USER UUID (== auth.uid());  org_id = public.members.org_id;
-#   identity_id (optional, docs) = ci_creator_identity.identity_id.  NOT interchangeable.
-# -----------------------------------------------------------------------------
-phase10_cohort(){
-  need OP_AUTH_UID; need CREATOR_AUTH_UID; need BRAND_ORG_ID
+# ------------------------------- ACTIVATE (one internal creator) --------------------
+activate(){
+  need OP_AUTH_UID; need CREATOR_AUTH_UID
+  confirm "ACTIVATE for ONE internal creator (enforce cohort, enable creator-facing)?" ACTIVATE
   psql "$PROD_DB_URL" -v ON_ERROR_STOP=1 <<SQL
--- integrity: identifiers must resolve to the right FKs before insert
 do \$\$ begin
-  if not exists (select 1 from auth.users where id='${OP_AUTH_UID}') then raise exception 'OP_AUTH_UID not an auth.users id'; end if;
-  if not exists (select 1 from auth.users where id='${CREATOR_AUTH_UID}') then raise exception 'CREATOR_AUTH_UID not an auth.users id'; end if;
-  if not exists (select 1 from public.members where org_id='${BRAND_ORG_ID}') then raise exception 'BRAND_ORG_ID not a members.org_id'; end if;
+  if not exists (select 1 from auth.users where id='${OP_AUTH_UID}') then raise exception 'OP_AUTH_UID is not an auth.users id'; end if;
+  if not exists (select 1 from auth.users where id='${CREATOR_AUTH_UID}') then raise exception 'CREATOR_AUTH_UID is not an auth.users id'; end if;
 end \$\$;
-insert into intel.ci_agency_operator(member_id,label) values ('${OP_AUTH_UID}','geek operator')
-  on conflict (member_id) do update set active=true;
-insert into intel.ci_pilot_cohort(subject_kind,member_id,label) values ('creator','${CREATOR_AUTH_UID}','pilot creator')
-  on conflict do nothing;
-insert into intel.ci_pilot_cohort(subject_kind,org_id,label) values ('brand','${BRAND_ORG_ID}','pilot brand')
-  on conflict do nothing;
-select 'operators='||count(*) from intel.ci_agency_operator where active;
-select 'cohort='||count(*) from intel.ci_pilot_cohort where active;
+insert into intel.ci_agency_operator(member_id,label) values ('${OP_AUTH_UID}','geek operator') on conflict (member_id) do update set active=true;
+insert into intel.ci_pilot_cohort(subject_kind,member_id,label) values ('creator','${CREATOR_AUTH_UID}','pilot creator #1') on conflict do nothing;
+-- enforce cohort BEFORE creator-facing features; each UPDATE must touch exactly 1 row
+do \$\$ declare n int; begin
+  update intel.ci_feature_flag set enabled=true where flag='pilot_cohort_enforced'; get diagnostics n=row_count; if n<>1 then raise exception 'pilot_cohort_enforced missing (%).',n; end if;
+  update intel.ci_feature_flag set enabled=true where flag='operational_pilot';     get diagnostics n=row_count; if n<>1 then raise exception 'operational_pilot missing (%).',n; end if;
+  update intel.ci_feature_flag set enabled=true where flag='creator_profile_api';    get diagnostics n=row_count; if n<>1 then raise exception 'creator_profile_api missing (%).',n; end if;
+  update intel.ci_feature_flag set enabled=true where flag='creator_ig_connect';     get diagnostics n=row_count; if n<>1 then raise exception 'creator_ig_connect missing (%).',n; end if;
+end \$\$;
+select flag,enabled from intel.ci_feature_flag order by flag;
 SQL
-}
-
-# -----------------------------------------------------------------------------
-# PHASE 11 — enable flags IN ORDER (cohort enforcement FIRST), assert row counts
-# -----------------------------------------------------------------------------
-phase11_enable(){
-  psql "$PROD_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
-do $$ declare n int;
-begin
-  -- enforcement BEFORE creator-facing surfaces; a zero-row UPDATE is a failure
-  update intel.ci_feature_flag set enabled=true where flag='pilot_cohort_enforced'; get diagnostics n=row_count; if n<>1 then raise exception 'pilot_cohort_enforced row missing (expected 1, got %)', n; end if;
-  update intel.ci_feature_flag set enabled=true where flag='operational_pilot';     get diagnostics n=row_count; if n<>1 then raise exception 'operational_pilot row missing (got %)', n; end if;
-  update intel.ci_feature_flag set enabled=true where flag='creator_profile_api';    get diagnostics n=row_count; if n<>1 then raise exception 'creator_profile_api row missing (got %)', n; end if;
-  update intel.ci_feature_flag set enabled=true where flag='creator_ig_connect';     get diagnostics n=row_count; if n<>1 then raise exception 'creator_ig_connect row missing (got %)', n; end if;
-end $$;
-select flag, enabled from intel.ci_feature_flag where flag in ('pilot_cohort_enforced','operational_pilot','creator_profile_api','creator_ig_connect') order by flag;
-SQL
-}
-
-# -----------------------------------------------------------------------------
-# PHASE 12 — post-enable verification (server-side enforcement + exposure boundary)
-#   Requires JWTs for a cohort creator and a NON-cohort user (service-issued test tokens).
-# -----------------------------------------------------------------------------
-phase12_verify(){
-  cat <<'NOTE'
->> Authenticated checks (use real user JWTs via the Data API, not the service role):
-   1. Exposure: GET /rest/v1/rpc/get_my_creator_intelligence with a COHORT creator JWT -> 200;
-      /rest/v1/ reflection must NOT list intel/private; api.* reachable only for the intended fns.
-   2. Enforcement: the SAME call with a NON-cohort user JWT -> 403/exception "not in pilot cohort".
-   3. Operator: get_campaign_pipeline with a non-operator JWT -> "not an agency operator"; with the
-      seeded operator -> 200.
-   Record the actual responses. This is required for GO; anon probes do NOT satisfy it.
+  cat <<NOTE
+>> ONE creator active. REQUIRED NEXT (human, real browser — synthetic does not count):
+   Run the live Meta E2E as CREATOR_AUTH_UID: sign in -> Connect Instagram (real consent; record granted scopes)
+   -> callback -> queued ingestion -> worker run -> feature computation -> creator intelligence view, recording
+   ACTUAL returned metrics and the fields that come back unavailable/insufficient_data.
+   Also confirm a NON-cohort account is denied (not in pilot cohort).
+   PASS  -> './release_pilot.sh admit'
+   FAIL  -> './release_pilot.sh rollback'  and report the SPECIFIC failing stage/response.
 NOTE
 }
 
-# -----------------------------------------------------------------------------
-# ROLLBACK (data-preserving) — covers ALL deployed entry points. Keep retention running.
-# -----------------------------------------------------------------------------
+# ------------------------------- ADMIT (rest of cohort, post-E2E) -------------------
+admit(){
+  need BRAND_ORG_ID
+  confirm "E2E PASSED — admit the remaining pilot cohort (brand org + any extra creators)?" ADMIT
+  psql "$PROD_DB_URL" -v ON_ERROR_STOP=1 <<SQL
+do \$\$ begin
+  if not exists (select 1 from public.members where org_id='${BRAND_ORG_ID}') then raise exception 'BRAND_ORG_ID is not a members.org_id'; end if;
+end \$\$;
+insert into intel.ci_pilot_cohort(subject_kind,org_id,label) values ('brand','${BRAND_ORG_ID}','pilot brand') on conflict do nothing;
+-- add more creators here as 'creator' rows keyed by their auth.users.id (idempotent):
+-- insert into intel.ci_pilot_cohort(subject_kind,member_id,label) values ('creator','<auth-uid>','pilot creator #N') on conflict do nothing;
+select subject_kind, count(*) from intel.ci_pilot_cohort where active group by subject_kind;
+SQL
+  echo ">> Remaining cohort admitted. Flags already on; enforcement remains on."
+}
+
+# ------------------------------- ROLLBACK (data-preserving) -------------------------
+# Disable creator-facing + ops entry points; KEEP pilot_cohort_enforced=true; stop ingestion; keep retention.
 rollback(){
-  echo ">> Rolling back (flags off; stop ingestion; preserve data; keep retention purge)."
+  confirm "ROLLBACK pilot (disable creator_profile_api/creator_ig_connect/operational_pilot; keep enforcement on; stop ingestion)?" ROLLBACK
   psql "$PROD_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
-update intel.ci_feature_flag set enabled=false
-  where flag in ('creator_profile_api','creator_ig_connect','operational_pilot','pilot_cohort_enforced');
-select flag, enabled from intel.ci_feature_flag where flag like 'creator_%' or flag in ('operational_pilot','pilot_cohort_enforced') order by flag;
+-- keep pilot_cohort_enforced = true (surface stays closed-by-cohort even if a flag is later toggled)
+update intel.ci_feature_flag set enabled=false where flag in ('creator_profile_api','creator_ig_connect','operational_pilot');
+update intel.ci_feature_flag set enabled=true  where flag='pilot_cohort_enforced';
+-- stop ingestion invocation; KEEP retention cleanup scheduled
+do $$ begin
+  if exists (select 1 from cron.job where jobname='ci-ingest-worker') then perform cron.unschedule('ci-ingest-worker'); end if;
+end $$;
+-- PROOF that ingestion cannot restart:
+select 'flags' k, jsonb_object_agg(flag,enabled) v from intel.ci_feature_flag
+  where flag in ('creator_profile_api','creator_ig_connect','operational_pilot','pilot_cohort_enforced')
+union all
+select 'ingest_worker_scheduled', to_jsonb(exists(select 1 from cron.job where jobname='ci-ingest-worker'))
+union all
+select 'retention_still_scheduled', to_jsonb(exists(select 1 from cron.job where jobname='ci-retention-purge'));
 SQL
   cat <<'NOTE'
->> Also, to cover every deployed entry point:
-   - unschedule the worker:  select cron.unschedule('ci-ingest-worker');   (STOP ingestion invocation)
-   - KEEP 'ci-retention-purge' scheduled (retention cleanup must keep running).
-   - (optional, full dark) remove 'api' from Exposed schemas so the surface is unreachable.
-   Entry-point coverage:
-     api serving/profile RPCs      <- creator_profile_api=false
-     creator IG connect (oauth)    <- creator_ig_connect=false (ig_connect_start gated)
-     operations (campaign) RPCs    <- operational_pilot=false
-     cohort restriction            <- pilot_cohort_enforced=false (surface closes with the api flag anyway)
-     ingestion worker              <- cron unscheduled
-   No data is dropped; no migration is reverted.
+>> Ingestion-restart coverage (why nothing can re-queue or process):
+   - ig-ingest-worker (sole processor)   : cron UNSCHEDULED -> no runner drains the queue.
+   - ig-oauth-callback / ig_connect_start: creator_ig_connect=false -> no new connection -> nothing enqueued.
+   - ig-webhook                          : may receive events, but only the (unscheduled) worker processes them.
+   - api serving/ops                     : creator_profile_api / operational_pilot = false.
+   - cohort                              : pilot_cohort_enforced stays TRUE (defence-in-depth).
+   - retention                           : ci-retention-purge REMAINS scheduled.
+   Confirm above: all three creator/ops flags=false, pilot_cohort_enforced=true,
+   ingest_worker_scheduled=false, retention_still_scheduled=true. Deployed functions remain but inert.
+   No data dropped; no migration reverted. (Full dark optional: remove 'api' from Exposed schemas.)
 NOTE
 }
 
-main(){
-  case "${1:-all}" in
-    rollback) rollback;;
-    *) phase0_help; phase1_integrity; phase2_drift; phase3_backup; phase4_dryrun;
-       phase5_apply; phase6_expose; phase7_secrets; phase8_functions; phase9_schedule;
-       phase10_cohort; phase11_enable; phase12_verify;
-       echo ">> Preparation/apply phases complete. GO only after Phase 12 passes AND the live E2E in the runbook passes.";;
-  esac
-}
-main "$@"
+usage(){ echo "usage: $0 [preflight|deploy|activate|admit|rollback]   (default: preflight, read-only)"; }
+case "${1:-preflight}" in
+  preflight) preflight;;
+  deploy)    deploy;;
+  activate)  activate;;
+  admit)     admit;;
+  rollback)  rollback;;
+  -h|--help) usage;;
+  *) usage; exit 1;;
+esac

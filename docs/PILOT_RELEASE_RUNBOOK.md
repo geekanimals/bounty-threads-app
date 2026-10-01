@@ -21,26 +21,42 @@ from the resulting `main` commit.** The GitHub auto-review rejection is not bypa
 | 31 | `cd8656bd1aad` `20260929150000_ci_ops_api.sql` | Operations api (create/invite/advance/ship/submit/approve/pipeline/onboarding-status/metrics). |
 | 32 | `72880774d90f` `20260929160000_ci_ops_campaign_detail_read.sql` | Read-only operator/owning-brand `get_campaign_detail` (security-approved). |
 
+> **Hash type:** the values above are **git blob object ids** (git's SHA-1 over `"blob <len>\0"+bytes`) — they
+> pin exact file content *in git* and are what `preflight` verifies against HEAD. They are **not** SHA-256
+> content digests; `preflight` also prints independent `sha256sum` values for each file if you want a
+> content-addressed check. Do not conflate the two.
+
 **Added operations scope (brief):** a dark, additive **barter-execution OS** over the existing identity/
 profile/brand/matching/feature-store code — campaigns with an 11-stage lifecycle, append-only event history
 (owner/timestamp/reason), deliverables/shipments/submissions/approvals, an internal agency-operator allowlist,
 a creator "My Campaigns"/onboarding surface, and evidence-only metrics. **No** scores/ranking, **no** inferred
 performance, **no** historical import, **no** change to existing intelligence models.
 
-## 2. Phases (map to `release_pilot.sh`)
-0. **CLI discovery** — `--help` on every subcommand used (adapt to the installed CLI version).
-1. **Integrity** — HEAD is the merged-PR#1 main commit; verify the 11 blob hashes; total = 32; old migrations preserved. *Never apply from an unverified tree.*
-2. **Drift/ledger** — `supabase link` + `supabase migration list`; service-role query of `intel.ci_feature_flag` to confirm baseline = 21 applied and the 4 flags present + **false** (authenticated, not anon).
-3. **Backup + restore-verify** — `supabase db dump` (roles/schema/data) then **restore into a disposable local stack** and spot-check; store backups securely, never in the repo.
-4. **Dry-run** — `supabase db push --dry-run` / `migration list` proposes **exactly** these 11.
-5. **Apply** (typed `APPLY`) — `supabase db push`; confirm 32. No repair, no history edits.
-6. **Expose only `api`** — add `api` to Data API *Exposed schemas* (Settings→API or `config.toml [api] schemas=["public","api"]`); **keep `intel`/`private` unexposed**. (Function EXECUTE + `grant usage on schema api` already in migrations.)
-7. **Secrets** — set `IG_REDIRECT_URI` = the callback URL; generate `CI_WORKER_SECRET` (≥32 random bytes, `openssl rand -base64 48`) and `IG_WEBHOOK_VERIFY_TOKEN`; **never printed**. `INSTAGRAM_APP_ID/SECRET` already valid — leave as-is.
-8. **Deploy functions** — `ig-oauth-start`, `ig-oauth-callback`, `ig-ingest-worker`, `ig-webhook` (legacy `instagram-login/auth` untouched).
-9. **Schedule** — pg_cron → worker (drains queued ingestion using the `CI_WORKER_SECRET` header from Vault) + `intel.ci_purge_expired` (retention). Confirm it **actually processes** a queued run.
-10. **Cohort seed** (idempotent; correct identifier types — see §4): operators + named creator + brand org.
-11. **Enable flags IN ORDER** — `pilot_cohort_enforced` → `operational_pilot` → `creator_profile_api` → `creator_ig_connect`; each `UPDATE` **must affect exactly 1 row** (0 rows = failure).
-12. **Verify** — authenticated: cohort creator allowed, **non-cohort denied** (`not in pilot cohort`), non-operator denied; exposure boundary (api reachable, intel/private absent).
+## 2. Script modes & activation order (`release_pilot.sh <mode>`)
+The script is **modal and gated**; the **default is read-only `preflight`**. A single invocation never
+proceeds from preflight into activation — each mutating stage is a separate, explicitly-named mode with a typed
+confirmation. Required order (matches the brief): **deploy dark → verify → enforce cohort → one internal
+creator → real Meta E2E → admit remaining cohort**.
+
+- **`preflight`** *(default, READ-ONLY)* — CLI `--help` discovery; integrity (HEAD = merged-PR#1 commit; the 11
+  **git blob ids** match; total = 32; old migrations preserved; plus independent **SHA-256** digests printed —
+  see §1 note); authenticated drift/ledger (`migration list` + service-role flag query, not anon); backup +
+  **restore-verify into a disposable local stack**; dry-run proposing **exactly** the 11. *Applies nothing.*
+- **`deploy`** *(mutating, stays DARK — flags OFF)* — apply the 11 (`db push`, no repair); expose **only** `api`
+  (keep `intel`/`private` unexposed); set secrets (reuse existing Instagram secrets, see §3); deploy
+  `ig-oauth-start/-callback/-ingest-worker/-webhook`; schedule worker + retention; verify (migrations=32,
+  exposure boundary, worker runs) — **with all feature flags still false**.
+- **`activate`** *(mutating)* — seed the operator + **ONE** internal creator; **enforce cohort first**
+  (`pilot_cohort_enforced` → `operational_pilot` → `creator_profile_api` → `creator_ig_connect`, each `UPDATE`
+  asserted to touch **exactly 1 row**; 0 = failure); verify the one creator is allowed and a **non-cohort
+  account is denied**. Then STOP and require the **real Meta E2E** (§5).
+- **`admit`** *(mutating, only after E2E passes)* — insert the remaining cohort (brand org + any further
+  creators), idempotently.
+- **`rollback`** *(mutating, data-preserving)* — see §6.
+
+**Required inputs by mode:** `deploy` → `SUPABASE_ACCESS_TOKEN`, `PROD_DB_URL`, (only if missing)
+`INSTAGRAM_APP_ID`/`INSTAGRAM_APP_SECRET`. `activate` → `OP_AUTH_UID`, `CREATOR_AUTH_UID` (both
+`auth.users.id`). `admit` → `BRAND_ORG_ID` (`public.members.org_id`).
 
 ## 3. Required human actions (cannot be scripted / not available in this session)
 - **Merge PR #1** (GitHub review gate; auto-mode rejected automated merge).
@@ -59,6 +75,7 @@ Server enforcement: `ci_in_pilot_cohort()` matches `auth.uid()`→creator rows O
 
 ## 5. Live E2E (required for GO — synthetic does NOT count)
 With the named creator + brand, in a real browser: **sign in → Connect Instagram (real Meta consent, record granted scopes) → callback → queued ingestion → worker run → feature computation → creator intelligence view → operator shortlist/compare → brand decision**. Record **actual returned metrics and the fields that come back `unavailable`/`insufficient_data`**. Pending until performed on the activated pilot with a consenting account.
+**On PASS →** `./release_pilot.sh admit`. **On FAIL →** `./release_pilot.sh rollback` (disables the pilot entry points, keeps enforcement + retention) and report the **specific failing stage and response** (OAuth redirect / Edge invocation / Meta token exchange / worker / feature computation / serving).
 
 ## 6. GO / BLOCKED criteria
 **GO** when ALL hold:
@@ -75,6 +92,15 @@ With the named creator + brand, in a real browser: **sign in → Connect Instagr
 2. **No Supabase access token / CLI / `PROD_DB_URL`** in this session → cannot apply, deploy, set secrets, seed, flip flags, or run authenticated verification.
 3. **Consenting Instagram account** for the live E2E.
 
-**Rollback (data-preserving):** `release_pilot.sh rollback` → flags off (covers api serving, creator connect, operations, cohort), unschedule the ingestion worker (stop ingestion), **keep retention purge running**, optionally un-expose `api`. No data dropped, no migration reverted.
+**Rollback (data-preserving):** `release_pilot.sh rollback` →
+- `creator_profile_api`, `creator_ig_connect`, `operational_pilot` → **false** (closes api serving, creator
+  connect, operations);
+- **`pilot_cohort_enforced` stays TRUE** (defence-in-depth — the surface remains cohort-closed even if a flag
+  is later toggled);
+- **unschedule `ci-ingest-worker`** (stops ingestion invocation); **keep `ci-retention-purge` scheduled**;
+- proves ingestion cannot restart: the sole processor (worker) is unscheduled, `ig-oauth-callback`/
+  `ig_connect_start` are gated by `creator_ig_connect=false` (nothing new enqueues), and `ig-webhook` events are
+  only drained by the (unscheduled) worker. Deployed functions remain but inert; no data dropped, no migration
+  reverted; optional full-dark = remove `api` from Exposed schemas.
 
 *Prepared this session: runbook + executable script + integrity hashes. The apply/deploy/activate phases and the live E2E require the human actions in §3 and the credentials this session does not hold.*
