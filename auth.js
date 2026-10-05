@@ -10,6 +10,12 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true }
 });
 
+// supabase-js puts the Edge Function's HTTP response in error.context; return its `error` text.
+async function fnError(error){
+  try{ const b = await error.context.json(); const m = b && (b.error || b.message); if(typeof m === "string") return m; }catch(e){}
+  return (error && error.message) || String(error);
+}
+
 const Auth = {
   profile: null,
   user: null,

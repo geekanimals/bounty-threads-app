@@ -57,7 +57,7 @@
       if(!(window.sb&&window.sb.functions)) throw new Error("Not available.");
       // server-side OAuth start (returns only the Meta authorize URL; state is one-time & server-held)
       var r = await window.sb.functions.invoke("ig-oauth-start", { body:{} });
-      if(r.error) throw r.error;
+      if(r.error) throw new Error(await fnError(r.error));
       var authorize = r.data && r.data.authorize_url;
       if(!authorize) throw new Error("Connect isn't enabled yet.");
       location.href = authorize;   // straight to Meta — all five scopes, no Geek selection page
