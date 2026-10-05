@@ -28,13 +28,16 @@ Deno.serve(async(req)=>{
     stage="user_lookup";
     const admin=createClient(SUPABASE_URL,SERVICE_ROLE); const email="ig_"+igUserId+"@creators.bountythreads.app";
     let userId=null,userEmail=email;
-    const {data:existing}=await admin.from("social_accounts").select("member_id").eq("ig_user_id",igUserId).eq("platform","instagram").maybeSingle();
+    const {data:rows,error:lookupErr}=await admin.from("social_accounts").select("member_id,updated_at").eq("ig_user_id",igUserId).eq("platform","instagram").order("updated_at",{ascending:false}).limit(1);
+    if(lookupErr) throw new Error("social_accounts lookup failed: "+lookupErr.message);
+    const existing=rows?.[0];
     if(existing?.member_id){
       userId=existing.member_id; const {data:u,error:uErr}=await admin.auth.admin.getUserById(userId);
       if(uErr||!u?.user) throw new Error("Existing account lookup failed: "+(uErr?.message||"user missing")); userEmail=u.user.email||email;
     }else{
-      const {data:byEmail}=await admin.auth.admin.getUserByEmail(email);
-      if(byEmail?.user){userId=byEmail.user.id;userEmail=byEmail.user.email||email;}
+      const {data:byEmail,error:eErr}=await admin.from("members").select("id,email").eq("email",email).maybeSingle();
+      if(eErr) throw new Error("Member lookup failed: "+eErr.message);
+      if(byEmail?.id){userId=byEmail.id;userEmail=byEmail.email||email;}
       else{
         const {data:created,error:cErr}=await admin.auth.admin.createUser({email,email_confirm:true,user_metadata:{full_name:profile.name||profile.username||"Creator",org_name:profile.username?"@"+profile.username:"My Creator Space",role:"creator"}});
         if(cErr||!created?.user) throw new Error("Create account failed: "+(cErr?.message||"unknown")); userId=created.user.id;
