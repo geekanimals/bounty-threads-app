@@ -70,6 +70,13 @@ Deno.serve(async (req) => {
     const { data: member } = await admin
       .from("members").select("org_id").eq("id", user.id).maybeSingle();
 
+    // One Instagram account maps to one login. Reject a second login that claims it.
+    const { data: linked, error: lErr } = await admin
+      .from("social_accounts").select("member_id")
+      .eq("ig_user_id", igUserId).eq("platform", "instagram").neq("member_id", user.id).limit(1);
+    if (lErr) return json({ error: "Could not check existing connections", detail: lErr.message }, 500);
+    if (linked?.length) return json({ error: "This Instagram account is already connected to another login." }, 409);
+
     const accountRow = {
       org_id: member?.org_id ?? null,
       member_id: user.id,
