@@ -1791,7 +1791,7 @@ function wireMkComposer(){
       const { data:pub } = sb.storage.from("ig-media").getPublicUrl(path);
       btn.textContent="Publishing…";
       const { data, error } = await sb.functions.invoke("instagram-publish", { body:{ image_url: pub.publicUrl, caption: f.get("caption")||"" } });
-      if(error) throw error;
+      if(error) throw new Error(await fnError(error));
       if(data && data.error) throw new Error(data.error);
       msg.textContent="Posted to Instagram ✅"; msg.className="lead-msg ok"; form.reset();
     }catch(ex){
@@ -2215,7 +2215,7 @@ async function finishInstagram(code){
     if(session){
       // Signed in already → CONNECT this Instagram to the current account.
       const { data, error } = await sb.functions.invoke("instagram-auth", { body:{ code, redirect_uri: IG_REDIRECT } });
-      if(error) throw error;
+      if(error) throw new Error(await fnError(error));
       if(data && data.error) throw new Error(data.error);
       localStorage.setItem("geekos_conn_instagram","1");
       alert("Instagram connected ✅ — your media kit is ready.");
@@ -2226,7 +2226,7 @@ async function finishInstagram(code){
 
     // Not signed in → SIGN IN with Instagram (server creates/loads the user + a session token).
     const { data, error } = await sb.functions.invoke("instagram-login", { body:{ code, redirect_uri: IG_REDIRECT } });
-    if(error) throw error;
+    if(error) throw new Error(await fnError(error));
     if(data && data.error) throw new Error(data.error);
     const { error: vErr } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: "magiclink" });
     if(vErr) throw vErr;
@@ -2242,7 +2242,9 @@ async function finishInstagram(code){
   }catch(ex){
     window.__igLoggingIn = false;
     alert("Instagram sign-in failed: " + (ex.message||ex) + "\n\nMake sure the instagram-login & instagram-auth Edge Functions are deployed and this redirect URL is registered in Meta:\n" + IG_REDIRECT);
-    if(window.startApp && !((await sb.auth.getSession()).data.session)) mountLogin("login");
+    const { data:{ session:s2 } } = await sb.auth.getSession();
+    if(!s2){ if(window.startApp) mountLogin("login"); }
+    else if(window.Auth && !Auth.profile){ await Auth.currentSession(); if(typeof bootOS==="function") bootOS(); }
   }
 }
 
@@ -2300,7 +2302,7 @@ async function handleOAuthCallback(){
     const { error } = await window.sb.functions.invoke("oauth-exchange", {
       body: { platform, code, redirect_uri: OAUTH_REDIRECT }
     });
-    if(error) throw error;
+    if(error) throw new Error(await fnError(error));
     // Only mark connected once the server actually stored a token.
     localStorage.setItem("geekos_conn_"+platform, "1");
     renderIntegrations();
@@ -2617,7 +2619,7 @@ async function sendAiMessage(text){
       name:(window.Auth&&Auth.profile&&Auth.profile.name)||"", org:(window.Auth&&Auth.profile&&Auth.profile.org)||"" };
     const msgs=AI_HISTORY.filter(m=>!m._pending).map(m=>({role:m.role, content:m.content}));
     const { data, error } = await sb.functions.invoke("ai-chat", { body:{ messages:msgs, context:ctx } });
-    if(error) throw error;
+    if(error) throw new Error(await fnError(error));
     if(data && data.error) throw new Error(data.error);
     AI_HISTORY=AI_HISTORY.filter(m=>!m._pending);
     AI_HISTORY.push({role:"assistant", content:(data&&data.reply)||"(no response)"});
