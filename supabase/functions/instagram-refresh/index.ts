@@ -16,6 +16,50 @@ const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") || "";
 const GRAPH = "https://graph.instagram.com";
 
+
+/* Lightweight profile sync for Media Kit/Audience polling. Does not rotate the token. */
+// deno-lint-ignore no-explicit-any
+async function syncProfileOnly(admin: any, tok: any) {
+  const fields = "user_id,username,name,account_type,followers_count,follows_count,media_count,profile_picture_url,biography,website";
+  const res = await fetch(`${GRAPH}/me?fields=${fields}&access_token=${encodeURIComponent(tok.access_token)}`);
+  const profile = await res.json();
+  if (!res.ok || profile?.error) {
+    throw new Error(profile?.error?.message || `Instagram profile sync failed (${res.status})`);
+  }
+
+  const canonicalIgUserId = profile.user_id ? String(profile.user_id) : String(tok.ig_user_id || "");
+  const now = new Date().toISOString();
+
+  if (canonicalIgUserId && canonicalIgUserId !== String(tok.ig_user_id || "")) {
+    await admin.from("social_tokens")
+      .update({ ig_user_id: canonicalIgUserId, updated_at: now })
+      .eq("member_id", tok.member_id).eq("platform", "instagram");
+    await admin.from("social_accounts")
+      .update({ ig_user_id: canonicalIgUserId })
+      .eq("member_id", tok.member_id).eq("platform", "instagram");
+  }
+
+  const { error } = await admin.from("social_accounts").update({
+    username: profile.username ?? null,
+    name: profile.name ?? null,
+    account_type: profile.account_type ?? null,
+    followers_count: profile.followers_count ?? 0,
+    follows_count: profile.follows_count ?? 0,
+    media_count: profile.media_count ?? 0,
+    profile_picture_url: profile.profile_picture_url ?? null,
+    biography: profile.biography ?? null,
+    website: profile.website ?? null,
+    updated_at: now,
+  }).eq("member_id", tok.member_id).eq("platform", "instagram");
+  if (error) throw error;
+
+  return {
+    followers_count: Number(profile.followers_count || 0),
+    username: profile.username ?? null,
+    updated_at: now,
+  };
+}
+
 // deno-lint-ignore no-explicit-any
 async function refreshOne(admin: any, tok: any) {
   const r = await (await fetch(`${GRAPH}/refresh_access_token?grant_type=ig_refresh_token&access_token=${tok.access_token}`)).json();
@@ -59,6 +103,29 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: "Not authenticated" }, 401);
     const { data: tok } = await admin.from("social_tokens").select("*").eq("member_id", user.id).eq("platform", "instagram").maybeSingle();
     if (!tok) return json({ ok: true, skipped: "not connected" });
+
+    // Lightweight polling mode used by the Media Kit/Audience page.
+    let body: any = {};
+    try { body = await req.json(); } catch (_e) { /* empty body */ }
+    if (body?.sync_only === true) {
+      try {
+        const result = await syncProfileOnly(admin, tok);
+        return json({ ok: true, synced: 1, ...result });
+      } catch (syncErr) {
+        // If the token is invalid/expired, recover once through the existing token refresh path.
+        try {
+          await refreshOne(admin, tok);
+          const { data: freshTok } = await admin.from("social_tokens").select("*")
+            .eq("member_id", user.id).eq("platform", "instagram").maybeSingle();
+          if (!freshTok) throw syncErr;
+          const result = await syncProfileOnly(admin, freshTok);
+          return json({ ok: true, synced: 1, refreshed: 1, ...result });
+        } catch (_refreshErr) {
+          throw syncErr;
+        }
+      }
+    }
+
     await refreshOne(admin, tok);
     return json({ ok: true, refreshed: 1 });
   } catch (e) {
