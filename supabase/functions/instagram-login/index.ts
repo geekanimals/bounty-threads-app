@@ -28,17 +28,24 @@ Deno.serve(async(req)=>{
     stage="user_lookup";
     const admin=createClient(SUPABASE_URL,SERVICE_ROLE); const email="ig_"+igUserId+"@creators.bountythreads.app";
     let userId=null,userEmail=email;
-    const {data:existing}=await admin.from("social_accounts").select("member_id").eq("ig_user_id",igUserId).eq("platform","instagram").maybeSingle();
+    const {data:rows,error:lookupErr}=await admin.from("social_accounts").select("member_id,updated_at").eq("ig_user_id",igUserId).eq("platform","instagram").order("updated_at",{ascending:false}).limit(1);
+    if(lookupErr) throw new Error("social_accounts lookup failed: "+lookupErr.message);
+    const existing=rows?.[0];
     if(existing?.member_id){
       userId=existing.member_id; const {data:u,error:uErr}=await admin.auth.admin.getUserById(userId);
       if(uErr||!u?.user) throw new Error("Existing account lookup failed: "+(uErr?.message||"user missing")); userEmail=u.user.email||email;
     }else{
-      const {data:byEmail}=await admin.auth.admin.getUserByEmail(email);
-      if(byEmail?.user){userId=byEmail.user.id;userEmail=byEmail.user.email||email;}
-      else{
-        const {data:created,error:cErr}=await admin.auth.admin.createUser({email,email_confirm:true,user_metadata:{full_name:profile.name||profile.username||"Creator",org_name:profile.username?"@"+profile.username:"My Creator Space",role:"creator"}});
-        if(cErr||!created?.user) throw new Error("Create account failed: "+(cErr?.message||"unknown")); userId=created.user.id;
-      }
+      const {data:created,error:cErr}=await admin.auth.admin.createUser({email,email_confirm:true,app_metadata:{created_via:"instagram-login"},user_metadata:{full_name:profile.name||profile.username||"Creator",org_name:profile.username?"@"+profile.username:"My Creator Space",role:"creator"}});
+      if(created?.user) userId=created.user.id;
+      else if(cErr?.code==="email_exists"){
+        // Reuse the email owner only when this function created it. app_metadata is not user-settable.
+        const {data:m,error:mErr}=await admin.from("members").select("id").eq("email",email).maybeSingle();
+        if(mErr) throw new Error("Member lookup failed: "+mErr.message);
+        const {data:o,error:oErr}=m?.id?await admin.auth.admin.getUserById(m.id):{data:null,error:null};
+        if(oErr) throw new Error("Owner lookup failed: "+oErr.message);
+        if(o?.user?.app_metadata?.created_via!=="instagram-login") return json({error:"Account conflict",stage},409);
+        userId=o.user.id; userEmail=o.user.email||email;
+      }else throw new Error("Create account failed: "+(cErr?.message||"unknown"));
     }
     stage="save";
     const {data:member}=await admin.from("members").select("org_id").eq("id",userId).maybeSingle();
