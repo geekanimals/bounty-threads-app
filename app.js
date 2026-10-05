@@ -1747,9 +1747,9 @@ async function loadMediaKit(){
   const showConnect = ()=>{ wrap.innerHTML = mkNotConnected(); const b=document.getElementById("mkConnect"); if(b) b.onclick=connectInstagram; };
   if(!window.sb){ showConnect(); return; }
   const memberId = (window.Auth && Auth.profile && Auth.profile.id) || null;
-  let query = sb.from("social_accounts").select("*").eq("platform","instagram");
-  if(memberId) query = query.eq("member_id", memberId);
-  const { data, error } = await query.order("updated_at",{ascending:false}).limit(1);
+  if(!memberId){ showConnect(); return; }
+  const { data, error } = await sb.from("social_accounts").select("*").eq("platform","instagram").eq("member_id", memberId)
+    .order("updated_at",{ascending:false}).limit(1);
   const acct = (data && data[0]) || null;
   if(error || !acct){ showConnect(); return; }
   wrap.innerHTML = mkHead(acct) + mkComposer();
@@ -1782,7 +1782,8 @@ function wireMkComposer(){
     btn.disabled=true; btn.textContent="Uploading…";
     try{
       if(!window.sb) throw new Error("Not connected.");
-      const uid = (window.Auth && Auth.profile && Auth.profile.id) || "anon";
+      const uid = window.Auth && Auth.profile && Auth.profile.id;
+      if(!uid) throw new Error("You're signed out. Sign in again to publish.");
       const safe = (file.name||"post.jpg").replace(/[^a-zA-Z0-9._-]/g,"");
       const path = `${uid}/${Date.now()}-${safe}`;
       const up = await sb.storage.from("ig-media").upload(path, file, { upsert:false, contentType:file.type||"image/jpeg" });
@@ -2218,6 +2219,7 @@ async function finishInstagram(code){
       if(data && data.error) throw new Error(data.error);
       localStorage.setItem("geekos_conn_instagram","1");
       alert("Instagram connected ✅ — your media kit is ready.");
+      if(window.Auth) await Auth.currentSession(); // startApp skipped it while __igLoggingIn was set
       currentPage = "mediakit"; if(typeof renderShell==="function") renderShell();
       return;
     }
