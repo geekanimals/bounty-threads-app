@@ -460,13 +460,12 @@ async function remindBarter(item){
   if(item.deadline) parts.push(`Please post by ${item.deadline}.`);
   parts.push("Thanks! 🙌");
   const via = reachOut(contact, parts.join(" "), "Content reminder");
-  if(via){ await sb.from("barter_items").update({ reminded_at:new Date().toISOString() }).eq("id", item.id); }
+  if(via){ await checkedWrite(sb.from("barter_items").update({ reminded_at:new Date().toISOString() }).eq("id", item.id), "save the reminder"); }
 }
 
 async function advanceBarter(id, nextStage){
   if(!window.sb) return;
-  const { error } = await sb.from("barter_items").update({stage:nextStage}).eq("id", id);
-  if(!error) loadBarter();
+  if(await checkedWrite(sb.from("barter_items").update({stage:nextStage}).eq("id", id), "move this barter")) loadBarter();
 }
 
 function openBarterModal(existing){
@@ -1042,16 +1041,23 @@ function renderCampaignWorkspace(c, apps, barter){
   content.querySelectorAll("[data-deliv]").forEach(cb=> cb.onchange = ()=>{
     const span = cb.parentNode.querySelector("span");
     if(span){ span.style.textDecoration = cb.checked ? "line-through" : ""; span.style.opacity = cb.checked ? ".6" : ""; }
-    toggleDeliverable(c, items[+cb.dataset.deliv], cb.checked);
+    toggleDeliverable(c, items[+cb.dataset.deliv], cb.checked).then(ok=>{
+      if(ok) return;
+      cb.checked = !cb.checked;
+      if(span){ span.style.textDecoration = cb.checked ? "line-through" : ""; span.style.opacity = cb.checked ? ".6" : ""; }
+    });
   });
 }
 
 async function toggleDeliverable(c, item, checked){
-  if(!window.sb || !item) return;
-  let done = Array.isArray(c.deliverables_done) ? c.deliverables_done.slice() : [];
+  if(!window.sb || !item) return false;
+  const prev = Array.isArray(c.deliverables_done) ? c.deliverables_done.slice() : [];
+  let done = prev.slice();
   if(checked){ if(!done.includes(item)) done.push(item); } else { done = done.filter(x=>x!==item); }
   c.deliverables_done = done;
-  await sb.from("campaigns").update({ deliverables_done: done }).eq("id", c.id);
+  const ok = await checkedWrite(sb.from("campaigns").update({ deliverables_done: done }).eq("id", c.id), "save this deliverable");
+  if(!ok) c.deliverables_done = prev;
+  return ok;
 }
 
 function openCampaignModal(existing){
@@ -1203,8 +1209,15 @@ function renderPlaceholder(title,sub){
 // Generic: update a row's status/stage then re-run a loader.
 async function updateStatus(table, id, patch, cb){
   if(!window.sb) return;
-  const { error } = await sb.from(table).update(patch).eq("id", id);
-  if(!error && cb) cb();
+  if(await checkedWrite(sb.from(table).update(patch).eq("id", id), "update this item") && cb) cb();
+}
+
+// Run an update query and alert on failure. An RLS-blocked UPDATE returns no error but zero rows, so .select() and check the rows.
+async function checkedWrite(query, what){
+  const { data, error } = await query.select();
+  if(error){ alert("Couldn't "+what+": "+error.message); return false; }
+  if(!data || !data.length){ alert("Couldn't "+what+": you don't have permission to change this."); return false; }
+  return true;
 }
 
 /* ================= CELEBRITY STORY ENGINE (story_deals) ================= */
