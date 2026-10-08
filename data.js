@@ -1,4 +1,4 @@
-// Geek Influencer OS — roles, nav, KPI config. NO mock KPI values.
+// Geek Influencer OS â roles, nav, KPI config. NO mock KPI values.
 // Every number the dashboard shows is computed live from the database (app.js realKPIs()).
 
 const ROLES = {
@@ -30,17 +30,18 @@ const ROLES = {
 };
 
 const NAV_META = {
-  dashboard:{ic:"🏠",label:"Dashboard"}, brands:{ic:"🏢",label:"Brand CRM"},
-  portfolio:{ic:"🗂",label:"Portfolio"}, roster:{ic:"🎬",label:"My Roster"},
-  campaigns:{ic:"📣",label:"Campaigns"}, marketplace:{ic:"🛒",label:"Marketplace"},
-  barter:{ic:"📦",label:"Mass Barter"}, celebrity:{ic:"👑",label:"Celebrity Stories"},
-  creators:{ic:"👥",label:"Creators"}, irm:{ic:"🤝",label:"IRM"},
-  mediakit:{ic:"📸",label:"Media Kit"}, admin:{ic:"🛡",label:"Super Admin"},
-  listening:{ic:"📡",label:"Listening"}, logistics:{ic:"🚚",label:"Logistics"},
-  finance:{ic:"💰",label:"Finance"}, reports:{ic:"📊",label:"Reports"},
-  approvals:{ic:"✅",label:"Approvals"}, growth:{ic:"🚀",label:"Growth"},
-  settings:{ic:"⚙️",label:"Settings"},
-  profile:{ic:"🧬",label:"Creator Profile"}
+  messages:{ic:"💬",label:"Messages"},
+  dashboard:{ic:"ð ",label:"Dashboard"}, brands:{ic:"ð¢",label:"Brand CRM"},
+  portfolio:{ic:"ð",label:"Portfolio"}, roster:{ic:"ð¬",label:"My Roster"},
+  campaigns:{ic:"ð£",label:"Campaigns"}, marketplace:{ic:"ð",label:"Marketplace"},
+  barter:{ic:"ð¦",label:"Mass Barter"}, celebrity:{ic:"ð",label:"Celebrity Stories"},
+  creators:{ic:"ð¥",label:"Creators"}, irm:{ic:"ð¤",label:"IRM"},
+  mediakit:{ic:"ð¸",label:"Media Kit"}, admin:{ic:"ð¡",label:"Super Admin"},
+  listening:{ic:"ð¡",label:"Listening"}, logistics:{ic:"ð",label:"Logistics"},
+  finance:{ic:"ð°",label:"Finance"}, reports:{ic:"ð",label:"Reports"},
+  approvals:{ic:"â",label:"Approvals"}, growth:{ic:"ð",label:"Growth"},
+  settings:{ic:"âï¸",label:"Settings"},
+  profile:{ic:"ð§¬",label:"Creator Profile"}
 };
 
 // Which KPI cards each role shows. Values are computed live in app.js realKPIs().
@@ -81,26 +82,26 @@ const AI_SUGGEST = {
 
 // ---- Demo/fallback data (shown when Supabase isn't connected; live data replaces it) ----
 const KPIS = {
-  owner:     [{label:"Creators",val:"128",dir:"up",trend:"12%"},{label:"Active Campaigns",val:"9",dir:"up",trend:"3"},{label:"Live Barters",val:"24",dir:"up",trend:"8%"},{label:"EMV Generated",val:"₹42.6L",dir:"up",trend:"18%"}],
-  corporate: [{label:"Brands",val:"6",dir:"up",trend:"1"},{label:"Creators",val:"312",dir:"up",trend:"9%"},{label:"Active Campaigns",val:"21",dir:"up",trend:"5"},{label:"EMV Generated",val:"₹1.4Cr",dir:"up",trend:"22%"}],
+  owner:     [{label:"Creators",val:"128",dir:"up",trend:"12%"},{label:"Active Campaigns",val:"9",dir:"up",trend:"3"},{label:"Live Barters",val:"24",dir:"up",trend:"8%"},{label:"EMV Generated",val:"â¹42.6L",dir:"up",trend:"18%"}],
+  corporate: [{label:"Brands",val:"6",dir:"up",trend:"1"},{label:"Creators",val:"312",dir:"up",trend:"9%"},{label:"Active Campaigns",val:"21",dir:"up",trend:"5"},{label:"EMV Generated",val:"â¹1.4Cr",dir:"up",trend:"22%"}],
   manager:   [{label:"Creators",val:"18",dir:"up",trend:"2"},{label:"Active Deals",val:"7",dir:"up",trend:"3"},{label:"Live Barters",val:"5",dir:"down",trend:"1"},{label:"Avg Talent Rating",val:"4.7",dir:"up",trend:"0.2"}],
   brand:     [{label:"Active Campaigns",val:"4",dir:"up",trend:"1"},{label:"Live Barters",val:"12",dir:"up",trend:"4"},{label:"Est. Reach",val:"3.2M",dir:"up",trend:"14%"},{label:"Pending Approvals",val:"3",dir:"down",trend:"2"}],
   creator:   [{label:"My Barters",val:"5",dir:"up",trend:"2"},{label:"Growth Score",val:"82",dir:"up",trend:"6"},{label:"Deadlines",val:"2",dir:"down",trend:"1"},{label:"Completed Barters",val:"17",dir:"up",trend:"3"}]
 };
 
 const NOTIFS = {
-  owner:     [{d:"good",t:"Barter batch went live",s:"Nykaa × 12 creators — shipping now"},{d:"brand",t:"New creator applied",s:"Aarav Mehta · 84K followers · Fashion"},{d:"warn",t:"Campaign needs approval",s:"boAt Summer Push awaiting your sign-off"}],
-  corporate: [{d:"good",t:"Portfolio milestone",s:"EMV crossed ₹1Cr across 6 brands"},{d:"brand",t:"New campaign launched",s:"Mamaearth Monsoon — 40 creators"},{d:"warn",t:"Budget alert",s:"Plum campaign at 85% of budget"}],
-  manager:   [{d:"good",t:"Deal booked",s:"Sanya × Sugar Cosmetics — ₹1.2L"},{d:"brand",t:"New brief matched",s:"2 of your creators fit the Zomato brief"},{d:"warn",t:"Deadline soon",s:"Rohit's reel due in 2 days"}],
+  owner:     [{d:"good",t:"Barter batch went live",s:"Nykaa Ã 12 creators â shipping now"},{d:"brand",t:"New creator applied",s:"Aarav Mehta Â· 84K followers Â· Fashion"},{d:"warn",t:"Campaign needs approval",s:"boAt Summer Push awaiting your sign-off"}],
+  corporate: [{d:"good",t:"Portfolio milestone",s:"EMV crossed â¹1Cr across 6 brands"},{d:"brand",t:"New campaign launched",s:"Mamaearth Monsoon â 40 creators"},{d:"warn",t:"Budget alert",s:"Plum campaign at 85% of budget"}],
+  manager:   [{d:"good",t:"Deal booked",s:"Sanya Ã Sugar Cosmetics â â¹1.2L"},{d:"brand",t:"New brief matched",s:"2 of your creators fit the Zomato brief"},{d:"warn",t:"Deadline soon",s:"Rohit's reel due in 2 days"}],
   brand:     [{d:"good",t:"Creators going live",s:"3 reels publishing today"},{d:"brand",t:"Content submitted",s:"Ishita uploaded a draft for review"},{d:"warn",t:"Approval pending",s:"Your Summer campaign needs sign-off"}],
-  creator:   [{d:"good",t:"You got selected!",s:"Nykaa barter — product ships this week"},{d:"brand",t:"New brief for you",s:"boAt is looking for tech creators"},{d:"warn",t:"Deadline reminder",s:"Submit your reel by Friday"}]
+  creator:   [{d:"good",t:"You got selected!",s:"Nykaa barter â product ships this week"},{d:"brand",t:"New brief for you",s:"boAt is looking for tech creators"},{d:"warn",t:"Deadline reminder",s:"Submit your reel by Friday"}]
 };
 
 const BARTER = {
-  "Requested":    [{n:"Nykaa Lip Kit",s:"12 creators · Beauty"},{n:"boAt Earbuds",s:"8 creators · Tech"}],
-  "Shipped":      [{n:"Mamaearth Combo",s:"15 creators · Skincare"}],
-  "Content Live": [{n:"Sugar Matte Set",s:"9 creators · 4 reels live"}],
-  "Completed":    [{n:"Plum Serum",s:"20 creators · EMV ₹6.4L"}]
+  "Requested":    [{n:"Nykaa Lip Kit",s:"12 creators Â· Beauty"},{n:"boAt Earbuds",s:"8 creators Â· Tech"}],
+  "Shipped":      [{n:"Mamaearth Combo",s:"15 creators Â· Skincare"}],
+  "Content Live": [{n:"Sugar Matte Set",s:"9 creators Â· 4 reels live"}],
+  "Completed":    [{n:"Plum Serum",s:"20 creators Â· EMV â¹6.4L"}]
 };
 
 const CREATORS = [

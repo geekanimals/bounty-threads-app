@@ -48,6 +48,7 @@ function renderNav(){
   // Creator Profile nav is DARK: shown only when the api.creator_profile_api feature is enabled
   // (in production the api schema is unexposed, so this stays hidden and legacy nav is unchanged).
   if(currentRole==="creator" && window.__ciProfileEnabled && !keys.includes("profile")) keys.splice(1,0,"profile");
+  if(!keys.includes("messages")) keys.splice(1,0,"messages");   // WhatsApp 1:1 messaging (all roles)
   if(window.__isAdmin) keys.push("admin");
   keys.forEach(key=>{
     const m = NAV_META[key] || {ic:"🛡", label:key};
@@ -2164,6 +2165,7 @@ function fmtDateTime(d){ if(!d) return "—"; try{ return new Date(d).toLocaleSt
 
 const PAGES = {
   profile: (typeof renderProfile==="function"?renderProfile:()=>""),
+  messages: (typeof renderWhatsApp==="function"?renderWhatsApp:()=>""),
   dashboard:renderDashboard, barter:renderBarter, creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit, admin:renderAdmin,
   campaigns:renderCampaigns, reports:renderReports, growth:renderGrowth, settings:renderSettings,
   celebrity:renderCelebrity, approvals:renderApprovals, marketplace:renderMarketplace,
@@ -2541,6 +2543,7 @@ function renderContent(){
     if(add) add.onclick = openIrmModal;
   }
   if(currentPage==="listening") loadListening();
+  if(currentPage==="messages" && window.waChat) window.waChat.load();
   if(currentPage==="approvals") loadApprovals();
   if(currentPage==="marketplace") loadMarketplace();
   if(currentPage==="brands" || currentPage==="portfolio") loadBrands();

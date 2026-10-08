@@ -40,3 +40,15 @@ verify_jwt = false
 # (constant-time) before any service-role/Vault/claim/Meta operation.
 [functions.ig-ingest-worker]
 verify_jwt = false
+
+# WhatsApp login (OTP) — called by signed-OUT users, so JWT verification is off.
+[functions.wa-otp-start]
+verify_jwt = false
+[functions.wa-otp-verify]
+verify_jwt = false
+# WhatsApp 1:1 send — signed-in app users only.
+[functions.wa-send]
+verify_jwt = true
+# WhatsApp inbound webhook — Meta calls it; verify-token + x-hub-signature-256 are the boundary.
+[functions.wa-webhook]
+verify_jwt = false
