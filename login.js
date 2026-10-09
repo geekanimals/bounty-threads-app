@@ -63,6 +63,7 @@ function loginView(mode){
 
       <div class="auth-or"><span>${isUp?"or, if you're a Creator":"or"}</span></div>
       <button type="button" class="ig-btn" id="igSignIn"><span class="ig-ic">📸</span> Continue with Instagram — as a Creator</button>
+      <button type="button" class="ig-btn wa-btn" id="waLoginBtn" style="margin-top:8px"><span class="ig-ic">💬</span> Continue with WhatsApp</button>
       <div class="muted" style="text-align:center;font-size:12px;margin-top:8px">Creators sign in with Instagram (we auto-build your media kit). Agencies, brands & managers use <b>${isUp?"the form above":"Create account"}</b> to pick your role.</div>
 
       ${Auth.isDemo()?`<div class="auth-note">⚡ Demo mode — accounts & per-org security turn on the moment Supabase is connected.</div>`:``}
@@ -92,6 +93,9 @@ function mountLogin(mode="login"){
 
   const ig = document.getElementById("igSignIn");
   if(ig) ig.onclick = ()=>{ if(typeof connectInstagram==="function") connectInstagram(); };
+
+  const wa = document.getElementById("waLoginBtn");
+  if(wa) wa.onclick = ()=>{ if(window.waLogin) window.waLogin.open(); else alert("WhatsApp login is loading — try again in a moment."); };
 
   // Returning-creator fast path.
   const igw = document.getElementById("igWelcome");

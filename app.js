@@ -54,6 +54,7 @@ function renderNav(){
   // Phase 1E — Campaign Operations nav is DARK (operational_pilot flag + pilot cohort; hidden in production).
   if(currentRole==="creator" && window.__ciOpsEnabled){ if(!keys.includes("mycampaigns")) keys.splice(2,0,"mycampaigns"); if(!keys.includes("onboarding")) keys.splice(3,0,"onboarding"); }
   if(currentRole!=="creator" && window.__ciOpsEnabled){ if(!keys.includes("campaignops")) keys.splice(2,0,"campaignops"); if(!keys.includes("brandsetup")) keys.splice(3,0,"brandsetup"); }
+  if(!keys.includes("messages")) keys.splice(1,0,"messages");   // WhatsApp 1:1 messaging (all roles)
   if(window.__isAdmin) keys.push("admin");
   keys.forEach(key=>{
     const m = NAV_META[key] || {ic:"🛡", label:key};
@@ -466,13 +467,12 @@ async function remindBarter(item){
   if(item.deadline) parts.push(`Please post by ${item.deadline}.`);
   parts.push("Thanks! 🙌");
   const via = reachOut(contact, parts.join(" "), "Content reminder");
-  if(via){ await sb.from("barter_items").update({ reminded_at:new Date().toISOString() }).eq("id", item.id); }
+  if(via){ await checkedWrite(sb.from("barter_items").update({ reminded_at:new Date().toISOString() }).eq("id", item.id), "save the reminder"); }
 }
 
 async function advanceBarter(id, nextStage){
   if(!window.sb) return;
-  const { error } = await sb.from("barter_items").update({stage:nextStage}).eq("id", id);
-  if(!error) loadBarter();
+  if(await checkedWrite(sb.from("barter_items").update({stage:nextStage}).eq("id", id), "move this barter")) loadBarter();
 }
 
 function openBarterModal(existing){
@@ -1048,16 +1048,23 @@ function renderCampaignWorkspace(c, apps, barter){
   content.querySelectorAll("[data-deliv]").forEach(cb=> cb.onchange = ()=>{
     const span = cb.parentNode.querySelector("span");
     if(span){ span.style.textDecoration = cb.checked ? "line-through" : ""; span.style.opacity = cb.checked ? ".6" : ""; }
-    toggleDeliverable(c, items[+cb.dataset.deliv], cb.checked);
+    toggleDeliverable(c, items[+cb.dataset.deliv], cb.checked).then(ok=>{
+      if(ok) return;
+      cb.checked = !cb.checked;
+      if(span){ span.style.textDecoration = cb.checked ? "line-through" : ""; span.style.opacity = cb.checked ? ".6" : ""; }
+    });
   });
 }
 
 async function toggleDeliverable(c, item, checked){
-  if(!window.sb || !item) return;
-  let done = Array.isArray(c.deliverables_done) ? c.deliverables_done.slice() : [];
+  if(!window.sb || !item) return false;
+  const prev = Array.isArray(c.deliverables_done) ? c.deliverables_done.slice() : [];
+  let done = prev.slice();
   if(checked){ if(!done.includes(item)) done.push(item); } else { done = done.filter(x=>x!==item); }
   c.deliverables_done = done;
-  await sb.from("campaigns").update({ deliverables_done: done }).eq("id", c.id);
+  const ok = await checkedWrite(sb.from("campaigns").update({ deliverables_done: done }).eq("id", c.id), "save this deliverable");
+  if(!ok) c.deliverables_done = prev;
+  return ok;
 }
 
 function openCampaignModal(existing){
@@ -1209,8 +1216,15 @@ function renderPlaceholder(title,sub){
 // Generic: update a row's status/stage then re-run a loader.
 async function updateStatus(table, id, patch, cb){
   if(!window.sb) return;
-  const { error } = await sb.from(table).update(patch).eq("id", id);
-  if(!error && cb) cb();
+  if(await checkedWrite(sb.from(table).update(patch).eq("id", id), "update this item") && cb) cb();
+}
+
+// Run an update query and alert on failure. An RLS-blocked UPDATE returns no error but zero rows, so .select() and check the rows.
+async function checkedWrite(query, what){
+  const { data, error } = await query.select();
+  if(error){ alert("Couldn't "+what+": "+error.message); return false; }
+  if(!data || !data.length){ alert("Couldn't "+what+": you don't have permission to change this."); return false; }
+  return true;
 }
 
 /* ================= CELEBRITY STORY ENGINE (story_deals) ================= */
@@ -1753,9 +1767,9 @@ async function loadMediaKit(){
   const showConnect = ()=>{ wrap.innerHTML = mkNotConnected(); const b=document.getElementById("mkConnect"); if(b) b.onclick=connectInstagram; };
   if(!window.sb){ showConnect(); return; }
   const memberId = (window.Auth && Auth.profile && Auth.profile.id) || null;
-  let query = sb.from("social_accounts").select("*").eq("platform","instagram");
-  if(memberId) query = query.eq("member_id", memberId);
-  const { data, error } = await query.order("updated_at",{ascending:false}).limit(1);
+  if(!memberId){ showConnect(); return; }
+  const { data, error } = await sb.from("social_accounts").select("*").eq("platform","instagram").eq("member_id", memberId)
+    .order("updated_at",{ascending:false}).limit(1);
   const acct = (data && data[0]) || null;
   if(error || !acct){ showConnect(); return; }
   wrap.innerHTML = mkHead(acct) + mkComposer();
@@ -1788,7 +1802,8 @@ function wireMkComposer(){
     btn.disabled=true; btn.textContent="Uploading…";
     try{
       if(!window.sb) throw new Error("Not connected.");
-      const uid = (window.Auth && Auth.profile && Auth.profile.id) || "anon";
+      const uid = window.Auth && Auth.profile && Auth.profile.id;
+      if(!uid) throw new Error("You're signed out. Sign in again to publish.");
       const safe = (file.name||"post.jpg").replace(/[^a-zA-Z0-9._-]/g,"");
       const path = `${uid}/${Date.now()}-${safe}`;
       const up = await sb.storage.from("ig-media").upload(path, file, { upsert:false, contentType:file.type||"image/jpeg" });
@@ -1796,7 +1811,7 @@ function wireMkComposer(){
       const { data:pub } = sb.storage.from("ig-media").getPublicUrl(path);
       btn.textContent="Publishing…";
       const { data, error } = await sb.functions.invoke("instagram-publish", { body:{ image_url: pub.publicUrl, caption: f.get("caption")||"" } });
-      if(error) throw error;
+      if(error) throw new Error(await fnError(error));
       if(data && data.error) throw new Error(data.error);
       msg.textContent="Posted to Instagram ✅"; msg.className="lead-msg ok"; form.reset();
     }catch(ex){
@@ -2162,6 +2177,7 @@ const PAGES = {
   brandsetup: (typeof renderBrandSetup==="function"?renderBrandSetup:()=>""),
   mycampaigns: (typeof renderMyCampaigns==="function"?renderMyCampaigns:()=>""),
   onboarding: (typeof renderOnboarding==="function"?renderOnboarding:()=>""),
+  messages: (typeof renderWhatsApp==="function"?renderWhatsApp:()=>""),
   dashboard:renderDashboard, barter:renderBarter, creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit, admin:renderAdmin,
   campaigns:renderCampaigns, reports:renderReports, growth:renderGrowth, settings:renderSettings,
   celebrity:renderCelebrity, approvals:renderApprovals, marketplace:renderMarketplace,
@@ -2226,17 +2242,18 @@ async function finishInstagram(code){
     if(session){
       // Signed in already → CONNECT this Instagram to the current account.
       const { data, error } = await sb.functions.invoke("instagram-auth", { body:{ code, redirect_uri: IG_REDIRECT } });
-      if(error) throw error;
+      if(error) throw new Error(await fnError(error));
       if(data && data.error) throw new Error(data.error);
       localStorage.setItem("geekos_conn_instagram","1");
       alert("Instagram connected ✅ — your media kit is ready.");
+      if(window.Auth) await Auth.currentSession(); // startApp skipped it while __igLoggingIn was set
       currentPage = "mediakit"; if(typeof renderShell==="function") renderShell();
       return;
     }
 
     // Not signed in → SIGN IN with Instagram (server creates/loads the user + a session token).
     const { data, error } = await sb.functions.invoke("instagram-login", { body:{ code, redirect_uri: IG_REDIRECT } });
-    if(error) throw error;
+    if(error) throw new Error(await fnError(error));
     if(data && data.error) throw new Error(data.error);
     const { error: vErr } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: "magiclink" });
     if(vErr) throw vErr;
@@ -2252,7 +2269,9 @@ async function finishInstagram(code){
   }catch(ex){
     window.__igLoggingIn = false;
     alert("Instagram sign-in failed: " + (ex.message||ex) + "\n\nMake sure the instagram-login & instagram-auth Edge Functions are deployed and this redirect URL is registered in Meta:\n" + IG_REDIRECT);
-    if(window.startApp && !((await sb.auth.getSession()).data.session)) mountLogin("login");
+    const { data:{ session:s2 } } = await sb.auth.getSession();
+    if(!s2){ if(window.startApp) mountLogin("login"); }
+    else if(window.Auth && !Auth.profile){ await Auth.currentSession(); if(typeof bootOS==="function") bootOS(); }
   }
 }
 
@@ -2310,7 +2329,7 @@ async function handleOAuthCallback(){
     const { error } = await window.sb.functions.invoke("oauth-exchange", {
       body: { platform, code, redirect_uri: OAUTH_REDIRECT }
     });
-    if(error) throw error;
+    if(error) throw new Error(await fnError(error));
     // Only mark connected once the server actually stored a token.
     localStorage.setItem("geekos_conn_"+platform, "1");
     renderIntegrations();
@@ -2536,6 +2555,7 @@ function renderContent(){
     if(add) add.onclick = openIrmModal;
   }
   if(currentPage==="listening") loadListening();
+  if(currentPage==="messages" && window.waChat) window.waChat.load();
   if(currentPage==="approvals") loadApprovals();
   if(currentPage==="marketplace") loadMarketplace();
   if(currentPage==="brands" || currentPage==="portfolio") loadBrands();
@@ -2633,7 +2653,7 @@ async function sendAiMessage(text){
       name:(window.Auth&&Auth.profile&&Auth.profile.name)||"", org:(window.Auth&&Auth.profile&&Auth.profile.org)||"" };
     const msgs=AI_HISTORY.filter(m=>!m._pending).map(m=>({role:m.role, content:m.content}));
     const { data, error } = await sb.functions.invoke("ai-chat", { body:{ messages:msgs, context:ctx } });
-    if(error) throw error;
+    if(error) throw new Error(await fnError(error));
     if(data && data.error) throw new Error(data.error);
     AI_HISTORY=AI_HISTORY.filter(m=>!m._pending);
     AI_HISTORY.push({role:"assistant", content:(data&&data.reply)||"(no response)"});
