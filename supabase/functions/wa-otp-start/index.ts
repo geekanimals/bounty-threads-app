@@ -33,14 +33,9 @@ Deno.serve(async (req) => {
     const { error: insErr } = await admin.from("wa_otp").insert({ phone_e164: e164, code_hash, expires_at });
     if (insErr) throw insErr;
 
-    // Meta AUTHENTICATION template: body param = code, copy-code button param = code.
-    await getProvider().send({
-      to: e164, template: TEMPLATE, lang: LANG,
-      components: [
-        { type: "body", parameters: [{ type: "text", text: code }] },
-        { type: "button", sub_type: "copy_code", index: "0", parameters: [{ type: "coupon_code", coupon_code: code }] },
-      ],
-    });
+    // Authentication template with the code as its single variable (works for snapto templateVariables
+    // and Meta body components alike — the provider adapts the shape).
+    await getProvider().send({ to: e164, template: TEMPLATE, lang: LANG, variables: [code] });
     return json({ ok: true, expires_in: 600 });
   } catch (e) {
     return json({ error: (e as Error).message || "Could not send the WhatsApp code." }, 500);

@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "Not authenticated" }, 401);
 
-    const { conversation_id, to_phone, campaign_id, subject, text, template, lang, components } = await req.json();
+    const { conversation_id, to_phone, campaign_id, subject, text, template, lang, variables, components } = await req.json();
 
     // resolve the conversation the caller is allowed to use
     let convId = conversation_id as string | undefined;
@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
     }
 
     const out = template
-      ? { to: conv.contact_phone_e164, template, lang, components }
+      ? { to: conv.contact_phone_e164, template, lang, variables, components }
       : { to: conv.contact_phone_e164, text: String(text || "") };
     const res = await getProvider().send(out as any);
 

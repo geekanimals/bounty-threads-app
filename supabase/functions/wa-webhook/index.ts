@@ -6,8 +6,12 @@ import { verifyChallenge, validateSignature } from "../_shared/webhook.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const VERIFY_TOKEN = Deno.env.get("WA_WEBHOOK_VERIFY_TOKEN") || "";
-const APP_SECRET = Deno.env.get("WHATSAPP_APP_SECRET") || Deno.env.get("INSTAGRAM_APP_SECRET") || "";
+const VERIFY_TOKEN = Deno.env.get("WA_WEBHOOK_VERIFY_TOKEN") || "";                 // Meta GET handshake (direct-Meta)
+const APP_SECRET = Deno.env.get("WHATSAPP_APP_SECRET") || Deno.env.get("INSTAGRAM_APP_SECRET") || ""; // x-hub-signature (direct-Meta)
+// snapto "Meta Webhooks" forwards the native Meta payload; we authenticate it by a Custom Header shared
+// secret configured on the snapto webhook (header name + value below).
+const HOOK_SECRET = Deno.env.get("WA_WEBHOOK_SECRET") || "";
+const HOOK_SECRET_HEADER = (Deno.env.get("WA_WEBHOOK_SECRET_HEADER") || "x-webhook-secret").toLowerCase();
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
@@ -18,8 +22,11 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
 
   const raw = await req.text();
-  if (APP_SECRET && !(await validateSignature(raw, req.headers.get("x-hub-signature-256"), APP_SECRET))) {
-    return new Response("bad signature", { status: 401 });
+  // Verify the sender: snapto Custom-Header secret (primary) and/or Meta x-hub-signature (direct-Meta).
+  if (HOOK_SECRET) {
+    if (req.headers.get(HOOK_SECRET_HEADER) !== HOOK_SECRET) return new Response("unauthorized", { status: 401 });
+  } else if (APP_SECRET) {
+    if (!(await validateSignature(raw, req.headers.get("x-hub-signature-256"), APP_SECRET))) return new Response("bad signature", { status: 401 });
   }
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
   try {
