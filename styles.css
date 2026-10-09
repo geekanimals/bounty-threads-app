@@ -538,3 +538,11 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .wa-meta{display:block;font-size:10px;opacity:.6;margin-top:3px}
 .wa-compose{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line,#e9ecf5)}
 .wa-compose input{flex:1}
+
+/* ---------- Creator onboarding popup: reel rate + barter (Phase 1A, dark) ---------- */
+.cp-ob-overlay{position:fixed;inset:0;background:rgba(10,12,26,.6);display:flex;align-items:center;justify-content:center;z-index:9998;padding:16px}
+.cp-ob-modal{background:var(--panel,#fff);border:1px solid var(--line,#e9ecf5);border-radius:16px;padding:20px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.cp-ob-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.cp-ob-h h3{margin:0}
+.cp-ob-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.cp-err-inline{color:var(--bad,#f04438)}

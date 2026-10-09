@@ -139,6 +139,11 @@
       + field("Date of birth (optional)","cp_dob",personal.date_of_birth,{type:"date",privacy:"Private",hint: age!=null? "Age "+age+" (calculated, never stored)":"Age is calculated from DOB, never stored"})
       + field("Marital status (optional)","cp_marital",mar,{select:[["","Prefer not to say"],["single","Single"],["married","Married"],["divorced","Divorced"],["widowed","Widowed"]],privacy:"Private"})
       + '<div id="cp_anniv_wrap" style="'+(mar==="married"?"":"display:none")+'">'+field("Marriage anniversary","cp_anniv",personal.marriage_anniversary,{type:"date",privacy:"Private"})+'</div>'
+      + '<label class="cp-check" style="grid-column:1/-1"><input type="checkbox" id="cp_pet_on"'+(personal.has_pet?" checked":"")+'> I have a pet <span class="cp-priv">Private</span></label>'
+      + '<div id="cp_pet_more" style="grid-column:1/-1;'+(personal.has_pet?"":"display:none")+'"><div class="cp-grid">'
+      +   field("Pet name","cp_pet_name",personal.pet_name,{privacy:"Private"})
+      +   field("Pet type","cp_pet_type",personal.pet_type,{select:[["","—"],["dog","Dog"],["cat","Cat"],["bird","Bird"],["fish","Fish"],["rabbit","Rabbit"],["hamster","Hamster"],["small_mammal","Small mammal"],["reptile","Reptile"],["horse","Horse"],["other","Other"]],privacy:"Private"})
+      + '</div></div>'
       + '</div><div class="cp-note">Optional sensitive fields never affect your profile quality, authenticity or ranking.</div>');
 
     // B Contact
@@ -248,6 +253,59 @@
 
     document.getElementById("cpBody").innerHTML = body;
     wire();
+    maybeOnboard();
+  }
+
+  /* ---------- post-connect onboarding popup: reel rate + barter opt-in ----------
+   * Appears once, right after Instagram is connected, before the creator has set a Reel rate.
+   * Saves through the same api RPCs the manual sections use; "Skip" is remembered per creator. */
+  function onbKey(){ var id="me"; try{ id=(window.Auth&&Auth.profile&&(Auth.profile.id||Auth.profile.user_id))||(window.Auth&&Auth.user&&Auth.user.id)||"me"; }catch(e){} return "ci_ob_commercial_"+id; }
+  function onbDismissed(){ try{ return localStorage.getItem(onbKey())==="1"; }catch(e){ return false; } }
+  function setOnbDismissed(){ try{ localStorage.setItem(onbKey(),"1"); }catch(e){} }
+  function maybeOnboard(){
+    try{
+      var d=DATA||{}, conn=d.connection;
+      if(!(conn && conn.connected)) return;                 // only after Instagram is connected
+      var items=((d.rate_cards&&d.rate_cards[0]&&d.rate_cards[0].items)||[]);
+      if(items.some(function(it){ return /reel/i.test(it.deliverable_type||""); })) return; // already onboarded
+      if(onbDismissed()) return;                            // creator chose "skip" earlier
+      showOnboard();
+    }catch(e){}
+  }
+  function showOnboard(){
+    if(document.getElementById("cpObOverlay")) return;
+    var cp=(DATA&&DATA.commercial_preference)||{};
+    var ov=document.createElement("div");
+    ov.id="cpObOverlay"; ov.className="cp-ob-overlay";
+    ov.innerHTML = ''
+      + '<div class="cp-ob-modal" role="dialog" aria-modal="true" aria-label="Set your rates and barter preference">'
+      + '  <div class="cp-ob-h"><h3>You’re connected 🎉</h3><button class="wa-x" id="cpObClose" aria-label="Close">×</button></div>'
+      + '  <p class="muted">Two quick questions so brands can start matching you. You can change these anytime in your profile.</p>'
+      + '  <label class="cp-f"><span>Your rate for one Instagram Reel (₹) <span class="cp-priv">You control visibility</span></span><input id="cpObRate" type="number" min="0" inputmode="numeric" placeholder="e.g. 15000"></label>'
+      + '  <label class="cp-switch" style="margin:10px 0"><input type="checkbox" id="cpObBarter"'+(cp.accepts_barter?" checked":"")+'> <span>I’m open to barter campaigns (product in exchange for content)</span></label>'
+      + '  <div class="cp-ob-actions"><button class="btn sm ghost" id="cpObSkip">Skip for now</button><button class="btn sm" id="cpObSave">Save &amp; continue</button></div>'
+      + '  <div class="cp-hint cp-err-inline" id="cpObErr"></div>'
+      + '</div>';
+    document.body.appendChild(ov);
+    function close(){ setOnbDismissed(); ov.remove(); }
+    document.getElementById("cpObClose").onclick=close;
+    document.getElementById("cpObSkip").onclick=close;
+    document.getElementById("cpObSave").onclick=async function(){
+      var err=document.getElementById("cpObErr"); err.textContent="";
+      var amt=document.getElementById("cpObRate").value;
+      var barter=document.getElementById("cpObBarter").checked;
+      if(amt!=="" && (isNaN(Number(amt)) || Number(amt)<0)){ err.textContent="Enter a valid amount (≥ 0), or leave it blank."; return; }
+      var btn=this; btn.disabled=true; btn.textContent="Saving…";
+      try{
+        var b=await api("save_profile_section",{p_section:"commercial_preference",p_patch:{accepts_barter:barter},p_correlation:"ui-onboard"});
+        if(b.error) throw b.error;
+        if(amt!=="" && Number(amt)>0){
+          var r=await api("save_rate_card_item",{p_payload:{deliverable_type:"IG Reel",amount:Number(amt)},p_correlation:"ui-onboard"});
+          if(r.error) throw r.error;
+        }
+        setOnbDismissed(); ov.remove(); load();
+      }catch(e){ err.textContent="Couldn’t save: "+(e.message||e); btn.disabled=false; btn.textContent="Save & continue"; }
+    };
   }
 
   function visOn(){ return false; } // default off; server is source of truth (no fabricated state)
@@ -282,9 +340,11 @@
     if(key==="personal"){
       var dob=v("cp_dob"); if(dob){ var d=new Date(dob); if(d>new Date()){ setStatus(key,"error","Date of birth can't be in the future"); return null; } }
       var mar=v("cp_marital");
+      var hasPet=(function(){ var e=document.getElementById("cp_pet_on"); return !!(e&&e.checked); })();
       var p={ first_name:v("cp_first")||null, last_name:v("cp_last")||null, gender:v("cp_gender")||null,
               date_of_birth:v("cp_dob")||null, marital_status:mar||null,
-              marriage_anniversary:(mar==="married"?(v("cp_anniv")||null):null) };
+              marriage_anniversary:(mar==="married"?(v("cp_anniv")||null):null),
+              has_pet:hasPet, pet_name:(hasPet?(v("cp_pet_name")||null):null), pet_type:(hasPet?(v("cp_pet_type")||null):null) };
       return p;
     }
     if(key==="contact"){
@@ -330,6 +390,8 @@
     if(bon) bon.onchange=function(){ document.getElementById("cp_barter_more").style.display = bon.checked?"":"none"; markDirty("barter"); };
     var dob=document.getElementById("cp_dob");
     if(dob) dob.onchange=function(){ var a=deriveAge(dob.value); var h=dob.parentNode.querySelector(".cp-hint"); if(h) h.textContent = a!=null?("Age "+a+" (calculated, never stored)"):"Age is calculated from DOB, never stored"; markDirty("personal"); };
+    var pet=document.getElementById("cp_pet_on");
+    if(pet) pet.onchange=function(){ var m=document.getElementById("cp_pet_more"); if(m) m.style.display = pet.checked?"":"none"; markDirty("personal"); };
     // Save & Continue buttons
     document.querySelectorAll("[data-save]").forEach(function(b){ b.onclick=function(){ saveSection(b.getAttribute("data-save")); }; });
     // auto-save (debounced) on input within a savable section
