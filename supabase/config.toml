@@ -52,3 +52,11 @@ verify_jwt = true
 # WhatsApp inbound webhook — Meta calls it; verify-token + x-hub-signature-256 are the boundary.
 [functions.wa-webhook]
 verify_jwt = false
+
+# Barter pipeline Phase 1 (DARK, not deployed/scheduled): notification + reminder workers. verify_jwt=false
+# because a valid user JWT must NOT authorize these internal endpoints; they check CI_WORKER_SECRET and act
+# only as service role. ops-notify-dispatch drains ci_outbox (WhatsApp+email); ops-reminder-worker fires SLAs.
+[functions.ops-notify-dispatch]
+verify_jwt = false
+[functions.ops-reminder-worker]
+verify_jwt = false
