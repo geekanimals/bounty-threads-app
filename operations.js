@@ -224,6 +224,8 @@
       else if(p.stage==='brand_confirmed') acts='<button class="btn sm" data-issue="'+p.participation_id+'">Issue contract</button>';
       else if(p.stage==='content_submitted') acts='<button class="btn sm" data-approve="'+(sub?sub.submission_id:'')+'" data-dec="approved">Approve</button>'
         + '<button class="btn sm ghost" data-approve="'+(sub?sub.submission_id:'')+'" data-dec="changes_requested">Request changes</button>';
+      else if(p.stage==='product_sent') acts='<button class="btn sm" data-deliver="'+p.participation_id+'">Mark delivered</button>'
+        + '<button class="btn sm ghost" data-shipfail="'+p.participation_id+'">Mark failed</button>';
       else if(p.stage==='content_approved') acts='<button class="btn sm ghost" data-adv="'+p.participation_id+'" data-to="published">Mark live</button>';
       else if(p.stage==='published') acts='<button class="btn sm ghost" data-adv="'+p.participation_id+'" data-to="completed">Complete</button>';
       var canShip=(p.stage==='accepted'||p.stage==='address_confirmed');
@@ -238,8 +240,33 @@
     var activity='<div class="card"><h4>Activity</h4><div class="ops-timeline">'+(events.length?events.map(function(e){
       return '<div class="ops-ev"><span class="ci-tag">'+esc(e.entity)+'</span> '+esc(e.from||"—")+' → <b>'+esc(e.to)+'</b>'+(e.reason?' <span class="muted">· '+esc(e.reason)+'</span>':'')+'<div class="ci-hint">'+fmtDT(e.at)+'</div></div>';
     }).join(""):'<div class="muted">No activity yet.</div>')+'</div></div>';
-    out.innerHTML=overview+creators+activity;
+    var reportCard='<div class="card"><div class="ci-mh"><h4>Live brand report</h4><button class="btn sm ghost" id="opsReportBtn" data-camp="'+esc(c.campaign_id)+'">Refresh report</button></div><div id="opsReport"><div class="muted">Open to see the funnel, posts and 15-day performance.</div></div></div>';
+    out.innerHTML=overview+creators+reportCard+activity;
     wireDetail(c.campaign_id);
+  }
+
+  // ---- live brand-campaign report (funnel + posts + 15-day metrics + checks) ----
+  async function openReport(campId){
+    var box=document.getElementById("opsReport"); if(!box) return;
+    box.innerHTML='<div class="muted">Loading report…</div>';
+    try{ var r=await api("get_campaign_report",{p_campaign:campId}); if(r.error) throw r.error; renderReport(r.data||{}); }
+    catch(e){ box.innerHTML='<div class="ci-err-inline">Couldn\'t load report: '+esc(e.message||e)+'</div>'; }
+  }
+  function renderReport(d){
+    var box=document.getElementById("opsReport"); var fn=d.funnel||{}, cr=d.creators||[];
+    var funnelHtml='<div class="ops-funnel">'+["applied","eligible","sent_to_brand","brand_confirmed","contract_signed","address_confirmed","product_sent","content_submitted","published","completed"].map(function(s){
+      var n=fn[s]||0; return '<span class="ops-fstep'+(n>0?" on":"")+'">'+esc((STAGE[s]?STAGE[s][0]:s))+': '+n+'</span>';
+    }).join('<span class="ops-farrow">›</span>')+'</div>';
+    var rows=cr.map(function(c){
+      var posts=(c.posts||[]); var chk=(c.checks||[]);
+      var pstr=posts.length?posts.map(function(p){
+        var m=p.latest; var mstr=m?('reach '+(m.reach==null?"—":m.reach)+' · likes '+(m.likes==null?"—":m.likes)+' · views '+(m.views==null?"—":m.views)):'no metrics yet';
+        return '<div class="ci-hint">'+esc(p.media_type)+(p.permalink?' · <a href="'+esc(p.permalink)+'" target="_blank" rel="noopener">link</a>':'')+' · '+esc(mstr)+'</div>';
+      }).join(''):'<div class="ci-hint">No posts yet.</div>';
+      var cstr=chk.length?chk.map(function(k){ return '<span class="ci-pill ci-'+(k.verdict==='pass'?'ok':k.verdict==='issues'?'warn':'na')+'">'+esc(k.kind)+': '+esc(k.verdict)+'</span>'; }).join(' '):'';
+      return '<div class="ci-cardrow"><div class="ci-mh"><b>Creator '+esc(shortId(c.participation_id))+'</b>'+spill(c.stage)+'</div>'+pstr+(cstr?'<div class="ci-evrow">'+cstr+'</div>':'')+'</div>';
+    }).join('');
+    box.innerHTML=funnelHtml+(rows||'<div class="muted">No creators yet.</div>');
   }
   function wireDetail(campId){
     var a=document.getElementById("opsAdvCamp"); if(a) a.onclick=function(){ api("set_campaign_status",{p_campaign:a.getAttribute("data-camp"),p_to:a.getAttribute("data-to"),p_reason:null}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId).then?openCampaignDetail(campId):openCampaignDetail(campId); }); };
@@ -257,6 +284,11 @@
     document.querySelectorAll("#opsDetail [data-brand-no]").forEach(function(b){ b.onclick=function(){ var reason=prompt("Reason for declining this creator:")||""; if(!reason) return; api("brand_decide_participation",{p_participation:b.getAttribute("data-brand-no"),p_confirm:false,p_reason:reason}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
     // funnel: issue contract
     document.querySelectorAll("#opsDetail [data-issue]").forEach(function(b){ b.onclick=function(){ openIssueContractModal(b.getAttribute("data-issue"), campId); }; });
+    // phase 4: manual delivery status
+    document.querySelectorAll("#opsDetail [data-deliver]").forEach(function(b){ b.onclick=function(){ api("mark_shipment_status_by_participation",{p_participation:b.getAttribute("data-deliver"),p_status:"delivered"}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
+    document.querySelectorAll("#opsDetail [data-shipfail]").forEach(function(b){ b.onclick=function(){ if(!confirm("Mark this shipment as failed/returned?")) return; api("mark_shipment_status_by_participation",{p_participation:b.getAttribute("data-shipfail"),p_status:"failed"}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
+    // phase 6: live report
+    var rb=document.getElementById("opsReportBtn"); if(rb) rb.onclick=function(){ openReport(rb.getAttribute("data-camp")); };
   }
 
   // ---- operator: issue a contract to a brand-confirmed creator ----
@@ -330,7 +362,31 @@
     document.querySelectorAll("#opsMine [data-upload]").forEach(function(b){ b.onclick=function(){ var url=prompt("Paste your content link (e.g. Instagram post URL):")||""; if(!url) return; var note=prompt("Note / question for the Geek team (optional):")||""; api("submit_content",{p_deliverable:b.getAttribute("data-upload"),p_content_url:url,p_note:note}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-contract]").forEach(function(b){ b.onclick=function(){ openContractModal(b.getAttribute("data-contract")); }; });
     document.querySelectorAll("#opsMine [data-address]").forEach(function(b){ b.onclick=function(){ openAddressModal(b.getAttribute("data-address")); }; });
-    document.querySelectorAll("#opsMine [data-post]").forEach(function(b){ b.onclick=function(){ if(typeof currentPage!=="undefined"){ currentPage="mediakit"; } if(typeof renderShell==="function") renderShell(); }; });
+    document.querySelectorAll("#opsMine [data-post]").forEach(function(b){ b.onclick=function(){ openPostModal(b.getAttribute("data-post")); }; });
+  }
+
+  // ---- creator: record the reel/story posted (runs the caption/tag check + marks published) ----
+  function openPostModal(part){
+    opsModal('<div class="ci-mh"><h3>Post your content</h3><button class="wa-x" id="opsMx">×</button></div>'
+      + '<div class="ci-hint">Publish from your Media Kit, then record it here so we can check your caption against the brief and start tracking its performance.</div>'
+      + '<label class="wa-f"><span>What did you post?</span><select id="opsPoMt"><option value="reel">Reel</option><option value="story">Story</option><option value="post">Feed post</option></select></label>'
+      + '<label class="wa-f"><span>Link to the post (permalink)</span><input id="opsPoLink" placeholder="https://instagram.com/p/…"></label>'
+      + '<label class="wa-f"><span>Caption you used</span><textarea id="opsPoCap" rows="3" placeholder="Paste your caption incl. #hashtags and @mentions"></textarea></label>'
+      + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsPoMk">Open Media Kit</button><button class="btn sm" id="opsPoSave">Record post</button></div>'
+      + '<div class="ci-hint cp-err-inline" id="opsPoErr"></div>');
+    document.getElementById("opsMx").onclick=closeModal;
+    document.getElementById("opsPoMk").onclick=function(){ closeModal(); if(typeof currentPage!=="undefined"){ currentPage="mediakit"; } if(typeof renderShell==="function") renderShell(); };
+    document.getElementById("opsPoSave").onclick=function(){
+      var err=document.getElementById("opsPoErr"); err.textContent="";
+      var payload={ media_type:document.getElementById("opsPoMt").value, permalink:(document.getElementById("opsPoLink").value||"").trim(), caption:(document.getElementById("opsPoCap").value||"").trim() };
+      var btn=this; btn.disabled=true; btn.textContent="Recording…";
+      api("record_campaign_post",{p_participation:part,p_payload:payload}).then(function(r){
+        if(r.error){ err.textContent=r.error.message||r.error; btn.disabled=false; btn.textContent="Record post"; return; }
+        closeModal();
+        if(r.data && r.data.caption_check==='issues'){ alert("Recorded — but your caption looks like it's missing a required hashtag or mention from the brief. Check your Alerts and update it."); }
+        loadMyCampaigns(); updateAlertsBadge();
+      });
+    };
   }
 
   // ---- creator: review + sign contract ----

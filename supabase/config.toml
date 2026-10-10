@@ -60,3 +60,12 @@ verify_jwt = false
 verify_jwt = false
 [functions.ops-reminder-worker]
 verify_jwt = false
+
+# Barter pipeline Phases 4–6 (DARK, not deployed/scheduled): courier tracking (DTDC/Amazon), AI brief-adherence
+# review (Claude), and 15-day post-metrics snapshots. All service-role, CI_WORKER_SECRET-gated, verify_jwt=false.
+[functions.ops-tracking-worker]
+verify_jwt = false
+[functions.ops-content-review]
+verify_jwt = false
+[functions.ops-post-metrics-worker]
+verify_jwt = false

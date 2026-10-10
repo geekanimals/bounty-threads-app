@@ -71,11 +71,13 @@ Get brief from brand/agency → make WhatsApp msg → reach out to the filtered 
 
 **Phase 3** — Contract signing UI + per-campaign address-confirm gate.
 
-**Phase 4** — Shipment tracking via DTDC / Amazon API + parcel-received push. *(needs carrier API keys)*
+**Phase 4 — Shipment tracking + parcel-received push — ✅ BUILT (dark).** `ci_campaign_shipment` gained carrier/tracking columns; `intel.ci_shipment_set_status` writes the shipment event (a `delivered` event → the Phase 1 parcel-received push + a fresh 3-day video SLA); `api.update_shipment_status` / `api.mark_shipment_status_by_participation` (operator); `_shared/tracking_provider.ts` (DTDC/Amazon adapters) + `ops-tracking-worker`. *Go-live needs carrier endpoint + key (e.g. `DTDC_TRACK_URL`/`DTDC_API_KEY`).*
 
-**Phase 5** — Video SLA + reminders + ML video-vs-brief check + caption/tag check. *(needs a model decision)*
+**Phase 5 — Video SLA + brief/caption checks — ✅ BUILT (dark).** SLA reminders from Phase 1. Deterministic caption/tag check `intel.ci_check_caption_tags` (brief `requirements.hashtags`/`mentions`/`caption_must_include`) with a creator fix-it push; AI brief-adherence review via `_shared/content_reviewer.ts` (Claude) + `ops-content-review`, stored in `ci_content_check`; `api.get_content_checks` for operators/owners. *Go-live needs `ANTHROPIC_API_KEY` (model `ANTHROPIC_MODEL`).*
 
-**Phase 6** — Post reel + story from the app → caption/tag validation → 15-day per-post analytics → live brand-campaign dashboard.
+**Phase 6 — Post from app → caption check → 15-day analytics → live report — ✅ BUILT (dark).** `ci_campaign_post` + `ci_campaign_post_metric`; `api.record_campaign_post` (records the post, runs the caption check, advances to published); `ops-post-metrics-worker` snapshots IG insights for 15 days; `api.get_campaign_report` is the live brand dashboard feed (funnel + per-creator posts + latest metrics + check verdicts), surfaced in the operator campaign detail. *Go-live needs an IG insights token (`IG_GRAPH_TOKEN`, or per-creator token wiring).*
+
+All of Phases 1–6 verified together on the disposable PG17 harness: 40-migration chain applies; probe 40/40; existing pgTAP suite 523/523. Nothing activated.
 
 ---
 
