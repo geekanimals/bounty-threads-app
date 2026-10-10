@@ -55,10 +55,13 @@ function renderNav(){
   if(currentRole==="creator" && window.__ciOpsEnabled){ if(!keys.includes("mycampaigns")) keys.splice(2,0,"mycampaigns"); if(!keys.includes("onboarding")) keys.splice(3,0,"onboarding"); }
   if(currentRole!=="creator" && window.__ciOpsEnabled){ if(!keys.includes("campaignops")) keys.splice(2,0,"campaignops"); if(!keys.includes("brandsetup")) keys.splice(3,0,"brandsetup"); }
   if(!keys.includes("messages")) keys.splice(1,0,"messages");   // WhatsApp 1:1 messaging (all roles)
+  // Barter-pipeline Alerts inbox is DARK (operational_pilot); shown for all roles when the ops layer is on.
+  if(window.__ciOpsEnabled && !keys.includes("alerts")) keys.splice(1,0,"alerts");
   if(window.__isAdmin) keys.push("admin");
   keys.forEach(key=>{
     const m = NAV_META[key] || {ic:"🛡", label:key};
     const a = el("a","", `<span class="ic">${m.ic}</span><span>${m.label}</span>`);
+    a.setAttribute("data-page", key);
     if(key===currentPage) a.classList.add("active");
     a.onclick = ()=>{ currentPage=key; renderShell(); if(window.innerWidth<=760) $("#sidebar").classList.remove("open"); };
     nav.appendChild(a);
@@ -2178,6 +2181,7 @@ const PAGES = {
   mycampaigns: (typeof renderMyCampaigns==="function"?renderMyCampaigns:()=>""),
   onboarding: (typeof renderOnboarding==="function"?renderOnboarding:()=>""),
   messages: (typeof renderWhatsApp==="function"?renderWhatsApp:()=>""),
+  alerts: (typeof renderAlerts==="function"?renderAlerts:()=>""),
   dashboard:renderDashboard, barter:renderBarter, creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit, admin:renderAdmin,
   campaigns:renderCampaigns, reports:renderReports, growth:renderGrowth, settings:renderSettings,
   celebrity:renderCelebrity, approvals:renderApprovals, marketplace:renderMarketplace,
@@ -2565,6 +2569,7 @@ function renderContent(){
   if(currentPage==="profile" && window.ciProfile) window.ciProfile.load();
   if(currentPage==="intelligence" && window.ciIntel) window.ciIntel.loadSelf();
   if(currentPage==="cintel" && window.ciIntel) window.ciIntel.loadBrand();
+  if(currentPage==="alerts" && window.ciOps) window.ciOps.loadAlerts();
   if(currentPage==="campaignops" && window.ciOps) window.ciOps.loadAgencyOps();
   if(currentPage==="brandsetup" && window.ciOps) window.ciOps.loadBrandSetup();
   if(currentPage==="mycampaigns" && window.ciOps) window.ciOps.loadMyCampaigns();

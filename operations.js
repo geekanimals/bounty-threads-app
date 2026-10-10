@@ -18,7 +18,11 @@
   var STAGE = { shortlisted:["Shortlisted","na"], invited:["Invited","warn"], accepted:["Confirmed","ok"],
     rejected:["Rejected","na"], product_sent:["Product sent","warn"], content_created:["Creating","warn"],
     content_submitted:["Submitted","warn"], content_approved:["Approved","ok"], changes_requested:["Changes requested","warn"],
-    published:["Live","ok"], completed:["Completed","ok"], dropped:["Dropped","na"] };
+    published:["Live","ok"], completed:["Completed","ok"], dropped:["Dropped","na"],
+    // application-first barter funnel
+    applied:["Applied","warn"], eligible:["Eligible","ok"], ineligible:["Not eligible","na"],
+    sent_to_brand:["With brand","warn"], brand_confirmed:["Brand confirmed","ok"], brand_declined:["Brand declined","na"],
+    contract_sent:["Sign contract","warn"], contract_signed:["Contract signed","ok"], address_confirmed:["Address confirmed","ok"] };
   var LIFE = { draft:"Draft", creator_discovery:"Creator discovery", in_execution:"In execution", reporting:"Reporting", completed:"Completed", cancelled:"Cancelled" };
   function spill(st){ var x=STAGE[st]||[st||"—","na"]; return '<span class="ci-pill ci-'+x[1]+'">'+esc(x[0])+'</span>'; }
 
@@ -30,7 +34,70 @@
     if(enabled){ try{ var p=await api("get_campaign_pipeline",{p_filters:{}}); isOperator=!!(p && !p.error); }catch(e){ isOperator=false; } }
     window.__ciOpsEnabled=enabled; window.__ciOpsOperator=isOperator;
     if(enabled && typeof renderNav==="function") renderNav();
+    if(enabled) updateAlertsBadge();
   }
+
+  /* ============================ 0. NOTIFICATION INBOX (app + WhatsApp + email spine) ============================ */
+  // Lightweight modal used by the funnel actions + inbox.
+  function opsModal(inner){
+    var ov=document.createElement("div"); ov.className="cp-ob-overlay"; ov.id="opsModal";
+    ov.innerHTML='<div class="cp-ob-modal" role="dialog" aria-modal="true">'+inner+'</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
+    return ov;
+  }
+  function closeModal(){ var m=document.getElementById("opsModal"); if(m) m.remove(); }
+
+  // route a notification's CTA to the right page (and open the campaign when relevant)
+  function routeNotification(n){
+    var route=n.action_route; if(!route) return;
+    if(typeof currentPage!=="undefined"){ currentPage=route; }
+    if(typeof renderShell==="function") renderShell();
+    if(route==="campaignops" && n.campaign_id){ setTimeout(function(){ openCampaignDetail(n.campaign_id); },60); }
+  }
+
+  async function updateAlertsBadge(){
+    try{
+      var r=await api("get_my_notifications",{p_only_unread:true});
+      var n=(r && !r.error && Array.isArray(r.data))?r.data.length:0;
+      var a=document.querySelector('#nav a[data-page="alerts"]'); if(!a) return;
+      var b=a.querySelector(".ops-badge"); if(!b){ b=document.createElement("span"); b.className="ops-badge"; a.appendChild(b); }
+      if(n>0){ b.textContent=n>9?"9+":String(n); b.style.display=""; } else { b.style.display="none"; }
+    }catch(e){}
+  }
+
+  window.renderAlerts=function(){
+    if(!enabled) return '<div class="card"><h3>Alerts</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
+    return '<div id="opsAlerts" class="ci"><div class="card ci-intro"><h3>Alerts</h3><div class="muted">Everything that needs you — the same updates we send on WhatsApp and email, with a link straight to the action.</div></div>'
+      + '<div id="opsAlertsBody"><div class="card"><div class="muted">Loading…</div></div></div></div>';
+  };
+  async function loadAlerts(){
+    var body=document.getElementById("opsAlertsBody"); if(!body) return;
+    try{ var r=await api("get_my_notifications",{p_only_unread:false}); if(r.error) throw r.error; renderAlertsList(r.data||[]); }
+    catch(e){ body.innerHTML='<div class="card ci-err-inline">Couldn\'t load alerts: '+esc(e.message||e)+'</div>'; }
+  }
+  function renderAlertsList(list){
+    var body=document.getElementById("opsAlertsBody");
+    if(!list.length){ body.innerHTML='<div class="card"><div class="muted">No alerts yet. When something needs you, it\'ll show here.</div></div>'; return; }
+    body.innerHTML='<div class="card"><div class="ops-alist">'+list.map(function(n){
+      var cls="ops-alert"+(n.read?"":" unread")+(n.kind==="action_required"?" act":"");
+      return '<div class="'+cls+'" data-nid="'+esc(n.notification_id)+'">'
+        + '<div class="ops-alert-h"><b>'+esc(n.title)+'</b><span class="ci-hint">'+fmtDT(n.created_at)+'</span></div>'
+        + '<div class="ci-hint">'+esc(n.body)+'</div>'
+        + (n.action_route?'<div class="ci-evrow"><button class="btn sm" data-act="'+esc(n.notification_id)+'">'+esc(n.action_label||"Open")+'</button></div>':'')
+        + '</div>';
+    }).join("")+'</div></div>';
+    // open CTA → mark acted + route
+    body.querySelectorAll("[data-act]").forEach(function(btn){ btn.onclick=function(e){ e.stopPropagation();
+      var n=findNotif(list, btn.getAttribute("data-act")); if(!n) return;
+      api("mark_notification_acted",{p_id:n.notification_id}).then(function(){ updateAlertsBadge(); routeNotification(n); });
+    }; });
+    // row click → mark read
+    body.querySelectorAll(".ops-alert").forEach(function(row){ row.onclick=function(){
+      var id=row.getAttribute("data-nid"); if(row.classList.contains("unread")){ api("mark_notification_read",{p_id:id}).then(function(){ row.classList.remove("unread"); updateAlertsBadge(); }); }
+    }; });
+  }
+  function findNotif(list,id){ for(var i=0;i<list.length;i++) if(list[i].notification_id===id) return list[i]; return null; }
 
   /* ============================ 1. AGENCY OPERATIONS ============================ */
   var COLS = [["draft","Draft"],["creator_discovery","Creator discovery"],["invited","Creators invited"],
@@ -40,7 +107,12 @@
 
   window.renderAgencyOps = function(){
     if(!enabled) return '<div class="card"><h3>Campaign Operations</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
-    if(!isOperator) return '<div class="card"><h3>Campaign Operations</h3><div class="muted">Your account isn\'t an agency operator for the pilot. Ask the Geek team to add you.</div></div>';
+    if(!isOperator){
+      // brand / owning-org view: no pipeline board, but open individual campaigns from an Alert link
+      return '<div id="opsAgency" class="ci"><div class="card ci-intro"><h3>Campaigns</h3>'
+        + '<div class="muted">Open a campaign from your <b>Alerts</b> to review and confirm the creators we\'ve shortlisted for you.</div></div>'
+        + '<div id="opsDetail"></div></div>';
+    }
     return '<div id="opsAgency" class="ci">'
       + '<div class="card ci-intro"><div class="ci-mh"><h3>Campaign Operations</h3><button class="btn sm" id="opsNewCamp">Create campaign</button></div>'
       + '<div class="muted">Run barter campaigns end to end. Every stage change is recorded with owner, time and reason. No scores, no ranking.</div></div>'
@@ -49,6 +121,7 @@
       + '<div id="opsDetail"></div></div>';
   };
   async function loadAgencyOps(){
+    if(!isOperator) return;   // brand view loads a specific campaign via openCampaignDetail (from Alerts)
     var nb=document.getElementById("opsNewCamp"); if(nb) nb.onclick=toggleNewCampaign;
     try{ var r=await api("get_campaign_pipeline",{p_filters:{}}); if(r.error) throw r.error; renderBoard(r.data||{}); }
     catch(e){ document.getElementById("opsBoard").innerHTML='<div class="card ci-err-inline">Couldn\'t load pipeline: '+esc(e.message||e)+'</div>'; }
@@ -127,6 +200,7 @@
   }
   function renderCampaignDetail(d){
     var out=document.getElementById("opsDetail"); var c=d.campaign||{}, parts=d.participations||[], events=d.events||[];
+    var eligN=parts.filter(function(p){ return p.stage==='eligible'; }).length;
     // overview + campaign stage actions
     var nextCampaign={draft:"creator_discovery",creator_discovery:"in_execution",in_execution:"reporting",reporting:"completed"}[c.lifecycle_status];
     var overview='<div class="card"><div class="ci-mh"><h3>'+esc(c.name||"Campaign")+'</h3><span class="ci-pill ci-na">'+esc(LIFE[c.lifecycle_status]||c.lifecycle_status)+'</span></div>'
@@ -134,22 +208,30 @@
       + '<span>Comp: <b>'+esc(c.comp_type||"—")+'</b></span><span>Timeline: <b>'+fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on)+'</b></span>'
       + '<span>Product: <b>'+esc(c.product||"—")+'</b></span></div>'
       + (nextCampaign?'<button class="btn sm ghost" id="opsAdvCamp" data-to="'+nextCampaign+'" data-camp="'+esc(c.campaign_id)+'">Move campaign → '+esc(LIFE[nextCampaign])+'</button>':'')
-      + '<div class="ci-addrow" style="margin-top:8px"><input id="opsInviteId" placeholder="Creator identity ID (from matching)"><select id="opsInviteRole"><option value="creator">Creator</option><option value="ugc_creator">UGC</option><option value="ambassador">Ambassador</option></select><button class="btn sm" id="opsAddPart" data-camp="'+esc(c.campaign_id)+'">Add creator</button></div></div>';
+      + '<div class="ci-addrow" style="margin-top:8px"><input id="opsInviteId" placeholder="Creator identity ID (from matching)"><select id="opsInviteRole"><option value="creator">Creator</option><option value="ugc_creator">UGC</option><option value="ambassador">Ambassador</option></select><button class="btn sm" id="opsAddPart" data-camp="'+esc(c.campaign_id)+'">Add creator</button></div>'
+      + (eligN>0?'<button class="btn sm" id="opsSendBrand" data-camp="'+esc(c.campaign_id)+'" style="margin-top:8px">Send shortlist to brand ('+eligN+' eligible)</button>':'')
+      + '</div>';
     // creators + execution + per-participation actions
     var creators='<div class="card"><h4>Creators &amp; execution</h4>'+(parts.length?parts.map(function(p){
       var dl=(p.deliverables||[]);
       var sub=null; dl.forEach(function(x){ if(x.latest_submission) sub=x.latest_submission; });
       var acts='';
       if(p.stage==='shortlisted') acts='<button class="btn sm ghost" data-adv="'+p.participation_id+'" data-to="invited">Invite</button>';
+      else if(p.stage==='applied') acts='<button class="btn sm" data-screen-ok="'+p.participation_id+'">Mark eligible</button>'
+        + '<button class="btn sm ghost" data-screen-no="'+p.participation_id+'">Not eligible</button>';
+      else if(p.stage==='sent_to_brand') acts='<button class="btn sm" data-brand-ok="'+p.participation_id+'">Brand: confirm</button>'
+        + '<button class="btn sm ghost" data-brand-no="'+p.participation_id+'">Brand: decline</button>';
+      else if(p.stage==='brand_confirmed') acts='<button class="btn sm" data-issue="'+p.participation_id+'">Issue contract</button>';
       else if(p.stage==='content_submitted') acts='<button class="btn sm" data-approve="'+(sub?sub.submission_id:'')+'" data-dec="approved">Approve</button>'
         + '<button class="btn sm ghost" data-approve="'+(sub?sub.submission_id:'')+'" data-dec="changes_requested">Request changes</button>';
       else if(p.stage==='content_approved') acts='<button class="btn sm ghost" data-adv="'+p.participation_id+'" data-to="published">Mark live</button>';
       else if(p.stage==='published') acts='<button class="btn sm ghost" data-adv="'+p.participation_id+'" data-to="completed">Complete</button>';
+      var canShip=(p.stage==='accepted'||p.stage==='address_confirmed');
       return '<div class="ci-cardrow"><div class="ci-mh"><b>Creator '+esc(shortId(p.creator_identity_id))+'</b>'+spill(p.stage)+'</div>'
         + '<div class="ci-hint">Role: '+esc(p.role||"creator")+(p.shipment?(' · Shipment: '+esc(p.shipment.status)+(p.shipment.tracking?(' ('+esc(p.shipment.tracking)+')'):'')):'')+(p.reason?(' · Reason: '+esc(p.reason)):'')+'</div>'
         + '<div class="ci-hint">Deliverables: '+(dl.length?dl.map(function(x){return esc(vlabel("content_formats",x.format))+' ×'+esc(x.quantity||1)+' ['+esc(x.status)+']';}).join(", "):'—')+'</div>'
         + (sub?'<div class="ci-hint">Submission: <a href="'+esc(sub.content_url||"#")+'" target="_blank" rel="noopener">'+esc(sub.content_url||"link")+'</a></div>':'')
-        + (acts?'<div class="ci-evrow">'+acts+(p.stage==='accepted'?'<button class="btn sm ghost" data-ship="'+p.participation_id+'">Record shipment</button>':'')+'</div>':(p.stage==='accepted'?'<div class="ci-evrow"><button class="btn sm ghost" data-ship="'+p.participation_id+'">Record shipment</button></div>':''))
+        + (acts||canShip?'<div class="ci-evrow">'+acts+(canShip?'<button class="btn sm ghost" data-ship="'+p.participation_id+'">Record shipment</button>':'')+'</div>':'')
         + '</div>';
     }).join(""):'<div class="muted">No creators yet. Add creators from matching above.</div>')+'</div>';
     // activity ledger
@@ -164,7 +246,44 @@
     var add=document.getElementById("opsAddPart"); if(add) add.onclick=function(){ var id=val("opsInviteId"); if(!id){alert("Enter a creator identity ID");return;} api("add_campaign_participant",{p_campaign:add.getAttribute("data-camp"),p_identity:id,p_role:val("opsInviteRole")||null,p_match_result:null}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); };
     document.querySelectorAll("#opsDetail [data-adv]").forEach(function(b){ b.onclick=function(){ var reason=null; api("advance_participation",{p_participation:b.getAttribute("data-adv"),p_to:b.getAttribute("data-to"),p_reason:reason}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
     document.querySelectorAll("#opsDetail [data-approve]").forEach(function(b){ b.onclick=function(){ var dec=b.getAttribute("data-dec"); var reason=(dec!=='approved')?(prompt("Reason:")||""):null; if(dec!=='approved'&&!reason) return; api("approve_content",{p_submission:b.getAttribute("data-approve"),p_decision:dec,p_reason:reason}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
-    document.querySelectorAll("#opsDetail [data-ship]").forEach(function(b){ b.onclick=function(){ var prod=prompt("Product shipped:")||""; var trk=prompt("Tracking ref (optional):")||""; api("record_shipment",{p_participation:b.getAttribute("data-ship"),p_product:prod,p_courier:null,p_tracking:trk}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
+    document.querySelectorAll("#opsDetail [data-ship]").forEach(function(b){ b.onclick=function(){ var prod=prompt("Product shipped:")||""; var courier=prompt("Courier (e.g. DTDC / Amazon):")||""; var trk=prompt("Tracking ref (optional):")||""; api("record_shipment",{p_participation:b.getAttribute("data-ship"),p_product:prod,p_courier:courier||null,p_tracking:trk||null}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
+    // funnel: eligibility screening
+    document.querySelectorAll("#opsDetail [data-screen-ok]").forEach(function(b){ b.onclick=function(){ api("screen_participation",{p_participation:b.getAttribute("data-screen-ok"),p_eligible:true,p_reason:null}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
+    document.querySelectorAll("#opsDetail [data-screen-no]").forEach(function(b){ b.onclick=function(){ var reason=prompt("Why is this creator not eligible?")||""; if(!reason) return; api("screen_participation",{p_participation:b.getAttribute("data-screen-no"),p_eligible:false,p_reason:reason}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
+    // funnel: send shortlist to brand (bulk)
+    var sb2=document.getElementById("opsSendBrand"); if(sb2) sb2.onclick=function(){ api("send_shortlist_to_brand",{p_campaign:sb2.getAttribute("data-camp")}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); };
+    // funnel: brand confirm/decline
+    document.querySelectorAll("#opsDetail [data-brand-ok]").forEach(function(b){ b.onclick=function(){ api("brand_decide_participation",{p_participation:b.getAttribute("data-brand-ok"),p_confirm:true,p_reason:null}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
+    document.querySelectorAll("#opsDetail [data-brand-no]").forEach(function(b){ b.onclick=function(){ var reason=prompt("Reason for declining this creator:")||""; if(!reason) return; api("brand_decide_participation",{p_participation:b.getAttribute("data-brand-no"),p_confirm:false,p_reason:reason}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
+    // funnel: issue contract
+    document.querySelectorAll("#opsDetail [data-issue]").forEach(function(b){ b.onclick=function(){ openIssueContractModal(b.getAttribute("data-issue"), campId); }; });
+  }
+
+  // ---- operator: issue a contract to a brand-confirmed creator ----
+  function openIssueContractModal(part, campId){
+    var fmts=(VOCAB&&VOCAB.content_formats)||[{key:"reel",label:"Reel"}];
+    opsModal('<div class="ci-mh"><h3>Issue contract</h3><button class="wa-x" id="opsMx">×</button></div>'
+      + '<label class="wa-f"><span>Deliverable</span><select id="opsIcFmt">'+fmts.map(function(f){return '<option value="'+esc(f.key)+'">'+esc(f.label)+'</option>';}).join("")+'</select></label>'
+      + '<label class="wa-f"><span>Quantity</span><input id="opsIcQty" type="number" min="1" value="1"></label>'
+      + '<label class="wa-f"><span>Product</span><input id="opsIcProduct" placeholder="e.g. pet bed"></label>'
+      + '<label class="wa-f"><span>Ad rights (months)</span><input id="opsIcMonths" type="number" min="0" value="1"></label>'
+      + '<label class="cp-check"><input type="checkbox" id="opsIcCollab"> Include collaboration/whitelisting rights</label>'
+      + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsIcCancel">Cancel</button><button class="btn sm" id="opsIcSend">Issue contract</button></div>'
+      + '<div class="ci-hint cp-err-inline" id="opsIcErr"></div>');
+    document.getElementById("opsMx").onclick=closeModal; document.getElementById("opsIcCancel").onclick=closeModal;
+    document.getElementById("opsIcSend").onclick=function(){
+      var err=document.getElementById("opsIcErr"); err.textContent="";
+      var qty=parseInt(document.getElementById("opsIcQty").value,10)||1;
+      var payload={ deliverables:[{format:document.getElementById("opsIcFmt").value, quantity:qty}],
+        product:(document.getElementById("opsIcProduct").value||"").trim()||null,
+        ad_rights_months:parseInt(document.getElementById("opsIcMonths").value,10),
+        collab_rights:document.getElementById("opsIcCollab").checked };
+      var btn=this; btn.disabled=true; btn.textContent="Issuing…";
+      api("send_contract",{p_participation:part,p_payload:payload}).then(function(r){
+        if(r.error){ err.textContent=r.error.message||r.error; btn.disabled=false; btn.textContent="Issue contract"; return; }
+        closeModal(); openCampaignDetail(campId);
+      });
+    };
   }
 
   /* ============================ 2. CREATOR "MY CAMPAIGNS" ============================ */
@@ -177,7 +296,11 @@
     try{ var r=await api("get_my_campaigns"); if(r.error) throw r.error; renderMine(r.data||[]); }
     catch(e){ document.getElementById("opsMineBody").innerHTML='<div class="card ci-err-inline">Couldn\'t load: '+esc(e.message||e)+'</div>'; }
   }
-  function mineGroup(stage){ if(['shortlisted','invited'].indexOf(stage)>=0) return 'Upcoming'; if(['completed','rejected','dropped'].indexOf(stage)>=0) return 'Completed'; return 'Active'; }
+  function mineGroup(stage){
+    if(['shortlisted','invited','applied','eligible','sent_to_brand'].indexOf(stage)>=0) return 'Upcoming';
+    if(['completed','rejected','dropped','ineligible','brand_declined'].indexOf(stage)>=0) return 'Completed';
+    return 'Active';
+  }
   function renderMine(list){
     if(!list.length){ document.getElementById("opsMineBody").innerHTML='<div class="card"><div class="muted">No campaigns yet. When the Geek team invites you, they\'ll appear here.</div></div>'; return; }
     var groups={Upcoming:[],Active:[],Completed:[]}; list.forEach(function(c){ groups[mineGroup(c.stage)].push(c); });
@@ -189,6 +312,9 @@
     var dl=(c.deliverables||[]);
     var acts='';
     if(c.stage==='invited') acts='<button class="btn sm" data-accept="'+c.participation_id+'">Accept</button><button class="btn sm ghost" data-reject="'+c.participation_id+'">Reject</button>';
+    else if(c.stage==='contract_sent') acts='<button class="btn sm" data-contract="'+c.participation_id+'">Review &amp; sign contract</button>';
+    else if(c.stage==='contract_signed') acts='<button class="btn sm" data-address="'+c.participation_id+'">Confirm delivery address</button>';
+    else if(c.stage==='content_approved') acts='<button class="btn sm" data-post="'+c.participation_id+'">Post from the app</button>';
     else if(['product_sent','content_created','changes_requested'].indexOf(c.stage)>=0 && dl.length) acts='<button class="btn sm" data-upload="'+(dl[0].deliverable_id)+'">Upload content link</button>';
     return '<div class="card ci-match"><div class="ci-mh"><h4>'+esc(c.campaign||"Campaign")+' <span class="ci-id">'+esc(c.brand||"")+'</span></h4>'+spill(c.stage)+'</div>'
       + '<div class="ci-meta"><span>Product: <b>'+esc(c.product||"—")+'</b></span><span>Comp: <b>'+esc(c.comp_type||"—")+'</b></span><span>Deadline: <b>'+fmtDate(c.deadline)+'</b></span></div>'
@@ -202,6 +328,71 @@
     document.querySelectorAll("#opsMine [data-accept]").forEach(function(b){ b.onclick=function(){ api("respond_to_campaign",{p_participation:b.getAttribute("data-accept"),p_accept:true,p_reason:null}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-reject]").forEach(function(b){ b.onclick=function(){ var reason=prompt("Reason for declining:")||""; if(!reason) return; api("respond_to_campaign",{p_participation:b.getAttribute("data-reject"),p_accept:false,p_reason:reason}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-upload]").forEach(function(b){ b.onclick=function(){ var url=prompt("Paste your content link (e.g. Instagram post URL):")||""; if(!url) return; var note=prompt("Note / question for the Geek team (optional):")||""; api("submit_content",{p_deliverable:b.getAttribute("data-upload"),p_content_url:url,p_note:note}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
+    document.querySelectorAll("#opsMine [data-contract]").forEach(function(b){ b.onclick=function(){ openContractModal(b.getAttribute("data-contract")); }; });
+    document.querySelectorAll("#opsMine [data-address]").forEach(function(b){ b.onclick=function(){ openAddressModal(b.getAttribute("data-address")); }; });
+    document.querySelectorAll("#opsMine [data-post]").forEach(function(b){ b.onclick=function(){ if(typeof currentPage!=="undefined"){ currentPage="mediakit"; } if(typeof renderShell==="function") renderShell(); }; });
+  }
+
+  // ---- creator: review + sign contract ----
+  async function openContractModal(part){
+    var ov=opsModal('<div class="ci-mh"><h3>Your contract</h3><button class="wa-x" id="opsMx">×</button></div><div id="opsCtBody"><div class="muted">Loading…</div></div>');
+    document.getElementById("opsMx").onclick=closeModal;
+    try{
+      var r=await api("get_my_contract",{p_participation:part}); if(r.error) throw r.error; var k=r.data;
+      if(!k){ document.getElementById("opsCtBody").innerHTML='<div class="ci-err-inline">No contract has been issued yet.</div>'; return; }
+      var dl=(k.deliverables||[]);
+      document.getElementById("opsCtBody").innerHTML=''
+        + '<div class="ci-meta"><span>Product: <b>'+esc(k.product||"—")+'</b></span><span>Ad rights: <b>'+esc(k.ad_rights_months||1)+' month(s)</b></span>'
+        + '<span>Until: <b>'+fmtDate(k.ad_rights_until)+'</b></span><span>Collab rights: <b>'+(k.collab_rights?"Yes":"No")+'</b></span></div>'
+        + '<div class="ci-hint" style="margin-top:8px">Deliverables: '+(dl.length?dl.map(function(x){return esc((x.format||x.content_format||"content"))+' ×'+esc(x.quantity||1);}).join(", "):'—')+'</div>'
+        + '<label class="cp-check" style="margin-top:12px"><input type="checkbox" id="opsAsci"> I have read and will follow the <b>ASCI</b> influencer-advertising guidelines, and I agree to the ad rights ('+esc(k.ad_rights_months||1)+' month) and deliverables above.</label>'
+        + '<label class="wa-f"><span>Type your full name to sign</span><input id="opsSig" placeholder="e.g. Asha Kumar"></label>'
+        + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsCtCancel">Cancel</button><button class="btn sm" id="opsCtSign">Sign contract</button></div>'
+        + '<div class="ci-hint cp-err-inline" id="opsCtErr"></div>';
+      document.getElementById("opsCtCancel").onclick=closeModal;
+      document.getElementById("opsCtSign").onclick=function(){
+        var err=document.getElementById("opsCtErr"); err.textContent="";
+        var asci=document.getElementById("opsAsci").checked; var sig=(document.getElementById("opsSig").value||"").trim();
+        if(!asci){ err.textContent="Please acknowledge the ASCI guidelines to sign."; return; }
+        if(!sig){ err.textContent="Please type your name to sign."; return; }
+        var btn=this; btn.disabled=true; btn.textContent="Signing…";
+        api("sign_contract",{p_participation:part,p_signature_name:sig,p_asci_ack:true}).then(function(r2){
+          if(r2.error){ err.textContent=r2.error.message||r2.error; btn.disabled=false; btn.textContent="Sign contract"; return; }
+          closeModal(); loadMyCampaigns(); updateAlertsBadge();
+        });
+      };
+    }catch(e){ var bd=document.getElementById("opsCtBody"); if(bd) bd.innerHTML='<div class="ci-err-inline">Couldn\'t load the contract: '+esc(e.message||e)+'</div>'; }
+  }
+
+  // ---- creator: confirm delivery address (choose from saved addresses) ----
+  async function openAddressModal(part){
+    var ov=opsModal('<div class="ci-mh"><h3>Confirm delivery address</h3><button class="wa-x" id="opsMx">×</button></div><div id="opsAdBody"><div class="muted">Loading your addresses…</div></div>');
+    document.getElementById("opsMx").onclick=closeModal;
+    try{
+      var r=await api("get_my_profile"); var prof=(r && !r.error)?r.data:null; var addrs=(prof&&prof.addresses)||[];
+      var body=document.getElementById("opsAdBody");
+      if(!addrs.length){ body.innerHTML='<div class="ci-hint">You have no saved addresses yet. Add one in your profile, then come back.</div>'
+        + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsAdCancel">Close</button><button class="btn sm" id="opsAdProfile">Go to profile</button></div>';
+        document.getElementById("opsAdCancel").onclick=closeModal;
+        document.getElementById("opsAdProfile").onclick=function(){ closeModal(); if(typeof currentPage!=="undefined"){ currentPage="profile"; } if(typeof renderShell==="function") renderShell(); };
+        return;
+      }
+      body.innerHTML='<div class="wa-f"><span>Ship my product to</span><select id="opsAddrSel">'+addrs.map(function(a){
+          var label=[a.line1,a.city,a.postal_code].filter(Boolean).join(", ")||"Address";
+          return '<option value="'+esc(a.address_id)+'">'+esc(label)+'</option>';
+        }).join("")+'</select></div>'
+        + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsAdCancel">Cancel</button><button class="btn sm" id="opsAdSave">Confirm address</button></div>'
+        + '<div class="ci-hint cp-err-inline" id="opsAdErr"></div>';
+      document.getElementById("opsAdCancel").onclick=closeModal;
+      document.getElementById("opsAdSave").onclick=function(){
+        var err=document.getElementById("opsAdErr"); err.textContent=""; var aid=document.getElementById("opsAddrSel").value;
+        var btn=this; btn.disabled=true; btn.textContent="Confirming…";
+        api("confirm_campaign_address",{p_participation:part,p_address_id:aid}).then(function(r2){
+          if(r2.error){ err.textContent=r2.error.message||r2.error; btn.disabled=false; btn.textContent="Confirm address"; return; }
+          closeModal(); loadMyCampaigns(); updateAlertsBadge();
+        });
+      };
+    }catch(e){ var bd=document.getElementById("opsAdBody"); if(bd) bd.innerHTML='<div class="ci-err-inline">Couldn\'t load addresses: '+esc(e.message||e)+'</div>'; }
     document.querySelectorAll("#opsMine [data-fb]").forEach(function(b){ b.onclick=function(){ submitCampFeedback('creator', b.getAttribute("data-fb"), {
       brief_clear: fv(b,"fbClear"), execution_smooth: fv(b,"fbSmooth"), participate_again: fv(b,"fbAgain") }, b); }; });
   }
@@ -284,7 +475,8 @@
     catch(e){ if(msg) msg.textContent="Couldn't submit: "+(e.message||e); }
   }
 
-  window.ciOps={ boot:boot, loadAgencyOps:loadAgencyOps, loadMyCampaigns:loadMyCampaigns, loadOnboarding:loadOnboarding, loadBrandSetup:loadBrandSetup };
+  window.ciOps={ boot:boot, loadAgencyOps:loadAgencyOps, loadMyCampaigns:loadMyCampaigns, loadOnboarding:loadOnboarding, loadBrandSetup:loadBrandSetup,
+    loadAlerts:loadAlerts, updateAlertsBadge:updateAlertsBadge, openCampaignDetail:openCampaignDetail };
 
   var tries=0, t=setInterval(function(){ tries++;
     if(window.sb && window.Auth && Auth.profile){ clearInterval(t); boot(); }

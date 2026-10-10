@@ -31,6 +31,7 @@ const ROLES = {
 
 const NAV_META = {
   messages:{ic:"💬",label:"Messages"},
+  alerts:{ic:"🔔",label:"Alerts"},
   dashboard:{ic:"🏠",label:"Dashboard"}, brands:{ic:"🏢",label:"Brand CRM"},
   portfolio:{ic:"🗂",label:"Portfolio"}, roster:{ic:"🎬",label:"My Roster"},
   campaigns:{ic:"📣",label:"Campaigns"}, marketplace:{ic:"🛒",label:"Marketplace"},
