@@ -55,6 +55,8 @@
       var v=await sbc().auth.verifyOtp({ token_hash:d.token_hash, type:"magiclink" });
       if(v.error) throw v.error;
       msg.textContent="Signed in ✓";
+      if(window.Auth) await Auth.currentSession();
+      if(window.Tracker) Tracker.security("login", { method: "whatsapp_otp" });
       closeOverlay();
       var authRoot=document.getElementById("authRoot"); if(authRoot){ authRoot.classList.remove("open"); authRoot.innerHTML=""; }
       if(window.Auth) await Auth.currentSession();

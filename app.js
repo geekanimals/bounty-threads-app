@@ -80,8 +80,45 @@ function renderMe(){
   }
   $("#me").textContent = initials;
   $("#me").title = title;
+  applyIgAvatar();
   // Badge = count of real pending tasks (set by the dashboard loader); 0 until known.
   $("#notifCount").textContent = window.__geekTasks != null ? window.__geekTasks : 0;
+}
+
+// Creator's live Instagram profile picture in the top-right avatar and the sidebar corner.
+// Kept fresh by instagram-media-sync (profile_picture_url is refreshed on every sync).
+let _igAvatarUrl = null, _igAvatarAt = 0;
+async function applyIgAvatar(force){
+  if(!(window.Auth && Auth.profile && window.sb)) return;
+  if(!force && _igAvatarUrl && Date.now()-_igAvatarAt < 60000){ paintIgAvatar(); return; }
+  try{
+    const { data } = await sb.from("social_accounts").select("profile_picture_url,username").eq("platform","instagram")
+      .eq("member_id", Auth.profile.id).limit(1);
+    const row = data && data[0];
+    _igAvatarUrl = row && row.profile_picture_url || null; _igAvatarAt = Date.now();
+    window.__igUsername = row && row.username || null;
+  }catch(e){}
+  paintIgAvatar();
+}
+function paintIgAvatar(){
+  const me = document.getElementById("me");
+  if(me && _igAvatarUrl){
+    me.textContent = ""; me.style.backgroundImage = `url("${_igAvatarUrl.replace(/"/g,"%22")}")`;
+    me.style.backgroundSize = "cover"; me.style.backgroundPosition = "center";
+  }
+  const box = document.querySelector(".org-box");
+  if(box){
+    let img = document.getElementById("sideAvatar");
+    if(_igAvatarUrl){
+      if(!img){ img = document.createElement("img"); img.id = "sideAvatar"; img.alt = "";
+        img.style.cssText = "width:34px;height:34px;border-radius:50%;object-fit:cover;flex:0 0 auto;margin-right:8px";
+        box.insertBefore(img, box.firstChild); }
+      if(img.getAttribute("src") !== _igAvatarUrl) img.src = _igAvatarUrl;
+      img.onerror = ()=>{ img.remove(); };
+    }
+  }
+  const who = document.getElementById("whoLabel");
+  if(who && window.__igUsername) who.textContent = "@" + window.__igUsername;
 }
 
 /* ---------- Pages ---------- */
@@ -1862,6 +1899,7 @@ async function refreshMediaKit(force){
       const y = window.scrollY; hw.innerHTML = headHtml; _mkHeadHtml = headHtml; wireMkHead(acct); window.scrollTo(0, y);
     }
     if(sw && storiesHtml !== _mkStoriesHtml){ sw.innerHTML = storiesHtml; _mkStoriesHtml = storiesHtml; }
+    if(acct.profile_picture_url && acct.profile_picture_url !== _igAvatarUrl){ _igAvatarUrl = acct.profile_picture_url; _igAvatarAt = Date.now(); window.__igUsername = acct.username || window.__igUsername; paintIgAvatar(); }
   }
   mkStamp();
 }
@@ -2078,6 +2116,7 @@ function wireMkComposer(){
       const { data, error } = await sb.functions.invoke("instagram-publish", { body });
       if(error) throw new Error(await fnError(error));
       if(data && data.error) throw new Error(data.error);
+      if(window.Tracker) Tracker.security("instagram_publish", { kind, items: media.length, permalink: (data && data.permalink) || null });
       let note = K.ok + (data && data.carousel ? " (carousel)" : "");
       if(collabs.length && kind!=="story") note += " · collaborator invite sent";
       const skipped = (data && data.skipped_tags) || [], done = tagsList.filter(u=>!skipped.includes(u));
@@ -2110,7 +2149,7 @@ function wireMkComposer(){
 
 /* ================= ADMIN (platform team — approve agency signups) ================= */
 /* ================= SUPER ADMIN CONSOLE ================= */
-const ADMIN_TABS = [["overview","Overview"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["approvals","Approvals"],["admins","Super admins"]];
+const ADMIN_TABS = [["overview","Overview"],["activity","Creator activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["approvals","Approvals"],["admins","Super admins"]];
 const ADMIN_TABLES = [
   ["members","Members"],["creators","Creators"],["campaigns","Campaigns"],["barter_items","Barter items"],
   ["applications","Applications"],["invites","Invites"],["irm_contacts","IRM contacts"],
@@ -2120,6 +2159,38 @@ const ADMIN_EDITABLE = new Set(["members","creators","campaigns","barter_items",
 const ADMIN_READONLY_FIELDS = new Set(["id","org_id","created_at","updated_at"]);
 let _adminTab = "overview";
 let _adminDataTable = "creators";
+
+// Super Admin → Creator activity: who is on the platform, from where, for how long, doing what.
+async function adminActivity(body){
+  body.innerHTML = `<div class="card"><div class="muted">Loading activity…</div></div>`;
+  const { data, error } = await sb.rpc("admin_activity_summary", { p_days: 30 });
+  if(error){ body.innerHTML = `<div class="card"><div class="muted">Couldn't load: ${esc(error.message)}</div></div>`; return; }
+  const rows = data || [];
+  const ago = t=>{ if(!t) return "—"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
+  body.innerHTML = `<div class="card"><h3>Creator activity · last 30 days</h3>
+    <p class="muted" style="font-size:12px;margin-bottom:10px">Security events (sign-ins, Instagram connect, publish, apply) are always logged. Pages &amp; time spent appear only for people who accepted analytics cookies. Locations are approximate (from IP).</p>
+    ${rows.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Person</th><th>Role</th><th>Last seen</th><th>Sessions</th><th>Time</th><th>Page views</th><th>Last IP</th><th>Location</th><th>Consent</th><th>Last action</th><th></th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td><b>${esc(r.name||r.email||"—")}</b>${r.ig_username?`<div class="muted" style="font-size:12px">@${esc(r.ig_username)}</div>`:""}</td>
+        <td>${esc(r.role||"—")}</td><td>${ago(r.last_seen)}</td><td>${r.sessions||0}</td><td>${r.minutes||0} min</td><td>${r.page_views||0}</td>
+        <td><code>${esc(r.last_ip||"—")}</code></td><td>${esc([r.last_city,r.last_region,r.last_country].filter(Boolean).join(", ")||"—")}</td>
+        <td>${r.consent==="all"?'<span class="tag good">all</span>':r.consent==="essential"?'<span class="tag warn">essential</span>':'—'}</td>
+        <td>${esc(r.last_event||"—")}</td><td><button class="mini-btn" data-acttl="${esc(r.member_id)}">Timeline</button></td></tr>`).join("")}
+    </tbody></table></div>` : `<div class="muted" style="padding:8px">No activity yet.</div>`}</div><div id="actTimeline"></div>`;
+  body.querySelectorAll("[data-acttl]").forEach(b=> b.onclick = ()=> adminActivityTimeline(b.dataset.acttl, rows.find(r=>r.member_id===b.dataset.acttl)));
+}
+async function adminActivityTimeline(member, row){
+  const box = document.getElementById("actTimeline"); if(!box) return;
+  box.innerHTML = `<div class="card"><div class="muted">Loading timeline…</div></div>`;
+  const { data, error } = await sb.rpc("admin_activity_timeline", { p_member: member, p_limit: 300 });
+  if(error){ box.innerHTML = `<div class="card"><div class="muted">${esc(error.message)}</div></div>`; return; }
+  const fmt = t=> new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  box.innerHTML = `<div class="card"><h3>Timeline — ${esc((row&&(row.name||row.email))||"")}</h3><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>When</th><th>Type</th><th>Event</th><th>Page</th><th>Details</th><th>IP</th><th>Location</th><th>Device</th></tr></thead><tbody>
+    ${(data||[]).map(e=>`<tr><td>${fmt(e.created_at)}</td><td>${esc(e.kind)}</td><td><b>${esc(e.event)}</b>${e.duration_ms?` <span class="muted">${Math.round(e.duration_ms/1000)}s</span>`:""}</td><td>${esc(e.page||"")}</td>
+      <td style="max-width:260px;font-size:12px">${esc(JSON.stringify(e.detail||{})==="{}"?"":JSON.stringify(e.detail))}</td><td><code>${esc(e.ip||"")}</code></td>
+      <td>${esc([e.city,e.region,e.country].filter(Boolean).join(", "))}</td><td style="max-width:200px;font-size:11px" class="muted">${esc((e.user_agent||"").slice(0,90))}</td></tr>`).join("")}
+  </tbody></table></div></div>`;
+  box.scrollIntoView({behavior:"smooth"});
+}
 
 function renderAdmin(){
   let html = pageHead("Super Admin","Full cross-workspace control — every record, every change, with timestamps.");
@@ -2132,7 +2203,7 @@ function loadAdmin(){
   document.querySelectorAll("[data-atab]").forEach(b=> b.onclick = ()=>{ _adminTab = b.dataset.atab; currentPage="admin"; renderShell(); });
   const body = document.getElementById("adminBody");
   if(!body || !window.sb) return;
-  ({ overview:adminOverview, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+  ({ overview:adminOverview, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
 }
 
 /* System check — live-verifies the deployed database matches the code (tables, columns, RPCs).
@@ -2532,9 +2603,11 @@ async function finishInstagram(code){
       if(error) throw new Error(await fnError(error));
       if(data && data.error) throw new Error(data.error);
       localStorage.setItem("geekos_conn_instagram","1");
-      alert("Instagram connected ✅ — your media kit is ready.");
+      if(window.Tracker) Tracker.security("instagram_connected", { merged: !!(data && data.merged) });
       if(window.Auth) await Auth.currentSession(); // startApp skipped it while __igLoggingIn was set
-      currentPage = "mediakit"; if(typeof renderShell==="function") renderShell();
+      currentPage = "mediakit";
+      if(window.__osBooted){ if(typeof renderShell==="function") renderShell(); }
+      else if(typeof bootOS==="function") bootOS();
       return;
     }
 
@@ -2887,6 +2960,7 @@ function renderContent(){
 }
 
 function renderShell(){
+  if(window.Tracker) Tracker.page(currentPage);
   renderNav(); renderMe(); renderContent();
 }
 
@@ -2992,9 +3066,44 @@ function showPending(){
   const b = document.getElementById("pendingSignout"); if(b) b.onclick = ()=> window.Auth && Auth.signOut();
 }
 
-function bootOS(){
+// Creator onboarding, step 2 of 2: an Instagram professional account is required before the OS opens
+// (step 1 is the WhatsApp OTP). Their media kit is built from it and campaigns are matched on it.
+async function creatorHasInstagram(){
+  try{
+    const { data, error } = await sb.from("social_accounts").select("member_id").eq("platform","instagram")
+      .eq("member_id", Auth.profile.id).limit(1);
+    if(error) return true;          // never lock a creator out on a read hiccup
+    return !!(data && data.length);
+  }catch(e){ return true; }
+}
+function showInstagramGate(){
+  const root = document.getElementById("authRoot"); if(!root) return;
+  root.classList.add("open");
+  root.innerHTML = `<div class="auth-wrap"><div class="auth-card" style="max-width:460px;margin:auto">
+    <div class="auth-brand"><div class="brand-mark">G</div><div><div class="brand-name">Almost there</div><div class="muted">Step 2 of 2 — connect Instagram</div></div></div>
+    <p style="margin:6px 0 12px">Connect your Instagram <b>Business or Creator</b> account. We build your media kit from it, show brands your real stats and let you publish posts, reels &amp; stories from here.</p>
+    <ul class="muted" style="font-size:13px;margin:0 0 14px 18px;line-height:1.6">
+      <li>Profile, followers, posts &amp; insights (read-only)</li>
+      <li>Publish only when <b>you</b> press Publish</li>
+      <li>We never see your Instagram password</li>
+    </ul>
+    <button class="ig-btn" id="gateIg"><span class="ig-ic">📸</span> Connect Instagram</button>
+    <div class="muted" style="font-size:12px;margin-top:10px">Personal account? In Instagram: Settings → Account type and tools → Switch to professional account (free, 1 minute).</div>
+    <button class="btn ghost" id="gateSignout" style="margin-top:14px;width:100%">Sign out</button>
+  </div></div>`;
+  document.getElementById("gateIg").onclick = ()=>{ if(window.Tracker) Tracker.security("instagram_connect_start"); connectInstagram(); };
+  document.getElementById("gateSignout").onclick = ()=> window.Auth && Auth.signOut();
+}
+
+async function bootOS(){
   // Gate: agency-side accounts awaiting platform approval don't enter the OS.
   if(window.Auth && Auth.profile && Auth.profile.status === "pending"){ showPending(); return; }
+  if(window.Auth && Auth.profile && Auth.profile.role === "creator"){
+    if(!(await creatorHasInstagram())){ showInstagramGate(); return; }
+    const root = document.getElementById("authRoot"); if(root){ root.classList.remove("open"); root.innerHTML = ""; }
+    if(!window.__osBooted && !new URLSearchParams(location.search).get("go")) currentPage = "mediakit";
+  }
+  if(window.Tracker) Tracker.start();
   // Seed the signed-in user's role into the shell.
   if(window.Auth && Auth.profile && ROLES[Auth.profile.role]){
     currentRole = Auth.profile.role;
@@ -3006,6 +3115,7 @@ function bootOS(){
 
 /* ---------- Wire up ---------- */
 function init(){
+  window.__osBooted = true;
   initRoles();
   // deep link from a WhatsApp / email push: app.html?go=<page> opens that page (then the param is dropped)
   const go = new URLSearchParams(location.search).get("go");
@@ -3027,7 +3137,7 @@ function init(){
 
 function wireSignOut(){
   const btn = $("#signOutBtn");
-  if(btn) btn.onclick = ()=> window.Auth && Auth.signOut();
+  if(btn) btn.onclick = ()=>{ if(window.Tracker) Tracker.security("sign_out"); setTimeout(()=> window.Auth && Auth.signOut(), 150); };
   // Show the signed-in org/name in the sidebar footer if present.
   const label = $("#orgLabel");
   if(label && window.Auth && Auth.profile){

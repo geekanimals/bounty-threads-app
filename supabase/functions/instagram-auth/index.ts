@@ -76,12 +76,22 @@ Deno.serve(async (req) => {
     const { data: member } = await admin
       .from("members").select("org_id").eq("id", user.id).maybeSingle();
 
-    // One Instagram account maps to one login. Reject a second login that claims it.
+    // One Instagram account maps to one login. If another login holds it and that login is an old
+    // Instagram-only placeholder (creators used to sign in with Instagram; login is WhatsApp-only now),
+    // move it over to this account; otherwise refuse.
+    const ids = [...new Set([igUserId, String(shortData.user_id)].filter(Boolean))];
     const { data: linked, error: lErr } = await admin
       .from("social_accounts").select("member_id")
-      .eq("ig_user_id", igUserId).eq("platform", "instagram").neq("member_id", user.id).limit(1);
+      .in("ig_user_id", ids).eq("platform", "instagram").neq("member_id", user.id).limit(5);
     if (lErr) return json({ error: "Could not check existing connections", detail: lErr.message }, 500);
-    if (linked?.length) return json({ error: "This Instagram account is already connected to another login." }, 409);
+    let merged = false;
+    for (const row of linked ?? []) {
+      const { data: m, error: mErr } = await admin.rpc("ci_merge_ig_placeholder", { p_old: row.member_id, p_new: user.id });
+      if (mErr || !m?.merged) {
+        return json({ error: "This Instagram account is already connected to another login. Contact support if it's yours." }, 409);
+      }
+      merged = true;
+    }
 
     const accountRow = {
       org_id: member?.org_id ?? null,
@@ -118,7 +128,7 @@ Deno.serve(async (req) => {
     }, { onConflict: "member_id,platform" });
 
     // Never return the token to the browser.
-    return json({ ok: true, profile: accountRow });
+    return json({ ok: true, merged, profile: accountRow });
   } catch (e) {
     return json({ error: String(e) }, 500);
   }

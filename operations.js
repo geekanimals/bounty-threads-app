@@ -378,6 +378,7 @@
     try{
       var r=await apiCreator("apply_to_campaign",{p_campaign:id});
       if(r.error) throw r.error;
+      if(window.Tracker) Tracker.security("campaign_apply", { campaign_id: id, campaign: name });
       loadMyCampaigns(); if(typeof updateAlertsBadge==="function") updateAlertsBadge();
     }catch(e){
       alert((e&&e.message)||e); btn.disabled=false; btn.textContent="Apply";
@@ -467,6 +468,7 @@
         if(!asci){ err.textContent="Please acknowledge the ASCI guidelines to sign."; return; }
         if(!sig){ err.textContent="Please type your name to sign."; return; }
         var btn=this; btn.disabled=true; btn.textContent="Signing…";
+        if(window.Tracker) Tracker.security("contract_sign", { participation_id: part });
         api("sign_contract",{p_participation:part,p_signature_name:sig,p_asci_ack:true}).then(function(r2){
           if(r2.error){ err.textContent=r2.error.message||r2.error; btn.disabled=false; btn.textContent="Sign contract"; return; }
           closeModal(); loadMyCampaigns(); updateAlertsBadge();
