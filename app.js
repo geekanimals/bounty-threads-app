@@ -2695,9 +2695,9 @@ function wireMkComposer(){
 
 /* ================= ADMIN (platform team — approve agency signups) ================= */
 /* ================= SUPER ADMIN CONSOLE ================= */
-const ADMIN_TABS = [["overview","Overview"],["users","👥 All users"],["approvals","✅ Account approvals"],["campaigns","📣 All campaigns"],["applications","📝 Applications"],["activity","📈 Activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["admins","Super admins"]];
+const ADMIN_TABS = [["overview","🏠 Overview"],["users","👥 All users"],["approvals","✅ Account approvals"],["campaigns","📣 All campaigns"],["applications","📝 Applications"],["activity","📈 Activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["admins","Super admins"]];
 const ADMIN_TABLES = [
-  ["members","Members"],["creators","Creators"],["campaigns","Campaigns"],["barter_items","Barter items"],
+  ["members","Members (all accounts)"],["creators","Agency creator rosters"],["campaigns","Campaigns"],["barter_items","Barter items"],
   ["applications","Applications"],["invites","Invites"],["irm_contacts","IRM contacts"],
   ["story_deals","Celebrity deals"],["dream_plans","Dream plans"],["org_profiles","Org profiles"]
 ];
@@ -2901,17 +2901,59 @@ async function runSystemCheck(){
         <td class="muted" style="font-size:12px">${esc((r.detail||"").slice(0,80))}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
-async function adminOverview(body){
-  body.innerHTML = `<div class="muted" style="padding:16px">Loading…</div>`;
-  const { data, error } = await sb.rpc("admin_overview");
-  if(error){ body.innerHTML = adminErr(error); return; }
-  const o = data||{};
-  const card = (v,l)=>`<div class="ws-stat"><b>${fmtNum(v)}</b><span>${l}</span></div>`;
-  body.innerHTML = `<div class="ws-stats" style="grid-template-columns:repeat(4,1fr)">
-      ${card(o.orgs,"Workspaces")}${card(o.members,"Members")}${card(o.creators,"Creators")}${card(o.campaigns,"Campaigns")}
-      ${card(o.barter,"Barter items")}${card(o.applications,"Applications")}${card(o.pending,"Pending approvals")}${card(o.changes_24h,"Changes (24h)")}</div>
-    <div class="ai-suggest"><span class="spark">🛡</span><div class="s-body"><b>${fmtNum(o.admins)} super admin${o.admins==1?"":"s"}</b>
-      <p>Super admins can read, edit and delete any record across every workspace. Every change is written to the audit log with a timestamp and the actor. Use the tabs above to browse data, review the audit trail, approve signups, or manage admins.</p></div></div>`;
+let _ovTimer = null, _ovSig = "";
+async function adminOverview(body, silent){
+  if(!silent) body.innerHTML = `<div class="muted" style="padding:16px">Loading…</div>`;
+  const { data, error } = await sb.rpc("admin_dashboard");
+  if(error){                                    // older database: fall back to the basic counters
+    const o = (await sb.rpc("admin_overview")).data || {};
+    const card = (v,l)=>`<div class="ws-stat"><b>${fmtNum(v)}</b><span>${l}</span></div>`;
+    body.innerHTML = `<div class="ws-stats" style="grid-template-columns:repeat(4,1fr)">${card(o.orgs,"Workspaces")}${card(o.members,"Members")}${card(o.campaigns,"Campaigns")}${card(o.applications,"Applications")}</div>`;
+    return;
+  }
+  const sig = JSON.stringify(data); if(silent && sig===_ovSig) return; _ovSig = sig;
+  const d = data||{}, t = d.todo||{}, pe = d.people||{}, c = d.campaigns||{};
+  const todo = [
+    ["accounts_pending","🏢","Agency / brand accounts waiting for approval","approvals"],
+    ["applications_pending","📝","Creator applications to approve or decline","applications"],
+    ["campaigns_awaiting","📣","Campaigns waiting for approval","campaigns"],
+    ["contracts_to_send","✍️","Approved creators — send contract","@campaignops"],
+    ["content_to_review","🎬","Content submitted — review","@campaignops"],
+    ["creators_incomplete","👤","Creators who haven't finished their profile","users"]];
+  const open = todo.filter(x=>Number(t[x[0]])>0);
+  const ago = s=>{ const m=Math.round((Date.now()-new Date(s).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
+  const EV = { login:"signed in", sign_out:"signed out", consent:"chose cookies", campaign_apply:"applied to a campaign", instagram_connect:"connected Instagram",
+               profile_completed:"completed their profile", official_email_verified:"verified official email", campaign_create:"created a campaign",
+               campaign_edit:"edited a campaign", application_approve:"approved an application", application_decline:"declined an application",
+               publish:"published on Instagram", contract_sign:"signed a contract" };
+  const stat = (v,l,tab)=>`<div class="ws-stat"${tab?` data-ovgo="${tab}" style="cursor:pointer"`:""}><b>${fmtNum(v)}</b><span>${l}</span></div>`;
+  body.innerHTML = `
+    <div class="card" style="margin-bottom:14px"><h3 style="margin-top:0">⚡ Needs your attention</h3>
+      ${open.length ? `<div class="list">${open.map(([k,ic,l,tab])=>`<div class="row" data-ovgo="${tab}" style="cursor:pointer"><span class="dot warn"></span>
+          <div class="r-main"><div class="r-title">${ic} ${esc(l)}</div></div><span class="tag warn">${fmtNum(t[k])}</span><button class="mini-btn">Open →</button></div>`).join("")}</div>`
+        : `<div class="muted" style="padding:6px">All clear — nothing waiting on you right now ✅</div>`}</div>
+    <div class="ci-sub">People</div>
+    <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
+      ${stat(pe.total,"Total users","users")}${stat(pe.creators,"Creators","users")}${stat(pe.agencies,"Agencies","users")}${stat(pe.brands,"Brands","users")}
+      ${stat(pe.instagram_connected,"Instagram connected","users")}${stat(pe.joined_today,"Joined today","users")}${stat(pe.signed_in_today,"Signed in today","activity")}</div>
+    <div class="ci-sub" style="margin-top:14px">Campaigns</div>
+    <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
+      ${stat(c.total,"Campaigns","campaigns")}${stat(c.live,"Open now","campaigns")}${stat(c.paid,"💰 Paid","campaigns")}${stat(c.barter,"🎁 Barter","campaigns")}
+      ${stat(c.barter_paid,"Barter + Paid","campaigns")}${stat(c.applications,"Applications","applications")}${stat(c.approved,"Creators approved","applications")}</div>
+    <div class="card" style="margin-top:14px"><h3 style="margin-top:0">🕒 Live activity <span class="muted" style="font-size:12px;font-weight:400">· refreshes every 30s</span></h3>
+      <div class="list">${(d.recent||[]).map(r=>`<div class="row"><span class="avatar">${esc(String(r.who||"?").replace(/^\+/,"").slice(0,2).toUpperCase())}</span>
+        <div class="r-main"><div class="r-title">${esc(r.who)} <span class="muted" style="font-weight:400">${esc(EV[r.event]||String(r.event).replace(/_/g," "))}${r.event==="consent"&&r.detail&&r.detail.choice?` (${esc(r.detail.choice)})`:""}${r.detail&&r.detail.campaign?` · ${esc(r.detail.campaign)}`:""}</span></div>
+        <div class="r-sub">${esc(r.role||"")}${r.city?` · ${esc(r.city)}`:""}</div></div><span class="muted" style="font-size:12px">${ago(r.at)}</span></div>`).join("") || `<div class="muted" style="padding:6px">No activity yet.</div>`}</div></div>`;
+  body.querySelectorAll("[data-ovgo]").forEach(el=> el.onclick = ()=>{
+    const go = el.dataset.ovgo;
+    if(go.startsWith("@")){ currentPage = go.slice(1); renderShell(); return; }
+    _adminTab = go; currentPage = "admin"; renderShell(); });
+  clearInterval(_ovTimer);
+  _ovTimer = setInterval(()=>{
+    const b = document.getElementById("adminBody");
+    if(currentPage!=="admin" || _adminTab!=="overview" || !b){ clearInterval(_ovTimer); return; }
+    if(document.visibilityState==="visible") adminOverview(b, true);
+  }, 30000);
 }
 
 async function adminOrgs(body){
