@@ -35,7 +35,17 @@ Deno.serve(async (req) => {
     if (cErr) throw cErr;
     if (!conv) return json({ error: "Conversation not found or not authorised" }, 403);
 
+    // Consent gate (WhatsApp Business policy + abuse protection): never message an opted-out number, and only
+    // START a conversation (template, outside the 24h window) with a number that verified + opted in via OTP.
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+    const { data: consent } = await admin.from("wa_contacts").select("opt_in_at,opt_out_at,verified_at")
+      .eq("phone_e164", conv.contact_phone_e164).maybeSingle();
+    if (consent?.opt_out_at) return json({ error: "This contact has opted out of WhatsApp messages." }, 403);
+
     const openWindow = conv.session_expires_at && new Date(conv.session_expires_at) > new Date();
+    if (!openWindow && !(consent?.verified_at && consent?.opt_in_at)) {
+      return json({ error: "This number hasn't opted in to WhatsApp updates yet. Ask them to link WhatsApp in the app first.", needs_opt_in: true }, 403);
+    }
     if (!template && !openWindow) {
       return json({ error: "Outside the 24-hour window — a pre-approved template is required to start the conversation.", needs_template: true }, 409);
     }
@@ -45,7 +55,6 @@ Deno.serve(async (req) => {
       : { to: conv.contact_phone_e164, text: String(text || "") };
     const res = await getProvider().send(out as any);
 
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
     const { data: msg, error: mErr } = await admin.from("wa_messages").insert({
       conversation_id: convId, sender_user_id: user.id, direction: "outbound",
       body: template ? `[template:${template}]` : String(text || ""), wa_message_id: res.wamid, status: "sent",
@@ -55,6 +64,7 @@ Deno.serve(async (req) => {
 
     return json({ ok: true, conversation_id: convId, message_id: msg.id, wa_message_id: msg.wa_message_id });
   } catch (e) {
-    return json({ error: (e as Error).message || "Send failed" }, 500);
+    console.error("wa-send failed:", (e as Error).message);
+    return json({ error: "Send failed. Please try again." }, 500);
   }
 });

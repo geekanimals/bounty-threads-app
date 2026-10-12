@@ -8,12 +8,12 @@
 // creator's replies show up in the app inbox. Outside Meta's 24h window a send needs an approved template;
 // without one the row is marked 'skipped' (the in-app + email copies still reach the creator).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { workerGuard } from "../_shared/worker_auth.ts";
 import { getProvider } from "../_shared/wa_provider.ts";
 import { getEmailProvider, renderEmailHtml } from "../_shared/email_provider.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const WORKER_SECRET = Deno.env.get("CI_WORKER_SECRET") || "";
 const APP_URL = (Deno.env.get("APP_URL") || "").replace(/\/+$/, "");   // e.g. https://bountythreads.app
 
 // app nav key ('mycampaigns') → absolute deep link the app opens on boot (app.html?go=<route>)
@@ -24,8 +24,7 @@ function deepLink(route?: string | null): string | null {
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-  if (WORKER_SECRET && req.headers.get("x-worker-secret") !== WORKER_SECRET) return new Response("unauthorized", { status: 401 });
+  const deny = workerGuard(req); if (deny) return deny;   // fail-closed, constant-time CI_WORKER_SECRET check
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
   const api = admin.schema("api");

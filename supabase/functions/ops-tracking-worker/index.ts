@@ -4,15 +4,14 @@
 // trigger turns into the parcel-received push + a fresh 3-day video SLA. Dark: no-ops until carriers are
 // configured and shipments exist. CI_WORKER_SECRET gates manual calls.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { workerGuard } from "../_shared/worker_auth.ts";
 import { getTrackingProvider } from "../_shared/tracking_provider.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const WORKER_SECRET = Deno.env.get("CI_WORKER_SECRET") || "";
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-  if (WORKER_SECRET && req.headers.get("x-worker-secret") !== WORKER_SECRET) return new Response("unauthorized", { status: 401 });
+  const deny = workerGuard(req); if (deny) return deny;   // fail-closed, constant-time CI_WORKER_SECRET check
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { db: { schema: "intel" } });
   const { data: rows, error } = await admin.rpc("ci_shipments_to_track", { p_limit: 200 });

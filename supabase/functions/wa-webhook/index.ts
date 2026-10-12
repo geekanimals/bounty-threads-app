@@ -3,6 +3,7 @@
 // Inbound replies land back in the app conversation (matched by phone), opening the 24h session window.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyChallenge, validateSignature } from "../_shared/webhook.ts";
+import { constantTimeEqual } from "../_shared/worker_auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -24,8 +25,9 @@ Deno.serve(async (req) => {
   const raw = await req.text();
   // Verify the sender: snapto Custom-Header secret (primary) and/or Meta x-hub-signature (direct-Meta).
   // Fail closed: with neither secret configured, anyone could inject messages / opt users out.
+  if (HOOK_SECRET && HOOK_SECRET.length < 32) return new Response("webhook secret too weak", { status: 503 });
   if (HOOK_SECRET) {
-    if (req.headers.get(HOOK_SECRET_HEADER) !== HOOK_SECRET) return new Response("unauthorized", { status: 401 });
+    if (!constantTimeEqual(req.headers.get(HOOK_SECRET_HEADER) || "", HOOK_SECRET)) return new Response("unauthorized", { status: 401 });
   } else if (APP_SECRET) {
     if (!(await validateSignature(raw, req.headers.get("x-hub-signature-256"), APP_SECRET))) return new Response("bad signature", { status: 401 });
   } else {

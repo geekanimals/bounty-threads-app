@@ -4,15 +4,14 @@
 // caption/tag check is separate (SQL: intel.ci_check_caption_tags, run on post). Dark until ANTHROPIC_API_KEY
 // is set. CI_WORKER_SECRET gates calls. Body: { participation_id, submission_id?, caption?, content_url? }.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { workerGuard } from "../_shared/worker_auth.ts";
 import { getContentReviewer } from "../_shared/content_reviewer.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const WORKER_SECRET = Deno.env.get("CI_WORKER_SECRET") || "";
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-  if (WORKER_SECRET && req.headers.get("x-worker-secret") !== WORKER_SECRET) return new Response("unauthorized", { status: 401 });
+  const deny = workerGuard(req); if (deny) return deny;   // fail-closed, constant-time CI_WORKER_SECRET check
 
   try {
     const { participation_id, submission_id, caption, content_url } = await req.json();

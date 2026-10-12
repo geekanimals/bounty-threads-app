@@ -16,32 +16,30 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   try {
-    const { phone, code, link: linkMode } = await req.json();
+    const { phone, code, link: linkMode } = await req.json().catch(() => ({}));
     const e164 = toE164(phone || "");
     if (!/^\+[1-9]\d{7,15}$/.test(e164)) return json({ error: "Invalid phone" }, 400);
     if (!/^\d{6}$/.test(String(code || ""))) return json({ error: "Enter the 6-digit code" }, 400);
-    if (!PEPPER) return json({ error: "OTP not configured" }, 501);
+    if (!PEPPER || PEPPER.length < 32) { console.error("wa-otp-verify: OTP_PEPPER missing/short"); return json({ error: "WhatsApp login is not available right now." }, 503); }
 
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
     let linkUserId: string | null = null;
     if (linkMode) {
-      const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+      const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+      if (!jwt) return json({ error: "Sign in first to link WhatsApp." }, 401);
       const { data: u } = await admin.auth.getUser(jwt);
       if (!u?.user) return json({ error: "Sign in first to link WhatsApp." }, 401);
       linkUserId = u.user.id;
     }
-    const { data: row } = await admin.from("wa_otp").select("id,code_hash,expires_at,attempts,consumed_at")
-      .eq("phone_e164", e164).is("consumed_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    if (!row) return json({ error: "No active code. Request a new one." }, 400);
-    if (new Date(row.expires_at) < new Date()) return json({ error: "Code expired. Request a new one." }, 400);
-    if ((row.attempts ?? 0) >= 5) return json({ error: "Too many attempts. Request a new code." }, 429);
-
-    const ok = (await hashCode(String(code), PEPPER)) === row.code_hash;
-    if (!ok) {
-      await admin.from("wa_otp").update({ attempts: (row.attempts ?? 0) + 1 }).eq("id", row.id);
-      return json({ error: "Incorrect code" }, 401);
-    }
-    await admin.from("wa_otp").update({ consumed_at: new Date().toISOString() }).eq("id", row.id);
+    // atomic: row-locked check, attempt counted, consumed on match (public.wa_otp_check)
+    const { data: status, error: chkErr } = await admin.rpc("wa_otp_check", {
+      p_phone: e164, p_code_hash: await hashCode(String(code), PEPPER),
+    });
+    if (chkErr) throw chkErr;
+    if (status === "no_code") return json({ error: "No active code. Request a new one." }, 400);
+    if (status === "expired") return json({ error: "Code expired. Request a new one." }, 400);
+    if (status === "locked")  return json({ error: "Too many attempts. Please wait and request a new code." }, 429);
+    if (status !== "ok")      return json({ error: "Incorrect code" }, 401);
 
     // find-or-create the Supabase user for this phone (mirrors instagram-login)
     const email = `wa_${normalizeMsisdn(e164)}@${EMAIL_DOMAIN}`;
@@ -86,6 +84,7 @@ Deno.serve(async (req) => {
     if (!token_hash) throw new Error("could not mint session");
     return json({ ok: true, token_hash, email: userRec?.user?.email || email });
   } catch (e) {
-    return json({ error: (e as Error).message || "Verification failed" }, 500);
+    console.error("wa-otp-verify failed:", (e as Error).message);       // details in logs only
+    return json({ error: "Verification failed. Please try again." }, 500);
   }
 });
