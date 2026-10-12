@@ -756,7 +756,7 @@ async function loadCreators(){
   if(!window.sb){ _creatorList = CREATORS.slice(); applyCreatorFilters(); return; }
   const org_id = (window.Auth && Auth.profile && Auth.profile.org_id) || null;
   let q = window.sb.from("creators").select("*").order("created_at",{ascending:false});
-  if(org_id) q = q.eq("org_id", org_id);
+  if(org_id && !window.__isAdmin) q = q.eq("org_id", org_id);
   const [{ data, error }, camps] = await Promise.all([
     q,
     window.sb.from("campaigns").select("id,name,brand,type,objective,platforms,hashtags,brief,deliverables,budget").order("created_at",{ascending:false})
@@ -999,7 +999,7 @@ function campaignCardsHtml(list){
     const st = {Live:"good","In Production":"brand",Sourcing:"warn",Approval:"warn",Draft:"warn",Completed:"good"}[c.status]||"brand";
     const prog = Math.max(0, Math.min(100, parseInt(c.progress)||0));
     const creators = parseInt(c.creators)||0;
-    return `<div class="card"><h3>${esc(c.name)}<span class="tag ${st}">${esc(c.status)||"Draft"}</span></h3>
+    return `<div class="card"><h3>${esc(c.name)}<span class="tag ${st}">${esc(c.status)||"Draft"}</span></h3>${window.__isAdmin && c.org_name ? `<div class="muted" style="font-size:12px">🏢 ${esc(c.org_name)}</div>` : ""}
       <div class="muted">${esc(c.brand)||"—"} · ${esc(c.campaign_type?campTypeLabel(c.campaign_type,c.barter_subtype):c.type)||"—"}${c.objective?` · ${esc(c.objective)}`:""}</div>
       ${c.deliverables?`<div class="muted" style="margin-top:6px;font-size:13px">📦 ${esc(c.deliverables)}</div>`:""}
       ${c.budget?`<div class="muted" style="font-size:13px">💰 ₹${fmtNum(c.budget)}</div>`:""}
@@ -1025,7 +1025,7 @@ function campInBucket(c, b){
 async function fetchOrgCampaigns(){
   const org_id = (window.Auth && Auth.profile && Auth.profile.org_id) || null;
   let cq = window.sb.from("campaigns").select("*").order("created_at",{ascending:false});
-  if(org_id) cq = cq.eq("org_id", org_id);
+  if(org_id && !window.__isAdmin) cq = cq.eq("org_id", org_id);      // Super Admin sees every workspace
   return await cq;
 }
 function wireCampaignGrid(grid, all){
@@ -1051,6 +1051,23 @@ async function loadCampaignSection(bucket){
   grid.innerHTML = list.length ? campaignCardsHtml(list) : `<div class="muted">No ${bucket==="celebrity"?"celebrity story":"barter"} campaigns yet — create one with the button above.</div>`;
   wireCampaignGrid(grid, all);
 }
+
+// Live: campaign pages re-check every 30s and repaint only when something actually changed
+let _campLiveSig = "";
+setInterval(async ()=>{
+  try{
+    if(!window.sb || !window.__osBooted || currentRole==="creator") return;
+    if(!["campaigns","barter","celebrity"].includes(currentPage)) { _campLiveSig = ""; return; }
+    if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open") || document.getElementById("wsBack")) return;
+    const { data } = await fetchOrgCampaigns(); const sig = JSON.stringify(data||[]);
+    if(_campLiveSig && sig !== _campLiveSig){
+      if(currentPage==="campaigns") loadCampaigns();
+      if(currentPage==="barter"){ loadCampaignSection("barter"); loadBarter(); }
+      if(currentPage==="celebrity"){ loadCampaignSection("celebrity"); loadStories(); }
+    }
+    _campLiveSig = sig;
+  }catch(e){}
+}, 30000);
 
 let _campFilter = "all";
 async function loadCampaigns(){
