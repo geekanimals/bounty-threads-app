@@ -1801,9 +1801,28 @@ async function loadMediaKit(){
   }
 }
 
+// Instagram's publishing API accepts JPEG images only (max 8 MB); feed posts must be between 4:5 and 1.91:1.
+// Convert any picked image (PNG, WebP…) to JPEG in the browser, downscale large ones, and for feed posts pad
+// (never crop) out-of-range shapes with white so the creator's photo is kept whole.
+async function toInstagramJpeg(file, kind){
+  const bmp = await createImageBitmap(file);
+  const maxEdge = kind === "story" ? 1920 : 1440;
+  let w = bmp.width, h = bmp.height;
+  const scale = Math.min(1, maxEdge / Math.max(w, h)); w = Math.round(w*scale); h = Math.round(h*scale);
+  let cw = w, ch = h;
+  if(kind === "feed"){ const r = w/h; if(r < 0.8) cw = Math.ceil(h*0.8); else if(r > 1.91) ch = Math.ceil(w/1.91); }
+  const c = document.createElement("canvas"); c.width = cw; c.height = ch;
+  const g = c.getContext("2d"); g.fillStyle = "#ffffff"; g.fillRect(0,0,cw,ch);
+  g.drawImage(bmp, Math.round((cw-w)/2), Math.round((ch-h)/2), w, h);
+  if(bmp.close) bmp.close();
+  let q = 0.9, blob;
+  do { blob = await new Promise(res=>c.toBlob(res, "image/jpeg", q)); q -= 0.1; } while(blob && blob.size > 8*1024*1024 && q > 0.4);
+  if(!blob) throw new Error("Couldn't prepare this image — try a JPG.");
+  return new File([blob], (file.name||"photo").replace(/\.[^.]+$/,"") + ".jpg", { type:"image/jpeg" });
+}
 const MK_KIND = {
-  feed:  { lbl:"Image",          accept:"image/jpeg,image/png",                     hint:"JPEG or PNG.",                                        btn:"Publish post →",  ok:"Posted to Instagram ✅" },
-  story: { lbl:"Image or video", accept:"image/jpeg,image/png,video/mp4,video/quicktime", hint:"9:16 works best. Videos up to 60 seconds. Stories have no caption — add text/stickers in Instagram if needed.", btn:"Publish story →", ok:"Story is live on Instagram ✅" },
+  feed:  { lbl:"Image",          accept:"image/*",                     hint:"Any photo — we convert it to JPEG for Instagram.",                                        btn:"Publish post →",  ok:"Posted to Instagram ✅" },
+  story: { lbl:"Image or video", accept:"image/*,video/mp4,video/quicktime", hint:"9:16 works best. Videos up to 60 seconds. Stories have no caption — add text/stickers in Instagram if needed.", btn:"Publish story →", ok:"Story is live on Instagram ✅" },
   reel:  { lbl:"Video",          accept:"video/mp4,video/quicktime",                hint:"MP4/MOV, 9:16, 3–90 seconds.",                        btn:"Publish reel →",  ok:"Reel posted to Instagram ✅" }
 };
 function wireMkComposer(){
@@ -1834,9 +1853,10 @@ function wireMkComposer(){
       if(!window.sb) throw new Error("Not connected.");
       const uid = window.Auth && Auth.profile && Auth.profile.id;
       if(!uid) throw new Error("You're signed out. Sign in again to publish.");
-      const safe = (file.name||(isVideo?"clip.mp4":"post.jpg")).replace(/[^a-zA-Z0-9._-]/g,"");
+      const media = isVideo ? file : await toInstagramJpeg(file, kind);
+      const safe = (media.name||(isVideo?"clip.mp4":"post.jpg")).replace(/[^a-zA-Z0-9._-]/g,"");
       const path = `${uid}/${Date.now()}-${safe}`;
-      const up = await sb.storage.from("ig-media").upload(path, file, { upsert:false, contentType:file.type||(isVideo?"video/mp4":"image/jpeg") });
+      const up = await sb.storage.from("ig-media").upload(path, media, { upsert:false, contentType:media.type||(isVideo?"video/mp4":"image/jpeg") });
       if(up.error) throw up.error;
       const { data:pub } = sb.storage.from("ig-media").getPublicUrl(path);
       btn.textContent = isVideo ? "Publishing… (videos take up to a minute)" : "Publishing…";

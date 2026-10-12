@@ -12,7 +12,12 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 
 // supabase-js puts the Edge Function's HTTP response in error.context; return its `error` text.
 async function fnError(error){
-  try{ const b = await error.context.json(); const m = b && (b.error || b.message); if(typeof m === "string") return m; }catch(e){}
+  try{
+    const b = await error.context.json(); const m = b && (b.error || b.message);
+    // include the provider's own reason (e.g. Instagram's error text) when the function sends one
+    const d = b && b.detail; const dm = typeof d === "string" ? d : (d && (d.error_user_msg || d.message || (d.error && d.error.message)));
+    if(typeof m === "string") return dm && typeof dm === "string" && dm !== m ? `${m} — ${dm}` : m;
+  }catch(e){}
   return (error && error.message) || String(error);
 }
 
