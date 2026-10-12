@@ -23,10 +23,13 @@ Deno.serve(async (req) => {
 
   const raw = await req.text();
   // Verify the sender: snapto Custom-Header secret (primary) and/or Meta x-hub-signature (direct-Meta).
+  // Fail closed: with neither secret configured, anyone could inject messages / opt users out.
   if (HOOK_SECRET) {
     if (req.headers.get(HOOK_SECRET_HEADER) !== HOOK_SECRET) return new Response("unauthorized", { status: 401 });
   } else if (APP_SECRET) {
     if (!(await validateSignature(raw, req.headers.get("x-hub-signature-256"), APP_SECRET))) return new Response("bad signature", { status: 401 });
+  } else {
+    return new Response("webhook not configured (WA_WEBHOOK_SECRET)", { status: 503 });
   }
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
   try {
@@ -37,13 +40,21 @@ Deno.serve(async (req) => {
         // inbound messages
         for (const m of v?.messages ?? []) {
           const fromE164 = "+" + String(m.from || "").replace(/\D/g, "");
-          const text = m?.text?.body ?? (m?.type ? `[${m.type}]` : "");
-          // match the latest conversation for this number; else record an unassigned one
-          let { data: conv } = await admin.from("wa_conversations").select("id").eq("contact_phone_e164", fromE164)
+          const text = m?.text?.body ?? m?.button?.text ?? m?.interactive?.button_reply?.title ?? (m?.type ? `[${m.type}]` : "");
+          const { data: contact } = await admin.from("wa_contacts").select("user_id").eq("phone_e164", fromE164).maybeSingle();
+          // opt-out / opt-in keywords (WhatsApp Business policy): honoured before anything else is sent
+          const kw = String(m?.text?.body || "").trim().toUpperCase();
+          if (contact && /^(STOP|UNSUBSCRIBE)$/.test(kw)) await admin.from("wa_contacts").update({ opt_out_at: new Date().toISOString() }).eq("user_id", contact.user_id);
+          if (contact && /^(START|SUBSCRIBE)$/.test(kw)) await admin.from("wa_contacts").update({ opt_out_at: null, opt_in_at: new Date().toISOString() }).eq("user_id", contact.user_id);
+          // match the latest conversation for this number; else open the creator's system thread (visible to
+          // the creator + agency operators) — never an orphan row nobody can read
+          let { data: conv } = await admin.from("wa_conversations").select("id,contact_user_id").eq("contact_phone_e164", fromE164)
             .order("last_message_at", { ascending: false, nullsFirst: false }).limit(1).maybeSingle();
           if (!conv) {
-            const { data: created } = await admin.from("wa_conversations").insert({ contact_phone_e164: fromE164, subject: "Inbound WhatsApp" }).select("id").single();
-            conv = created;
+            const { data: id } = await admin.rpc("wa_system_conversation", { p_user: contact?.user_id ?? null, p_phone: fromE164 });
+            conv = { id, contact_user_id: contact?.user_id ?? null };
+          } else if (!conv.contact_user_id && contact?.user_id) {
+            await admin.from("wa_conversations").update({ contact_user_id: contact.user_id }).eq("id", conv.id);
           }
           const sessionExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
           await admin.from("wa_messages").upsert(

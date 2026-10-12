@@ -2723,7 +2723,11 @@ function bootOS(){
 
 /* ---------- Wire up ---------- */
 function init(){
-  initRoles(); renderShell();
+  initRoles();
+  // deep link from a WhatsApp / email push: app.html?go=<page> opens that page (then the param is dropped)
+  const go = new URLSearchParams(location.search).get("go");
+  if(go && PAGES[go]){ currentPage = go; history.replaceState({}, "", location.pathname); }
+  renderShell();
   wireSignOut();
   $("#searchTrigger").onclick=openPalette;
   $("#paletteOverlay").onclick=e=>{if(e.target.id==="paletteOverlay")closePalette();};

@@ -36,7 +36,9 @@ supabase link --project-ref edibibytqfrrxfztukpm
 ## 1. Apply migrations (dark)
 
 `db push` applies every pending migration, including the 8 barter-pipeline ones
-(`20261009100000` … `20261009170000`). The RPCs are created but unreachable until `api` is exposed (Step 7) and the flag is on (Step 10).
+(`20261009100000` … `20261009170000`) and the WhatsApp flow-completion migration `20261012090000`
+(worker RPCs `api.ops_outbox_claim` / `api.ops_outbox_complete` / `api.ops_run_due_reminders`, operator read
+access to the WhatsApp inbox, per-notification outbox dedupe, client-read-only `wa_contacts` + `wa_set_opt_out`). The RPCs are created but unreachable until `api` is exposed (Step 7) and the flag is on (Step 10).
 
 ```bash
 # review what will run, then push
@@ -99,6 +101,7 @@ Put everything in an **uncommitted** env file and set it in one call (keeps secr
 # supabase/.env.production   (gitignored — DO NOT COMMIT)
 # ---- workers ----
 CI_WORKER_SECRET=<hex32>
+APP_URL=<public app origin, e.g. https://bountythreads.app — WhatsApp/email CTAs link to $APP_URL/app.html?go=<page>>
 # ---- WhatsApp via snapto (lead provider) ----
 WA_PROVIDER=snapto
 SNAPTO_API_KEY=<from snapto → Developer → API Keys>
@@ -365,14 +368,31 @@ select jobname, status, return_message, start_time
 | Secret | Used by | Notes |
 |---|---|---|
 | `CI_WORKER_SECRET` | all `ops-*` workers | `x-worker-secret` header; also in Vault for cron |
+| `APP_URL` | ops-notify-dispatch | public app origin; builds the deep link in every WhatsApp/email push (unset → no link) |
 | `WA_PROVIDER` | wa_provider | `snapto` (default) or `meta` |
 | `SNAPTO_API_KEY`, `SNAPTO_PHONE_ID` | WhatsApp send | snapto Developer → API Keys; phone id `881923021676427` |
 | `WA_OTP_TEMPLATE`, `WA_OTP_LANG` | wa-otp-start | approved AUTHENTICATION template |
 | `OTP_PEPPER` | wa-otp-* | 32-byte hex; never rotate mid-flight |
-| `WA_WEBHOOK_SECRET`, `WA_WEBHOOK_SECRET_HEADER` | wa-webhook | must match the snapto Custom Header |
+| `WA_WEBHOOK_SECRET`, `WA_WEBHOOK_SECRET_HEADER` | wa-webhook | must match the snapto Custom Header; with no secret set the webhook now rejects everything (503) |
 | `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM` | email_provider | Resend; `EMAIL_FROM` must be a verified domain |
 | `DTDC_*` / `AMAZON_*` / `CARRIER_*` | tracking_provider | `{ref}` in URL; `*_STATUS_PATH` = JSON path to status |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | content_reviewer | brief-adherence review (default `claude-sonnet-5-5`) |
 | `IG_GRAPH_TOKEN`, `WHATSAPP_API_VER` | post-metrics-worker | IG insights; graph version reused from `WHATSAPP_API_VER` |
 
 Meta-direct WhatsApp fallback (only if `WA_PROVIDER=meta`): `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_APP_SECRET`/`INSTAGRAM_APP_SECRET`, `WA_WEBHOOK_VERIFY_TOKEN`.
+
+## 14. WhatsApp flow — end-to-end behaviour
+
+- **Who gets WhatsApp pushes:** any user with a verified, non-opted-out row in `wa_contacts` — WhatsApp-login creators automatically, and email/Instagram creators after **Messages → Link WhatsApp** (OTP to the number, `wa-otp-verify` in link mode).
+- **24-hour window:** inside it the dispatcher sends free text (title + body + deep link). Outside it, it sends `ci_notification_template.wa_template_name` if set; otherwise the WhatsApp copy is marked `skipped` (in-app + email still go out). Approve one UTILITY template per action-required template key to reach creators who haven't messaged in 24h.
+- **Thread:** every WhatsApp push is mirrored into the creator's *Campaign updates* conversation, so delivery ticks update live and the creator's replies land in **Messages** — visible to the creator and every active agency operator.
+- **Opt-out:** creator replies `STOP` (or uses *Pause updates* in Messages) → `opt_out_at` set, no further WhatsApp sends (checked at enqueue *and* at send). `START` / *Resume updates* re-enables.
+- **Retries:** failed sends retry up to 3 attempts (5 min × attempt backoff); rows stuck in `sending` > 10 min are reclaimed.
+
+Health check:
+
+```sql
+select channel, status, count(*), max(last_error) from intel.ci_outbox
+ where created_at > now() - interval '1 day' group by 1,2 order by 1,2;
+```
+

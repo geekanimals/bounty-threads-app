@@ -1,6 +1,8 @@
 // Edge Function: wa-otp-verify  (verify_jwt = false)
 // Verifies the WhatsApp OTP, finds-or-creates the Supabase user for that phone, marks the contact verified +
 // opted-in, and returns a magic-link token_hash the client exchanges for a session (sb.auth.verifyOtp).
+// Link mode ({ link: true } + the signed-in user's JWT): attaches the verified number to the CURRENT account
+// instead (email / Instagram creators opting in to WhatsApp updates) and returns no session.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { toE164, normalizeMsisdn, hashCode } from "../_shared/wa_provider.ts";
@@ -14,13 +16,20 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   try {
-    const { phone, code } = await req.json();
+    const { phone, code, link: linkMode } = await req.json();
     const e164 = toE164(phone || "");
     if (!/^\+[1-9]\d{7,15}$/.test(e164)) return json({ error: "Invalid phone" }, 400);
     if (!/^\d{6}$/.test(String(code || ""))) return json({ error: "Enter the 6-digit code" }, 400);
     if (!PEPPER) return json({ error: "OTP not configured" }, 501);
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+    let linkUserId: string | null = null;
+    if (linkMode) {
+      const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+      const { data: u } = await admin.auth.getUser(jwt);
+      if (!u?.user) return json({ error: "Sign in first to link WhatsApp." }, 401);
+      linkUserId = u.user.id;
+    }
     const { data: row } = await admin.from("wa_otp").select("id,code_hash,expires_at,attempts,consumed_at")
       .eq("phone_e164", e164).is("consumed_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (!row) return json({ error: "No active code. Request a new one." }, 400);
@@ -38,6 +47,14 @@ Deno.serve(async (req) => {
     const email = `wa_${normalizeMsisdn(e164)}@${EMAIL_DOMAIN}`;
     let userId: string | null = null;
     const { data: existing } = await admin.from("wa_contacts").select("user_id").eq("phone_e164", e164).maybeSingle();
+    if (linkUserId) {
+      if (existing?.user_id && existing.user_id !== linkUserId) return json({ error: "This WhatsApp number is already linked to another account." }, 409);
+      const now = new Date().toISOString();
+      const { error: lErr } = await admin.from("wa_contacts").upsert(
+        { user_id: linkUserId, phone_e164: e164, verified_at: now, opt_in_at: now, opt_out_at: null }, { onConflict: "user_id" });
+      if (lErr) throw lErr;
+      return json({ ok: true, linked: true, phone_e164: e164 });
+    }
     if (existing?.user_id) {
       userId = existing.user_id;
     } else {
@@ -47,9 +64,11 @@ Deno.serve(async (req) => {
       });
       if (cErr && !/registered|exists/i.test(cErr.message)) throw cErr;
       userId = created?.user?.id ?? null;
-      if (!userId) { // created elsewhere — look up by email
-        const { data: list } = await admin.auth.admin.listUsers();
-        userId = list?.users?.find((u) => u.email === email)?.id ?? null;
+      for (let page = 1; !userId && page <= 50; page++) { // created elsewhere — look up by email (paged)
+        const { data: list } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+        const users = list?.users ?? [];
+        userId = users.find((u) => u.email === email)?.id ?? null;
+        if (users.length < 1000) break;
       }
     }
     if (!userId) throw new Error("could not resolve user");

@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
     const { count } = await admin.from("wa_otp").select("id", { count: "exact", head: true }).eq("phone_e164", e164).gte("created_at", since);
     if ((count ?? 0) >= 5) return json({ error: "Too many attempts. Please wait a few minutes and try again." }, 429);
 
-    const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+    const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000)); // 6 digits, CSPRNG
     const code_hash = await hashCode(code, PEPPER);
     const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString();
     const { error: insErr } = await admin.from("wa_otp").insert({ phone_e164: e164, code_hash, expires_at });
