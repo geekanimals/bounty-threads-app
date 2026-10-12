@@ -463,7 +463,8 @@ function renderBarter(){
   let html = pageHead("Mass Barter Engine","Live pipeline — product to content to ROI.",`<span id="addBarterBtn">+ New Barter Batch</span>`);
   html += kpiRow(currentRole);
   html += aiSuggestCard(currentRole in AI_SUGGEST ? currentRole : "owner");
-  html += `<div class="card" style="margin-top:16px"><h3>Pipeline</h3>
+  html += campaignSectionHtml("barter");
+  html += `<div class="card" style="margin-top:16px"><h3>Barter shipments pipeline</h3>
     <div class="kanban" id="barterKanban"><div class="muted" style="padding:12px">Loading pipeline…</div></div></div>`;
   return html;
 }
@@ -1009,29 +1010,66 @@ function campaignCardsHtml(list){
   }).join("");
 }
 
+// Which section a campaign belongs to: Paid → Campaigns, Barter → Mass Barter, Celebrity story → Celebrity Stories.
+// Barter + Paid shows under both Paid and Barter.
+function campKind(c){ return c.campaign_type || (/hybrid/i.test(c.type||"")?"barter_paid":/paid|ugc/i.test(c.type||"")?"paid":"barter"); }
+function isCelebrityCamp(c){ return c.barter_subtype==="celebrity_story" || (!c.barter_subtype && /celebrity/i.test(c.type||"")); }
+function campInBucket(c, b){
+  if(b==="all") return true;
+  if(b==="approval") return c.status==="Approval";
+  if(b==="celebrity") return isCelebrityCamp(c);
+  if(b==="paid") return ["paid","barter_paid"].includes(campKind(c)) && !(isCelebrityCamp(c) && campKind(c)!=="barter_paid");
+  if(b==="barter") return ["barter","barter_paid"].includes(campKind(c)) && !isCelebrityCamp(c);
+  return true;
+}
+async function fetchOrgCampaigns(){
+  const org_id = (window.Auth && Auth.profile && Auth.profile.org_id) || null;
+  let cq = window.sb.from("campaigns").select("*").order("created_at",{ascending:false});
+  if(org_id) cq = cq.eq("org_id", org_id);
+  return await cq;
+}
+function wireCampaignGrid(grid, all){
+  grid.querySelectorAll("[data-editcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.editcamp); if(c) openCampaignModal(c); });
+  grid.querySelectorAll("[data-opencamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.opencamp); if(c) openCampaignWorkspace(c.id); });
+}
+// Mass Barter / Celebrity Stories pages: their campaigns on top, with a pre-set "New campaign" button
+function campaignSectionHtml(bucket){
+  const T = { barter:["🎁 Barter campaigns","+ New barter campaign","Creators get your product in exchange for content."],
+              celebrity:["👑 Celebrity story campaigns","+ New celebrity story campaign","Celebrity / top-creator stories for your brand."] }[bucket];
+  return `<div class="card" style="margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <div><h3 style="margin:0">${T[0]}</h3><div class="muted" style="font-size:13px">${T[2]}</div></div>
+      <button class="btn" data-newcamp="${bucket}">${T[1]}</button></div>
+    <div class="grid three" id="campSection_${bucket}" style="margin-top:12px"><div class="muted">Loading…</div></div></div>`;
+}
+async function loadCampaignSection(bucket){
+  const grid = document.getElementById("campSection_"+bucket); if(!grid || !window.sb) return;
+  const btn = document.querySelector(`[data-newcamp="${bucket}"]`);
+  if(btn) btn.onclick = ()=> openCampaignModal(null, bucket==="celebrity" ? { campaign_type:"barter", barter_subtype:"celebrity_story" } : { campaign_type:"barter", barter_subtype:"normal_barter" });
+  const { data, error } = await fetchOrgCampaigns();
+  if(error){ grid.innerHTML = `<div class="muted">Couldn't load campaigns: ${esc(error.message)}</div>`; return; }
+  const all = data||[], list = all.filter(c=>campInBucket(c, bucket));
+  grid.innerHTML = list.length ? campaignCardsHtml(list) : `<div class="muted">No ${bucket==="celebrity"?"celebrity story":"barter"} campaigns yet — create one with the button above.</div>`;
+  wireCampaignGrid(grid, all);
+}
+
 let _campFilter = "all";
 async function loadCampaigns(){
   const grid = document.getElementById("campaignGrid");
   if(!grid) return;
   if(!window.sb){ grid.innerHTML = campaignCardsHtml(CAMPAIGNS); return; }
-  const org_id = (window.Auth && Auth.profile && Auth.profile.org_id) || null;
-  let cq = window.sb.from("campaigns").select("*").order("created_at",{ascending:false});
-  if(org_id) cq = cq.eq("org_id", org_id);
-  const { data, error } = await cq;
+  const { data, error } = await fetchOrgCampaigns();
   if(error){ grid.innerHTML = `<div class="card"><div class="muted">Couldn't load campaigns: ${esc(error.message)}</div></div>`; return; }
   const all = data||[];
-  const kind = c => c.campaign_type || (/hybrid/i.test(c.type||"")?"barter_paid":/paid|celebrity/i.test(c.type||"")?"paid":"barter");
-  const pass = c => _campFilter==="all" || (_campFilter==="paid" ? ["paid","barter_paid"].includes(kind(c)) : _campFilter==="barter" ? ["barter","barter_paid"].includes(kind(c)) : _campFilter==="approval" ? c.status==="Approval" : true);
+  const pass = c => campInBucket(c, _campFilter);
   const chips = document.getElementById("campTypeChips");
   if(chips){
-    chips.innerHTML = [["all","All"],["paid","💰 Paid"],["barter","🎁 Barter"],["approval","⏳ Awaiting approval"]].map(([k,l])=>{ const keep=_campFilter; _campFilter=k; const n=all.filter(pass).length; _campFilter=keep;
+    chips.innerHTML = [["all","All"],["paid","💰 Paid"],["barter","🎁 Barter"],["celebrity","👑 Celebrity stories"],["approval","⏳ Awaiting approval"]].map(([k,l])=>{ const keep=_campFilter; _campFilter=k; const n=all.filter(pass).length; _campFilter=keep;
       return `<button class="ci-chip${_campFilter===k?" on":""}" data-cfilter="${k}">${l} <span>${n}</span></button>`; }).join("");
     chips.querySelectorAll("[data-cfilter]").forEach(b=> b.onclick = ()=>{ _campFilter = b.dataset.cfilter; loadCampaigns(); });
   }
   const data2 = all.filter(pass);
   grid.innerHTML = campaignCardsHtml(data2);
-  grid.querySelectorAll("[data-editcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.editcamp); if(c) openCampaignModal(c); });
-  grid.querySelectorAll("[data-opencamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.opencamp); if(c) openCampaignWorkspace(c.id); });
+  wireCampaignGrid(grid, all);
 }
 
 /* ================= CAMPAIGN WORKSPACE (one campaign, everything connected) ================= */
@@ -1153,11 +1191,12 @@ function legacyTypeFor(t, st){
 }
 const MAX_CAMP_FILE = 10*1024*1024;
 
-function openCampaignModal(existing){
+function openCampaignModal(existing, preset){
+  preset = preset || {};
   const ed = existing || {};
   const ip = (ed.ideal_profile && typeof ed.ideal_profile==="object") ? ed.ideal_profile : {};
   let files = Array.isArray(ed.attachments) ? ed.attachments.slice() : [];
-  const ctype = ed.campaign_type || (/paid/i.test(ed.type||"") && !/hybrid/i.test(ed.type||"") ? "paid" : /hybrid/i.test(ed.type||"") ? "barter_paid" : "barter");
+  const ctype = ed.campaign_type || preset.campaign_type || (/paid/i.test(ed.type||"") && !/hybrid/i.test(ed.type||"") ? "paid" : /hybrid/i.test(ed.type||"") ? "barter_paid" : "barter");
   const opt = (arr,val)=>arr.map(o=>`<option${o===val?' selected':''}>${o}</option>`).join("");
   const kv = (arr,val)=>arr.map(([k,l])=>`<option value="${k}"${k===val?' selected':''}>${l}</option>`).join("");
   const plats = String(ed.platforms||"Instagram").split(/\s*,\s*/).filter(Boolean);
@@ -1169,7 +1208,7 @@ function openCampaignModal(existing){
     <form id="campaignForm" class="modal-form">
       <div class="cm-sec">Campaign type</div>
       <div class="cm-seg" id="cmType">${CAMP_TYPES.map(([k,l])=>`<label class="${k===ctype?'act':''}"><input type="radio" name="campaign_type" value="${k}"${k===ctype?' checked':''}> ${l}</label>`).join("")}</div>
-      <div class="mf-row cm-barter"><label>Barter type<select name="barter_subtype">${kv(BARTER_SUBTYPES, ed.barter_subtype||"normal_barter")}</select></label>
+      <div class="mf-row cm-barter"><label>Barter type<select name="barter_subtype">${kv(BARTER_SUBTYPES, ed.barter_subtype||preset.barter_subtype||"normal_barter")}</select></label>
         <label>Number of creators<input name="creators" type="number" min="0" value="${ed.creators!=null?esc(ed.creators):''}" placeholder="20"></label></div>
       <div class="mf-row"><label>Campaign name<input name="name" required maxlength="120" value="${esc(ed.name||'')}" placeholder="Summer Glow Launch"></label>
       <label>Brand name<input name="brand" required maxlength="120" value="${esc(ed.brand||'')}" placeholder="Lume Cosmetics"></label></div>
@@ -1282,7 +1321,7 @@ function openCampaignModal(existing){
       if(error) throw error;
       if(window.Tracker) Tracker.security(existing?"campaign_edit":"campaign_create", { campaign: row.name, type: t });
       m.classList.remove("open");
-      if(existing && document.getElementById("wsBack") && _wsCampaign && _wsCampaign.id===existing.id) openCampaignWorkspace(existing.id); else await loadCampaigns();
+      if(existing && document.getElementById("wsBack") && _wsCampaign && _wsCampaign.id===existing.id) openCampaignWorkspace(existing.id); else { await loadCampaigns(); loadCampaignSection("barter"); loadCampaignSection("celebrity"); }
     }catch(ex){ paintFiles(); err.textContent = ex.message||"Couldn't save."; btn.disabled=false; btn.textContent=existing?'Save changes':'Launch Campaign'; }
   };
 }
@@ -1403,7 +1442,8 @@ const STORY_STAGES = ["Requested","Negotiating","Live","Delivered"];
 
 function renderCelebrity(){
   let html = pageHead("Celebrity Stories","Celebrity barter & paid deals — request to proof.",`<span id="addStoryBtn">+ New Story Deal</span>`);
-  html += `<div class="card" style="margin-top:16px"><h3>Deal Pipeline</h3>
+  html += campaignSectionHtml("celebrity");
+  html += `<div class="card" style="margin-top:16px"><h3>Story deal pipeline</h3>
     <div class="kanban" id="storyKanban"><div class="muted" style="padding:12px">Loading…</div></div></div>`;
   return html;
 }
@@ -1762,11 +1802,11 @@ async function adminCampaigns(body, silent){
   if(silent && sig === _acSig) return;           // nothing changed → don't touch the DOM
   _acSig = sig;
   const kindL = c => c.campaign_type || "barter";
-  const camps = (cr.data||[]).filter(c=> !tfilter || (tfilter==="paid" ? ["paid","barter_paid"].includes(kindL(c)) : ["barter","barter_paid"].includes(kindL(c)))), pipe = pr.data||[], legacy = ar.data||[];
+  const camps = (cr.data||[]).filter(c=> !tfilter || campInBucket(c, tfilter)), pipe = pr.data||[], legacy = ar.data||[];
   const pendFor = id => pipe.filter(p=>p.legacy_campaign_id===id && APPLICANT_PENDING.includes(p.stage)).length + legacy.filter(a=>a.campaign_id===id && a.status==="Applied").length;
   body.innerHTML = `<div class="card"><div class="ci-mh" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <h3 style="margin:0">All campaigns <span class="muted" style="font-size:12px;font-weight:400">· live, refreshes every 30s</span></h3>
-      <span style="display:flex;gap:6px"><select id="acType"><option value="">Paid + Barter</option><option value="paid"${tfilter==="paid"?" selected":""}>💰 Paid</option><option value="barter"${tfilter==="barter"?" selected":""}>🎁 Barter</option></select>
+      <span style="display:flex;gap:6px"><select id="acType"><option value="">Paid + Barter</option><option value="paid"${tfilter==="paid"?" selected":""}>💰 Paid</option><option value="barter"${tfilter==="barter"?" selected":""}>🎁 Barter</option><option value="celebrity"${tfilter==="celebrity"?" selected":""}>👑 Celebrity stories</option></select>
       <select id="acFilter"><option value="">All statuses</option>${CAMP_STATUSES.map(s=>`<option${s===filter?" selected":""}>${s}</option>`).join("")}</select></span></div>
     ${camps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="tbl"><thead><tr><th>Campaign</th><th>Workspace</th><th>Type</th><th>Status</th><th>Applied</th><th>Pending</th><th>Approved</th><th>Declined</th><th></th></tr></thead><tbody>
       ${camps.map(c=>{ const pc = pipe.filter(p=>p.legacy_campaign_id===c.id);
@@ -3582,6 +3622,7 @@ function renderContent(){
     if(smp) smp.onclick = e=>{ e.preventDefault(); csvSampleDownload(); };
   }
   if(currentPage==="celebrity"){
+    loadCampaignSection("celebrity");
     loadStories();
     const add = document.getElementById("addStoryBtn");
     if(add) add.onclick = openStoryModal;
@@ -3630,6 +3671,7 @@ function renderContent(){
   }
   if(currentPage==="barter" && currentRole==="creator" && window.__ciOpsEnabled && window.ciOps){ window.ciOps.loadMyCampaigns(); }
   else if(currentPage==="barter"){
+    loadCampaignSection("barter");
     loadBarter();
     const add = document.getElementById("addBarterBtn");
     if(add) add.onclick = ()=> openBarterModal();
