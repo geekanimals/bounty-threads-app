@@ -252,9 +252,9 @@ Deno.serve(async (req: Request) => {
       accessToken
     );
 
-    // Publish to the token's own account: `me` first; if Instagram rejects that, resolve the professional
-    // account id (/me?fields=user_id) and try it, then the stored id. Older connections saved the app-scoped
-    // id from the token exchange, which Instagram refuses ("Object with ID … does not exist").
+    // Publish to the token's own account (`me`) — works for every creator regardless of which id was stored.
+    // Fallback: the token's app-scoped id, its professional account id, then the stored id. The stored id is
+    // never rewritten here (login / refresh / webhooks key accounts on it).
     const tryCreate = async (base: string) => {
       const r = await fetch(`${GRAPH}/${base}/media`, { method: "POST", body: createParams });
       return { r, j: await readJson(r) };
@@ -262,18 +262,14 @@ Deno.serve(async (req: Request) => {
     let pubBase = "me";
     let { r: createResponse, j: container } = await tryCreate(pubBase);
     if (!createResponse.ok || !container?.id) {
-      const meRes = await fetch(`${GRAPH}/me?fields=user_id&access_token=${encodeURIComponent(accessToken)}`);
-      const me = await readJson(meRes);
-      const canonical = meRes.ok && me?.user_id ? String(me.user_id) : "";
-      for (const id of [canonical, String(igUserId)].filter((x, i, arr) => x && arr.indexOf(x) === i)) {
+      const firstError = container;
+      const meRes = await fetch(`${GRAPH}/me?fields=id,user_id&access_token=${encodeURIComponent(accessToken)}`);
+      const me = meRes.ok ? await readJson(meRes) : {};
+      for (const id of [me?.id, me?.user_id, igUserId].map((x) => String(x || "")).filter((x, i, arr) => x && arr.indexOf(x) === i)) {
         const t = await tryCreate(id);
-        createResponse = t.r; container = t.j;
-        if (createResponse.ok && container?.id) { pubBase = id; break; }
+        if (t.r.ok && t.j?.id) { createResponse = t.r; container = t.j; pubBase = id; break; }
       }
-      // heal the stored id so the media kit / insights use the right account from now on
-      if (canonical && canonical !== String(igUserId)) {
-        await admin.from("social_tokens").update({ ig_user_id: canonical }).eq("member_id", user.id).eq("platform", "instagram");
-      }
+      if (!container?.id) container = firstError;   // report Instagram's answer for `me`
     }
 
     // Instagram rejected container creation
