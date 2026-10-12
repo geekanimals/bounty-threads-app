@@ -16,12 +16,11 @@ Deno.serve(async (req) => {
   try {
     const { participation_id, submission_id, caption, content_url } = await req.json();
     if (!participation_id) return new Response(JSON.stringify({ error: "participation_id required" }), { status: 400 });
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { db: { schema: "intel" } });
-
-    const { data: part } = await admin.from("ci_campaign_participation").select("campaign_id").eq("participation_id", participation_id).maybeSingle();
-    if (!part) return new Response(JSON.stringify({ error: "participation not found" }), { status: 404 });
-    const { data: brief } = await admin.from("ci_campaign_brief").select("requirements").eq("campaign_id", part.campaign_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    const { data: dlv } = await admin.from("ci_campaign_deliverable").select("content_format,quantity").eq("participation_id", participation_id);
+    const api = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } }).schema("api"); // intel is not exposed
+    const { data: ctx, error: cErr } = await api.rpc("ops_content_review_context", { p_participation: participation_id });
+    if (cErr) throw new Error(cErr.message);
+    if (!ctx?.found) return new Response(JSON.stringify({ error: "participation not found" }), { status: 404 });
+    const brief = { requirements: ctx.brief }, dlv = ctx.deliverables as unknown[];
 
     let verdict = "error", findings: string[] = ["review unavailable"], model = "";
     try {
@@ -29,10 +28,11 @@ Deno.serve(async (req) => {
       verdict = res.verdict; findings = res.findings; model = res.model;
     } catch (e) { findings = [(e as Error).message]; }
 
-    await admin.rpc("ci_record_content_check", {
+    const { error: rErr } = await api.rpc("ops_record_content_check", {
       p_participation: participation_id, p_subject_kind: "submission", p_subject_id: submission_id ?? null,
       p_kind: "brief_adherence", p_verdict: verdict, p_findings: findings, p_model: model || null,
     });
+    if (rErr) throw new Error(rErr.message);
     return new Response(JSON.stringify({ ok: true, verdict, findings }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500 });

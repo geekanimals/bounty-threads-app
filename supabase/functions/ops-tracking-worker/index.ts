@@ -13,18 +13,18 @@ const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 Deno.serve(async (req) => {
   const deny = workerGuard(req); if (deny) return deny;   // fail-closed, constant-time CI_WORKER_SECRET check
 
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { db: { schema: "intel" } });
-  const { data: rows, error } = await admin.rpc("ci_shipments_to_track", { p_limit: 200 });
+  const api = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } }).schema("api"); // intel is not exposed
+  const { data: rows, error } = await api.rpc("ops_shipments_to_track", { p_limit: 200 });
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
 
   let checked = 0, updated = 0, failed = 0;
-  for (const s of rows ?? []) {
+  for (const s of (rows ?? []) as any[]) {
     checked++;
     try {
       const carrier = (s.carrier_code || s.courier || "").toString();
       const res = await getTrackingProvider(carrier).track(s.tracking_ref);
-      const { error: e2 } = await admin.rpc("ci_shipment_set_status", {
-        p_shipment: s.shipment_id, p_status: res.status, p_actor: null,
+      const { error: e2 } = await api.rpc("ops_shipment_set_status", {
+        p_shipment: s.shipment_id, p_status: res.status,
         p_raw: { tracking_status: res.label, payload: res.raw as unknown },
       });
       if (e2) throw new Error(e2.message);

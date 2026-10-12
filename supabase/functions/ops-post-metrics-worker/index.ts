@@ -21,13 +21,13 @@ function pick(values: Record<string, number>, keys: string[]): number | undefine
 Deno.serve(async (req) => {
   const deny = workerGuard(req); if (deny) return deny;   // fail-closed, constant-time CI_WORKER_SECRET check
 
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { db: { schema: "intel" } });
-  const { data: posts, error } = await admin.rpc("ci_posts_to_track", { p_limit: 100 });
+  const api = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } }).schema("api"); // intel is not exposed
+  const { data: posts, error } = await api.rpc("ops_posts_to_track", { p_limit: 100 });
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   if (!IG_TOKEN) return new Response(JSON.stringify({ ok: true, skipped: (posts ?? []).length, reason: "IG_GRAPH_TOKEN not set" }), { headers: { "Content-Type": "application/json" } });
 
   let captured = 0, failed = 0;
-  for (const p of posts ?? []) {
+  for (const p of (posts ?? []) as any[]) {
     if (!p.external_media_id) { continue; }
     try {
       const metricList = p.media_type === "story"
@@ -45,7 +45,8 @@ Deno.serve(async (req) => {
         shares: pick(values, ["shares"]), saves: pick(values, ["saved"]),
         views: pick(values, ["plays", "video_views"]), raw: values,
       };
-      await admin.rpc("ci_record_post_metric", { p_post: p.post_id, p_metrics: metrics, p_actor: null });
+      const { error: mErr } = await api.rpc("ops_record_post_metric", { p_post: p.post_id, p_metrics: metrics });
+      if (mErr) throw new Error(mErr.message);
       captured++;
     } catch (_e) { failed++; }
   }
