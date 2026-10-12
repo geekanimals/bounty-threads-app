@@ -1817,7 +1817,7 @@ function mkStories(a){
     }).join("")}</div></div>`;
 }
 
-let _mkTimer = null, _mkSyncedAt = 0;
+let _mkTimer = null, _mkSyncedAt = 0, _mkLastAcct = null;
 function wireMkHead(acct){
   const share = document.getElementById("mkShare");
   if(share) share.onclick = async ()=>{
@@ -1850,7 +1850,12 @@ async function refreshMediaKit(force){
     else if(!error && data && data.cached && !_mkSyncedAt) _mkSyncedAt = Date.now() - (60000 - (data.next_in_ms||0));
   }catch(e){ /* keep showing the last data */ }
   const acct = await mkFetchAcct(); const hw = document.getElementById("mkHeadWrap");
-  if(acct && hw){ hw.innerHTML = mkHead(acct) + mkStories(acct); wireMkHead(acct); }
+  if(acct && hw){
+    // never blank the grid: if this read has no posts but the last good one did, keep showing those
+    if(!(Array.isArray(acct.recent_media) && acct.recent_media.length) && _mkLastAcct && (_mkLastAcct.recent_media||[]).length) acct.recent_media = _mkLastAcct.recent_media;
+    _mkLastAcct = acct;
+    hw.innerHTML = mkHead(acct) + mkStories(acct); wireMkHead(acct);
+  }
   mkStamp();
 }
 function startMkAutoRefresh(){
@@ -1869,6 +1874,7 @@ async function loadMediaKit(){
   if(!window.sb){ showConnect(); return; }
   const acct = await mkFetchAcct();
   if(!acct){ showConnect(); return; }
+  _mkLastAcct = acct;
   wrap.innerHTML = `<div class="muted" id="mkSyncStamp" style="font-size:12px;text-align:right;margin-bottom:6px"></div>`
     + `<div id="mkHeadWrap">${mkHead(acct) + mkStories(acct)}</div>` + mkComposer();
   wireMkHead(acct);

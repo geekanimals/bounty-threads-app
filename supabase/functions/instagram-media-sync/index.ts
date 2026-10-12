@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
     const force = !!(await req.json().catch(() => ({})))?.force;
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-    const { data: acct } = await admin.from("social_accounts").select("last_media_sync_at")
+    const { data: acct } = await admin.from("social_accounts").select("last_media_sync_at, recent_media")
       .eq("member_id", user.id).eq("platform", "instagram").maybeSingle();
     if (!acct) return json({ error: "Instagram not connected" }, 400);
 
@@ -68,7 +68,16 @@ Deno.serve(async (req) => {
       if (prof.j?.username) patch.username = prof.j.username;
       if (prof.j?.profile_picture_url) patch.profile_picture_url = prof.j.profile_picture_url;
     }
-    if (media.ok && Array.isArray(media.j?.data)) patch.recent_media = media.j.data;
+    // Merge, never wipe: an empty/failed media read must not erase the kit's posts. Fresh items win, but fields
+    // the heavy sync added earlier (e.g. per-post reach) are kept for posts that are still in the list.
+    const prev: any[] = Array.isArray(acct.recent_media) ? acct.recent_media : [];
+    const fresh: any[] = media.ok && Array.isArray(media.j?.data) ? media.j.data : [];
+    if (fresh.length) {
+      const byId = new Map(prev.map((m) => [String(m?.id), m]));
+      patch.recent_media = fresh.map((m) => ({ ...(byId.get(String(m.id)) || {}), ...m }));
+    } else {
+      console.warn("instagram-media-sync: Instagram returned no posts", JSON.stringify({ ok: media.ok, prev: prev.length, error: media.j?.error?.message ?? null }));
+    }
     // /me/stories only returns stories that are live right now (last 24 h)
     if (stories.ok) patch.recent_stories = Array.isArray(stories.j?.data) ? stories.j.data : [];
 
@@ -80,7 +89,8 @@ Deno.serve(async (req) => {
     if (failed.length) console.warn("instagram-media-sync partial:", failed.join(","), JSON.stringify(media.ok ? stories.j?.error ?? prof.j?.error : media.j?.error).slice(0, 300));
     return json({
       ok: true, cached: false,
-      posts: Array.isArray(patch.recent_media) ? (patch.recent_media as unknown[]).length : null,
+      posts: Array.isArray(patch.recent_media) ? (patch.recent_media as unknown[]).length : prev.length,
+      posts_from_instagram: fresh.length,
       stories: Array.isArray(patch.recent_stories) ? (patch.recent_stories as unknown[]).length : null,
       partial: failed,
     });
