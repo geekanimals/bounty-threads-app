@@ -86,7 +86,7 @@
     var groups = COMP ? COMP.groups : {};
     var chip = function(k,label){ var on = groups && groups[k]; return '<span class="cp-chip '+(on?"on":"")+'">'+(on?"✓":"○")+" "+esc(label)+'</span>'; };
     return ''
-      + '<div class="card cp-head">' + reqBanner()
+      + '<div id="cpHead" class="card cp-head">' + reqBanner()
       + '  <div class="cp-head-top"><h3>Your Creator Profile</h3><span id="cpSave" class="cp-savestate"></span></div>'
       + (REQ ? '' : (''
       + '  <div class="cp-progress"><div class="cp-bar"><span style="width:'+pct+'%"></span></div><b>'+pct+'% complete</b></div>'
@@ -125,7 +125,9 @@
   }
 
   function renderAll(){
-    document.getElementById("cpHead").outerHTML = header();
+    var head = document.getElementById("cpHead"), bodyEl = document.getElementById("cpBody");
+    if(!head || !bodyEl) return;          // page changed / re-rendered while loading — a newer load() will paint
+    head.outerHTML = header();
     var d = DATA, personal = d.personal||{}, contact = d.contact||{}, pro = d.professional||{}, conn = d.connection;
     var body = "";
 
@@ -283,7 +285,7 @@
       + '<div class="cp-note">Disabling data sharing may reduce Verified Data Coverage — it never lowers Performance, raises Fraud risk, or labels you unreliable.</div>',
       {noSave:true});
 
-    document.getElementById("cpBody").innerHTML = body;
+    bodyEl.innerHTML = body;
     wire(); wireReq();
     maybeOnboard();
   }
@@ -413,7 +415,7 @@
     var r=await api("upsert_address",{ p_payload:payload, p_correlation:"ui" }); if(r.error) throw r.error;
   }
 
-  async function refreshCompletion(){ try{ var c=await api("get_profile_completion"); if(c&&!c.error){ COMP=c.data; } await loadReq(); var h=document.querySelector(".cp-head"); if(h){ h.outerHTML=header(); wireReq(); } }catch(e){} }
+  async function refreshCompletion(){ try{ var c=await api("get_profile_completion"); if(c&&!c.error){ COMP=c.data; } await loadReq(); var h=document.getElementById("cpHead"); if(h){ h.outerHTML=header(); wireReq(); } }catch(e){} }
   function wireReq(){
     document.querySelectorAll("[data-goto]").forEach(function(a){ a.onclick=function(e){ e.preventDefault();
       var sec=document.querySelector('.cp-sec[data-sec="'+a.getAttribute("data-goto")+'"]'); if(sec){ sec.scrollIntoView({behavior:"smooth",block:"start"}); sec.classList.add("cp-flash"); setTimeout(function(){ sec.classList.remove("cp-flash"); },1600); } }; });
