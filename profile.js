@@ -188,7 +188,7 @@
       + '<div class="cp-hint" style="margin-top:12px" id="cp_addr_mode">Add a new address</div>'
       + '<div class="cp-grid">'
       + '<input type="hidden" id="cp_addr_id" value="">'
-      + field("Label","cp_addr_label","",{hint:"e.g. Home, Office, Studio"})
+      + field("Label","cp_addr_label","Home",{select:[["Home","Home"],["Office","Office"],["Manager","Manager / agent"],["Other","Other (studio, PG, family…)"]]})
       + field("Address line 1","cp_l1",addr.line1,{privacy:"Campaign-only"})
       + field("Address line 2","cp_l2",addr.line2)
       + field("Locality / landmark","cp_landmark",addr.landmark)
@@ -409,7 +409,7 @@
     if(pin && !/^[A-Za-z0-9 \-]{3,12}$/.test(pin)) throw new Error("Enter a valid postal/PIN code");
     var payload={ line1:v("cp_l1")||null, line2:v("cp_l2")||null, landmark:v("cp_landmark")||null,
       city:v("cp_city")||null, state:v("cp_state")||null, postal_code:pin||null, country:v("cp_country")||"India",
-      label:v("cp_addr_label")||null, is_default: !!(document.getElementById("cp_addr_default")||{}).checked };
+      label:(function(x){ x=String(x||"").trim().toLowerCase(); return x==="home"?"Home":x==="office"?"Office":x==="manager"?"Manager":x?"Other":"Home"; })(v("cp_addr_label")), is_default: !!(document.getElementById("cp_addr_default")||{}).checked };
     if(!payload.line1 || !payload.city || !payload.postal_code) throw new Error("Address line 1, city and PIN are required");
     var id=v("cp_addr_id"); if(id) payload.address_id=id;
     var r=await api("upsert_address",{ p_payload:payload, p_correlation:"ui" }); if(r.error) throw r.error;
@@ -446,7 +446,7 @@
     if(an) an.onclick=function(){ fillAddr({}); };
     function fillAddr(a){
       var set=function(id,v){ var e=document.getElementById(id); if(e) e.value = v==null?"":v; };
-      set("cp_addr_id",a.address_id); set("cp_addr_label",a.label); set("cp_l1",a.line1); set("cp_l2",a.line2); set("cp_landmark",a.landmark);
+      set("cp_addr_id",a.address_id); set("cp_addr_label",a.label||"Home"); set("cp_l1",a.line1); set("cp_l2",a.line2); set("cp_landmark",a.landmark);
       set("cp_city",a.city); set("cp_state",a.state); set("cp_pin",a.postal_code); set("cp_country",a.country||"India");
       var dflt=document.getElementById("cp_addr_default"); if(dflt) dflt.checked = !!a.is_default || !(DATA.addresses||[]).length;
       var m=document.getElementById("cp_addr_mode"); if(m) m.textContent = a.address_id ? "Editing: "+(a.label||"address") : "Add a new address";
