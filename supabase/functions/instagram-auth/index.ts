@@ -51,7 +51,8 @@ Deno.serve(async (req) => {
     if (!shortRes.ok || !shortData.access_token) {
       return json({ error: "Token exchange failed", detail: shortData }, 400);
     }
-    const igUserId = String(shortData.user_id);
+    // token-exchange user_id is the APP-SCOPED id; publishing needs the professional account id from /me
+    let igUserId = String(shortData.user_id);
 
     // --- 2) short-lived -> long-lived token (~60 days) ---
     const longRes = await fetch(
@@ -61,6 +62,11 @@ Deno.serve(async (req) => {
     const accessToken = longData.access_token || shortData.access_token;
     const expiresIn = Number(longData.expires_in) || 3600;
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+    try {
+      const meRes = await fetch(`${GRAPH}/me?fields=user_id&access_token=${encodeURIComponent(accessToken)}`);
+      const me = await meRes.json();
+      if (meRes.ok && me?.user_id) igUserId = String(me.user_id);
+    } catch (_e) { /* keep the exchange id; publish resolves it again */ }
 
     // --- 3) fetch profile + media + insights (avg reach, audience, mentions) ---
     const { profile, media, avgReach, audience, mentions } = await fetchProfileBundle(accessToken, igUserId);

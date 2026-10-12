@@ -252,17 +252,29 @@ Deno.serve(async (req: Request) => {
       accessToken
     );
 
-    const createResponse = await fetch(
-      `${GRAPH}/${igUserId}/media`,
-      {
-        method: "POST",
-        body: createParams,
+    // Publish to the token's own account: `me` first; if Instagram rejects that, resolve the professional
+    // account id (/me?fields=user_id) and try it, then the stored id. Older connections saved the app-scoped
+    // id from the token exchange, which Instagram refuses ("Object with ID … does not exist").
+    const tryCreate = async (base: string) => {
+      const r = await fetch(`${GRAPH}/${base}/media`, { method: "POST", body: createParams });
+      return { r, j: await readJson(r) };
+    };
+    let pubBase = "me";
+    let { r: createResponse, j: container } = await tryCreate(pubBase);
+    if (!createResponse.ok || !container?.id) {
+      const meRes = await fetch(`${GRAPH}/me?fields=user_id&access_token=${encodeURIComponent(accessToken)}`);
+      const me = await readJson(meRes);
+      const canonical = meRes.ok && me?.user_id ? String(me.user_id) : "";
+      for (const id of [canonical, String(igUserId)].filter((x, i, arr) => x && arr.indexOf(x) === i)) {
+        const t = await tryCreate(id);
+        createResponse = t.r; container = t.j;
+        if (createResponse.ok && container?.id) { pubBase = id; break; }
       }
-    );
-
-    const container = await readJson(
-      createResponse
-    );
+      // heal the stored id so the media kit / insights use the right account from now on
+      if (canonical && canonical !== String(igUserId)) {
+        await admin.from("social_tokens").update({ ig_user_id: canonical }).eq("member_id", user.id).eq("platform", "instagram");
+      }
+    }
 
     // Instagram rejected container creation
     if (
@@ -395,7 +407,7 @@ Deno.serve(async (req: Request) => {
     );
 
     const publishResponse = await fetch(
-      `${GRAPH}/${igUserId}/media_publish`,
+      `${GRAPH}/${pubBase}/media_publish`,
       {
         method: "POST",
         body: publishParams,
