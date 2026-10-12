@@ -1711,7 +1711,8 @@ function mkHead(a){
       <div><h3 style="margin:0 0 2px">Work with ${firstName}</h3>
         <div class="muted">Barters, paid campaigns &amp; brand collaborations — managed end-to-end in Geek Influencer OS.</div></div>
       <button class="btn" id="mkComposeCta">Publish to Instagram →</button>
-    </div>`;
+    </div>
+  </div>`;
 }
 
 function openMkEdit(section, acct){
@@ -1854,7 +1855,8 @@ async function refreshMediaKit(force){
     // never blank the grid: if this read has no posts but the last good one did, keep showing those
     if(!(Array.isArray(acct.recent_media) && acct.recent_media.length) && _mkLastAcct && (_mkLastAcct.recent_media||[]).length) acct.recent_media = _mkLastAcct.recent_media;
     _mkLastAcct = acct;
-    hw.innerHTML = mkHead(acct) + mkStories(acct); wireMkHead(acct);
+    hw.innerHTML = mkHead(acct); wireMkHead(acct);
+    const sw = document.getElementById("mkStoriesWrap"); if(sw) sw.innerHTML = mkStories(acct);
   }
   mkStamp();
 }
@@ -1876,7 +1878,10 @@ async function loadMediaKit(){
   if(!acct){ showConnect(); return; }
   _mkLastAcct = acct;
   wrap.innerHTML = `<div class="muted" id="mkSyncStamp" style="font-size:12px;text-align:right;margin-bottom:6px"></div>`
-    + `<div id="mkHeadWrap">${mkHead(acct) + mkStories(acct)}</div>` + mkComposer();
+    + `<div id="mkHeadWrap"></div><div class="mk-kit" id="mkStoriesWrap"></div><div class="mk-kit" id="mkComposerWrap"></div>`;
+  document.getElementById("mkHeadWrap").innerHTML = mkHead(acct);
+  document.getElementById("mkStoriesWrap").innerHTML = mkStories(acct);
+  document.getElementById("mkComposerWrap").innerHTML = mkComposer();
   wireMkHead(acct);
   wireMkComposer();
   _mkSyncedAt = 0; mkStamp();
