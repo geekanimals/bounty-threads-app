@@ -1818,7 +1818,7 @@ function mkStories(a){
     }).join("")}</div></div>`;
 }
 
-let _mkTimer = null, _mkSyncedAt = 0, _mkLastAcct = null;
+let _mkTimer = null, _mkSyncedAt = 0, _mkLastAcct = null, _mkHeadHtml = "", _mkStoriesHtml = "";
 function wireMkHead(acct){
   const share = document.getElementById("mkShare");
   if(share) share.onclick = async ()=>{
@@ -1854,9 +1854,14 @@ async function refreshMediaKit(force){
   if(acct && hw){
     // never blank the grid: if this read has no posts but the last good one did, keep showing those
     if(!(Array.isArray(acct.recent_media) && acct.recent_media.length) && _mkLastAcct && (_mkLastAcct.recent_media||[]).length) acct.recent_media = _mkLastAcct.recent_media;
+    // silent refresh: only touch the DOM when something visible actually changed (no flicker, no image reloads,
+    // scroll position kept); the composer is never touched
+    const headHtml = mkHead(acct), storiesHtml = mkStories(acct), sw = document.getElementById("mkStoriesWrap");
     _mkLastAcct = acct;
-    hw.innerHTML = mkHead(acct); wireMkHead(acct);
-    const sw = document.getElementById("mkStoriesWrap"); if(sw) sw.innerHTML = mkStories(acct);
+    if(headHtml !== _mkHeadHtml){
+      const y = window.scrollY; hw.innerHTML = headHtml; _mkHeadHtml = headHtml; wireMkHead(acct); window.scrollTo(0, y);
+    }
+    if(sw && storiesHtml !== _mkStoriesHtml){ sw.innerHTML = storiesHtml; _mkStoriesHtml = storiesHtml; }
   }
   mkStamp();
 }
@@ -1879,8 +1884,9 @@ async function loadMediaKit(){
   _mkLastAcct = acct;
   wrap.innerHTML = `<div class="muted" id="mkSyncStamp" style="font-size:12px;text-align:right;margin-bottom:6px"></div>`
     + `<div id="mkHeadWrap"></div><div class="mk-kit" id="mkStoriesWrap"></div><div class="mk-kit" id="mkComposerWrap"></div>`;
-  document.getElementById("mkHeadWrap").innerHTML = mkHead(acct);
-  document.getElementById("mkStoriesWrap").innerHTML = mkStories(acct);
+  _mkHeadHtml = mkHead(acct); _mkStoriesHtml = mkStories(acct);
+  document.getElementById("mkHeadWrap").innerHTML = _mkHeadHtml;
+  document.getElementById("mkStoriesWrap").innerHTML = _mkStoriesHtml;
   document.getElementById("mkComposerWrap").innerHTML = mkComposer();
   wireMkHead(acct);
   wireMkComposer();
