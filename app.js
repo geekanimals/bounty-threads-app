@@ -61,12 +61,17 @@ function renderNav(){
   // Barter-pipeline Alerts inbox is DARK (operational_pilot); shown for all roles when the ops layer is on.
   if(window.__ciOpsEnabled && !keys.includes("alerts")) keys.splice(1,0,"alerts");
   if(window.__isAdmin) keys.push("admin");
+  if(window.__profileGate && !keys.includes("profile")) keys.splice(1,0,"profile");
   keys.forEach(key=>{
     const m = NAV_META[key] || {ic:"🛡", label:key};
     const a = el("a","", `<span class="ic">${m.ic}</span><span>${m.label}</span>`);
     a.setAttribute("data-page", key);
     if(key===currentPage) a.classList.add("active");
-    a.onclick = ()=>{ currentPage=key; renderShell(); if(window.innerWidth<=760) $("#sidebar").classList.remove("open"); };
+    const locked = window.__profileGate && key!=="profile";
+    if(locked){ a.style.opacity = ".45"; a.title = "Complete your profile to unlock"; a.querySelector(".ic").textContent = "🔒"; }
+    a.onclick = ()=>{
+      if(locked){ gateToast("Complete your profile first — "+((window.__profileReq&&window.__profileReq.total)-(window.__profileReq&&window.__profileReq.done)||"a few")+" items left."); return; }
+      currentPage=key; renderShell(); if(window.innerWidth<=760) $("#sidebar").classList.remove("open"); };
     nav.appendChild(a);
   });
 }
@@ -2626,7 +2631,7 @@ function wireMkComposer(){
 
 /* ================= ADMIN (platform team — approve agency signups) ================= */
 /* ================= SUPER ADMIN CONSOLE ================= */
-const ADMIN_TABS = [["overview","Overview"],["campaigns","All campaigns"],["activity","Creator activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["approvals","Approvals"],["admins","Super admins"]];
+const ADMIN_TABS = [["overview","Overview"],["users","All users"],["campaigns","All campaigns"],["activity","Creator activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["approvals","Approvals"],["admins","Super admins"]];
 const ADMIN_TABLES = [
   ["members","Members"],["creators","Creators"],["campaigns","Campaigns"],["barter_items","Barter items"],
   ["applications","Applications"],["invites","Invites"],["irm_contacts","IRM contacts"],
@@ -2636,6 +2641,92 @@ const ADMIN_EDITABLE = new Set(["members","creators","campaigns","barter_items",
 const ADMIN_READONLY_FIELDS = new Set(["id","org_id","created_at","updated_at"]);
 let _adminTab = "overview";
 let _adminDataTable = "creators";
+
+// Super Admin → All users: who joined, when they signed in, consent, live profile status + full creator profile
+let _auFilter = "all", _auTimer = null, _auSig = "";
+async function adminUsers(body, silent){
+  if(!silent) body.innerHTML = `<div class="card"><div class="muted">Loading users…</div></div>`;
+  const { data, error } = await sb.rpc("admin_users");
+  if(error){ if(!silent) body.innerHTML = adminErr(error); return; }
+  const sig = JSON.stringify(data); if(silent && sig===_auSig) return; _auSig = sig;
+  const all = data||[];
+  const ago = t=>{ if(!t) return "—"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
+  const roles = ["all","creator","owner","brand","manager","corporate"];
+  const rows = all.filter(u=> _auFilter==="all" || u.role===_auFilter || (_auFilter==="incomplete" && u.role==="creator" && u.profile_complete===false) || (_auFilter==="pending" && u.status==="pending"));
+  const today = new Date(); today.setHours(0,0,0,0);
+  const n = f => all.filter(f).length;
+  body.innerHTML = `<div class="rp-kpis">
+      <div><b>${all.length}</b>Total users</div><div><b>${n(u=>u.role==="creator")}</b>Creators</div>
+      <div><b>${n(u=>u.role==="owner"||u.role==="brand")}</b>Agencies & brands</div>
+      <div><b>${n(u=>u.joined_at && new Date(u.joined_at)>=today)}</b>Joined today</div>
+      <div><b>${n(u=>u.last_sign_in_at && new Date(u.last_sign_in_at)>=today)}</b>Signed in today</div>
+      <div><b>${n(u=>u.role==="creator" && u.profile_complete)}</b>Profiles complete</div>
+      <div><b>${n(u=>u.consent)}</b>Cookie consent given</div></div>
+    <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+      <h3 style="margin:0">All users <span class="muted" style="font-size:12px;font-weight:400">· live, refreshes every 30s</span></h3>
+      <select id="auFilter">${roles.concat(["incomplete","pending"]).map(r=>`<option value="${r}"${r===_auFilter?" selected":""}>${{all:"Everyone",creator:"Creators",owner:"Agency owners",brand:"Brands",manager:"Managers",corporate:"Corporate",incomplete:"Creators — profile incomplete",pending:"Pending approval"}[r]}</option>`).join("")}</select></div>
+    <div style="overflow-x:auto;margin-top:10px"><table class="tbl"><thead><tr><th>Person</th><th>Role</th><th>WhatsApp / email</th><th>Joined</th><th>Last sign-in</th><th>Logins</th><th>Last seen</th><th>Location / IP</th><th>Cookies</th><th>Profile</th><th></th></tr></thead><tbody>
+    ${rows.map(u=>`<tr><td><b>${esc(u.name||"—")}</b>${u.ig_username?`<div class="muted" style="font-size:12px">@${esc(u.ig_username)}${u.followers!=null?` · ${fmtNum(u.followers)}`:""}</div>`:""}${u.org_name&&u.role!=="creator"?`<div class="muted" style="font-size:12px">${esc(u.org_name)}</div>`:""}</td>
+      <td>${esc(u.role||"—")}${u.status==="pending"?' <span class="tag warn">pending</span>':""}</td>
+      <td style="font-size:12px">${esc(u.whatsapp||"")}${u.email?`<div>${esc(u.email)}</div>`:""}</td>
+      <td style="font-size:12px">${esc(fmtDateTime(u.joined_at))}</td><td style="font-size:12px">${esc(fmtDateTime(u.last_sign_in_at))}</td>
+      <td>${u.logins||0}</td><td>${ago(u.last_seen)}</td>
+      <td style="font-size:12px">${esc([u.last_city,u.last_region].filter(Boolean).join(", ")||"—")}${u.last_ip?`<div class="muted"><code>${esc(u.last_ip)}</code></div>`:""}</td>
+      <td>${u.consent==="all"?'<span class="tag good">all</span>':u.consent==="essential"?'<span class="tag warn">essential</span>':'<span class="muted">—</span>'}${u.consent_at?`<div class="muted" style="font-size:11px">${esc(fmtDateTime(u.consent_at))}</div>`:""}</td>
+      <td>${u.role!=="creator"?"—":u.profile_complete?'<span class="tag good">complete</span>':`<span class="tag warn">${u.profile_done??0}/${u.profile_total??"?"}</span>`}</td>
+      <td style="white-space:nowrap">${u.role==="creator"?`<button class="mini-btn" data-auprof="${esc(u.member_id)}">Profile</button> `:""}<button class="mini-btn ghost" data-autl="${esc(u.member_id)}">Activity</button></td></tr>`).join("")}
+    </tbody></table></div>${rows.length?"":`<div class="muted" style="padding:8px">No users in this view.</div>`}</div>
+    <div id="auDetail"></div><div id="actTimeline"></div>`;
+  document.getElementById("auFilter").onchange = e=>{ _auFilter = e.target.value; _auSig=""; adminUsers(body); };
+  body.querySelectorAll("[data-auprof]").forEach(b=> b.onclick = ()=> adminCreatorProfile(b.dataset.auprof, all.find(u=>u.member_id===b.dataset.auprof)));
+  body.querySelectorAll("[data-autl]").forEach(b=> b.onclick = ()=> adminActivityTimeline(b.dataset.autl, all.find(u=>u.member_id===b.dataset.autl)));
+  clearInterval(_auTimer);
+  _auTimer = setInterval(()=>{
+    const b = document.getElementById("adminBody");
+    if(currentPage!=="admin" || _adminTab!=="users" || !b){ clearInterval(_auTimer); return; }
+    if(document.visibilityState!=="visible" || document.getElementById("auDetail")?.innerHTML || document.getElementById("actTimeline")?.innerHTML || document.activeElement?.tagName==="SELECT") return;
+    adminUsers(b, true);
+  }, 30000);
+}
+async function adminCreatorProfile(member, row){
+  const box = document.getElementById("auDetail"); if(!box) return;
+  box.innerHTML = `<div class="card"><div class="muted">Loading profile…</div></div>`;
+  const { data:d, error } = await sb.rpc("admin_creator_profile", { p_member: member });
+  if(error){ box.innerHTML = `<div class="card"><div class="muted">${esc(error.message)}</div></div>`; return; }
+  if(!d || !d.identity_id){ box.innerHTML = `<div class="card"><div class="muted">This creator hasn't started their profile yet.</div></div>`; return; }
+  const per=d.personal||{}, con=d.contact||{}, cp=d.commercial_preference||{}, pro=d.professional||{}, req=d.requirements||{};
+  const age = per.date_of_birth ? Math.floor((Date.now()-new Date(per.date_of_birth).getTime())/31557600000) : null;
+  const yn = v => v===true?"Yes":v===false?"No":"—";
+  const L = { prefer_not_to_say:"Prefer not to say", single:"Unmarried", married:"Married", divorced:"Divorced", widowed:"Widowed", non_binary:"Non-binary", female:"Female", male:"Male", other:"Other" };
+  const r = (k,v)=>`<div class="cd-row"><span class="cd-l">${esc(k)}</span><span class="cd-v">${v==null||v===""?"—":v}</span></div>`;
+  const synthetic = /@creators\.bountythreads\.app$/i.test(con.email||"");
+  box.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><h3 style="margin:0">${esc((row&&row.name)||"Creator")} ${row&&row.ig_username?`<span class="muted" style="font-weight:400">@${esc(row.ig_username)}</span>`:""}</h3>
+      <span>${req.complete?'<span class="tag good">Profile complete</span>':`<span class="tag warn">${req.done}/${req.total} done</span>`} <button class="mini-btn ghost" id="auClose">Close</button></span></div>
+    ${!req.complete&&(req.missing||[]).length?`<div class="muted" style="margin:8px 0">Missing: ${req.missing.map(esc).join(" · ")}</div>`:""}
+    <div class="grid two" style="margin-top:10px"><div>
+      ${r("Rate card", (d.rate_items||[]).map(i=>`${esc(i.deliverable_type)} — ${fmtMoney(i.amount)}`).join("<br>"))}
+      ${r("Open to barter", yn(cp.accepts_barter))}
+      ${r("Barter min value", cp.min_product_value!=null?fmtMoney(cp.min_product_value):"")}
+      ${r("Favourite brands", (d.fav_brands||[]).map(esc).join(", "))}
+      ${r("Brands worked with", (d.brands_worked||[]).map(b=>esc(b.brand)+(b.type?` (${esc(b.type)})`:"")).join(", "))}
+      ${r("Skills", (d.skills||[]).map(esc).join(", "))}
+      ${r("Resources", (d.resources||[]).map(esc).join(", "))}
+      ${r("Categories", (pro.categories||[]).map(esc).join(", "))}
+    </div><div>
+      ${r("Name", esc([per.first_name,per.last_name].filter(Boolean).join(" ")))}
+      ${r("Gender", esc(L[per.gender]||per.gender||""))}
+      ${r("Birthday", per.date_of_birth?`${esc(fmtDate(per.date_of_birth))}${age!=null?` · ${age} yrs`:""}`:"")}
+      ${r("Marital status", esc(L[per.marital_status]||per.marital_status||""))}
+      ${per.marital_status==="married"?r("Anniversary", esc(fmtDate(per.marriage_anniversary))):""}
+      ${r("Pet", per.has_pet==null?"—":per.has_pet?`Yes — ${esc(per.pet_name||"")} (${esc(per.pet_type||"")})`:"No")}
+      ${r("WhatsApp", esc(con.whatsapp_e164||(row&&row.whatsapp)||""))}
+      ${r("Backup email", synthetic?"":esc(con.email||""))}
+    </div></div>
+    <div class="cd-block" style="margin-top:10px"><div class="cd-l">Addresses</div><div class="cd-body">${(d.addresses||[]).map(a=>`${a.is_default?"⭐ ":""}${esc([a.label,a.line1,a.line2,a.landmark,a.city,a.state,a.postal_code,a.country].filter(Boolean).join(", "))}`).join("<br>")||"—"}</div></div>
+    <div class="muted" style="font-size:11px;margin-top:10px">Private data — this view is recorded in the audit log.</div></div>`;
+  document.getElementById("auClose").onclick = ()=>{ box.innerHTML = ""; };
+  box.scrollIntoView({behavior:"smooth"});
+}
 
 // Super Admin → Creator activity: who is on the platform, from where, for how long, doing what.
 async function adminActivity(body){
@@ -2680,7 +2771,7 @@ function loadAdmin(){
   document.querySelectorAll("[data-atab]").forEach(b=> b.onclick = ()=>{ _adminTab = b.dataset.atab; currentPage="admin"; renderShell(); });
   const body = document.getElementById("adminBody");
   if(!body || !window.sb) return;
-  ({ overview:adminOverview, campaigns:adminCampaigns, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+  ({ overview:adminOverview, users:adminUsers, campaigns:adminCampaigns, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
 }
 
 /* System check — live-verifies the deployed database matches the code (tables, columns, RPCs).
@@ -3441,6 +3532,7 @@ function renderContent(){
 }
 
 function renderShell(){
+  if(window.__profileGate && currentPage!=="profile") currentPage = "profile";
   if(window.Tracker) Tracker.page(currentPage);
   renderNav(); renderMe(); renderContent();
 }
@@ -3617,6 +3709,40 @@ function showEmailGate(){
   document.getElementById("emSignout").onclick = ()=> window.Auth && Auth.signOut();
 }
 
+function gateToast(msg){
+  let t = document.getElementById("gateToast");
+  if(!t){ t = el("div",""); t.id="gateToast"; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;font-size:14px;max-width:90vw;box-shadow:0 6px 24px rgba(0,0,0,.25)"; document.body.appendChild(t); }
+  t.textContent = msg; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(()=>{ t.style.display="none"; }, 3200);
+}
+// called by profile.js every time the mandatory checklist is re-computed
+window.onProfileRequirements = function(req){
+  if(!window.Auth || !Auth.profile || Auth.profile.role!=="creator" || !req) return;
+  const wasGated = !!window.__profileGate;
+  window.__profileGate = !req.complete;
+  if(wasGated && req.complete){
+    if(window.Tracker) Tracker.security("profile_completed");
+    gateToast("🎉 Profile complete — everything is unlocked!");
+    currentPage = "mediakit"; renderShell();
+  } else if(wasGated !== !!window.__profileGate){ renderNav(); }
+};
+// Cookie choice is required once per account (server-recorded so the Super Admin sees it on every device)
+async function ensureConsent(){
+  if(!window.Consent) return;
+  let local = Consent.choice();
+  if(!local && window.sb){
+    try{ const { data } = await sb.rpc("my_consent"); if(data==="all"||data==="essential"){ Consent.set(data, true); local = data; } }catch(e){}
+  }
+  if(!local) await Consent.require();
+}
+async function creatorProfileGate(){
+  try{
+    const { data, error } = await sb.schema("api").rpc("get_profile_requirements");
+    if(error || !data) return;                    // fail open: never lock someone out on a network error
+    window.__profileReq = data;
+    window.__profileGate = !data.complete;
+  }catch(e){}
+}
+
 async function bootOS(){
   // Agency/brand accounts created through WhatsApp verify their official email first (one time)
   if(window.Auth && Auth.profile && ["owner","brand"].includes(Auth.profile.role) && Auth.profile.created_via === "whatsapp-login" && !Auth.profile.email_verified_at){
@@ -3630,6 +3756,11 @@ async function bootOS(){
     if(!window.__osBooted && !new URLSearchParams(location.search).get("go")) currentPage = "mediakit";
   }
   if(window.Tracker) Tracker.start();
+  await ensureConsent();
+  if(window.Auth && Auth.profile && Auth.profile.role === "creator"){
+    await creatorProfileGate();
+    if(window.__profileGate) currentPage = "profile";
+  }
   // Seed the signed-in user's role into the shell.
   if(window.Auth && Auth.profile && ROLES[Auth.profile.role]){
     currentRole = Auth.profile.role;

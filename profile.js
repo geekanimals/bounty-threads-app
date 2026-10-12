@@ -57,6 +57,7 @@
       }
       DATA = p.data || {};
       var c = await api("get_profile_completion"); COMP = (c && !c.error) ? c.data : null;
+      await loadReq();
       try { var ing = await api("get_my_ingestion_status"); window.__ciIngest = (ing && !ing.error) ? ing.data : null; } catch(e){ window.__ciIngest = null; }
       renderAll();
     }catch(e){
@@ -65,20 +66,36 @@
     }
   }
 
+  var REQ = null;
+  async function loadReq(){
+    try{ var r = await api("get_profile_requirements"); if(r && !r.error && r.data){ REQ = r.data; window.__profileReq = REQ; } }catch(e){}
+    if(REQ && window.onProfileRequirements) window.onProfileRequirements(REQ);
+    return REQ;
+  }
+  function reqBanner(){
+    if(!REQ) return "";
+    if(REQ.complete) return '<div class="cp-req"><b>✓ Profile complete</b> <span class="muted">— all '+REQ.total+' required details added. Keep them up to date.</span></div>';
+    return '<div class="cp-req"><div class="cp-req-h"><b>🔒 Complete your profile to unlock Geek OS</b><span>'+REQ.done+' / '+REQ.total+' done</span></div>'
+      + '<div class="cp-bar"><span style="width:'+Math.round(100*REQ.done/Math.max(REQ.total,1))+'%"></span></div>'
+      + '<div class="cp-req-list">'+(REQ.items||[]).map(function(it){
+          return '<a href="#" class="cp-req-it '+(it.done?"done":"")+'" data-goto="'+esc(it.section)+'">'+(it.done?"✓":"○")+' '+esc(it.label)+'</a>'; }).join("")+'</div></div>';
+  }
   function header(){
     var pct = COMP ? COMP.completion_pct : 0;
     var missing = (COMP && COMP.missing_core) ? COMP.missing_core : [];
     var groups = COMP ? COMP.groups : {};
     var chip = function(k,label){ var on = groups && groups[k]; return '<span class="cp-chip '+(on?"on":"")+'">'+(on?"✓":"○")+" "+esc(label)+'</span>'; };
     return ''
-      + '<div class="card cp-head">'
+      + '<div class="card cp-head">' + reqBanner()
       + '  <div class="cp-head-top"><h3>Your Creator Profile</h3><span id="cpSave" class="cp-savestate"></span></div>'
+      + (REQ ? '' : (''
       + '  <div class="cp-progress"><div class="cp-bar"><span style="width:'+pct+'%"></span></div><b>'+pct+'% complete</b></div>'
       + '  <div class="cp-chips">'+chip("personal","Personal")+chip("contact","Contact")+chip("professional","Professional")
       +      chip("skills","Skills")+chip("barter","Barter")+chip("rate_card","Rate card")
       +      '<span class="cp-chip opt">'+(groups&&groups.brand_experience?"✓":"○")+' Brands (optional)</span>'
       +      '<span class="cp-chip opt">'+(groups&&groups.dream_brands?"✓":"○")+' Dream brands (optional)</span></div>'
       + (missing.length ? '<div class="muted cp-todo">Still to complete: '+missing.map(esc).join(", ")+'</div>' : '<div class="muted cp-todo">Core profile complete. Optional sections don\'t affect completion.</div>')
+      ))
       + '</div>';
   }
 
@@ -135,29 +152,29 @@
         '<div class="cp-grid">'
       + field("First name","cp_first",personal.first_name,{source:srcOf("professional.display_name")?null:null})
       + field("Last name","cp_last",personal.last_name)
-      + field("Gender (optional)","cp_gender",personal.gender,{select:[["","Prefer not to say"],["female","Female"],["male","Male"],["non_binary","Non-binary"],["other","Other"]],privacy:"Private"})
-      + field("Date of birth (optional)","cp_dob",personal.date_of_birth,{type:"date",privacy:"Private",hint: age!=null? "Age "+age+" (calculated, never stored)":"Age is calculated from DOB, never stored"})
-      + field("Marital status (optional)","cp_marital",mar,{select:[["","Prefer not to say"],["single","Single"],["married","Married"],["divorced","Divorced"],["widowed","Widowed"]],privacy:"Private"})
-      + '<div id="cp_anniv_wrap" style="'+(mar==="married"?"":"display:none")+'">'+field("Marriage anniversary","cp_anniv",personal.marriage_anniversary,{type:"date",privacy:"Private"})+'</div>'
-      + '<label class="cp-check" style="grid-column:1/-1"><input type="checkbox" id="cp_pet_on"'+(personal.has_pet?" checked":"")+'> I have a pet <span class="cp-priv">Private</span></label>'
+      + field("Gender *","cp_gender",personal.gender,{select:[["","Select…"],["female","Female"],["male","Male"],["non_binary","Non-binary"],["other","Other"],["prefer_not_to_say","Prefer not to say"]],privacy:"Private"})
+      + field("Birthday *","cp_dob",personal.date_of_birth,{type:"date",privacy:"Private",hint: age!=null? "Age "+age+" (calculated, never stored)":"Age is calculated from DOB, never stored"})
+      + field("Married / unmarried *","cp_marital",mar,{select:[["","Select…"],["single","Unmarried"],["married","Married"],["divorced","Divorced"],["widowed","Widowed"],["prefer_not_to_say","Prefer not to say"]],privacy:"Private"})
+      + '<div id="cp_anniv_wrap" style="'+(mar==="married"?"":"display:none")+'">'+field("Marriage anniversary *","cp_anniv",personal.marriage_anniversary,{type:"date",privacy:"Private"})+'</div>'
+      + field("Do you have a pet? *","cp_pet_on",personal.has_pet==null?"":(personal.has_pet?"yes":"no"),{select:[["","Select…"],["yes","Yes"],["no","No"]],privacy:"Private"})
       + '<div id="cp_pet_more" style="grid-column:1/-1;'+(personal.has_pet?"":"display:none")+'"><div class="cp-grid">'
-      +   field("Pet name","cp_pet_name",personal.pet_name,{privacy:"Private"})
-      +   field("Pet type","cp_pet_type",personal.pet_type,{select:[["","—"],["dog","Dog"],["cat","Cat"],["bird","Bird"],["fish","Fish"],["rabbit","Rabbit"],["hamster","Hamster"],["small_mammal","Small mammal"],["reptile","Reptile"],["horse","Horse"],["other","Other"]],privacy:"Private"})
+      +   field("Pet name *","cp_pet_name",personal.pet_name,{privacy:"Private"})
+      +   field("Pet type *","cp_pet_type",personal.pet_type,{select:[["","—"],["dog","Dog"],["cat","Cat"],["bird","Bird"],["fish","Fish"],["rabbit","Rabbit"],["hamster","Hamster"],["small_mammal","Small mammal"],["reptile","Reptile"],["horse","Horse"],["other","Other"]],privacy:"Private"})
       + '</div></div>'
-      + '</div><div class="cp-note">Optional sensitive fields never affect your profile quality, authenticity or ranking.</div>');
+      + '</div><div class="cp-note">* Required. “Prefer not to say” is a valid answer. These details are private — used only to personalise campaigns (birthday / anniversary gifting, pet brands), never shown to brands.</div>');
 
     // B Contact
     body += section("contact","Contact",
         '<div class="cp-grid">'
       + field("WhatsApp number","cp_wa",contact.whatsapp_e164,{privacy:"Private",hint:"International format, e.g. +919812345678"+(contact.whatsapp_verified_at?" · Verified":" · Not verified")})
-      + field("Email (backup & account recovery)","cp_email",contact.email,{type:"email",source:srcOf("contact.email"),privacy:"Private",hint:(contact.email_verified_at?"Verified":"Not verified")})
+      + field("Backup email (account recovery) *","cp_email",/@creators\.bountythreads\.app$/i.test(contact.email||"")?"":contact.email,{type:"email",source:srcOf("contact.email"),privacy:"Private",hint:(contact.email_verified_at?"Verified":"Not verified")})
       + field("Preferred contact","cp_pref",contact.preferred_contact_method,{select:[["","—"],["whatsapp","WhatsApp"],["email","Email"]]})
       + '</div><div class="cp-note">WhatsApp and email verification are independent and never shown to brands.</div>');
 
     // C Delivery addresses (one or many; one is the default for shipments)
     var addrs = (d.addresses || []);
     var addr = {};
-    body += section("address","Delivery addresses",
+    body += section("address","Delivery addresses — at least 1 with city, state & PIN *",
         '<div class="cp-list" id="cp_addr_list">'+(addrs.length?addrs.map(function(a){
             return '<div class="cp-item"><div><b>'+esc(a.label||"Address")+'</b>'+(a.is_default?' <span class="cp-badge">Default</span>':'')
               + '<div class="muted">'+esc([a.line1,a.line2,a.landmark,a.city,a.state,a.postal_code].filter(Boolean).join(", "))+'</div></div>'
@@ -199,10 +216,10 @@
       + '</div>');
 
     // E Skills & Resources
-    body += section("skills","Skills & resources",
+    body += section("skills","Skills & resources — at least 1 of each *",
         '<div class="cp-hint">Skills</div><div id="cp_skills" class="cp-tags">'+renderTags((d.skills||[]).map(function(s){return s.skill_key;}),"skill")+'</div>'
       + '<div class="cp-addrow"><input id="cp_skill_new" placeholder="Add a skill (e.g. Makeup)"><button class="btn sm ghost" data-add="skill">Add</button>'
-      + '<a class="btn sm ghost" target="_blank" rel="noopener" href="https://docs.google.com/forms/d/e/1FAIpQLScNqx1chYnV4154RVka6OFrXmG0asJ8bAChzBQyW7rOcJJh8A/viewform">Detailed skills form ↗</a></div>'
+      + '<a class="btn sm" target="_blank" rel="noopener" href="https://docs.google.com/forms/d/e/1FAIpQLScNqx1chYnV4154RVka6OFrXmG0asJ8bAChzBQyW7rOcJJh8A/viewform">📝 Fill the detailed skills form ↗</a></div>'
       + '<div class="cp-hint" style="margin-top:12px">Resources / equipment</div><div id="cp_res" class="cp-tags">'+renderTags((d.resources||[]).map(function(r){return r.resource_key;}),"resource")+'</div>'
       + '<div class="cp-addrow"><input id="cp_res_new" placeholder="Add a resource (e.g. Professional camera)"><button class="btn sm ghost" data-add="resource">Add</button></div>',
       {noSave:true});
@@ -223,7 +240,7 @@
     // G Barter preferences
     var cp = d.commercial_preference||{};
     body += section("barter","Barter preferences",
-        '<label class="cp-switch"><input type="checkbox" id="cp_barter_on"'+(cp.accepts_barter?" checked":"")+'> <span>Open to barter collaborations</span></label>'
+        field("Open to barter collaborations? *","cp_barter_on",cp.accepts_barter==null?"":(cp.accepts_barter?"yes":"no"),{select:[["","Select…"],["yes","Yes"],["no","No"]]})
       + '<div id="cp_barter_more" style="'+(cp.accepts_barter?"":"display:none")+'">'
       + '<div class="cp-grid">'
       + field("Scope","cp_barter_pref",cp.barter_preference,{select:[["","Any relevant brand"],["top_established_only","Top / established brands only"],["selected_brands_only","Selected brands only"]]})
@@ -237,7 +254,7 @@
     // H Paid rate card
     var items = ((d.rate_cards&&d.rate_cards[0]&&d.rate_cards[0].items)||[]);
     var DELIV = ["IG Reel","IG Story","IG Static Post","IG Carousel","IG Collab Reel","IG Live","Store/Restaurant Visit","UGC Video (no posting)","Usage Rights","Paid Amplification/Whitelisting","Exclusivity Add-on"];
-    body += section("rate","Paid rate card",
+    body += section("rate","Rate card — add your cost per Reel *",
         '<div class="cp-list" id="cp_rate_list">'+(items.length?items.map(function(it){
             return '<div class="cp-item"><div><b>'+esc(it.deliverable_type)+'</b> — ₹'+esc(it.amount)+' <span class="muted">× '+esc(it.unit_quantity||1)+'</span></div>'
               +'<button class="btn sm ghost" data-delitem="'+esc(it.rate_card_item_id)+'">Remove</button></div>';
@@ -249,7 +266,7 @@
 
     // I Dream brands
     var dreams = (d.dream_brands||[]);
-    body += section("dreams","Top brands I want to work with",
+    body += section("dreams","Favourite brands — add at least 1 *",
         '<div class="cp-list" id="cp_dream_list">'+(dreams.length?dreams.map(function(x,i){
             return '<div class="cp-item"><div><b>#'+(x.priority_rank||i+1)+'</b> '+esc(x.submitted_brand_name||"(brand)")+'</div>'
               +'<button class="btn sm ghost" data-deldream="'+esc(x.aspiration_id)+'">Remove</button></div>';
@@ -267,7 +284,7 @@
       {noSave:true});
 
     document.getElementById("cpBody").innerHTML = body;
-    wire();
+    wire(); wireReq();
     maybeOnboard();
   }
 
@@ -355,7 +372,7 @@
     if(key==="personal"){
       var dob=v("cp_dob"); if(dob){ var d=new Date(dob); if(d>new Date()){ setStatus(key,"error","Date of birth can't be in the future"); return null; } }
       var mar=v("cp_marital");
-      var hasPet=(function(){ var e=document.getElementById("cp_pet_on"); return !!(e&&e.checked); })();
+      var petV=v("cp_pet_on"), hasPet=petV==="yes"?true:petV==="no"?false:null;
       var p={ first_name:v("cp_first")||null, last_name:v("cp_last")||null, gender:v("cp_gender")||null,
               date_of_birth:v("cp_dob")||null, marital_status:mar||null,
               marriage_anniversary:(mar==="married"?(v("cp_anniv")||null):null),
@@ -375,7 +392,7 @@
                management_status:v("cp_mgmt")||null, bio:v("cp_bio")||null };
     }
     if(key==="barter"){
-      var on=document.getElementById("cp_barter_on").checked;
+      var bv=v("cp_barter_on"), on=bv==="yes"?true:bv==="no"?false:null;
       return { accepts_barter:on, barter_preference:v("cp_barter_pref")||null,
                preferred_categories:arr("cp_barter_cats"), excluded_categories:arr("cp_barter_excl"),
                min_product_value:num("cp_barter_min"), travel_ready:document.getElementById("cp_barter_travel").checked,
@@ -396,18 +413,22 @@
     var r=await api("upsert_address",{ p_payload:payload, p_correlation:"ui" }); if(r.error) throw r.error;
   }
 
-  async function refreshCompletion(){ try{ var c=await api("get_profile_completion"); if(c&&!c.error){ COMP=c.data; document.querySelector(".cp-head").outerHTML=header(); } }catch(e){} }
+  async function refreshCompletion(){ try{ var c=await api("get_profile_completion"); if(c&&!c.error){ COMP=c.data; } await loadReq(); var h=document.querySelector(".cp-head"); if(h){ h.outerHTML=header(); wireReq(); } }catch(e){} }
+  function wireReq(){
+    document.querySelectorAll("[data-goto]").forEach(function(a){ a.onclick=function(e){ e.preventDefault();
+      var sec=document.querySelector('.cp-sec[data-sec="'+a.getAttribute("data-goto")+'"]'); if(sec){ sec.scrollIntoView({behavior:"smooth",block:"start"}); sec.classList.add("cp-flash"); setTimeout(function(){ sec.classList.remove("cp-flash"); },1600); } }; });
+  }
 
   function wire(){
     // conditional anniversary + barter reveal
     var mar=document.getElementById("cp_marital");
     if(mar) mar.onchange=function(){ document.getElementById("cp_anniv_wrap").style.display = (mar.value==="married")?"":"none"; markDirty("personal"); };
     var bon=document.getElementById("cp_barter_on");
-    if(bon) bon.onchange=function(){ document.getElementById("cp_barter_more").style.display = bon.checked?"":"none"; markDirty("barter"); };
+    if(bon) bon.onchange=function(){ document.getElementById("cp_barter_more").style.display = bon.value==="yes"?"":"none"; markDirty("barter"); scheduleSave("barter"); };
     var dob=document.getElementById("cp_dob");
     if(dob) dob.onchange=function(){ var a=deriveAge(dob.value); var h=dob.parentNode.querySelector(".cp-hint"); if(h) h.textContent = a!=null?("Age "+a+" (calculated, never stored)"):"Age is calculated from DOB, never stored"; markDirty("personal"); };
     var pet=document.getElementById("cp_pet_on");
-    if(pet) pet.onchange=function(){ var m=document.getElementById("cp_pet_more"); if(m) m.style.display = pet.checked?"":"none"; markDirty("personal"); };
+    if(pet) pet.onchange=function(){ var m=document.getElementById("cp_pet_more"); if(m) m.style.display = pet.value==="yes"?"":"none"; markDirty("personal"); scheduleSave("personal"); };
     // Save & Continue buttons
     document.querySelectorAll("[data-save]").forEach(function(b){ b.onclick=function(){ saveSection(b.getAttribute("data-save")); }; });
     // auto-save (debounced) on input within a savable section
@@ -465,7 +486,13 @@
   // warn before discarding unsaved edits
   window.addEventListener("beforeunload", function(e){ if(window.__cpDirty){ e.preventDefault(); e.returnValue=""; } });
 
-  window.ciProfile = { boot: boot, load: load };
+  (function(){ if(document.getElementById("cpReqCss")) return; var st=document.createElement("style"); st.id="cpReqCss";
+    st.textContent='.cp-req{border:1px solid rgba(108,92,231,.35);background:rgba(108,92,231,.06);border-radius:12px;padding:12px 14px;margin-bottom:14px}'
+      +'.cp-req-h{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap}.cp-req-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}'
+      +'.cp-req-it{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid rgba(0,0,0,.12);text-decoration:none;color:inherit}'
+      +'.cp-req-it.done{opacity:.55;text-decoration:line-through}.cp-flash{box-shadow:0 0 0 3px rgba(108,92,231,.45);transition:box-shadow .3s}';
+    document.head.appendChild(st); })();
+  window.ciProfile = { boot: boot, load: load, loadReq: loadReq };
 
   // self-boot once app + a signed-in creator are ready (kept fully passive otherwise)
   var tries=0, t=setInterval(function(){
