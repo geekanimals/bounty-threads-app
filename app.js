@@ -1710,7 +1710,7 @@ function mkHead(a){
     <div class="card mk-section mk-collab">
       <div><h3 style="margin:0 0 2px">Work with ${firstName}</h3>
         <div class="muted">Barters, paid campaigns &amp; brand collaborations — managed end-to-end in Geek Influencer OS.</div></div>
-      <button class="btn" id="mkComposeCta">Create a post →</button>
+      <button class="btn" id="mkComposeCta">Publish to Instagram →</button>
     </div>`;
 }
 
@@ -1757,19 +1757,41 @@ function openMkEdit(section, acct){
 
 function mkComposer(){
   return `<div class="card" style="margin-top:16px"><h3>Publish to Instagram</h3>
-    <p class="muted" style="margin-bottom:10px">Post, Story or Reel — it publishes straight to your Instagram.</p>
+    <p class="muted" style="margin-bottom:10px">Post, carousel, Reel or Story — straight to your Instagram.</p>
     <form id="mkComposer" class="modal-form">
       <label>What are you publishing?<select name="kind" id="mkKind">
-        <option value="feed">Feed post (image)</option>
-        <option value="story">Story (image or video)</option>
+        <option value="feed">Post (1 photo) or Carousel (up to 10 photos/videos)</option>
         <option value="reel">Reel (video)</option>
+        <option value="story">Story (photo or video)</option>
       </select></label>
-      <label><span id="mkFileLbl">Image</span><input type="file" name="image" id="mkFile" accept="image/jpeg,image/png" required></label>
-      <div class="muted" id="mkHint" style="font-size:12px;margin-top:-4px">JPEG or PNG.</div>
-      <label id="mkCapWrap">Caption<textarea name="caption" rows="3" placeholder="Write a caption… #barter"></textarea></label>
+      <div id="mkCampWrap" style="display:none">
+        <label>Is this for a campaign?<select id="mkCamp"><option value="">No — personal post</option></select></label>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="mkAd" checked style="width:auto"> Add #ad disclosure (required by ASCI for brand posts)</label>
+      </div>
+      <label><span id="mkFileLbl">Photos</span><input type="file" id="mkFile"></label>
+      <div id="mkPreview" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      <div class="muted" id="mkHint" style="font-size:12px"></div>
+      <div id="mkCapWrap">
+        <label>Caption<textarea id="mkCap" rows="4" placeholder="Write a caption… use #hashtags and @mentions"></textarea></label>
+        <div class="muted" id="mkCount" style="font-size:12px"></div>
+      </div>
+      <div id="mkPeopleWrap">
+        <label>Tag people<input id="mkTags" placeholder="@friend, @photographer"></label>
+        <label>Collaborators (max 3)<input id="mkCollab" placeholder="@brand"></label>
+        <div class="muted" style="font-size:12px">Collaborators get an invite in Instagram — once they accept, the post shows on both profiles.</div>
+      </div>
+      <div id="mkReelWrap">
+        <label>Cover image (optional)<input type="file" id="mkCover" accept="image/*"></label>
+        <label>Or use the frame at (seconds)<input type="number" id="mkThumb" min="0" step="0.5" placeholder="e.g. 2.5"></label>
+        <label>Name your original audio (optional)<input id="mkAudio" maxlength="50" placeholder="e.g. Diwali vibes"></label>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="mkShareFeed" checked style="width:auto"> Also show on my profile grid</label>
+      </div>
+      <div class="ai-suggest" style="margin-top:4px"><span class="spark">🎵</span><div class="s-body"><b>Want a song, stickers or a link?</b>
+        <p>Instagram keeps its music library, stickers and story links inside the Instagram app — no outside app can add them. On your phone, tap below: your media opens in Instagram, ready to add a song and post.</p>
+        <button type="button" class="btn ghost" id="mkOpenIg" style="margin-top:6px">Open in Instagram app →</button></div></div>
       <div class="auth-err" id="mkErr"></div>
       <div class="lead-msg" id="mkMsg"></div>
-      <button class="btn" type="submit">Publish to Instagram →</button>
+      <button class="btn" type="submit">Publish →</button>
     </form></div>`;
 }
 
@@ -1821,55 +1843,159 @@ async function toInstagramJpeg(file, kind){
   return new File([blob], (file.name||"photo").replace(/\.[^.]+$/,"") + ".jpg", { type:"image/jpeg" });
 }
 const MK_KIND = {
-  feed:  { lbl:"Image",          accept:"image/*",                     hint:"Any photo — we convert it to JPEG for Instagram.",                                        btn:"Publish post →",  ok:"Posted to Instagram ✅" },
-  story: { lbl:"Image or video", accept:"image/*,video/mp4,video/quicktime", hint:"9:16 works best. Videos up to 60 seconds. Stories have no caption — add text/stickers in Instagram if needed.", btn:"Publish story →", ok:"Story is live on Instagram ✅" },
-  reel:  { lbl:"Video",          accept:"video/mp4,video/quicktime",                hint:"MP4/MOV, 9:16, 3–90 seconds.",                        btn:"Publish reel →",  ok:"Reel posted to Instagram ✅" }
+  feed:  { lbl:"Photos (pick up to 10 for a carousel)", accept:"image/*,video/mp4,video/quicktime", multiple:true, max:10,
+           hint:"1 photo = post · 2–10 photos/videos = carousel. Any photo format — we convert it to JPEG for Instagram.", btn:"Publish post →", ok:"Posted to Instagram ✅" },
+  reel:  { lbl:"Video", accept:"video/mp4,video/quicktime", multiple:false, max:1,
+           hint:"MP4/MOV, vertical 9:16, 3–90 seconds.", btn:"Publish reel →", ok:"Reel posted to Instagram ✅" },
+  story: { lbl:"Photo or video", accept:"image/*,video/mp4,video/quicktime", multiple:false, max:1,
+           hint:"Vertical 9:16 works best. Videos up to 60 seconds. Instagram's API can't add story text, stickers or music — use “Open in Instagram app” for those.", btn:"Publish story →", ok:"Story is live on Instagram ✅" }
 };
+const mkUsers = s => String(s||"").split(/[\s,]+/).map(x=>x.replace(/^@/,"").trim()).filter(x=>/^[A-Za-z0-9._]{1,30}$/.test(x)).filter((x,i,a)=>a.indexOf(x)===i);
+let _mkRules = [];
+
 function wireMkComposer(){
   const form = document.getElementById("mkComposer");
   if(!form) return;
-  const kindSel=document.getElementById("mkKind"), fileIn=document.getElementById("mkFile");
-  const applyKind=()=>{
-    const k=MK_KIND[kindSel.value]||MK_KIND.feed;
-    document.getElementById("mkFileLbl").textContent=k.lbl; fileIn.accept=k.accept; fileIn.value="";
-    document.getElementById("mkHint").textContent=k.hint;
-    document.getElementById("mkCapWrap").style.display = kindSel.value==="story" ? "none" : "";
-    form.querySelector("button[type=submit]").textContent=k.btn;
+  const $id = id => document.getElementById(id);
+  const kindSel=$id("mkKind"), fileIn=$id("mkFile"), cap=$id("mkCap"), btn=form.querySelector("button[type=submit]");
+  let files = [];
+
+  const counter = ()=>{
+    const t=cap.value||"", tags=(t.match(/#[\p{L}\p{N}_]+/gu)||[]).length, ments=(t.match(/@[A-Za-z0-9._]+/g)||[]).length;
+    const bad = t.length>2200 || tags>30 || ments>20;
+    $id("mkCount").innerHTML = `${t.length}/2200 characters · ${tags}/30 hashtags · ${ments}/20 mentions`;
+    $id("mkCount").style.color = bad ? "#c0392b" : "";
+    return !bad;
   };
-  kindSel.onchange=applyKind; applyKind();
+  const renderPreview = ()=>{
+    $id("mkPreview").innerHTML = files.map(f=>{
+      const u=URL.createObjectURL(f);
+      return /^video\//.test(f.type) ? `<video src="${u}" muted style="width:72px;height:72px;object-fit:cover;border-radius:8px"></video>`
+                                     : `<img src="${u}" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:8px">`;
+    }).join("");
+  };
+  const applyKind = ()=>{
+    const k = MK_KIND[kindSel.value]||MK_KIND.feed;
+    $id("mkFileLbl").textContent=k.lbl; fileIn.accept=k.accept; fileIn.multiple=k.multiple; fileIn.value=""; files=[]; renderPreview();
+    $id("mkHint").textContent=k.hint;
+    const story = kindSel.value==="story";
+    $id("mkCapWrap").style.display = story ? "none" : "";
+    $id("mkPeopleWrap").style.display = story ? "none" : "";
+    $id("mkReelWrap").style.display = kindSel.value==="reel" ? "" : "none";
+    btn.textContent=k.btn; $id("mkErr").textContent="";
+  };
+  kindSel.onchange = applyKind;
+  fileIn.onchange = ()=>{
+    const k = MK_KIND[kindSel.value]||MK_KIND.feed, err=$id("mkErr"); err.textContent="";
+    files = Array.from(fileIn.files||[]);
+    if(files.length > k.max){ err.textContent=`Pick at most ${k.max} file${k.max>1?"s":""}.`; files=files.slice(0,k.max); }
+    renderPreview();
+  };
+  cap.oninput = counter;
+
+  // campaign posting rules (pilot creators only): pre-fill required #hashtags / @mentions + #ad
+  const syncAd = ()=>{
+    const want = $id("mkAd").checked && !!$id("mkCamp").value, has = /(^|\s)#ad\b/i.test(cap.value);
+    if(want && !has) cap.value = (cap.value.trim()+" #ad").trim();
+    if(!want && has) cap.value = cap.value.replace(/(^|\s)#ad\b/ig,"").trim();
+    counter();
+  };
+  $id("mkAd").onchange = syncAd;
+  $id("mkCamp").onchange = ()=>{
+    const r = _mkRules.find(x=>x.participation_id===$id("mkCamp").value);
+    if(r){
+      const need = [...(r.hashtags||[]).map(h=>h.startsWith("#")?h:"#"+h), ...(r.mentions||[]).map(m=>"@"+String(m).replace(/^@/,""))];
+      const missing = need.filter(t=>!new RegExp("(^|\\s)"+t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"(\\b|$)","i").test(cap.value));
+      if(missing.length) cap.value = (cap.value.trim()+"\n\n"+missing.join(" ")).trim();
+      if(!$id("mkCollab").value.trim() && (r.mentions||[]).length) $id("mkCollab").value = "@"+String(r.mentions[0]).replace(/^@/,"");
+    }
+    syncAd();
+  };
+  if(window.__ciOpsEnabled && window.sb && sb.schema){
+    sb.schema("api").rpc("get_my_posting_rules").then(({data,error})=>{
+      if(error || !Array.isArray(data) || !data.length) return;
+      _mkRules = data;
+      $id("mkCamp").innerHTML = `<option value="">No — personal post</option>` + data.map(r=>`<option value="${esc(r.participation_id)}">${esc(r.campaign||"Campaign")} · ${esc(r.brand||"")}</option>`).join("");
+      $id("mkCampWrap").style.display = "";
+    });
+  }
+
+  // music / stickers / links live only inside the Instagram app → hand the media to it (mobile share sheet)
+  $id("mkOpenIg").onclick = async ()=>{
+    const err=$id("mkErr"); err.textContent="";
+    if(!files.length){ err.textContent="Pick your photo or video first, then tap “Open in Instagram app”."; return; }
+    try{ if(cap.value) await navigator.clipboard.writeText(cap.value); }catch(e){}
+    if(navigator.canShare && navigator.canShare({ files: files.slice(0,1) })){
+      try{ await navigator.share({ files: files.slice(0,1) }); $id("mkMsg").textContent="Choose Instagram → Story/Reel, add your song, paste the caption (already copied) and post."; $id("mkMsg").className="lead-msg ok"; }
+      catch(e){ if(e && e.name!=="AbortError") err.textContent="Couldn't open the share sheet: "+(e.message||e); }
+    } else {
+      err.textContent="This works on your phone (Chrome on Android, Safari on iPhone). Open the Media Kit on your phone to add music or stickers in Instagram.";
+    }
+  };
+
+  applyKind(); counter();
+
   form.onsubmit = async e=>{
     e.preventDefault();
-    const f = new FormData(form), err=document.getElementById("mkErr"), msg=document.getElementById("mkMsg");
-    const btn = form.querySelector("button[type=submit]");
+    const err=$id("mkErr"), msg=$id("mkMsg"), kind=kindSel.value||"feed", K=MK_KIND[kind]||MK_KIND.feed;
     err.textContent=""; msg.textContent=""; msg.className="lead-msg";
-    const file = f.get("image"), kind = f.get("kind")||"feed", K = MK_KIND[kind]||MK_KIND.feed;
-    if(!file || !file.size){ err.textContent="Pick a file first."; return; }
-    const isVideo = /^video\//.test(file.type||"");
-    if(kind==="feed" && isVideo){ err.textContent="Feed posts take an image — choose Reel or Story for videos."; return; }
-    if(kind==="reel" && !isVideo){ err.textContent="Reels need a video file."; return; }
-    if(file.size > 50*1024*1024){ err.textContent="File is too large (max 50 MB)."; return; }
-    btn.disabled=true; btn.textContent="Uploading…";
+    if(!files.length){ err.textContent="Pick a file first."; return; }
+    if(!counter()){ err.textContent="Caption is over Instagram's limits (see the counter)."; return; }
+    const vids = files.filter(f=>/^video\//.test(f.type||""));
+    if(kind==="reel" && !vids.length){ err.textContent="Reels need a video file."; return; }
+    if(kind==="feed" && files.length===1 && vids.length){ err.textContent="A single video is a Reel — choose Reel."; return; }
+    if(files.some(f=>f.size > 50*1024*1024)){ err.textContent="Each file must be under 50 MB."; return; }
+    const collabs = mkUsers($id("mkCollab").value);
+    if(collabs.length>3){ err.textContent="Instagram allows at most 3 collaborators."; return; }
+
+    btn.disabled=true;
     try{
       if(!window.sb) throw new Error("Not connected.");
       const uid = window.Auth && Auth.profile && Auth.profile.id;
       if(!uid) throw new Error("You're signed out. Sign in again to publish.");
-      const media = isVideo ? file : await toInstagramJpeg(file, kind);
-      const safe = (media.name||(isVideo?"clip.mp4":"post.jpg")).replace(/[^a-zA-Z0-9._-]/g,"");
-      const path = `${uid}/${Date.now()}-${safe}`;
-      const up = await sb.storage.from("ig-media").upload(path, media, { upsert:false, contentType:media.type||(isVideo?"video/mp4":"image/jpeg") });
-      if(up.error) throw up.error;
-      const { data:pub } = sb.storage.from("ig-media").getPublicUrl(path);
-      btn.textContent = isVideo ? "Publishing… (videos take up to a minute)" : "Publishing…";
-      const body = { kind, caption: kind==="story" ? "" : (f.get("caption")||"") };
-      if(isVideo) body.video_url = pub.publicUrl; else body.image_url = pub.publicUrl;
+      const upload = async (file, convertKind)=>{
+        const isVid = /^video\//.test(file.type||"");
+        const m = isVid ? file : await toInstagramJpeg(file, convertKind);
+        const path = `${uid}/${Date.now()}-${Math.random().toString(36).slice(2,8)}-${(m.name||(isVid?"clip.mp4":"photo.jpg")).replace(/[^a-zA-Z0-9._-]/g,"")}`;
+        const up = await sb.storage.from("ig-media").upload(path, m, { upsert:false, contentType:m.type||(isVid?"video/mp4":"image/jpeg") });
+        if(up.error) throw up.error;
+        return { type: isVid?"video":"image", url: sb.storage.from("ig-media").getPublicUrl(path).data.publicUrl };
+      };
+      const media=[];
+      for(let i=0;i<files.length;i++){ btn.textContent=`Uploading ${i+1}/${files.length}…`; media.push(await upload(files[i], kind)); }
+      const body = { kind, media, caption: kind==="story" ? "" : cap.value, user_tags: mkUsers($id("mkTags").value), collaborators: collabs };
+      if(kind==="reel"){
+        const cov = ($id("mkCover").files||[])[0];
+        body.reel = { share_to_feed: $id("mkShareFeed").checked, audio_name: $id("mkAudio").value.trim() };
+        if(cov){ btn.textContent="Uploading cover…"; body.reel.cover_url = (await upload(cov, "reel")).url; }
+        else if($id("mkThumb").value) body.reel.thumb_offset_ms = Math.round(parseFloat($id("mkThumb").value)*1000);
+      }
+      btn.textContent = vids.length ? "Publishing… (videos take up to a minute)" : "Publishing…";
       const { data, error } = await sb.functions.invoke("instagram-publish", { body });
       if(error) throw new Error(await fnError(error));
-      if(data && data.error) throw new Error(data.error + (data.detail && typeof data.detail==="string" ? " — "+data.detail : ""));
-      msg.textContent=K.ok; msg.className="lead-msg ok"; form.reset(); kindSel.value=kind; applyKind();
+      if(data && data.error) throw new Error(data.error);
+      let note = K.ok + (data && data.carousel ? " (carousel)" : "");
+      if(collabs.length) note += " · collaborator invite sent";
+      // campaign post → record it so the brief check runs and the brand report tracks it
+      const rule = _mkRules.find(x=>x.participation_id===$id("mkCamp").value);
+      if(rule){
+        if(rule.can_record_post && data && data.permalink){
+          const rr = await sb.schema("api").rpc("record_campaign_post", { p_participation: rule.participation_id,
+            p_payload: { media_type: kind==="feed" ? "post" : kind, permalink: data.permalink, caption: body.caption } });
+          note += rr.error ? " · couldn't record it on the campaign: "+(rr.error.message||rr.error)
+                : (rr.data && rr.data.caption_check==="issues" ? " · ⚠️ caption is missing something from the brief — check Alerts" : " · recorded on the campaign ✓");
+        } else if(!rule.can_record_post){
+          note += " · this campaign isn't at the posting step yet, so it wasn't recorded there";
+        }
+      }
+      msg.innerHTML = esc(note) + (data && data.permalink ? ` · <a href="${esc(data.permalink)}" target="_blank" rel="noopener">View on Instagram ↗</a>` : "");
+      msg.className="lead-msg ok";
+      cap.value=""; $id("mkTags").value=""; $id("mkCollab").value=""; $id("mkAudio").value=""; $id("mkThumb").value=""; $id("mkCover").value=""; $id("mkCamp").value="";
+      applyKind(); counter();
     }catch(ex){
       err.textContent = (ex.message||ex);
     }finally{
-      btn.disabled=false; btn.textContent=(MK_KIND[(document.getElementById("mkKind")||{}).value]||MK_KIND.feed).btn;
+      btn.disabled=false; btn.textContent=(MK_KIND[kindSel.value]||MK_KIND.feed).btn;
     }
   };
 }
