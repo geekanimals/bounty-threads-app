@@ -21,7 +21,13 @@
 // (Instagram's servers download them directly; restricting the folder stops publishing arbitrary URLs).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { corsHeaders, json } from "../_shared/cors.ts";
+import { corsHeaders, json as jsonRaw } from "../_shared/cors.ts";
+
+// every non-2xx reply is logged (reason only — never tokens) so failures are visible in the function logs
+function json(body: unknown, status = 200) {
+  if (status >= 400) console.warn(`instagram-publish ${status}:`, JSON.stringify(body).slice(0, 800));
+  return jsonRaw(body, status);
+}
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
