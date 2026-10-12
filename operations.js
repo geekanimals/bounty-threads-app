@@ -336,11 +336,36 @@
   }
 
   /* ============================ 2. CREATOR "MY CAMPAIGNS" ============================ */
-  window.renderMyCampaigns=function(){
-    if(!enabled) return '<div class="card"><h3>My Campaigns</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
-    return '<div id="opsMine" class="ci"><div class="card ci-intro"><h3>My Campaigns</h3><div class="muted">Apply to open campaigns, then track every step here — contract, delivery, content and posting.</div></div>'
-      + '<div class="ci-sub">Open campaigns</div><div id="opsOpenBody"><div class="card"><div class="muted">Loading…</div></div></div>'
-      + '<div class="ci-sub">My campaigns</div><div id="opsMineBody"><div class="card"><div class="muted">Loading…</div></div></div></div>';
+  // Paid / Barter split: "Campaigns" page has All · Paid · Barter filters; the creator "Barter" page is the same
+  // view locked to barter (Barter + Paid shows under both). Apply works the same everywhere.
+  var CAMP_FILTER="all", CAMP_LOCKED=false, _openCache=[], _mineCache=[];
+  function kindOf(c){ return c.campaign_type || ({cash:"paid",hybrid:"barter_paid",barter:"barter"})[c.comp_type] || ""; }
+  function matchFilter(c){ var t=kindOf(c); if(CAMP_FILTER==="paid") return t==="paid"||t==="barter_paid"; if(CAMP_FILTER==="barter") return t==="barter"||t==="barter_paid"; return true; }
+  function typeBadge(c){ var t=kindOf(c), L={paid:"💰 Paid",barter:"🎁 Barter",barter_paid:"🎁 Barter + 💰 Paid"}; return t?'<span class="ci-type ci-type-'+t+'">'+L[t]+'</span>':'<span class="ci-type">—</span>'; }
+  function chipsHtml(){
+    if(CAMP_LOCKED) return '';
+    var n=function(f){ var keep=CAMP_FILTER; CAMP_FILTER=f; var k=_openCache.filter(matchFilter).length; CAMP_FILTER=keep; return k; };
+    return [["all","All"],["paid","💰 Paid"],["barter","🎁 Barter"]].map(function(x){
+      return '<button class="ci-chip'+(CAMP_FILTER===x[0]?' on':'')+'" data-campf="'+x[0]+'">'+x[1]+(_openCache.length?' <span>'+n(x[0])+'</span>':'')+'</button>'; }).join("");
+  }
+  function paintChips(){ var el=document.getElementById("campChips"); if(!el) return; el.innerHTML=chipsHtml();
+    el.querySelectorAll("[data-campf]").forEach(function(b){ b.onclick=function(){ CAMP_FILTER=b.getAttribute("data-campf"); paintChips(); renderOpen(_openCache); renderMine(_mineCache); }; }); }
+  (function(){ if(document.getElementById("ciTypeCss")) return; var st=document.createElement("style"); st.id="ciTypeCss";
+    st.textContent='.ci-chips{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 14px}.ci-chip{border:1px solid var(--line,#ddd);background:var(--panel,#fff);border-radius:999px;padding:7px 14px;font-weight:600;cursor:pointer;color:inherit}'
+      +'.ci-chip.on{background:var(--brand,#6c5ce7);color:#fff;border-color:transparent}.ci-chip span{opacity:.7;font-weight:500;margin-left:4px}'
+      +'.ci-type{font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;background:rgba(0,0,0,.06)}.ci-type-paid{background:rgba(16,185,129,.14);color:#047857}'
+      +'.ci-type-barter{background:rgba(245,158,11,.16);color:#b45309}.ci-type-barter_paid{background:rgba(108,92,231,.14);color:#5b4bd6}';
+    document.head.appendChild(st); })();
+  window.renderMyCampaigns=function(mode){
+    CAMP_LOCKED = mode==="barter"; if(CAMP_LOCKED) CAMP_FILTER="barter"; else if(mode==="paid") CAMP_FILTER="paid"; else if(CAMP_FILTER==="barter" && !mode) CAMP_FILTER="all";
+    var title = CAMP_LOCKED ? "Barter campaigns" : "Campaigns";
+    var sub = CAMP_LOCKED ? "Get products from brands in exchange for content. Apply, then track contract, delivery, content and posting here."
+                          : "Paid and barter campaigns open for you. Apply, then track every step here — contract, delivery, content and posting.";
+    if(!enabled) return '<div class="card"><h3>'+title+'</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
+    return '<div id="opsMine" class="ci"><div class="card ci-intro"><h3>'+title+'</h3><div class="muted">'+sub+'</div></div>'
+      + '<div class="ci-chips" id="campChips">'+chipsHtml()+'</div>'
+      + '<div class="ci-sub">Open '+(CAMP_LOCKED?'barter ':'')+'campaigns</div><div id="opsOpenBody"><div class="card"><div class="muted">Loading…</div></div></div>'
+      + '<div class="ci-sub">My '+(CAMP_LOCKED?'barter ':'')+'campaigns</div><div id="opsMineBody"><div class="card"><div class="muted">Loading…</div></div></div></div>';
   };
   async function loadMyCampaigns(){
     loadOpenCampaigns();
@@ -354,18 +379,20 @@
     try{ var r=await api("list_open_campaigns"); if(r.error) throw r.error; renderOpen(r.data||[]); }
     catch(e){ el.innerHTML='<div class="card ci-err-inline">Couldn\'t load open campaigns: '+esc((e&&e.message)||e)+'</div>'; }
   }
-  function renderOpen(list){
+  function renderOpen(all){
     var el=document.getElementById("opsOpenBody"); if(!el) return;
-    if(!list.length){ el.innerHTML='<div class="card"><div class="muted">No campaigns are open right now. New ones will show up here.</div></div>'; return; }
+    _openCache=all||[]; paintChips();
+    var list=_openCache.filter(matchFilter);
+    if(!list.length){ el.innerHTML='<div class="card"><div class="muted">'+(_openCache.length?'No '+(CAMP_FILTER==="paid"?'paid':'barter')+' campaigns open right now — check the other tab.':'No campaigns are open right now. New ones will show up here.')+'</div></div>'; return; }
     el.innerHTML=list.map(function(c){
       var tags=[].concat(c.hashtags||[],(c.mentions||[]).map(function(m){ return String(m).charAt(0)==='@'?m:'@'+m; }));
       var where=(c.cities||[]).join(", "), langs=(c.languages||[]).join(", ");
       var act=c.my_stage ? spill(c.my_stage)
         : '<button class="btn sm" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Apply</button>';
       return '<div class="card ci-match"><div class="ci-mh"><h4>'+esc(c.name||"Campaign")+' <span class="ci-id">'+esc(c.brand||"")+'</span></h4>'+act+'</div>'
-        + '<div class="ci-meta"><span>Product: <b>'+esc(c.product||"—")+'</b></span><span>Comp: <b>'+esc(c.comp_type||"—")+'</b></span>'
+        + '<div class="ci-meta"><span>'+typeBadge(c)+'</span>'+(c.product?'<span>Product: <b>'+esc(c.product)+'</b></span>':'')
         + (c.category?'<span>Category: <b>'+esc(c.category)+'</b></span>':'')
-        + '<span>Dates: <b>'+fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on)+'</b></span></div>'
+        + ((c.starts_on||c.ends_on)?'<span>Dates: <b>'+fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on)+'</b></span>':'')+'</div>'
         + (where||langs?'<div class="ci-hint">'+(where?'Cities: '+esc(where):'')+(where&&langs?' · ':'')+(langs?'Languages: '+esc(langs):'')+'</div>':'')
         + (c.campaign_type?'<div class="ci-hint">Type: <b>'+esc(campTypeLabel(c.campaign_type,c.barter_subtype))+'</b>'+(c.creators_needed?' · '+esc(c.creators_needed)+' creators':'')+'</div>':'')
         + (c.product_link||c.product_value?'<div class="ci-hint">Barter product: '+(c.product_link?'<a href="'+esc(safeLink(c.product_link))+'" target="_blank" rel="noopener">view product ↗</a>':'')+(c.product_value?' · worth ₹'+esc(Number(c.product_value).toLocaleString("en-IN")):'')+'</div>':'')
@@ -380,7 +407,7 @@
   }
   async function applyToCampaign(btn){
     var id=btn.getAttribute("data-apply"), name=btn.getAttribute("data-name")||"this campaign";
-    if(!confirm("Apply to "+name+"? The Geek team will review your profile and let you know on WhatsApp and in Alerts.")) return;
+    if(!confirm("Apply to "+name+"? The brand / agency reviews your profile — you'll hear back on WhatsApp and in Alerts.")) return;
     btn.disabled=true; btn.textContent="Applying…";
     try{
       var r=await apiCreator("apply_to_campaign",{p_campaign:id});
@@ -396,8 +423,10 @@
     if(['completed','rejected','dropped','ineligible','brand_declined'].indexOf(stage)>=0) return 'Completed';
     return 'Active';
   }
-  function renderMine(list){
-    if(!list.length){ document.getElementById("opsMineBody").innerHTML='<div class="card"><div class="muted">No campaigns yet. Apply to an open campaign above — it will show up here with every next step.</div></div>'; return; }
+  function renderMine(all){
+    var box=document.getElementById("opsMineBody"); if(!box) return;
+    _mineCache=all||[]; var list=_mineCache.filter(matchFilter);
+    if(!list.length){ box.innerHTML='<div class="card"><div class="muted">No '+(CAMP_FILTER==="all"?'':CAMP_FILTER+' ')+'campaigns yet. Apply to an open campaign above — it will show up here with every next step.</div></div>'; return; }
     var groups={Upcoming:[],Active:[],Completed:[]}; list.forEach(function(c){ groups[mineGroup(c.stage)].push(c); });
     var html=Object.keys(groups).map(function(g){ if(!groups[g].length) return ''; return '<div class="ci-sub">'+g+'</div>'+groups[g].map(cardMine).join(""); }).join("");
     document.getElementById("opsMineBody").innerHTML=html;
@@ -412,7 +441,7 @@
     else if(c.stage==='content_approved') acts='<button class="btn sm" data-post="'+c.participation_id+'">Post from the app</button>';
     else if(['product_sent','content_created','changes_requested'].indexOf(c.stage)>=0 && dl.length) acts='<button class="btn sm" data-upload="'+(dl[0].deliverable_id)+'">Upload content link</button>';
     return '<div class="card ci-match"><div class="ci-mh"><h4>'+esc(c.campaign||"Campaign")+' <span class="ci-id">'+esc(c.brand||"")+'</span></h4>'+spill(c.stage)+'</div>'
-      + '<div class="ci-meta"><span>Product: <b>'+esc(c.product||"—")+'</b></span><span>Comp: <b>'+esc(c.comp_type||"—")+'</b></span><span>Deadline: <b>'+fmtDate(c.deadline)+'</b></span></div>'
+      + '<div class="ci-meta"><span>'+typeBadge(c)+'</span>'+(c.product?'<span>Product: <b>'+esc(c.product)+'</b></span>':'')+'<span>Deadline: <b>'+fmtDate(c.deadline)+'</b></span></div>'
       + '<div class="ci-hint">Deliverables: '+(dl.length?dl.map(function(x){return esc(vlabel("content_formats",x.format))+' ×'+esc(x.quantity||1)+' ['+esc(x.status)+']';}).join(", "):'—')+'</div>'
       + (c.reason?'<div class="ci-hint">Note: '+esc(c.reason)+'</div>':'')
       + (acts?'<div class="ci-evrow">'+acts+'</div>':'')

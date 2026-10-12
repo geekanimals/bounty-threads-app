@@ -63,7 +63,9 @@ function renderNav(){
   if(window.__isAdmin) keys.push("admin");
   if(window.__profileGate && !keys.includes("profile")) keys.splice(1,0,"profile");
   keys.forEach(key=>{
-    const m = NAV_META[key] || {ic:"🛡", label:key};
+    let m = NAV_META[key] || {ic:"🛡", label:key};
+    if(currentRole==="creator" && key==="barter") m = {ic:"🎁", label:"Barter Campaigns"};
+    if(currentRole==="creator" && key==="mycampaigns") m = {ic:"📣", label:"Campaigns"};
     const a = el("a","", `<span class="ic">${m.ic}</span><span>${m.label}</span>`);
     a.setAttribute("data-page", key);
     if(key===currentPage) a.classList.add("active");
@@ -986,7 +988,7 @@ function openCreatorModal(existing){
 
 function renderCampaigns(){
   let html = pageHead("Campaigns","Every campaign type, one connected pipeline.",`<span id="addCampaignBtn">+ New Campaign</span>`);
-  html += `<div class="grid three" id="campaignGrid"><div class="card"><div class="muted">Loading campaigns…</div></div></div>`;
+  html += `<div class="ci-chips" id="campTypeChips"></div><div class="grid three" id="campaignGrid"><div class="card"><div class="muted">Loading campaigns…</div></div></div>`;
   return html;
 }
 
@@ -1007,6 +1009,7 @@ function campaignCardsHtml(list){
   }).join("");
 }
 
+let _campFilter = "all";
 async function loadCampaigns(){
   const grid = document.getElementById("campaignGrid");
   if(!grid) return;
@@ -1016,9 +1019,19 @@ async function loadCampaigns(){
   if(org_id) cq = cq.eq("org_id", org_id);
   const { data, error } = await cq;
   if(error){ grid.innerHTML = `<div class="card"><div class="muted">Couldn't load campaigns: ${esc(error.message)}</div></div>`; return; }
-  grid.innerHTML = campaignCardsHtml(data||[]);
-  grid.querySelectorAll("[data-editcamp]").forEach(b=>b.onclick=()=>{ const c=(data||[]).find(x=>x.id===b.dataset.editcamp); if(c) openCampaignModal(c); });
-  grid.querySelectorAll("[data-opencamp]").forEach(b=>b.onclick=()=>{ const c=(data||[]).find(x=>x.id===b.dataset.opencamp); if(c) openCampaignWorkspace(c.id); });
+  const all = data||[];
+  const kind = c => c.campaign_type || (/hybrid/i.test(c.type||"")?"barter_paid":/paid|celebrity/i.test(c.type||"")?"paid":"barter");
+  const pass = c => _campFilter==="all" || (_campFilter==="paid" ? ["paid","barter_paid"].includes(kind(c)) : _campFilter==="barter" ? ["barter","barter_paid"].includes(kind(c)) : _campFilter==="approval" ? c.status==="Approval" : true);
+  const chips = document.getElementById("campTypeChips");
+  if(chips){
+    chips.innerHTML = [["all","All"],["paid","💰 Paid"],["barter","🎁 Barter"],["approval","⏳ Awaiting approval"]].map(([k,l])=>{ const keep=_campFilter; _campFilter=k; const n=all.filter(pass).length; _campFilter=keep;
+      return `<button class="ci-chip${_campFilter===k?" on":""}" data-cfilter="${k}">${l} <span>${n}</span></button>`; }).join("");
+    chips.querySelectorAll("[data-cfilter]").forEach(b=> b.onclick = ()=>{ _campFilter = b.dataset.cfilter; loadCampaigns(); });
+  }
+  const data2 = all.filter(pass);
+  grid.innerHTML = campaignCardsHtml(data2);
+  grid.querySelectorAll("[data-editcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.editcamp); if(c) openCampaignModal(c); });
+  grid.querySelectorAll("[data-opencamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.opencamp); if(c) openCampaignWorkspace(c.id); });
 }
 
 /* ================= CAMPAIGN WORKSPACE (one campaign, everything connected) ================= */
@@ -1519,6 +1532,7 @@ const APPLICANT_STAGE = { applied:["Applied","warn"], eligible:["Screened ✓","
   brand_confirmed:["Approved","good"], ineligible:["Declined",""], brand_declined:["Declined",""], dropped:["Dropped",""], rejected:["Rejected",""] };
 const APPLICANT_PENDING = ["applied","eligible","sent_to_brand"];
 
+function typeTag(t){ const L={paid:"💰 Paid",barter:"🎁 Barter",barter_paid:"🎁 Barter + 💰 Paid"}; return t&&L[t]?`<span class="ci-type ci-type-${t}">${L[t]}</span>`:""; }
 function applicantRowHtml(p, showCampaign){
   const cr = p.creator || {}, [lbl, cls] = APPLICANT_STAGE[p.stage] || [String(p.stage||"").replace(/_/g," "), "good"];
   const pic = cr.profile_picture_url ? `<img class="ap-pic" src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`
@@ -1526,7 +1540,7 @@ function applicantRowHtml(p, showCampaign){
   const bits = [cr.followers!=null?fmtNum(cr.followers)+" followers":"", cr.engagement!=null?cr.engagement+"% eng.":"", cr.city||"", (cr.categories||[]).slice(0,2).join(", ")].filter(Boolean).join(" · ");
   return `<div class="row">${pic}
     <div class="r-main"><div class="r-title">${cr.username?`<a href="https://instagram.com/${encodeURIComponent(cr.username)}" target="_blank" rel="noopener">@${esc(cr.username)}</a>`:esc(cr.name||"Creator")}
-      ${showCampaign?`<span class="muted" style="font-weight:400"> → ${esc(p.campaign_name||"")}</span>`:""}</div>
+      ${showCampaign?`<span class="muted" style="font-weight:400"> → ${esc(p.campaign_name||"")}${p.org_name?` · ${esc(p.org_name)}`:""}</span>`:""} ${typeTag(p.campaign_type)}</div>
       <div class="r-sub">${esc(bits)||"Instagram not connected"}${p.reason && !APPLICANT_PENDING.includes(p.stage)?` · <i>${esc(p.reason)}</i>`:""}</div></div>
     ${APPLICANT_PENDING.includes(p.stage)
       ? `<span style="display:flex;gap:6px"><button class="mini-btn" data-papprove="${esc(p.participation_id)}">Approve</button><button class="mini-btn ghost" data-pdecline="${esc(p.participation_id)}">Decline</button></span>`
@@ -1688,12 +1702,56 @@ async function loadOrgReports(){
   return true;
 }
 
+/* ---------- Super Admin → Applications: every creator application across every workspace ---------- */
+let _apStatus = "pending", _apType = "", _apTimer = null, _apSig = "";
+async function adminApplications(body, silent){
+  if(!silent) body.innerHTML = `<div class="card"><div class="muted">Loading applications…</div></div>`;
+  const [pr, ar] = await Promise.all([
+    sb.schema("api").rpc("org_applicants", { p_campaign:null, p_stage:null }).then(r=>r, e=>({error:e})),
+    sb.rpc("admin_applications", { p_campaign:null, p_status:null }).then(r=>r, ()=>({data:[]}))
+  ]);
+  if(pr.error){ if(!silent) body.innerHTML = adminErr(pr.error); return; }
+  const sig = JSON.stringify([pr.data, ar.data]); if(silent && sig===_apSig) return; _apSig = sig;
+  const DECL = ["ineligible","brand_declined","dropped","rejected"];
+  const grp = st => APPLICANT_PENDING.includes(st) ? "pending" : DECL.includes(st) ? "declined" : "approved";
+  const lgrp = st => st==="Applied" ? "pending" : st==="Declined" ? "declined" : "approved";
+  const tpass = t => !_apType || (_apType==="paid" ? ["paid","barter_paid"].includes(t) : ["barter","barter_paid"].includes(t));
+  const pipe = (pr.data||[]), legacy = (ar.data||[]);
+  const cnt = g => pipe.filter(p=>grp(p.stage)===g && tpass(p.campaign_type)).length + legacy.filter(a=>lgrp(a.status)===g && !_apType).length;
+  const P = pipe.filter(p=> (_apStatus==="all" || grp(p.stage)===_apStatus) && tpass(p.campaign_type));
+  const Lg = _apType ? [] : legacy.filter(a=> _apStatus==="all" || lgrp(a.status)===_apStatus);
+  body.innerHTML = `<div class="rp-kpis"><div><b>${cnt("pending")}</b>Pending</div><div><b>${cnt("approved")}</b>Approved</div><div><b>${cnt("declined")}</b>Declined</div><div><b>${pipe.length+legacy.length}</b>Total</div></div>
+    <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center">
+      <h3 style="margin:0">Applications <span class="muted" style="font-size:12px;font-weight:400">· every workspace, live</span></h3>
+      <span style="display:flex;gap:6px"><select id="apType"><option value="">Paid + Barter</option><option value="paid"${_apType==="paid"?" selected":""}>💰 Paid</option><option value="barter"${_apType==="barter"?" selected":""}>🎁 Barter</option></select>
+      <select id="apStatus">${[["pending","⏳ Pending"],["approved","✅ Approved"],["declined","✖ Declined"],["all","All"]].map(([k,l])=>`<option value="${k}"${k===_apStatus?" selected":""}>${l}</option>`).join("")}</select></span></div>
+    <div class="list" style="margin-top:10px">${P.map(p=>applicantRowHtml(p, true)).join("")}
+      ${Lg.map(a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span><div class="r-main"><div class="r-title">${esc(a.creator_name||"Creator")} <span class="muted" style="font-weight:400">→ ${esc(a.campaign_name||"")}${a.agency_org?` · ${esc(a.agency_org)}`:""}</span></div>
+        <div class="r-sub">Marketplace application${a.decline_reason_code?` · ${esc(a.decline_reason_code)}`:""}${a.decline_note?` — ${esc(a.decline_note)}`:""}</div></div>
+        ${a.status==="Applied"?`<span style="display:flex;gap:6px"><button class="mini-btn" data-apappr="${esc(a.id)}">Approve</button><button class="mini-btn ghost" data-apdecl="${esc(a.id)}">Decline</button></span>`:`<span class="tag ${a.status==="Approved"?"good":""}">${esc(a.status)}</span>`}</div>`).join("")}
+      ${(!P.length && !Lg.length)?`<div class="muted" style="padding:8px">Nothing here.</div>`:""}</div></div>`;
+  const again = ()=>{ _apSig=""; adminApplications(body, true); };
+  document.getElementById("apStatus").onchange = e=>{ _apStatus = e.target.value; again(); };
+  document.getElementById("apType").onchange = e=>{ _apType = e.target.value; again(); };
+  wireApplicantButtons(body, again);
+  body.querySelectorAll("[data-apappr]").forEach(b=> b.onclick = async ()=>{ const { error } = await sb.rpc("decide_application", { p_id:b.dataset.apappr, p_approve:true, p_reason_code:null, p_note:null }); if(error) alert(error.message); again(); });
+  body.querySelectorAll("[data-apdecl]").forEach(b=> b.onclick = ()=> declineLegacyApplication(b.dataset.apdecl, again));
+  clearInterval(_apTimer);
+  _apTimer = setInterval(()=>{
+    const b = document.getElementById("adminBody");
+    if(currentPage!=="admin" || _adminTab!=="applications" || !b){ clearInterval(_apTimer); return; }
+    if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open") || document.activeElement?.tagName==="SELECT") return;
+    adminApplications(b, true);
+  }, 30000);
+}
+
 /* ---------- Super Admin → All campaigns (live): status override + decide applications for anyone ---------- */
 let _acTimer = null, _acOpen = null, _acSig = "";
 const CAMP_STATUSES = ["Draft","Approval","Sourcing","In Production","Live","Completed"];
 async function adminCampaigns(body, silent){
   if(!silent) body.innerHTML = `<div class="card"><div class="muted">Loading campaigns…</div></div>`;
   const filter = (document.getElementById("acFilter")||{}).value || "";
+  const tfilter = (document.getElementById("acType")||{}).value || "";
   const [cr, pr, ar] = await Promise.all([
     sb.rpc("admin_campaigns", { p_status: filter||null }),
     sb.schema("api").rpc("org_applicants", { p_campaign:null, p_stage:null }).then(r=>r, ()=>({data:[]})),
@@ -1703,11 +1761,13 @@ async function adminCampaigns(body, silent){
   const sig = JSON.stringify([cr.data, pr.data, ar.data]);
   if(silent && sig === _acSig) return;           // nothing changed → don't touch the DOM
   _acSig = sig;
-  const camps = cr.data||[], pipe = pr.data||[], legacy = ar.data||[];
+  const kindL = c => c.campaign_type || "barter";
+  const camps = (cr.data||[]).filter(c=> !tfilter || (tfilter==="paid" ? ["paid","barter_paid"].includes(kindL(c)) : ["barter","barter_paid"].includes(kindL(c)))), pipe = pr.data||[], legacy = ar.data||[];
   const pendFor = id => pipe.filter(p=>p.legacy_campaign_id===id && APPLICANT_PENDING.includes(p.stage)).length + legacy.filter(a=>a.campaign_id===id && a.status==="Applied").length;
   body.innerHTML = `<div class="card"><div class="ci-mh" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <h3 style="margin:0">All campaigns <span class="muted" style="font-size:12px;font-weight:400">· live, refreshes every 30s</span></h3>
-      <select id="acFilter"><option value="">All statuses</option>${CAMP_STATUSES.map(s=>`<option${s===filter?" selected":""}>${s}</option>`).join("")}</select></div>
+      <span style="display:flex;gap:6px"><select id="acType"><option value="">Paid + Barter</option><option value="paid"${tfilter==="paid"?" selected":""}>💰 Paid</option><option value="barter"${tfilter==="barter"?" selected":""}>🎁 Barter</option></select>
+      <select id="acFilter"><option value="">All statuses</option>${CAMP_STATUSES.map(s=>`<option${s===filter?" selected":""}>${s}</option>`).join("")}</select></span></div>
     ${camps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="tbl"><thead><tr><th>Campaign</th><th>Workspace</th><th>Type</th><th>Status</th><th>Applied</th><th>Pending</th><th>Approved</th><th>Declined</th><th></th></tr></thead><tbody>
       ${camps.map(c=>{ const pc = pipe.filter(p=>p.legacy_campaign_id===c.id);
         const appr = Number(c.approved)+pc.filter(p=>REPORT_APPROVED(p.stage)).length, decl = Number(c.declined)+pc.filter(p=>["ineligible","brand_declined","dropped","rejected"].includes(p.stage)).length;
@@ -1715,7 +1775,7 @@ async function adminCampaigns(body, silent){
         <td>${esc(campTypeLabel(c.campaign_type,c.barter_subtype)||"—")}</td>
         <td><select data-acstatus="${esc(c.id)}">${CAMP_STATUSES.map(s=>`<option${s===c.status?" selected":""}>${s}</option>`).join("")}</select></td>
         <td>${Number(c.applied)+pc.length}</td><td>${pendFor(c.id)?`<span class="tag warn">${pendFor(c.id)}</span>`:"0"}</td><td>${appr}</td><td>${decl}</td>
-        <td><button class="mini-btn" data-acopen="${esc(c.id)}">${_acOpen===c.id?"Hide":"Applications"}</button></td></tr>
+        <td style="white-space:nowrap">${c.status==="Approval"?`<button class="mini-btn" data-acgo="${esc(c.id)}">Approve campaign</button> `:""}<button class="mini-btn ghost" data-acopen="${esc(c.id)}">${_acOpen===c.id?"Hide":"Applications"}</button></td></tr>
         ${_acOpen===c.id?`<tr><td colspan="9"><div class="list">${pc.map(p=>applicantRowHtml(p)).join("")}
           ${legacy.filter(a=>a.campaign_id===c.id).map(a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span><div class="r-main"><div class="r-title">${esc(a.creator_name||"Creator")}</div><div class="r-sub">${esc(a.creator_org||"")}${a.decline_reason_code?` · ${esc(a.decline_reason_code)}`:""}${a.decline_note?` — ${esc(a.decline_note)}`:""}</div></div>
             ${a.status==="Applied"?`<span style="display:flex;gap:6px"><button class="mini-btn" data-acappr="${esc(a.id)}">Approve</button><button class="mini-btn ghost" data-acdecl="${esc(a.id)}">Decline</button></span>`:`<span class="tag ${a.status==="Approved"?"good":""}">${esc(a.status)}</span>`}</div>`).join("")}
@@ -1723,6 +1783,10 @@ async function adminCampaigns(body, silent){
     </tbody></table></div>`:`<div class="muted" style="padding:8px">No campaigns${filter?" with this status":""}.</div>`}</div>`;
   const reload = ()=> adminCampaigns(body, true);
   document.getElementById("acFilter").onchange = ()=> adminCampaigns(body);
+  document.getElementById("acType").onchange = ()=> adminCampaigns(body);
+  body.querySelectorAll("[data-acgo]").forEach(b=> b.onclick = async ()=>{
+    const { error } = await sb.rpc("admin_set_campaign_status", { p_id:b.dataset.acgo, p_status:"Sourcing" });
+    if(error) alert(error.message); _acSig=""; reload(); });
   body.querySelectorAll("[data-acopen]").forEach(b=> b.onclick = ()=>{ _acOpen = _acOpen===b.dataset.acopen ? null : b.dataset.acopen; _acSig=""; reload(); });
   body.querySelectorAll("[data-acstatus]").forEach(s=> s.onchange = async ()=>{
     const { error } = await sb.rpc("admin_set_campaign_status", { p_id:s.dataset.acstatus, p_status:s.value });
@@ -2631,7 +2695,7 @@ function wireMkComposer(){
 
 /* ================= ADMIN (platform team — approve agency signups) ================= */
 /* ================= SUPER ADMIN CONSOLE ================= */
-const ADMIN_TABS = [["overview","Overview"],["users","All users"],["campaigns","All campaigns"],["activity","Creator activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["approvals","Approvals"],["admins","Super admins"]];
+const ADMIN_TABS = [["overview","Overview"],["users","👥 All users"],["approvals","✅ Account approvals"],["campaigns","📣 All campaigns"],["applications","📝 Applications"],["activity","📈 Activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["admins","Super admins"]];
 const ADMIN_TABLES = [
   ["members","Members"],["creators","Creators"],["campaigns","Campaigns"],["barter_items","Barter items"],
   ["applications","Applications"],["invites","Invites"],["irm_contacts","IRM contacts"],
@@ -2771,7 +2835,7 @@ function loadAdmin(){
   document.querySelectorAll("[data-atab]").forEach(b=> b.onclick = ()=>{ _adminTab = b.dataset.atab; currentPage="admin"; renderShell(); });
   const body = document.getElementById("adminBody");
   if(!body || !window.sb) return;
-  ({ overview:adminOverview, users:adminUsers, campaigns:adminCampaigns, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+  ({ overview:adminOverview, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
 }
 
 /* System check — live-verifies the deployed database matches the code (tables, columns, RPCs).
@@ -3107,7 +3171,7 @@ const PAGES = {
   messages: (typeof renderWhatsApp==="function"?renderWhatsApp:()=>""),
   alerts: (typeof renderAlerts==="function"?renderAlerts:()=>""),
   discover:renderDiscover,
-  dashboard:renderDashboard, barter:renderBarter, creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit, admin:renderAdmin,
+  dashboard:renderDashboard, barter:()=> (currentRole==="creator" && window.__ciOpsEnabled && window.renderMyCampaigns) ? window.renderMyCampaigns("barter") : renderBarter(), creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit, admin:renderAdmin,
   campaigns:renderCampaigns, reports:renderReports, growth:renderGrowth, settings:renderSettings,
   celebrity:renderCelebrity, approvals:renderApprovals, marketplace:renderMarketplace,
   brands:renderBrands, portfolio:renderPortfolio, finance:renderFinance, logistics:renderLogistics,
@@ -3522,7 +3586,8 @@ function renderContent(){
   if(currentPage==="dashboard"){
     loadDashboard();
   }
-  if(currentPage==="barter"){
+  if(currentPage==="barter" && currentRole==="creator" && window.__ciOpsEnabled && window.ciOps){ window.ciOps.loadMyCampaigns(); }
+  else if(currentPage==="barter"){
     loadBarter();
     const add = document.getElementById("addBarterBtn");
     if(add) add.onclick = ()=> openBarterModal();
