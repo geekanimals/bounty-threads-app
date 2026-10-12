@@ -73,3 +73,9 @@ verify_jwt = false
 # Media Kit live refresh (60 s) — signed-in creator syncs only their own posts/stories; server-throttled.
 [functions.instagram-media-sync]
 verify_jwt = true
+
+# Media Kit: comment moderation + Instagram DM inbox — signed-in creator, own account only.
+[functions.instagram-comments]
+verify_jwt = true
+[functions.instagram-dm]
+verify_jwt = true

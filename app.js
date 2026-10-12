@@ -1855,6 +1855,101 @@ function mkStories(a){
     }).join("")}</div></div>`;
 }
 
+/* ---------- Media Kit: comment management (reply / hide / delete on the creator's own posts) ---------- */
+function mkCommentsHtml(a){
+  const media = (Array.isArray(a.recent_media) ? a.recent_media : []).slice(0, 12);
+  if(!media.length) return "";
+  return `<div class="card" style="margin-top:16px"><h3>Comments</h3>
+    <p class="muted" style="margin-bottom:10px">Pick a post to read and manage its comments — reply, hide or delete, without opening Instagram.</p>
+    <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px">${media.map(m=>{
+      const img = m.media_type==="VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
+      return `<button type="button" data-mkcm="${esc(m.id)}" title="${esc((m.caption||"").slice(0,80))}" style="flex:0 0 auto;width:84px;border:2px solid transparent;border-radius:10px;padding:0;background:#eee;cursor:pointer;position:relative;overflow:hidden">
+        ${img?`<img src="${esc(safeUrl(img))}" alt="" loading="lazy" style="width:84px;height:84px;object-fit:cover;display:block">`:`<div style="width:84px;height:84px"></div>`}
+        <span style="position:absolute;left:4px;bottom:4px;font-size:11px;color:#fff;text-shadow:0 1px 2px #000">💬 ${fmtNum(m.comments_count||0)}</span></button>`;
+    }).join("")}</div>
+    <div id="mkCmBody" class="muted" style="padding:6px 2px">Select a post above.</div></div>`;
+}
+function wireMkComments(){
+  document.querySelectorAll("[data-mkcm]").forEach(b=> b.onclick = ()=>{
+    document.querySelectorAll("[data-mkcm]").forEach(x=> x.style.borderColor = "transparent");
+    b.style.borderColor = "var(--brand)"; loadMkComments(b.dataset.mkcm);
+  });
+}
+async function mkCommentsCall(body){
+  const { data, error } = await sb.functions.invoke("instagram-comments", { body });
+  if(error){ let msg = await fnError(error), perm = false; try{ const j = await error.context.json(); perm = !!j.needs_permission; }catch(e){} return { error: msg, needs_permission: perm }; }
+  return data || {};
+}
+async function loadMkComments(mediaId){
+  const box = document.getElementById("mkCmBody"); if(!box) return;
+  box.innerHTML = "Loading comments…";
+  const r = await mkCommentsCall({ action:"list", media_id: mediaId });
+  if(r.error){ box.innerHTML = `<div class="${r.needs_permission?'ai-suggest':''}" style="padding:8px">${esc(r.error)}</div>`; return; }
+  const fmt = t=> t ? new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "";
+  const one = (c, isReply)=> `<div class="cp-item" style="${isReply?'margin-left:28px;':''}${c.hidden?'opacity:.55;':''}align-items:flex-start">
+      <div style="min-width:0"><b>@${esc(c.username||"user")}</b> <span class="muted" style="font-size:12px">${fmt(c.timestamp)}${c.like_count?` · ❤ ${c.like_count}`:""}${c.hidden?" · hidden":""}</span>
+      <div style="white-space:pre-wrap;word-break:break-word">${esc(c.text||"")}</div>
+      ${isReply?"":`<div class="cp-addrow" style="margin-top:6px"><input data-cmreplytxt="${esc(c.id)}" placeholder="Reply…" style="flex:1"><button class="btn sm ghost" data-cmreply="${esc(c.id)}">Reply</button></div>`}</div>
+      <div style="display:flex;gap:6px;flex:0 0 auto"><button class="btn sm ghost" data-cmhide="${esc(c.id)}" data-hidden="${c.hidden?1:0}">${c.hidden?"Unhide":"Hide"}</button>
+      <button class="btn sm ghost" data-cmdel="${esc(c.id)}">Delete</button></div></div>`;
+  const list = r.comments || [];
+  box.innerHTML = list.length ? `<div class="cp-list">${list.map(c=> one(c,false) + ((c.replies&&c.replies.data)||[]).map(x=>one(x,true)).join("")).join("")}</div>`
+                              : `<div style="padding:8px">No comments on this post yet.</div>`;
+  const act = async (body, btn)=>{ btn.disabled = true; const x = await mkCommentsCall(body); if(x.error){ alert(x.error); btn.disabled = false; return; } loadMkComments(mediaId); };
+  box.querySelectorAll("[data-cmreply]").forEach(b=> b.onclick = ()=>{ const t = box.querySelector(`[data-cmreplytxt="${b.dataset.cmreply}"]`); const msg = (t&&t.value||"").trim(); if(!msg) return; act({ action:"reply", comment_id:b.dataset.cmreply, message:msg }, b); });
+  box.querySelectorAll("[data-cmhide]").forEach(b=> b.onclick = ()=> act({ action:"hide", comment_id:b.dataset.cmhide, hide: b.dataset.hidden!=="1" }, b));
+  box.querySelectorAll("[data-cmdel]").forEach(b=> b.onclick = ()=>{ if(confirm("Delete this comment from Instagram? This can't be undone.")) act({ action:"delete", comment_id:b.dataset.cmdel }, b); });
+}
+
+/* ---------- Media Kit: Instagram DM inbox (needs Meta approval of instagram_business_manage_messages) ---------- */
+function mkInboxHtml(){
+  return `<div class="card" style="margin-top:16px"><h3>Instagram inbox</h3><div id="mkInbox" class="muted">Loading…</div></div>`;
+}
+async function mkDmCall(body){
+  const { data, error } = await sb.functions.invoke("instagram-dm", { body });
+  if(error){ let msg = await fnError(error), perm = false; try{ const j = await error.context.json(); perm = !!j.needs_permission; }catch(e){} return { error: msg, needs_permission: perm }; }
+  return data || {};
+}
+async function loadMkInbox(){
+  const box = document.getElementById("mkInbox"); if(!box) return;
+  const r = await mkDmCall({ action:"conversations" });
+  if(r.error){
+    box.innerHTML = r.needs_permission
+      ? `<div class="ai-suggest"><span class="spark">💬</span><div class="s-body"><b>DMs will show here</b><p>${esc(r.error)}</p></div></div>`
+      : `<div style="padding:6px">${esc(r.error)}</div>`;
+    return;
+  }
+  const t = r.threads || [];
+  const ago = x=>{ if(!x) return ""; const m=Math.round((Date.now()-new Date(x).getTime())/60000); return m<60?m+"m":m<1440?Math.round(m/60)+"h":Math.round(m/1440)+"d"; };
+  box.innerHTML = t.length ? `<div style="display:grid;grid-template-columns:minmax(180px,1fr) 2fr;gap:12px" class="mk-inbox">
+      <div class="cp-list">${t.map(c=>`<button type="button" class="cp-item" data-dmc="${esc(c.id)}" data-dmto="${esc(c.with_id||"")}" data-dmname="${esc(c.with_username||"")}" style="text-align:left;cursor:pointer;width:100%">
+        <div style="min-width:0"><b>@${esc(c.with_username||"user")}</b> <span class="muted" style="font-size:12px">${ago(c.last_at||c.updated_time)}</span>
+        <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.last_from_me?"You: ":""}${esc(c.last_text||"")}</div></div></button>`).join("")}</div>
+      <div id="mkDmThread" class="muted" style="padding:6px">Select a conversation.</div></div>` : `<div style="padding:6px">No conversations yet.</div>`;
+  box.querySelectorAll("[data-dmc]").forEach(b=> b.onclick = ()=> openMkThread(b.dataset.dmc, b.dataset.dmto, b.dataset.dmname, r.me||{}));
+}
+async function openMkThread(id, toId, name, me){
+  const box = document.getElementById("mkDmThread"); if(!box) return;
+  box.innerHTML = "Loading…";
+  const r = await mkDmCall({ action:"thread", conversation_id:id });
+  if(r.error){ box.innerHTML = esc(r.error); return; }
+  const msgs = (r.messages||[]).slice().reverse();
+  box.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px;max-height:360px;overflow-y:auto" id="mkDmMsgs">${msgs.map(m=>{
+      const mine = m.from && (String(m.from.id)===String(me.id) || m.from.username===me.username);
+      return `<div style="align-self:${mine?"flex-end":"flex-start"};max-width:80%;background:${mine?"var(--brand)":"var(--line, #eee)"};color:${mine?"#fff":"inherit"};padding:7px 11px;border-radius:14px;white-space:pre-wrap;word-break:break-word">${esc(m.message||(m.attachments?"[attachment]":""))}</div>`;
+    }).join("")}</div>
+    <div class="cp-addrow" style="margin-top:8px"><input id="mkDmText" placeholder="Reply to @${esc(name||"")}…" style="flex:1"><button class="btn sm" id="mkDmSend">Send</button></div>
+    <div class="muted" style="font-size:12px">Instagram allows replies within 24 hours of their last message.</div>`;
+  const list = document.getElementById("mkDmMsgs"); if(list) list.scrollTop = list.scrollHeight;
+  document.getElementById("mkDmSend").onclick = async ()=>{
+    const txt = (document.getElementById("mkDmText").value||"").trim(); if(!txt || !toId) return;
+    const s = await mkDmCall({ action:"send", recipient_id:toId, text:txt });
+    if(s.error){ alert(s.error); return; }
+    if(window.Tracker) Tracker.security("instagram_dm_send", { to: name||null });
+    openMkThread(id, toId, name, me);
+  };
+}
+
 let _mkTimer = null, _mkSyncedAt = 0, _mkLastAcct = null, _mkHeadHtml = "", _mkStoriesHtml = "";
 function wireMkHead(acct){
   const share = document.getElementById("mkShare");
@@ -1921,13 +2016,18 @@ async function loadMediaKit(){
   if(!acct){ showConnect(); return; }
   _mkLastAcct = acct;
   wrap.innerHTML = `<div class="muted" id="mkSyncStamp" style="font-size:12px;text-align:right;margin-bottom:6px"></div>`
-    + `<div id="mkHeadWrap"></div><div class="mk-kit" id="mkStoriesWrap"></div><div class="mk-kit" id="mkComposerWrap"></div>`;
+    + `<div id="mkHeadWrap"></div><div class="mk-kit" id="mkStoriesWrap"></div><div class="mk-kit" id="mkComposerWrap"></div>`
+    + `<div class="mk-kit" id="mkCommentsWrap"></div><div class="mk-kit" id="mkInboxWrap"></div>`;
   _mkHeadHtml = mkHead(acct); _mkStoriesHtml = mkStories(acct);
   document.getElementById("mkHeadWrap").innerHTML = _mkHeadHtml;
   document.getElementById("mkStoriesWrap").innerHTML = _mkStoriesHtml;
   document.getElementById("mkComposerWrap").innerHTML = mkComposer();
+  document.getElementById("mkCommentsWrap").innerHTML = mkCommentsHtml(acct);
+  document.getElementById("mkInboxWrap").innerHTML = mkInboxHtml();
   wireMkHead(acct);
   wireMkComposer();
+  wireMkComments(acct);
+  loadMkInbox();
   _mkSyncedAt = 0; mkStamp();
   refreshMediaKit(false);          // fresh posts + live stories on open
   startMkAutoRefresh();            // then every 60 s while the page is open and visible

@@ -150,15 +150,26 @@
     body += section("contact","Contact",
         '<div class="cp-grid">'
       + field("WhatsApp number","cp_wa",contact.whatsapp_e164,{privacy:"Private",hint:"International format, e.g. +919812345678"+(contact.whatsapp_verified_at?" · Verified":" · Not verified")})
-      + field("Email","cp_email",contact.email,{type:"email",source:srcOf("contact.email"),privacy:"Private",hint:(contact.email_verified_at?"Verified":"Not verified")})
+      + field("Email (backup & account recovery)","cp_email",contact.email,{type:"email",source:srcOf("contact.email"),privacy:"Private",hint:(contact.email_verified_at?"Verified":"Not verified")})
       + field("Preferred contact","cp_pref",contact.preferred_contact_method,{select:[["","—"],["whatsapp","WhatsApp"],["email","Email"]]})
       + '</div><div class="cp-note">WhatsApp and email verification are independent and never shown to brands.</div>');
 
-    // C Delivery address
-    var addr = (d.addresses && d.addresses[0]) || {};
-    body += section("address","Delivery address",
-        '<div class="cp-grid">'
-      + '<input type="hidden" id="cp_addr_id" value="'+esc(val(addr.address_id))+'">'
+    // C Delivery addresses (one or many; one is the default for shipments)
+    var addrs = (d.addresses || []);
+    var addr = {};
+    body += section("address","Delivery addresses",
+        '<div class="cp-list" id="cp_addr_list">'+(addrs.length?addrs.map(function(a){
+            return '<div class="cp-item"><div><b>'+esc(a.label||"Address")+'</b>'+(a.is_default?' <span class="cp-badge">Default</span>':'')
+              + '<div class="muted">'+esc([a.line1,a.line2,a.landmark,a.city,a.state,a.postal_code].filter(Boolean).join(", "))+'</div></div>'
+              + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+              + '<button class="btn sm ghost" data-editaddr="'+esc(a.address_id)+'">Edit</button>'
+              + (a.is_default?'':'<button class="btn sm ghost" data-defaddr="'+esc(a.address_id)+'">Make default</button>')
+              + '<button class="btn sm ghost" data-deladdr="'+esc(a.address_id)+'">Remove</button></div></div>';
+          }).join(""):'<div class="muted">No address yet — add where brands should ship your products.</div>')+'</div>'
+      + '<div class="cp-hint" style="margin-top:12px" id="cp_addr_mode">Add a new address</div>'
+      + '<div class="cp-grid">'
+      + '<input type="hidden" id="cp_addr_id" value="">'
+      + field("Label","cp_addr_label","",{hint:"e.g. Home, Office, Studio"})
       + field("Address line 1","cp_l1",addr.line1,{privacy:"Campaign-only"})
       + field("Address line 2","cp_l2",addr.line2)
       + field("Locality / landmark","cp_landmark",addr.landmark)
@@ -166,7 +177,10 @@
       + field("State","cp_state",addr.state)
       + field("PIN / postal code","cp_pin",addr.postal_code)
       + field("Country","cp_country",addr.country||"India")
-      + '</div><div class="cp-note">Your full address is private, used only for campaign logistics you approve — never shown in search or to brands.</div>');
+      + '</div><label class="cp-check"><input type="checkbox" id="cp_addr_default"'+(addrs.length?'':' checked')+'> Use as my default shipping address</label>'
+      + '<div class="cp-addrow"><button class="btn sm" id="cp_addr_save">Save address</button><button class="btn sm ghost" id="cp_addr_new">Clear / new</button></div>'
+      + '<div class="cp-note">Your full address is private, used only for campaign logistics you approve — never shown in search or to brands.</div>',
+      {noSave:true});
 
     // D Professional
     body += section("professional","Professional",
@@ -187,7 +201,8 @@
     // E Skills & Resources
     body += section("skills","Skills & resources",
         '<div class="cp-hint">Skills</div><div id="cp_skills" class="cp-tags">'+renderTags((d.skills||[]).map(function(s){return s.skill_key;}),"skill")+'</div>'
-      + '<div class="cp-addrow"><input id="cp_skill_new" placeholder="Add a skill (e.g. Makeup)"><button class="btn sm ghost" data-add="skill">Add</button></div>'
+      + '<div class="cp-addrow"><input id="cp_skill_new" placeholder="Add a skill (e.g. Makeup)"><button class="btn sm ghost" data-add="skill">Add</button>'
+      + '<a class="btn sm ghost" target="_blank" rel="noopener" href="https://docs.google.com/forms/d/e/1FAIpQLScNqx1chYnV4154RVka6OFrXmG0asJ8bAChzBQyW7rOcJJh8A/viewform">Detailed skills form ↗</a></div>'
       + '<div class="cp-hint" style="margin-top:12px">Resources / equipment</div><div id="cp_res" class="cp-tags">'+renderTags((d.resources||[]).map(function(r){return r.resource_key;}),"resource")+'</div>'
       + '<div class="cp-addrow"><input id="cp_res_new" placeholder="Add a resource (e.g. Professional camera)"><button class="btn sm ghost" data-add="resource">Add</button></div>',
       {noSave:true});
@@ -374,10 +389,11 @@
     var pin=v("cp_pin");
     if(pin && !/^[A-Za-z0-9 \-]{3,12}$/.test(pin)) throw new Error("Enter a valid postal/PIN code");
     var payload={ line1:v("cp_l1")||null, line2:v("cp_l2")||null, landmark:v("cp_landmark")||null,
-      city:v("cp_city")||null, state:v("cp_state")||null, postal_code:pin||null, country:v("cp_country")||"India", is_default:true };
+      city:v("cp_city")||null, state:v("cp_state")||null, postal_code:pin||null, country:v("cp_country")||"India",
+      label:v("cp_addr_label")||null, is_default: !!(document.getElementById("cp_addr_default")||{}).checked };
+    if(!payload.line1 || !payload.city || !payload.postal_code) throw new Error("Address line 1, city and PIN are required");
     var id=v("cp_addr_id"); if(id) payload.address_id=id;
     var r=await api("upsert_address",{ p_payload:payload, p_correlation:"ui" }); if(r.error) throw r.error;
-    if(r.data && !id){ document.getElementById("cp_addr_id").value=r.data; }
   }
 
   async function refreshCompletion(){ try{ var c=await api("get_profile_completion"); if(c&&!c.error){ COMP=c.data; document.querySelector(".cp-head").outerHTML=header(); } }catch(e){} }
@@ -397,9 +413,26 @@
     // auto-save (debounced) on input within a savable section
     document.querySelectorAll('.cp-sec[data-sec]').forEach(function(sec){
       var key=sec.getAttribute("data-sec");
-      if(["personal","contact","professional","address","barter"].indexOf(key)<0) return;
+      if(["personal","contact","professional","barter"].indexOf(key)<0) return;
       sec.addEventListener("input", function(){ markDirty(key); scheduleSave(key); });
     });
+    // addresses: save / new / edit / default / remove
+    var as=document.getElementById("cp_addr_save");
+    if(as) as.onclick=async function(){ setStatus("address","saving"); try{ await saveAddress(); setStatus("address","saved"); await load(); }catch(e){ setStatus("address","error", e.message||e); } };
+    var an=document.getElementById("cp_addr_new");
+    if(an) an.onclick=function(){ fillAddr({}); };
+    function fillAddr(a){
+      var set=function(id,v){ var e=document.getElementById(id); if(e) e.value = v==null?"":v; };
+      set("cp_addr_id",a.address_id); set("cp_addr_label",a.label); set("cp_l1",a.line1); set("cp_l2",a.line2); set("cp_landmark",a.landmark);
+      set("cp_city",a.city); set("cp_state",a.state); set("cp_pin",a.postal_code); set("cp_country",a.country||"India");
+      var dflt=document.getElementById("cp_addr_default"); if(dflt) dflt.checked = !!a.is_default || !(DATA.addresses||[]).length;
+      var m=document.getElementById("cp_addr_mode"); if(m) m.textContent = a.address_id ? "Editing: "+(a.label||"address") : "Add a new address";
+    }
+    document.querySelectorAll("[data-editaddr]").forEach(function(b){ b.onclick=function(){ var a=(DATA.addresses||[]).find(function(x){return x.address_id===b.getAttribute("data-editaddr");}); if(a){ fillAddr(a); document.getElementById("cp_l1").focus(); } }; });
+    document.querySelectorAll("[data-defaddr]").forEach(function(b){ b.onclick=async function(){ var a=(DATA.addresses||[]).find(function(x){return x.address_id===b.getAttribute("data-defaddr");}); if(!a) return;
+      var r=await api("upsert_address",{p_payload:{address_id:a.address_id,is_default:true},p_correlation:"ui"}); if(r.error) alert(r.error.message||r.error); load(); }; });
+    document.querySelectorAll("[data-deladdr]").forEach(function(b){ b.onclick=async function(){ if(!confirm("Remove this address?")) return;
+      var r=await api("delete_address",{p_address_id:b.getAttribute("data-deladdr"),p_correlation:"ui"}); if(r.error) alert(r.error.message||r.error); load(); }; });
     // add/remove collections
     document.querySelectorAll("[data-add]").forEach(function(b){ b.onclick=function(){ addItem(b.getAttribute("data-add")); }; });
     hookDel();
