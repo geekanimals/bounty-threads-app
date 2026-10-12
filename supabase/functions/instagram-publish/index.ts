@@ -141,8 +141,28 @@ Deno.serve(async (req: Request) => {
       }
       return first;
     };
+    // Instagram rejects the WHOLE item if any tagged/mentioned account can't be tagged (doesn't exist, private,
+    // blocked, or has mentions turned off). Retry without the offending usernames (named in Instagram's — possibly
+    // localized — message), or without tags if none can be identified, and report who was skipped.
+    const skippedTags = new Set<string>();
     const mustCreate = async (params: Record<string, string>, what: string) => {
-      const r = await createOn(params);
+      let r = await createOn(params);
+      if ((!r.ok || !r.j?.id) && params.user_tags) {
+        const msg = String(metaError(r.j) || "");
+        let tags: any[] = []; try { tags = JSON.parse(params.user_tags); } catch { /* ignore */ }
+        const named = tags.filter((t) => t?.username && msg.includes(String(t.username)));
+        const drop = named.length ? named : tags;
+        drop.forEach((t) => t?.username && skippedTags.add(String(t.username)));
+        const keep = tags.filter((t) => !drop.includes(t));
+        const retry = { ...params };
+        if (keep.length) retry.user_tags = JSON.stringify(keep); else delete retry.user_tags;
+        r = await createOn(retry);
+        if ((!r.ok || !r.j?.id) && retry.user_tags) {          // still failing → last try with no tags at all
+          keep.forEach((t) => t?.username && skippedTags.add(String(t.username)));
+          delete retry.user_tags;
+          r = await createOn(retry);
+        }
+      }
       if (!r.ok || !r.j?.id) throw new Reject({ error: `Instagram rejected the ${what}.`, detail: metaError(r.j) || r.j });
       return String(r.j.id);
     };
@@ -229,6 +249,7 @@ Deno.serve(async (req: Request) => {
       ok: true, kind, media_id: mediaId, container_id: containerId,
       permalink: link.ok ? link.j?.permalink ?? null : null,
       carousel: kind === "feed" && media.length > 1,
+      skipped_tags: [...skippedTags],
       message: kind === "story" ? "Story is live on Instagram." : kind === "reel" ? "Reel published." : "Post published.",
     });
   } catch (e) {

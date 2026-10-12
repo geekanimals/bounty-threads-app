@@ -2011,7 +2011,9 @@ function wireMkComposer(){
       if(data && data.error) throw new Error(data.error);
       let note = K.ok + (data && data.carousel ? " (carousel)" : "");
       if(collabs.length && kind!=="story") note += " · collaborator invite sent";
-      if(kind==="story" && tagsList.length) note += ` · mentioned ${tagsList.map(u=>"@"+u).join(", ")} (they'll be notified)`;
+      const skipped = (data && data.skipped_tags) || [], done = tagsList.filter(u=>!skipped.includes(u));
+      if(done.length) note += kind==="story" ? ` · mentioned ${done.map(u=>"@"+u).join(", ")} (they'll be notified)` : ` · tagged ${done.map(u=>"@"+u).join(", ")}`;
+      if(skipped.length) note += ` · ⚠️ couldn't ${kind==="story"?"mention":"tag"} ${skipped.map(u=>"@"+u).join(", ")} — check the spelling; private accounts or people who turned off mentions can't be tagged`;
       // campaign post → record it so the brief check runs and the brand report tracks it
       const rule = _mkRules.find(x=>x.participation_id===$id("mkCamp").value);
       if(rule){
