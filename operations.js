@@ -321,12 +321,61 @@
   /* ============================ 2. CREATOR "MY CAMPAIGNS" ============================ */
   window.renderMyCampaigns=function(){
     if(!enabled) return '<div class="card"><h3>My Campaigns</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
-    return '<div id="opsMine" class="ci"><div class="card ci-intro"><h3>My Campaigns</h3><div class="muted">Campaigns you\'ve been invited to. Accept, upload your content and track status here — no WhatsApp needed.</div></div>'
-      + '<div id="opsMineBody"><div class="card"><div class="muted">Loading…</div></div></div></div>';
+    return '<div id="opsMine" class="ci"><div class="card ci-intro"><h3>My Campaigns</h3><div class="muted">Apply to open campaigns, then track every step here — contract, delivery, content and posting.</div></div>'
+      + '<div class="ci-sub">Open campaigns</div><div id="opsOpenBody"><div class="card"><div class="muted">Loading…</div></div></div>'
+      + '<div class="ci-sub">My campaigns</div><div id="opsMineBody"><div class="card"><div class="muted">Loading…</div></div></div></div>';
   };
   async function loadMyCampaigns(){
+    loadOpenCampaigns();
     try{ var r=await api("get_my_campaigns"); if(r.error) throw r.error; renderMine(r.data||[]); }
-    catch(e){ document.getElementById("opsMineBody").innerHTML='<div class="card ci-err-inline">Couldn\'t load: '+esc(e.message||e)+'</div>'; }
+    catch(e){
+      var m=String((e&&e.message)||e);
+      // a creator who hasn't applied anywhere yet may have no creator identity — that's "no campaigns", not an error
+      if(/no creator identity/i.test(m)){ renderMine([]); return; }
+      var el=document.getElementById("opsMineBody"); if(el) el.innerHTML='<div class="card ci-err-inline">Couldn\'t load: '+esc(m)+'</div>';
+    }
+  }
+
+  /* ---- creator: browse open campaigns + apply (application-first funnel entry) ---- */
+  async function loadOpenCampaigns(){
+    var el=document.getElementById("opsOpenBody"); if(!el) return;
+    try{ var r=await api("list_open_campaigns"); if(r.error) throw r.error; renderOpen(r.data||[]); }
+    catch(e){ el.innerHTML='<div class="card ci-err-inline">Couldn\'t load open campaigns: '+esc((e&&e.message)||e)+'</div>'; }
+  }
+  function renderOpen(list){
+    var el=document.getElementById("opsOpenBody"); if(!el) return;
+    if(!list.length){ el.innerHTML='<div class="card"><div class="muted">No campaigns are open right now. New ones will show up here.</div></div>'; return; }
+    el.innerHTML=list.map(function(c){
+      var tags=[].concat(c.hashtags||[],(c.mentions||[]).map(function(m){ return String(m).charAt(0)==='@'?m:'@'+m; }));
+      var where=(c.cities||[]).join(", "), langs=(c.languages||[]).join(", ");
+      var act=c.my_stage ? spill(c.my_stage)
+        : '<button class="btn sm" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Apply</button>';
+      return '<div class="card ci-match"><div class="ci-mh"><h4>'+esc(c.name||"Campaign")+' <span class="ci-id">'+esc(c.brand||"")+'</span></h4>'+act+'</div>'
+        + '<div class="ci-meta"><span>Product: <b>'+esc(c.product||"—")+'</b></span><span>Comp: <b>'+esc(c.comp_type||"—")+'</b></span>'
+        + (c.category?'<span>Category: <b>'+esc(c.category)+'</b></span>':'')
+        + '<span>Dates: <b>'+fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on)+'</b></span></div>'
+        + (where||langs?'<div class="ci-hint">'+(where?'Cities: '+esc(where):'')+(where&&langs?' · ':'')+(langs?'Languages: '+esc(langs):'')+'</div>':'')
+        + (tags.length?'<div class="ci-hint">Must include in caption: '+esc(tags.join(" "))+'</div>':'')
+        + '</div>';
+    }).join("");
+    el.querySelectorAll("[data-apply]").forEach(function(b){ b.onclick=function(){ applyToCampaign(b); }; });
+  }
+  async function applyToCampaign(btn){
+    var id=btn.getAttribute("data-apply"), name=btn.getAttribute("data-name")||"this campaign";
+    if(!confirm("Apply to "+name+"? The Geek team will review your profile and let you know on WhatsApp and in Alerts.")) return;
+    btn.disabled=true; btn.textContent="Applying…";
+    try{
+      var r=await api("apply_to_campaign",{p_campaign:id});
+      if(r.error && /no creator identity|not a creator/i.test(r.error.message||"")){
+        // first application from a WhatsApp/email creator: create their creator profile, then retry once
+        var b=await api("bootstrap_my_profile",{p_correlation:"ui-apply"}); if(b.error) throw b.error;
+        r=await api("apply_to_campaign",{p_campaign:id});
+      }
+      if(r.error) throw r.error;
+      loadMyCampaigns(); if(typeof updateAlertsBadge==="function") updateAlertsBadge();
+    }catch(e){
+      alert((e&&e.message)||e); btn.disabled=false; btn.textContent="Apply";
+    }
   }
   function mineGroup(stage){
     if(['shortlisted','invited','applied','eligible','sent_to_brand'].indexOf(stage)>=0) return 'Upcoming';
@@ -334,7 +383,7 @@
     return 'Active';
   }
   function renderMine(list){
-    if(!list.length){ document.getElementById("opsMineBody").innerHTML='<div class="card"><div class="muted">No campaigns yet. When the Geek team invites you, they\'ll appear here.</div></div>'; return; }
+    if(!list.length){ document.getElementById("opsMineBody").innerHTML='<div class="card"><div class="muted">No campaigns yet. Apply to an open campaign above — it will show up here with every next step.</div></div>'; return; }
     var groups={Upcoming:[],Active:[],Completed:[]}; list.forEach(function(c){ groups[mineGroup(c.stage)].push(c); });
     var html=Object.keys(groups).map(function(g){ if(!groups[g].length) return ''; return '<div class="ci-sub">'+g+'</div>'+groups[g].map(cardMine).join(""); }).join("");
     document.getElementById("opsMineBody").innerHTML=html;
@@ -531,7 +580,7 @@
     catch(e){ if(msg) msg.textContent="Couldn't submit: "+(e.message||e); }
   }
 
-  window.ciOps={ boot:boot, loadAgencyOps:loadAgencyOps, loadMyCampaigns:loadMyCampaigns, loadOnboarding:loadOnboarding, loadBrandSetup:loadBrandSetup,
+  window.ciOps={ boot:boot, loadAgencyOps:loadAgencyOps, loadMyCampaigns:loadMyCampaigns, loadOpenCampaigns:loadOpenCampaigns, loadOnboarding:loadOnboarding, loadBrandSetup:loadBrandSetup,
     loadAlerts:loadAlerts, updateAlertsBadge:updateAlertsBadge, openCampaignDetail:openCampaignDetail };
 
   var tries=0, t=setInterval(function(){ tries++;
