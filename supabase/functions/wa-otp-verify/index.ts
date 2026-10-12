@@ -16,7 +16,12 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   try {
-    const { phone, code, link: linkMode } = await req.json().catch(() => ({}));
+    const { phone, code, link: linkMode, door: doorRaw, name: nameRaw, org: orgRaw } = await req.json().catch(() => ({}));
+    // which login door was used: creator (default) | owner (agency) | brand. Agency/brand accounts are created
+    // `pending` by handle_new_user and only enter after the Super Admin approves them.
+    const door = ["owner", "brand"].includes(String(doorRaw)) ? String(doorRaw) : "creator";
+    const fullName = String(nameRaw || "").trim().slice(0, 80);
+    const orgName = String(orgRaw || "").trim().slice(0, 120);
     const e164 = toE164(phone || "");
     if (!/^\+[1-9]\d{7,15}$/.test(e164)) return json({ error: "Invalid phone" }, 400);
     if (!/^\d{6}$/.test(String(code || ""))) return json({ error: "Enter the 6-digit code" }, 400);
@@ -55,10 +60,19 @@ Deno.serve(async (req) => {
     }
     if (existing?.user_id) {
       userId = existing.user_id;
+      // one WhatsApp number = one kind of account; never let a creator walk in through the agency door or vice versa
+      const { data: mem } = await admin.from("members").select("role").eq("id", userId).maybeSingle();
+      const isCreator = !mem?.role || mem.role === "creator";
+      if (door === "creator" && !isCreator) return json({ error: "This WhatsApp number belongs to an Agency/Brand account — use the Agency Owner or Brand door." }, 409);
+      if (door !== "creator" && isCreator) return json({ error: "This WhatsApp number is registered as a Creator. Use a different number for your agency or brand." }, 409);
     } else {
+      if (door !== "creator" && (!fullName || !orgName)) return json({ error: "Enter your name and organisation name.", needs_details: true }, 400);
       const { data: created, error: cErr } = await admin.auth.admin.createUser({
         email, email_confirm: true, phone: e164.replace("+", ""), phone_confirm: true,
-        app_metadata: { created_via: "whatsapp-login" }, user_metadata: { role: "creator", org_name: "My Creator Space" },
+        app_metadata: { created_via: "whatsapp-login", door },
+        user_metadata: door === "creator"
+          ? { role: "creator", org_name: "My Creator Space" }
+          : { role: door, org_name: orgName, full_name: fullName },
       });
       if (cErr && !/registered|exists/i.test(cErr.message)) throw cErr;
       userId = created?.user?.id ?? null;
@@ -76,6 +90,9 @@ Deno.serve(async (req) => {
       { user_id: userId, phone_e164: e164, verified_at: new Date().toISOString(), opt_in_at: new Date().toISOString() },
       { onConflict: "user_id" },
     );
+
+    // keep the verified WhatsApp on the member row (Super Admin approval queue shows it)
+    await admin.from("members").update({ whatsapp_e164: e164 }).eq("id", userId);
 
     // magic-link token_hash the browser exchanges for a session
     const { data: userRec } = await admin.auth.admin.getUserById(userId);

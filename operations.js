@@ -10,6 +10,8 @@
 
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function api(fn,args){ return window.sb.schema("api").rpc(fn, args||{}); }
+  function safeLink(u){ u=String(u||""); return /^https?:\/\//i.test(u)?u:"#"; }
+  function campTypeLabel(t,st){ var T={barter:"Barter",paid:"Paid",barter_paid:"Barter + Paid"}, S={celebrity_story:"Celebrity story",normal_barter:"Normal barter",pr_package:"PR package"}; return (T[t]||t||"")+(st&&S[st]?" · "+S[st]:""); }
   // A creator who signed in with WhatsApp/email has no creator identity until the first profile action.
   // Create it once, on demand, then retry the call — instead of surfacing a 403 to the creator.
   var _idBoot=null;
@@ -289,7 +291,9 @@
     document.querySelectorAll("#opsDetail [data-ship]").forEach(function(b){ b.onclick=function(){ var prod=prompt("Product shipped:")||""; var courier=prompt("Courier (e.g. DTDC / Amazon):")||""; var trk=prompt("Tracking ref (optional):")||""; api("record_shipment",{p_participation:b.getAttribute("data-ship"),p_product:prod,p_courier:courier||null,p_tracking:trk||null}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
     // funnel: eligibility screening
     document.querySelectorAll("#opsDetail [data-screen-ok]").forEach(function(b){ b.onclick=function(){ api("screen_participation",{p_participation:b.getAttribute("data-screen-ok"),p_eligible:true,p_reason:null}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
-    document.querySelectorAll("#opsDetail [data-screen-no]").forEach(function(b){ b.onclick=function(){ var reason=prompt("Why is this creator not eligible?")||""; if(!reason) return; api("screen_participation",{p_participation:b.getAttribute("data-screen-no"),p_eligible:false,p_reason:reason}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
+    document.querySelectorAll("#opsDetail [data-screen-no]").forEach(function(b){ b.onclick=async function(){
+      var pick = window.openReasonModal ? await window.openReasonModal("Why is this creator not eligible?") : null; if(!pick) return;
+      api("screen_participation_v2",{p_participation:b.getAttribute("data-screen-no"),p_eligible:false,p_reason_code:pick.code,p_note:pick.note||null}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
     // funnel: send shortlist to brand (bulk)
     var sb2=document.getElementById("opsSendBrand"); if(sb2) sb2.onclick=function(){ api("send_shortlist_to_brand",{p_campaign:sb2.getAttribute("data-camp")}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); };
     // funnel: brand confirm/decline
@@ -363,10 +367,13 @@
         + (c.category?'<span>Category: <b>'+esc(c.category)+'</b></span>':'')
         + '<span>Dates: <b>'+fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on)+'</b></span></div>'
         + (where||langs?'<div class="ci-hint">'+(where?'Cities: '+esc(where):'')+(where&&langs?' · ':'')+(langs?'Languages: '+esc(langs):'')+'</div>':'')
+        + (c.campaign_type?'<div class="ci-hint">Type: <b>'+esc(campTypeLabel(c.campaign_type,c.barter_subtype))+'</b>'+(c.creators_needed?' · '+esc(c.creators_needed)+' creators':'')+'</div>':'')
+        + (c.product_link||c.product_value?'<div class="ci-hint">Barter product: '+(c.product_link?'<a href="'+esc(safeLink(c.product_link))+'" target="_blank" rel="noopener">view product ↗</a>':'')+(c.product_value?' · worth ₹'+esc(Number(c.product_value).toLocaleString("en-IN")):'')+'</div>':'')
         + (c.platforms?'<div class="ci-hint">Platforms: '+esc(c.platforms)+'</div>':'')
         + (c.deliverables_text?'<div class="ci-hint">Deliverables: '+esc(c.deliverables_text)+'</div>':'')
         + (c.brief?'<details class="ci-hint"><summary>Brief</summary><div style="white-space:pre-wrap">'+esc(c.brief)+'</div></details>':'')
         + (tags.length?'<div class="ci-hint">Must include in caption: '+esc(tags.join(" "))+'</div>':'')
+        + ((c.attachments||[]).length?'<div class="ci-hint">Files: '+(c.attachments||[]).map(function(a){ return '<a href="'+esc(safeLink(a.url))+'" target="_blank" rel="noopener">📎 '+esc(a.name||"file")+'</a>'; }).join(" · ")+'</div>':'')
         + '</div>';
     }).join("");
     el.querySelectorAll("[data-apply]").forEach(function(b){ b.onclick=function(){ applyToCampaign(b); }; });

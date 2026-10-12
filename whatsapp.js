@@ -15,9 +15,14 @@
     o.innerHTML='<div class="wa-modal">'+html+'</div>'; o.style.display="flex"; return o;
   }
   function closeOverlay(){ var o=document.getElementById("waOverlay"); if(o) o.style.display="none"; }
-  var _phone="", _linkMode=false;
+  var _phone="", _linkMode=false, _door="creator", _details={};
   function openLink(){ _linkMode=true; startOverlay("Link your WhatsApp", "Get campaign updates on WhatsApp. We'll send a 6-digit code to confirm the number."); }
-  function openLogin(){ _linkMode=false; startOverlay("Sign in with WhatsApp", "We'll send a 6-digit code to your WhatsApp."); }
+  // opts: { door: "creator"|"owner"|"brand", name, org, phone } — with a phone the code is sent straight away
+  function openLogin(opts){
+    opts = opts || {}; _linkMode=false; _door = opts.door || "creator"; _details = { name: opts.name || "", org: opts.org || "" };
+    if(opts.phone){ _phone = opts.phone; overlay('<div class="muted">Sending code…</div><div class="wa-msg" id="waMsg"></div>'); sendCode(); return; }
+    startOverlay("Sign in with WhatsApp", "We'll send a 6-digit code to your WhatsApp.");
+  }
   function startOverlay(title, sub){
     overlay('<div class="ci-mh"><h3>'+esc(title)+'</h3><button class="wa-x" id="waClose">×</button></div>'
       + '<div class="muted">'+esc(sub)+'</div>'
@@ -27,12 +32,12 @@
     document.getElementById("waSend").onclick=sendCode;
   }
   async function sendCode(){
-    var phone=(document.getElementById("waPhone").value||"").trim(); var msg=document.getElementById("waMsg");
+    var pin=document.getElementById("waPhone"); var phone=((pin&&pin.value)||_phone||"").trim(); var msg=document.getElementById("waMsg");
     if(!/^\+?[0-9 \-]{8,}$/.test(phone)){ msg.textContent="Enter a valid number in international format."; return; }
     _phone=phone; msg.textContent="Sending…";
     try{ var r=await fn("wa-otp-start",{ phone: phone }); var em=await fnErr(r); if(em) throw new Error(em);
       codeStep();
-    }catch(e){ msg.textContent="Couldn't send: "+(e.message||e); }
+    }catch(e){ if(!document.getElementById("waPhone")) startOverlay("Sign in with WhatsApp", "We'll send a 6-digit code to your WhatsApp."); var m2=document.getElementById("waMsg"); if(m2) m2.textContent="Couldn't send: "+(e.message||e); }
   }
   function codeStep(){
     overlay('<div class="ci-mh"><h3>Enter your code</h3><button class="wa-x" id="waClose">×</button></div>'
@@ -49,7 +54,7 @@
     if(!/^\d{6}$/.test(code)){ msg.textContent="Enter the 6-digit code."; return; }
     msg.textContent="Verifying…";
     try{
-      var r=await fn("wa-otp-verify",{ phone:_phone, code:code, link:_linkMode }); var d=r.data||{};
+      var r=await fn("wa-otp-verify",{ phone:_phone, code:code, link:_linkMode, door:_door, name:_details.name, org:_details.org }); var d=r.data||{};
       var em=await fnErr(r); if(em) throw new Error(em);
       if(_linkMode){ msg.textContent="Linked ✓"; closeOverlay(); renderStatus(); return; }
       var v=await sbc().auth.verifyOtp({ token_hash:d.token_hash, type:"magiclink" });

@@ -4,22 +4,22 @@
 const ROLES = {
   owner: {
     label: "Agency Owner", initials: "AO", name: "Agency Owner",
-    nav: ["dashboard","brands","campaigns","barter","celebrity","creators","irm","listening","logistics","finance","reports","approvals","settings"],
+    nav: ["dashboard","brands","campaigns","discover","barter","celebrity","creators","irm","listening","logistics","finance","reports","approvals","settings"],
     ai: { title:"Owner Agent", sub:"Growth & revenue copilot" }
   },
   corporate: {
     label: "Corporate (Multi-Brand)", initials: "CO", name: "Corporate Admin",
-    nav: ["dashboard","portfolio","campaigns","barter","celebrity","creators","irm","listening","reports","settings"],
+    nav: ["dashboard","portfolio","campaigns","discover","barter","celebrity","creators","irm","listening","reports","settings"],
     ai: { title:"Corporate Agent", sub:"Portfolio-wide intelligence" }
   },
   manager: {
     label: "Influencer / Celebrity Manager", initials: "MG", name: "Talent Manager",
-    nav: ["dashboard","roster","campaigns","barter","celebrity","reports"],
+    nav: ["dashboard","roster","campaigns","discover","barter","celebrity","reports"],
     ai: { title:"Manager Agent", sub:"Books deals, manages talent" }
   },
   brand: {
     label: "Brand", initials: "BR", name: "Brand",
-    nav: ["dashboard","campaigns","creators","irm","listening","approvals","reports"],
+    nav: ["dashboard","campaigns","discover","approvals","creators","irm","listening","reports"],
     ai: { title:"Brand Agent", sub:"Your campaign concierge" }
   },
   creator: {
@@ -32,6 +32,7 @@ const ROLES = {
 const NAV_META = {
   messages:{ic:"💬",label:"Messages"},
   alerts:{ic:"🔔",label:"Alerts"},
+  discover:{ic:"🔎",label:"Discovery"},
   dashboard:{ic:"🏠",label:"Dashboard"}, brands:{ic:"🏢",label:"Brand CRM"},
   portfolio:{ic:"🗂",label:"Portfolio"}, roster:{ic:"🎬",label:"My Roster"},
   campaigns:{ic:"📣",label:"Campaigns"}, marketplace:{ic:"🛒",label:"Marketplace"},

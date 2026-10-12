@@ -992,7 +992,7 @@ function campaignCardsHtml(list){
     const prog = Math.max(0, Math.min(100, parseInt(c.progress)||0));
     const creators = parseInt(c.creators)||0;
     return `<div class="card"><h3>${esc(c.name)}<span class="tag ${st}">${esc(c.status)||"Draft"}</span></h3>
-      <div class="muted">${esc(c.brand)||"—"} · ${esc(c.type)||"—"}${c.objective?` · ${esc(c.objective)}`:""}</div>
+      <div class="muted">${esc(c.brand)||"—"} · ${esc(c.campaign_type?campTypeLabel(c.campaign_type,c.barter_subtype):c.type)||"—"}${c.objective?` · ${esc(c.objective)}`:""}</div>
       ${c.deliverables?`<div class="muted" style="margin-top:6px;font-size:13px">📦 ${esc(c.deliverables)}</div>`:""}
       ${c.budget?`<div class="muted" style="font-size:13px">💰 ₹${fmtNum(c.budget)}</div>`:""}
       ${(c.start_date||c.end_date)?`<div class="muted" style="font-size:13px">🗓 ${esc(c.start_date)||"—"} → ${esc(c.end_date)||"—"}</div>`:""}
@@ -1024,9 +1024,10 @@ async function openCampaignWorkspace(id){
   if(!content || !window.sb) return;
   content.innerHTML = `<div class="muted" style="padding:24px">Loading campaign…</div>`;
   // Campaign (org-scoped), applications to it, and barter items linked by campaign name.
-  const [cRes, aRes] = await Promise.all([
+  const [cRes, aRes, pRes] = await Promise.all([
     sb.from("campaigns").select("*").eq("id", id).maybeSingle(),
-    sb.rpc("campaign_applications")
+    sb.rpc("campaign_applications"),
+    sb.schema("api").rpc("org_applicants", { p_campaign: null, p_stage: null }).then(r=>r, ()=>({data:[]}))
   ]);
   const c = cRes.data;
   if(!c){ content.innerHTML = `<div class="card"><div class="muted">Couldn't open this campaign.</div></div>`; return; }
@@ -1034,13 +1035,17 @@ async function openCampaignWorkspace(id){
   const apps = ((aRes && aRes.data) || []).filter(a=>a.campaign_id===id);
   const { data: bdata } = await sb.from("barter_items").select("*").eq("campaign", c.name||"__none__").order("created_at",{ascending:false});
   const barter = bdata||[];
-  renderCampaignWorkspace(c, apps, barter);
+  const pipe = ((pRes && pRes.data) || []).filter(p=>p.legacy_campaign_id===id);
+  renderCampaignWorkspace(c, apps, barter, pipe);
 }
 
-function renderCampaignWorkspace(c, apps, barter){
+function renderCampaignWorkspace(c, apps, barter, pipe){
+  pipe = pipe || [];
   const content = document.querySelector("#content, .content");
   const st = {Live:"good","In Production":"brand",Sourcing:"warn",Approval:"warn",Draft:"warn",Completed:"good"}[c.status]||"brand";
-  const applied = apps.filter(a=>a.status==="Applied"), approved = apps.filter(a=>a.status==="Approved");
+  const PENDING = ["applied","eligible","sent_to_brand"], DECLINED = ["ineligible","brand_declined","dropped","rejected"];
+  const applied = apps.filter(a=>a.status==="Applied").concat(pipe.filter(p=>PENDING.includes(p.stage)));
+  const approved = apps.filter(a=>a.status==="Approved").concat(pipe.filter(p=>!PENDING.includes(p.stage) && !DECLINED.includes(p.stage)));
   const info = (l,v)=> v ? `<div class="cd-row"><span class="cd-l">${l}</span><span class="cd-v">${esc(v)}</span></div>` : "";
   // Deliverables checklist from the free-text field.
   const items = (c.deliverables||"").split(/\r?\n|;|,(?![^(]*\))/).map(s=>s.trim()).filter(Boolean);
@@ -1049,7 +1054,7 @@ function renderCampaignWorkspace(c, apps, barter){
     : `<div class="muted" style="padding:6px">No deliverables set — add them via Edit.</div>`;
   const appRow = a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span>
     <div class="r-main"><div class="r-title">${esc(a.creator_name)||"Creator"}</div><div class="r-sub">${esc(a.creator_org)||""} · ${esc(a.status)}</div></div>
-    ${a.status==="Applied"?`<span><button class="mini-btn" data-wsapprove="${esc(a.id)}">Approve</button> <button class="mini-btn ghost" data-wsdecline="${esc(a.id)}">Decline</button></span>`:`<span class="tag ${a.status==="Approved"?"good":""}">${esc(a.status)}</span>`}</div>`;
+    ${a.status==="Applied"?`<span><button class="mini-btn" data-wsapprove="${esc(a.id)}">Approve</button> <button class="mini-btn ghost" data-wsdecline="${esc(a.id)}">Decline</button></span>`:`<span class="tag ${a.status==="Approved"?"good":""}" title="${esc(a.decline_note||"")}">${esc(a.status)}</span>`}</div>`;
   const barterRow = b=>`<div class="row"><div class="r-main"><div class="r-title">${esc(b.product||"Item")} ${b.creator?`· ${esc(b.creator)}`:""}</div>
     <div class="r-sub">${esc(b.stage||"Requested")}${b.tracking_number?` · 🚚 ${esc(b.tracking_number)}`:""}${b.deadline?` · ⏰ ${esc(b.deadline)}`:""}</div></div>
     <span class="tag brand">${esc(b.stage||"Requested")}</span></div>`;
@@ -1070,16 +1075,20 @@ function renderCampaignWorkspace(c, apps, barter){
     <div class="grid two">
       <div class="grid" style="gap:16px">
         <div class="card"><h3>Applicants ${applied.length?`<span class="tag warn">${applied.length} new</span>`:""}</h3>
-          <div class="list" id="wsApps">${apps.length?apps.map(appRow).join(""):`<div class="muted" style="padding:8px">No applications yet. Creators apply from the Marketplace.</div>`}</div></div>
+          <div class="list" id="wsApps">${(pipe.length||apps.length)?pipe.map(p=>applicantRowHtml(p)).join("")+apps.map(appRow).join(""):`<div class="muted" style="padding:8px">No applications yet. Creators apply from their Media Kit → Open campaigns.</div>`}</div></div>
         <div class="card"><h3>Barter shipments</h3>
           <div class="list" id="wsBarter">${barter.length?barter.map(barterRow).join(""):`<div class="muted" style="padding:8px">No barter items linked. Create one in Mass Barter with campaign “${esc(c.name)}”.</div>`}</div></div>
       </div>
       <div class="grid" style="gap:16px">
         <div class="card"><h3>Deliverables</h3><div id="wsChecklist">${checklist}</div></div>
         <div class="card"><h3>Details</h3>
+          ${info("Type", c.campaign_type?campTypeLabel(c.campaign_type,c.barter_subtype):c.type)}${info("Creators needed", c.creators?String(c.creators):"")}
+          ${c.product_link||c.product_value?`<div class="cd-row"><span class="cd-l">Barter product</span><span class="cd-v">${c.product_link?`<a href="${esc(safeUrl(c.product_link))}" target="_blank" rel="noopener">Open ↗</a>`:""}${c.product_value?` · ${fmtMoney(c.product_value)}`:""}</span></div>`:""}
           ${info("Platforms", c.platforms)}${info("Hashtags", c.hashtags)}
           ${info("Timeline", (c.start_date||c.end_date)?`${c.start_date||"—"} → ${c.end_date||"—"}`:"")}
-          ${c.brief?`<div class="cd-block"><div class="cd-l">Brief</div><div class="cd-body">${esc(c.brief)}</div></div>`:""}</div>
+          ${c.brief?`<div class="cd-block"><div class="cd-l">Brief</div><div class="cd-body">${esc(c.brief)}</div></div>`:""}
+          ${(c.attachments||[]).length?`<div class="cd-block"><div class="cd-l">Files</div><div class="cd-body">${c.attachments.map(a=>`<a href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener">📎 ${esc(a.name)}</a>`).join("<br>")}</div></div>`:""}
+          ${idealProfileHtml(c.ideal_profile)}</div>
       </div>
     </div>`;
 
@@ -1087,7 +1096,8 @@ function renderCampaignWorkspace(c, apps, barter){
   document.getElementById("wsEdit").onclick = ()=> openCampaignModal(c);
   const reload = ()=> openCampaignWorkspace(c.id);
   content.querySelectorAll("[data-wsapprove]").forEach(b=>b.onclick=()=>updateStatus("applications", b.dataset.wsapprove, {status:"Approved"}, reload));
-  content.querySelectorAll("[data-wsdecline]").forEach(b=>b.onclick=()=>updateStatus("applications", b.dataset.wsdecline, {status:"Declined"}, reload));
+  content.querySelectorAll("[data-wsdecline]").forEach(b=>b.onclick=()=>declineLegacyApplication(b.dataset.wsdecline, reload));
+  wireApplicantButtons(content, reload);
   content.querySelectorAll("[data-deliv]").forEach(cb=> cb.onchange = ()=>{
     const span = cb.parentNode.querySelector("span");
     if(span){ span.style.textDecoration = cb.checked ? "line-through" : ""; span.style.opacity = cb.checked ? ".6" : ""; }
@@ -1110,52 +1120,152 @@ async function toggleDeliverable(c, item, checked){
   return ok;
 }
 
+const CAMP_TYPES = [["barter","Barter"],["paid","Paid"],["barter_paid","Barter + Paid"]];
+const BARTER_SUBTYPES = [["celebrity_story","Celebrity story"],["normal_barter","Normal barter"],["pr_package","PR package"]];
+const CAMP_PLATFORMS = ["Instagram","YouTube","Facebook","LinkedIn","X / Twitter","Snapchat","Moj / Josh"];
+function campTypeLabel(t, st){
+  const T = Object.fromEntries(CAMP_TYPES), S = Object.fromEntries(BARTER_SUBTYPES);
+  return (T[t]||"") + (st && S[st] && t!=="paid" ? " · "+S[st] : "");
+}
+// legacy `type` text kept in sync so older screens & reports keep working
+function legacyTypeFor(t, st){
+  if(t==="paid") return "Paid Campaign";
+  if(t==="barter_paid") return "Hybrid";
+  return { celebrity_story:"Celebrity Story", pr_package:"Product Seeding", normal_barter:"Mass Barter" }[st] || "Mass Barter";
+}
+const MAX_CAMP_FILE = 10*1024*1024;
+
 function openCampaignModal(existing){
   const ed = existing || {};
+  const ip = (ed.ideal_profile && typeof ed.ideal_profile==="object") ? ed.ideal_profile : {};
+  let files = Array.isArray(ed.attachments) ? ed.attachments.slice() : [];
+  const ctype = ed.campaign_type || (/paid/i.test(ed.type||"") && !/hybrid/i.test(ed.type||"") ? "paid" : /hybrid/i.test(ed.type||"") ? "barter_paid" : "barter");
   const opt = (arr,val)=>arr.map(o=>`<option${o===val?' selected':''}>${o}</option>`).join("");
+  const kv = (arr,val)=>arr.map(([k,l])=>`<option value="${k}"${k===val?' selected':''}>${l}</option>`).join("");
+  const plats = String(ed.platforms||"Instagram").split(/\s*,\s*/).filter(Boolean);
+  const list = v => Array.isArray(v) ? v.join(", ") : (v||"");
   let m = document.getElementById("campaignModal"); if(m) m.remove();
   m = el("div","modal-overlay"); m.id="campaignModal";
   m.innerHTML = `<div class="modal modal-lg">
     <div class="modal-head"><strong>${existing?'Edit Campaign':'New Campaign'}</strong><button class="icon-btn" id="cmClose">✕</button></div>
     <form id="campaignForm" class="modal-form">
-      <div class="mf-row"><label>Campaign name<input name="name" required value="${esc(ed.name||'')}" placeholder="Summer Glow Launch"></label>
-      <label>Brand<input name="brand" value="${esc(ed.brand||'')}" placeholder="Lume Cosmetics"></label></div>
-      <div class="mf-row"><label>Type<select name="type">${opt(["Paid Campaign","Mass Barter","Turnkey Barter","Celebrity Story","UGC","Product Seeding","Hybrid"], ed.type)}</select></label>
+      <div class="cm-sec">Campaign type</div>
+      <div class="cm-seg" id="cmType">${CAMP_TYPES.map(([k,l])=>`<label class="${k===ctype?'act':''}"><input type="radio" name="campaign_type" value="${k}"${k===ctype?' checked':''}> ${l}</label>`).join("")}</div>
+      <div class="mf-row cm-barter"><label>Barter type<select name="barter_subtype">${kv(BARTER_SUBTYPES, ed.barter_subtype||"normal_barter")}</select></label>
+        <label>Number of creators<input name="creators" type="number" min="0" value="${ed.creators!=null?esc(ed.creators):''}" placeholder="20"></label></div>
+      <div class="mf-row"><label>Campaign name<input name="name" required maxlength="120" value="${esc(ed.name||'')}" placeholder="Summer Glow Launch"></label>
+      <label>Brand name<input name="brand" required maxlength="120" value="${esc(ed.brand||'')}" placeholder="Lume Cosmetics"></label></div>
+      <div class="mf-row cm-barter"><label>Barter product link<input name="product_link" type="url" value="${esc(ed.product_link||'')}" placeholder="https://brand.com/product"></label>
+      <label>Barter product value (₹)<input name="product_value" type="number" min="0" value="${ed.product_value!=null?esc(ed.product_value):''}" placeholder="1499"></label></div>
+      <div class="mf-row"><label class="cm-paid">Budget (₹)<input name="budget" type="number" min="0" value="${ed.budget!=null?esc(ed.budget):''}" placeholder="100000"></label>
+      <label class="cm-nobarter-creators">Number of creators<input name="creators_paid" type="number" min="0" value="${ed.creators!=null?esc(ed.creators):''}" placeholder="10"></label>
       <label>Objective<select name="objective">${opt(["Awareness","Engagement","Sales / Conversions","UGC content","Product launch","App installs","Store visits"], ed.objective)}</select></label></div>
-      <div class="mf-row"><label>Status<select name="status">${opt(["Draft","Sourcing","Approval","In Production","Live","Completed"], ed.status)}</select></label>
-      <label>Budget (₹)<input name="budget" type="number" min="0" value="${ed.budget!=null?esc(ed.budget):''}" placeholder="100000"></label></div>
-      <div class="mf-row"><label>Platforms<input name="platforms" value="${esc(ed.platforms||'')}" placeholder="Instagram, YouTube"></label>
-      <label>Hashtags<input name="hashtags" value="${esc(ed.hashtags||'')}" placeholder="#summerglow #ad"></label></div>
-      <label>Deliverables<textarea name="deliverables" rows="2" placeholder="e.g. 2 Reels + 3 Stories + 1 Static post">${esc(ed.deliverables||'')}</textarea></label>
+      <label>Platforms</label>
+      <div class="cm-chips">${CAMP_PLATFORMS.map(p=>`<label><input type="checkbox" name="platforms" value="${esc(p)}"${plats.includes(p)?' checked':''}> ${esc(p)}</label>`).join("")}</div>
+      <label>Hashtags &amp; mentions<input name="hashtags" value="${esc(ed.hashtags||'')}" placeholder="#summerglow #ad @lumecosmetics"></label>
+      <label>Deliverables<textarea name="deliverables" rows="2" placeholder="e.g. 1 Reel + 2 Stories + 1 Static post">${esc(ed.deliverables||'')}</textarea></label>
       <label>Brief / notes<textarea name="brief" rows="3" placeholder="Goals, key messaging, dos & don'ts, references…">${esc(ed.brief||'')}</textarea></label>
+      <label>Attach anything <span class="muted" style="font-weight:400">(brief PDF, mood board, product images — max 10 MB each)</span><input type="file" id="cmFiles" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.heic,.mp4,.mov,.csv,.txt,.zip,.doc,.docx,.ppt,.pptx,.xls,.xlsx"></label>
+      <div id="cmFileList" class="cm-files"></div>
       <div class="mf-row"><label>Start date<input name="start_date" type="date" value="${esc(ed.start_date||'')}"></label>
       <label>End date<input name="end_date" type="date" value="${esc(ed.end_date||'')}"></label></div>
-      <div class="mf-row"><label>Progress %<input name="progress" type="number" min="0" max="100" value="${ed.progress!=null?esc(ed.progress):''}" placeholder="0"></label>
-      <label>Creators<input name="creators" type="number" min="0" value="${ed.creators!=null?esc(ed.creators):''}" placeholder="0"></label></div>
+      <div class="mf-row"><label>Status<select name="status">${opt(["Draft","Sourcing","Approval","In Production","Live","Completed"], ed.status||"Sourcing")}</select></label>
+      ${existing?`<label>Progress %<input name="progress" type="number" min="0" max="100" value="${ed.progress!=null?esc(ed.progress):''}" placeholder="0"></label>`:'<span></span>'}</div>
+      <div class="cm-sec">Ideal influencer profile <span class="muted" style="font-weight:400;font-size:12px">— used to screen & discover creators; never shown to creators</span></div>
+      <div class="mf-row"><label>Min followers<input name="ip_min" type="number" min="0" value="${esc(ip.min_followers??'')}" placeholder="10000"></label>
+      <label>Max followers<input name="ip_max" type="number" min="0" value="${esc(ip.max_followers??'')}" placeholder="500000"></label></div>
+      <div class="mf-row"><label>Location(s)<input name="ip_loc" value="${esc(list(ip.locations))}" placeholder="Delhi NCR, Mumbai"></label>
+      <label>Gender<select name="ip_gender">${kv([["","Any"],["female","Female"],["male","Male"],["other","Other"]], ip.gender||"")}</select></label></div>
+      <div class="mf-row"><label>Category<input name="ip_cat" value="${esc(list(ip.categories))}" placeholder="Beauty, Lifestyle"></label>
+      <label>Avg engagement (min %)<input name="ip_eng" type="number" min="0" max="100" step="0.1" value="${esc(ip.min_engagement??'')}" placeholder="2.5"></label></div>
+      <label>Audience data<input name="ip_aud" value="${esc(ip.audience_notes||'')}" placeholder="e.g. 18–34, 60% female, metro India"></label>
       <div class="auth-err" id="cmErr"></div>
       <button class="btn" type="submit">${existing?'Save changes':'Launch Campaign'}</button>
     </form></div>`;
   document.body.appendChild(m); m.classList.add("open");
+  const form = document.getElementById("campaignForm");
+  const syncType = ()=>{
+    const t = form.querySelector("input[name=campaign_type]:checked").value;
+    form.querySelectorAll(".cm-barter").forEach(x=> x.style.display = t==="paid" ? "none" : "");
+    form.querySelectorAll(".cm-paid").forEach(x=> x.style.display = t==="barter" ? "none" : "");
+    form.querySelectorAll(".cm-nobarter-creators").forEach(x=> x.style.display = t==="paid" ? "" : "none");
+    form.querySelectorAll("#cmType label").forEach(l=> l.classList.toggle("act", l.querySelector("input").checked));
+  };
+  form.querySelectorAll("input[name=campaign_type]").forEach(r=> r.onchange = syncType); syncType();
+  const pending = [];
+  const paintFiles = ()=>{
+    const box = document.getElementById("cmFileList");
+    box.innerHTML = files.map((f,i)=>`<span class="cm-file">📎 <a href="${esc(safeUrl(f.url))}" target="_blank" rel="noopener">${esc(f.name)}</a> <button type="button" data-rmf="${i}">✕</button></span>`).join("")
+      + pending.map((f,i)=>`<span class="cm-file pend">⏳ ${esc(f.name)} <button type="button" data-rmp="${i}">✕</button></span>`).join("");
+    box.querySelectorAll("[data-rmf]").forEach(b=> b.onclick = ()=>{ files.splice(+b.dataset.rmf,1); paintFiles(); });
+    box.querySelectorAll("[data-rmp]").forEach(b=> b.onclick = ()=>{ pending.splice(+b.dataset.rmp,1); paintFiles(); });
+  };
+  paintFiles();
+  document.getElementById("cmFiles").onchange = e=>{
+    const err = document.getElementById("cmErr"); err.textContent = "";
+    for(const f of e.target.files){
+      if(f.size > MAX_CAMP_FILE){ err.textContent = `${f.name} is over 10 MB.`; continue; }
+      if(files.length + pending.length >= 10){ err.textContent = "Up to 10 files per campaign."; break; }
+      pending.push(f);
+    }
+    e.target.value = ""; paintFiles();
+  };
   m.onclick = e=>{ if(e.target.id==="campaignModal") m.classList.remove("open"); };
   document.getElementById("cmClose").onclick = ()=> m.classList.remove("open");
-  document.getElementById("campaignForm").onsubmit = async e=>{
+  form.onsubmit = async e=>{
     e.preventDefault();
-    const f = new FormData(e.target), err = document.getElementById("cmErr");
-    const btn = e.target.querySelector("button[type=submit]");
-    err.textContent=""; btn.disabled=true; btn.textContent="Saving…";
-    const row = { name:f.get("name"), brand:f.get("brand"), type:f.get("type"), objective:f.get("objective"),
-      status:f.get("status"), budget:parseFloat(f.get("budget"))||null, platforms:f.get("platforms"),
-      hashtags:f.get("hashtags"), deliverables:f.get("deliverables"), brief:f.get("brief"),
-      start_date:f.get("start_date")||null, end_date:f.get("end_date")||null,
-      progress:parseInt(f.get("progress"))||0, creators:parseInt(f.get("creators"))||0 };
+    const f = new FormData(form), err = document.getElementById("cmErr");
+    const btn = form.querySelector("button[type=submit]");
+    const t = f.get("campaign_type"), st = t==="paid" ? null : f.get("barter_subtype");
+    const num = v => { const n = parseFloat(v); return isFinite(n) && n>=0 ? n : null; };
+    const csv = v => String(v||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,20);
+    err.textContent="";
+    if(f.get("start_date") && f.get("end_date") && f.get("end_date") < f.get("start_date")){ err.textContent = "End date must be after the start date."; return; }
+    const pl = f.get("product_link");
+    if(pl && !/^https?:\/\//i.test(pl)){ err.textContent = "Product link must start with https://"; return; }
+    const ideal = {};
+    if(num(f.get("ip_min"))!=null) ideal.min_followers = num(f.get("ip_min"));
+    if(num(f.get("ip_max"))!=null) ideal.max_followers = num(f.get("ip_max"));
+    if(ideal.min_followers!=null && ideal.max_followers!=null && ideal.max_followers < ideal.min_followers){ err.textContent = "Max followers must be more than min followers."; return; }
+    if(csv(f.get("ip_loc")).length) ideal.locations = csv(f.get("ip_loc"));
+    if(f.get("ip_gender")) ideal.gender = f.get("ip_gender");
+    if(csv(f.get("ip_cat")).length) ideal.categories = csv(f.get("ip_cat"));
+    if(num(f.get("ip_eng"))!=null) ideal.min_engagement = num(f.get("ip_eng"));
+    if(String(f.get("ip_aud")||"").trim()) ideal.audience_notes = String(f.get("ip_aud")).trim().slice(0,500);
+    btn.disabled=true; btn.textContent="Saving…";
     try{
       if(!window.sb) throw new Error("Database not connected.");
+      const org = window.Auth && Auth.profile && Auth.profile.org_id;
+      if(pending.length){
+        if(!org) throw new Error("Your workspace isn't set up yet — can't upload files.");
+        for(const file of pending.slice()){
+          btn.textContent = `Uploading ${file.name}…`;
+          const safe = file.name.replace(/[^\w.\-]+/g,"_").slice(-80);
+          const path = `${org}/${Date.now()}-${Math.random().toString(36).slice(2,8)}-${safe}`;
+          const up = await sb.storage.from("campaign-files").upload(path, file, { contentType: file.type || "application/octet-stream", upsert:false });
+          if(up.error) throw new Error(`Couldn't upload ${file.name}: ${up.error.message}`);
+          const { data:pub } = sb.storage.from("campaign-files").getPublicUrl(path);
+          files.push({ name:file.name, url:pub.publicUrl, type:file.type||"", size:file.size, path });
+          pending.splice(pending.indexOf(file),1);
+        }
+      }
+      const creators = t==="paid" ? parseInt(f.get("creators_paid")) : parseInt(f.get("creators"));
+      const row = { name:f.get("name"), brand:f.get("brand"), campaign_type:t, barter_subtype:st, type:legacyTypeFor(t, st),
+        objective:f.get("objective"), status:f.get("status"),
+        budget: t==="barter" ? null : num(f.get("budget")),
+        product_link: t==="paid" ? null : (pl||null), product_value: t==="paid" ? null : num(f.get("product_value")),
+        platforms:f.getAll("platforms").join(", "), hashtags:f.get("hashtags"), deliverables:f.get("deliverables"), brief:f.get("brief"),
+        start_date:f.get("start_date")||null, end_date:f.get("end_date")||null,
+        creators: isFinite(creators) && creators>=0 ? creators : 0, attachments: files, ideal_profile: ideal };
+      if(existing) row.progress = parseInt(f.get("progress"))||0;
       let error;
       if(existing){ ({ error } = await sb.from("campaigns").update(row).eq("id", existing.id)); }
       else { if(window.Auth&&Auth.profile){ row.org_name=Auth.profile.org; row.org_id=Auth.profile.org_id; } ({ error } = await sb.from("campaigns").insert(row)); }
       if(error) throw error;
-      m.classList.remove("open"); await loadCampaigns();
-    }catch(ex){ err.textContent = ex.message||"Couldn't save."; btn.disabled=false; btn.textContent=existing?'Save changes':'Launch Campaign'; }
+      if(window.Tracker) Tracker.security(existing?"campaign_edit":"campaign_create", { campaign: row.name, type: t });
+      m.classList.remove("open");
+      if(existing && document.getElementById("wsBack") && _wsCampaign && _wsCampaign.id===existing.id) openCampaignWorkspace(existing.id); else await loadCampaigns();
+    }catch(ex){ paintFiles(); err.textContent = ex.message||"Couldn't save."; btn.disabled=false; btn.textContent=existing?'Save changes':'Launch Campaign'; }
   };
 }
 
@@ -1358,7 +1468,274 @@ async function loadApprovals(){
   document.querySelectorAll("[data-capprove]").forEach(b=>b.onclick=()=>updateStatus("campaigns", b.dataset.capprove, {status:"Sourcing"}, loadApprovals));
   document.querySelectorAll("[data-creject]").forEach(b=>b.onclick=()=>updateStatus("campaigns", b.dataset.creject, {status:"Draft"}, loadApprovals));
   document.querySelectorAll("[data-aapprove]").forEach(b=>b.onclick=()=>updateStatus("applications", b.dataset.aapprove, {status:"Approved"}, loadApprovals));
-  document.querySelectorAll("[data-adecline]").forEach(b=>b.onclick=()=>updateStatus("applications", b.dataset.adecline, {status:"Declined"}, loadApprovals));
+  document.querySelectorAll("[data-adecline]").forEach(b=>b.onclick=()=>declineLegacyApplication(b.dataset.adecline, loadApprovals));
+  // creators who applied from their Media Kit (pipeline) to this org's campaigns
+  if(apps){
+    const r = await sb.schema("api").rpc("org_applicants", { p_campaign:null, p_stage:null }).then(x=>x, ()=>({data:[]}));
+    const pend = (r.data||[]).filter(p=>["applied","eligible","sent_to_brand"].includes(p.stage));
+    if(pend.length){
+      if(!al.length) apps.innerHTML = "";
+      apps.insertAdjacentHTML("afterbegin", pend.map(p=>applicantRowHtml(p, true)).join(""));
+      wireApplicantButtons(apps, loadApprovals);
+    }
+  }
+}
+
+/* ================= AGENCY / BRAND: applicants, reasons, discovery, reports, super-admin campaigns ================= */
+(function injectAgencyCss(){
+  if(document.getElementById("agencyCss")) return;
+  const st = document.createElement("style"); st.id = "agencyCss";
+  st.textContent = `
+  .cm-sec{font-weight:700;margin:14px 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;opacity:.8}
+  .cm-seg{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .cm-seg label{display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--line,#ddd);border-radius:999px;cursor:pointer;font-weight:600}
+  .cm-seg label.act{background:var(--brand,#6c5ce7);color:#fff;border-color:transparent}
+  .cm-seg input{display:none}
+  .cm-chips{display:flex;flex-wrap:wrap;gap:6px 14px;margin:2px 0 10px}
+  .cm-chips label{display:flex;align-items:center;gap:6px;font-weight:500}
+  .cm-files{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 8px}
+  .cm-file{font-size:12px;padding:4px 8px;border:1px solid var(--line,#ddd);border-radius:8px;display:inline-flex;gap:6px;align-items:center}
+  .cm-file.pend{opacity:.7}.cm-file button{border:0;background:none;cursor:pointer}
+  .ap-pic{width:36px;height:36px;border-radius:50%;object-fit:cover;flex:none}
+  .dc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+  .dc-card .dc-top{display:flex;gap:10px;align-items:center;margin-bottom:8px}
+  .dc-card .dc-top img{width:52px;height:52px;border-radius:50%;object-fit:cover}
+  .dc-stats{display:flex;gap:12px;font-size:12px;margin:6px 0}.dc-stats b{display:block;font-size:15px}
+  .dc-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}.dc-tags span{font-size:11px;padding:2px 7px;border-radius:999px;background:rgba(108,92,231,.1)}
+  .dc-filters{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
+  .dc-filters label{font-size:12px;display:flex;flex-direction:column;gap:3px}
+  .rp-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+  .rp-kpis div{padding:12px;border:1px solid var(--line,#eee);border-radius:12px}.rp-kpis b{display:block;font-size:20px}
+  @media (max-width:640px){ .dc-grid{grid-template-columns:1fr} }`;
+  document.head.appendChild(st);
+})();
+
+const APPLICANT_STAGE = { applied:["Applied","warn"], eligible:["Screened ✓","brand"], sent_to_brand:["Awaiting brand","warn"],
+  brand_confirmed:["Approved","good"], ineligible:["Declined",""], brand_declined:["Declined",""], dropped:["Dropped",""], rejected:["Rejected",""] };
+const APPLICANT_PENDING = ["applied","eligible","sent_to_brand"];
+
+function applicantRowHtml(p, showCampaign){
+  const cr = p.creator || {}, [lbl, cls] = APPLICANT_STAGE[p.stage] || [String(p.stage||"").replace(/_/g," "), "good"];
+  const pic = cr.profile_picture_url ? `<img class="ap-pic" src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`
+                                     : `<span class="avatar">${esc((cr.username||"?").slice(0,2).toUpperCase())}</span>`;
+  const bits = [cr.followers!=null?fmtNum(cr.followers)+" followers":"", cr.engagement!=null?cr.engagement+"% eng.":"", cr.city||"", (cr.categories||[]).slice(0,2).join(", ")].filter(Boolean).join(" · ");
+  return `<div class="row">${pic}
+    <div class="r-main"><div class="r-title">${cr.username?`<a href="https://instagram.com/${encodeURIComponent(cr.username)}" target="_blank" rel="noopener">@${esc(cr.username)}</a>`:esc(cr.name||"Creator")}
+      ${showCampaign?`<span class="muted" style="font-weight:400"> → ${esc(p.campaign_name||"")}</span>`:""}</div>
+      <div class="r-sub">${esc(bits)||"Instagram not connected"}${p.reason && !APPLICANT_PENDING.includes(p.stage)?` · <i>${esc(p.reason)}</i>`:""}</div></div>
+    ${APPLICANT_PENDING.includes(p.stage)
+      ? `<span style="display:flex;gap:6px"><button class="mini-btn" data-papprove="${esc(p.participation_id)}">Approve</button><button class="mini-btn ghost" data-pdecline="${esc(p.participation_id)}">Decline</button></span>`
+      : `<span class="tag ${cls}">${esc(lbl)}</span>`}</div>`;
+}
+
+function wireApplicantButtons(root, reload){
+  root.querySelectorAll("[data-papprove]").forEach(b=> b.onclick = async ()=>{
+    b.disabled = true; b.textContent = "…";
+    const { error } = await sb.schema("api").rpc("org_decide_applicant", { p_participation:b.dataset.papprove, p_approve:true, p_reason_code:null, p_note:null });
+    if(error){ alert(error.message); b.disabled=false; b.textContent="Approve"; return; }
+    if(window.Tracker) Tracker.security("application_approve", { participation_id: b.dataset.papprove });
+    reload && reload();
+  });
+  root.querySelectorAll("[data-pdecline]").forEach(b=> b.onclick = async ()=>{
+    const pick = await openReasonModal("Why are you declining this creator?"); if(!pick) return;
+    const { error } = await sb.schema("api").rpc("org_decide_applicant", { p_participation:b.dataset.pdecline, p_approve:false, p_reason_code:pick.code, p_note:pick.note||null });
+    if(error){ alert(error.message); return; }
+    if(window.Tracker) Tracker.security("application_decline", { participation_id: b.dataset.pdecline, reason: pick.code });
+    reload && reload();
+  });
+}
+
+async function declineLegacyApplication(id, reload){
+  const pick = await openReasonModal("Why are you declining this application?"); if(!pick) return;
+  const { error } = await sb.rpc("decide_application", { p_id:id, p_approve:false, p_reason_code:pick.code, p_note:pick.note||null });
+  if(error){ alert("Couldn't decline: "+error.message); return; }
+  reload && reload();
+}
+
+let _rejectReasons = null;
+async function rejectionReasons(){
+  if(_rejectReasons) return _rejectReasons;
+  const { data } = await sb.schema("api").rpc("rejection_reasons").then(r=>r, ()=>({data:null}));
+  _rejectReasons = (Array.isArray(data) && data.length) ? data : [{code:"other",label:"Other"}];
+  return _rejectReasons;
+}
+// Structured reason (feeds matching / ML) + optional note. Resolves {code, note} or null if cancelled.
+function openReasonModal(title){
+  return new Promise(async resolve=>{
+    const reasons = await rejectionReasons();
+    let m = document.getElementById("reasonModal"); if(m) m.remove();
+    m = el("div","modal-overlay"); m.id = "reasonModal";
+    m.innerHTML = `<div class="modal"><div class="modal-head"><strong>${esc(title||"Reason")}</strong><button class="icon-btn" id="rmClose">✕</button></div>
+      <form id="reasonForm" class="modal-form">
+        <label>Reason<select name="code" required><option value="">Pick a reason…</option>${reasons.map(r=>`<option value="${esc(r.code)}">${esc(r.label)}</option>`).join("")}</select></label>
+        <label>Note <span class="muted" style="font-weight:400">(optional — helps us match better next time)</span><textarea name="note" rows="2" maxlength="500"></textarea></label>
+        <div class="auth-err" id="rmErr"></div>
+        <button class="btn" type="submit">Decline</button></form></div>`;
+    document.body.appendChild(m); m.classList.add("open");
+    const done = v=>{ m.remove(); resolve(v); };
+    document.getElementById("rmClose").onclick = ()=> done(null);
+    m.onclick = e=>{ if(e.target.id==="reasonModal") done(null); };
+    document.getElementById("reasonForm").onsubmit = e=>{
+      e.preventDefault(); const f = new FormData(e.target);
+      if(!f.get("code")){ document.getElementById("rmErr").textContent = "Pick a reason."; return; }
+      done({ code:f.get("code"), note:String(f.get("note")||"").trim() });
+    };
+  });
+}
+window.openReasonModal = openReasonModal;
+
+function idealProfileHtml(ip){
+  if(!ip || typeof ip!=="object" || !Object.keys(ip).length) return "";
+  const rows = [
+    ["Followers", (ip.min_followers!=null||ip.max_followers!=null) ? `${ip.min_followers!=null?fmtNum(ip.min_followers):"any"} – ${ip.max_followers!=null?fmtNum(ip.max_followers):"any"}` : ""],
+    ["Location", (ip.locations||[]).join(", ")], ["Gender", ip.gender||""], ["Category", (ip.categories||[]).join(", ")],
+    ["Min engagement", ip.min_engagement!=null?ip.min_engagement+"%":""], ["Audience", ip.audience_notes||""]].filter(r=>r[1]);
+  return `<div class="cd-block"><div class="cd-l">Ideal influencer</div><div class="cd-body">${rows.map(r=>`<div><b>${esc(r[0])}:</b> ${esc(r[1])}</div>`).join("")}
+    ${ip.min_followers!=null||(ip.locations||[]).length||(ip.categories||[]).length?`<button class="mini-btn" style="margin-top:8px" id="wsFindCreators">🔎 Find matching creators</button>`:""}</div></div>`;
+}
+document.addEventListener("click", e=>{
+  if(e.target && e.target.id==="wsFindCreators" && _wsCampaign){
+    const ip = _wsCampaign.ideal_profile || {};
+    _discoverPreset = { min_followers: ip.min_followers ?? "", max_followers: ip.max_followers ?? "", location: (ip.locations||[])[0]||"",
+      gender: ip.gender||"", category: (ip.categories||[])[0]||"", min_engagement: ip.min_engagement ?? "" };
+    currentPage = "discover"; renderShell();
+  }
+});
+
+/* ---------- Discovery: search creators by #hashtag, keyword and filters ---------- */
+let _discoverPreset = null;
+function renderDiscover(){
+  let html = pageHead("Discovery","Find creators on the platform by #hashtag, keyword and filters.");
+  html += `<div class="card"><form id="dcForm" class="modal-form" style="padding:0">
+    <div class="mf-row"><label>Keyword<input name="q" placeholder="food, travel, @username, bio words…"></label>
+    <label>#Hashtag<input name="tag" placeholder="#delhifood"></label></div>
+    <div class="dc-filters">
+      <label>Min followers<input name="min_followers" type="number" min="0" placeholder="10000"></label>
+      <label>Max followers<input name="max_followers" type="number" min="0" placeholder="500000"></label>
+      <label>Location<input name="location" placeholder="Delhi"></label>
+      <label>Gender<select name="gender"><option value="">Any</option><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option></select></label>
+      <label>Category<input name="category" placeholder="Beauty"></label>
+      <label>Min engagement %<input name="min_engagement" type="number" min="0" step="0.1" placeholder="2"></label>
+      <label>Audience<input name="audience" placeholder="Mumbai, 18-24…"></label>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px"><button class="btn" type="submit">🔎 Search</button><button class="btn ghost" type="reset" id="dcReset">Clear</button></div>
+  </form></div>
+  <div id="dcResults" style="margin-top:16px"></div>`;
+  return html;
+}
+async function loadDiscover(){
+  const form = document.getElementById("dcForm"); if(!form) return;
+  if(_discoverPreset){ Object.entries(_discoverPreset).forEach(([k,v])=>{ if(form.elements[k]!=null) form.elements[k].value = v; }); _discoverPreset = null; }
+  const run = async ()=>{
+    const f = new FormData(form), box = document.getElementById("dcResults");
+    const filters = {}; ["min_followers","max_followers","location","gender","category","min_engagement","audience"].forEach(k=>{ const v=String(f.get(k)||"").trim(); if(v) filters[k]=v; });
+    box.innerHTML = `<div class="card"><div class="muted">Searching…</div></div>`;
+    const { data, error } = await sb.schema("api").rpc("discover_creators", { p_query: String(f.get("q")||"").trim()||null, p_hashtag: String(f.get("tag")||"").trim()||null, p_filters: filters });
+    if(error){ box.innerHTML = `<div class="card"><div class="muted">Couldn't search: ${esc(error.message)}</div></div>`; return; }
+    const list = data||[];
+    if(window.Tracker) Tracker.event && Tracker.event("discover_search", { results: list.length });
+    box.innerHTML = list.length ? `<div class="muted" style="margin-bottom:8px">${list.length} creator${list.length>1?"s":""}${list.length>=60?" (top 60 — narrow your filters)":""}</div><div class="dc-grid">${list.map(c=>`
+      <div class="card dc-card"><div class="dc-top">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((c.username||"?").slice(0,2).toUpperCase())}</span>`}
+        <div><b><a href="https://instagram.com/${encodeURIComponent(c.username||"")}" target="_blank" rel="noopener">@${esc(c.username||"")}</a></b><div class="muted" style="font-size:12px">${esc(c.name||"")}${c.city?` · ${esc(c.city)}`:""}</div></div></div>
+        <div class="dc-stats"><span><b>${fmtNum(c.followers)}</b>followers</span><span><b>${c.engagement!=null?c.engagement+"%":"—"}</b>engagement</span><span><b>${c.avg_reach?fmtNum(Math.round(c.avg_reach)):"—"}</b>avg reach</span></div>
+        ${c.bio?`<div class="muted" style="font-size:12px">${esc(c.bio)}</div>`:""}
+        <div class="dc-tags">${(c.categories||[]).map(x=>`<span>${esc(x)}</span>`).join("")}${(c.top_hashtags||[]).slice(0,6).map(x=>`<span>#${esc(x)}</span>`).join("")}</div></div>`).join("")}</div>`
+      : `<div class="card"><div class="muted">No creators match. Try fewer filters or a broader keyword.</div></div>`;
+  };
+  form.onsubmit = e=>{ e.preventDefault(); run(); };
+  document.getElementById("dcReset").onclick = ()=> setTimeout(run, 0);
+  run();
+}
+
+/* ---------- Reports (agency / brand: own campaigns; Super Admin: all) ---------- */
+const REPORT_APPROVED = s => !APPLICANT_PENDING.includes(s) && !["ineligible","brand_declined","dropped","rejected"].includes(s);
+async function loadOrgReports(){
+  const wrap = document.getElementById("reportRows"); if(!wrap) return false;
+  const { data, error } = await sb.schema("api").rpc("org_reports").then(r=>r, e=>({error:e}));
+  if(error || !Array.isArray(data) || !data.length) return false;
+  const reasons = Object.fromEntries((await rejectionReasons()).map(r=>[r.code, r.label]));
+  const sum = (o, pred)=> Object.entries(o||{}).reduce((a,[k,v])=> a + (pred(k)?Number(v)||0:0), 0);
+  const rows = data.map(c=>{
+    const f = c.funnel||{}, m = c.metrics||{};
+    return { c, applied: sum(f,()=>true), approved: sum(f,REPORT_APPROVED), declined: sum(f,k=>["ineligible","brand_declined","dropped","rejected"].includes(k)),
+             pending: sum(f,k=>APPLICANT_PENDING.includes(k)), posts: Number(c.posts)||0, reach:Number(m.reach)||0, views:Number(m.views)||0,
+             likes:Number(m.likes)||0, comments:Number(m.comments)||0, saves:Number(m.saves)||0 };
+  });
+  const T = k => rows.reduce((a,r)=>a+r[k],0);
+  const eng = T("reach") ? ((T("likes")+T("comments")+T("saves"))/T("reach")*100).toFixed(1)+"%" : "—";
+  const topDecl = {}; data.forEach(c=> Object.entries(c.declines||{}).forEach(([k,v])=> topDecl[k]=(topDecl[k]||0)+Number(v)));
+  const csvRows = [["Campaign","Brand","Status","Type","Applied","Pending","Approved","Declined","Posts","Reach","Views","Likes","Comments","Saves"]]
+    .concat(rows.map(r=>[r.c.name, r.c.brand, r.c.lifecycle_status, r.c.comp_type, r.applied, r.pending, r.approved, r.declined, r.posts, r.reach, r.views, r.likes, r.comments, r.saves]));
+  wrap.innerHTML = `<div class="rp-kpis">
+      <div><b>${rows.length}</b>Campaigns</div><div><b>${fmtNum(T("applied"))}</b>Applications</div><div><b>${fmtNum(T("approved"))}</b>Approved creators</div>
+      <div><b>${fmtNum(T("posts"))}</b>Posts live</div><div><b>${fmtNum(T("reach"))}</b>Reach</div><div><b>${fmtNum(T("views"))}</b>Views</div><div><b>${eng}</b>Engagement / reach</div></div>
+    <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Campaign</th><th>Status</th><th>Applied</th><th>Pending</th><th>Approved</th><th>Declined</th><th>Posts</th><th>Reach</th><th>Views</th><th>Likes</th><th>Comments</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td><b>${esc(r.c.name)}</b><div class="muted" style="font-size:12px">${esc(r.c.brand||"")}${r.c.creators_needed?` · need ${esc(r.c.creators_needed)}`:""}</div></td>
+      <td>${esc(String(r.c.lifecycle_status||"").replace(/_/g," "))}</td><td>${r.applied}</td><td>${r.pending}</td><td>${r.approved}</td><td>${r.declined}</td>
+      <td>${r.posts}</td><td>${fmtNum(r.reach)}</td><td>${fmtNum(r.views)}</td><td>${fmtNum(r.likes)}</td><td>${fmtNum(r.comments)}</td></tr>`).join("")}</tbody></table></div>
+    ${Object.keys(topDecl).length?`<div style="margin-top:14px"><b>Why creators were declined</b><div class="dc-tags" style="margin-top:6px">${Object.entries(topDecl).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${esc(reasons[k]||k)} · ${v}</span>`).join("")}</div></div>`:""}
+    <div style="margin-top:14px"><button class="mini-btn" id="rpCsv">⬇ Download CSV</button></div>`;
+  document.getElementById("rpCsv").onclick = ()=>{
+    const csv = csvRows.map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download = "campaign-report.csv"; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+  };
+  return true;
+}
+
+/* ---------- Super Admin → All campaigns (live): status override + decide applications for anyone ---------- */
+let _acTimer = null, _acOpen = null, _acSig = "";
+const CAMP_STATUSES = ["Draft","Approval","Sourcing","In Production","Live","Completed"];
+async function adminCampaigns(body, silent){
+  if(!silent) body.innerHTML = `<div class="card"><div class="muted">Loading campaigns…</div></div>`;
+  const filter = (document.getElementById("acFilter")||{}).value || "";
+  const [cr, pr, ar] = await Promise.all([
+    sb.rpc("admin_campaigns", { p_status: filter||null }),
+    sb.schema("api").rpc("org_applicants", { p_campaign:null, p_stage:null }).then(r=>r, ()=>({data:[]})),
+    sb.rpc("admin_applications", { p_campaign:null, p_status:null }).then(r=>r, ()=>({data:[]}))
+  ]);
+  if(cr.error){ if(!silent) body.innerHTML = adminErr(cr.error); return; }
+  const sig = JSON.stringify([cr.data, pr.data, ar.data]);
+  if(silent && sig === _acSig) return;           // nothing changed → don't touch the DOM
+  _acSig = sig;
+  const camps = cr.data||[], pipe = pr.data||[], legacy = ar.data||[];
+  const pendFor = id => pipe.filter(p=>p.legacy_campaign_id===id && APPLICANT_PENDING.includes(p.stage)).length + legacy.filter(a=>a.campaign_id===id && a.status==="Applied").length;
+  body.innerHTML = `<div class="card"><div class="ci-mh" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <h3 style="margin:0">All campaigns <span class="muted" style="font-size:12px;font-weight:400">· live, refreshes every 30s</span></h3>
+      <select id="acFilter"><option value="">All statuses</option>${CAMP_STATUSES.map(s=>`<option${s===filter?" selected":""}>${s}</option>`).join("")}</select></div>
+    ${camps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="tbl"><thead><tr><th>Campaign</th><th>Workspace</th><th>Type</th><th>Status</th><th>Applied</th><th>Pending</th><th>Approved</th><th>Declined</th><th></th></tr></thead><tbody>
+      ${camps.map(c=>{ const pc = pipe.filter(p=>p.legacy_campaign_id===c.id);
+        const appr = Number(c.approved)+pc.filter(p=>REPORT_APPROVED(p.stage)).length, decl = Number(c.declined)+pc.filter(p=>["ineligible","brand_declined","dropped","rejected"].includes(p.stage)).length;
+        return `<tr><td><b>${esc(c.name)}</b><div class="muted" style="font-size:12px">${esc(c.brand||"")}</div></td><td>${esc(c.org_name||"—")}</td>
+        <td>${esc(campTypeLabel(c.campaign_type,c.barter_subtype)||"—")}</td>
+        <td><select data-acstatus="${esc(c.id)}">${CAMP_STATUSES.map(s=>`<option${s===c.status?" selected":""}>${s}</option>`).join("")}</select></td>
+        <td>${Number(c.applied)+pc.length}</td><td>${pendFor(c.id)?`<span class="tag warn">${pendFor(c.id)}</span>`:"0"}</td><td>${appr}</td><td>${decl}</td>
+        <td><button class="mini-btn" data-acopen="${esc(c.id)}">${_acOpen===c.id?"Hide":"Applications"}</button></td></tr>
+        ${_acOpen===c.id?`<tr><td colspan="9"><div class="list">${pc.map(p=>applicantRowHtml(p)).join("")}
+          ${legacy.filter(a=>a.campaign_id===c.id).map(a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span><div class="r-main"><div class="r-title">${esc(a.creator_name||"Creator")}</div><div class="r-sub">${esc(a.creator_org||"")}${a.decline_reason_code?` · ${esc(a.decline_reason_code)}`:""}${a.decline_note?` — ${esc(a.decline_note)}`:""}</div></div>
+            ${a.status==="Applied"?`<span style="display:flex;gap:6px"><button class="mini-btn" data-acappr="${esc(a.id)}">Approve</button><button class="mini-btn ghost" data-acdecl="${esc(a.id)}">Decline</button></span>`:`<span class="tag ${a.status==="Approved"?"good":""}">${esc(a.status)}</span>`}</div>`).join("")}
+          ${(!pc.length && !legacy.some(a=>a.campaign_id===c.id))?`<div class="muted" style="padding:8px">No applications yet.</div>`:""}</div></td></tr>`:""}`; }).join("")}
+    </tbody></table></div>`:`<div class="muted" style="padding:8px">No campaigns${filter?" with this status":""}.</div>`}</div>`;
+  const reload = ()=> adminCampaigns(body, true);
+  document.getElementById("acFilter").onchange = ()=> adminCampaigns(body);
+  body.querySelectorAll("[data-acopen]").forEach(b=> b.onclick = ()=>{ _acOpen = _acOpen===b.dataset.acopen ? null : b.dataset.acopen; _acSig=""; reload(); });
+  body.querySelectorAll("[data-acstatus]").forEach(s=> s.onchange = async ()=>{
+    const { error } = await sb.rpc("admin_set_campaign_status", { p_id:s.dataset.acstatus, p_status:s.value });
+    if(error) alert(error.message); _acSig=""; reload();
+  });
+  body.querySelectorAll("[data-acappr]").forEach(b=> b.onclick = async ()=>{
+    const { error } = await sb.rpc("decide_application", { p_id:b.dataset.acappr, p_approve:true, p_reason_code:null, p_note:null });
+    if(error) alert(error.message); _acSig=""; reload();
+  });
+  body.querySelectorAll("[data-acdecl]").forEach(b=> b.onclick = ()=> declineLegacyApplication(b.dataset.acdecl, ()=>{ _acSig=""; reload(); }));
+  wireApplicantButtons(body, ()=>{ _acSig=""; reload(); });
+  clearInterval(_acTimer);
+  _acTimer = setInterval(()=>{
+    const b = document.getElementById("adminBody");
+    if(currentPage!=="admin" || _adminTab!=="campaigns" || !b){ clearInterval(_acTimer); return; }
+    if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open") || (document.activeElement && document.activeElement.tagName==="SELECT")) return;
+    adminCampaigns(b, true);
+  }, 30000);
 }
 
 /* ================= MARKETPLACE (creator: browse + apply) ================= */
@@ -2249,7 +2626,7 @@ function wireMkComposer(){
 
 /* ================= ADMIN (platform team — approve agency signups) ================= */
 /* ================= SUPER ADMIN CONSOLE ================= */
-const ADMIN_TABS = [["overview","Overview"],["activity","Creator activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["approvals","Approvals"],["admins","Super admins"]];
+const ADMIN_TABS = [["overview","Overview"],["campaigns","All campaigns"],["activity","Creator activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["approvals","Approvals"],["admins","Super admins"]];
 const ADMIN_TABLES = [
   ["members","Members"],["creators","Creators"],["campaigns","Campaigns"],["barter_items","Barter items"],
   ["applications","Applications"],["invites","Invites"],["irm_contacts","IRM contacts"],
@@ -2303,7 +2680,7 @@ function loadAdmin(){
   document.querySelectorAll("[data-atab]").forEach(b=> b.onclick = ()=>{ _adminTab = b.dataset.atab; currentPage="admin"; renderShell(); });
   const body = document.getElementById("adminBody");
   if(!body || !window.sb) return;
-  ({ overview:adminOverview, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+  ({ overview:adminOverview, campaigns:adminCampaigns, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
 }
 
 /* System check — live-verifies the deployed database matches the code (tables, columns, RPCs).
@@ -2574,12 +2951,14 @@ function openAuditDiff(d){
 async function adminApprovals(body){
   body.innerHTML = `<div class="card"><h3>Awaiting approval</h3><div class="list" id="adminRows"><div class="muted" style="padding:8px">Loading…</div></div></div>`;
   const wrap=document.getElementById("adminRows");
-  const { data, error } = await sb.rpc("pending_members");
+  let { data, error } = await sb.rpc("pending_members_v2");
+  if(error){ ({ data, error } = await sb.rpc("pending_members")); }      // before the migration is applied
   if(error){ wrap.innerHTML=adminErr(error); return; }
   const list=data||[];
   if(!list.length){ wrap.innerHTML=`<div class="muted" style="padding:8px">No pending signups 🎉</div>`; return; }
-  wrap.innerHTML = list.map(x=>`<div class="row"><div class="r-main"><div class="r-title">${esc(x.name)||esc(x.email)}</div>
-    <div class="r-sub">${esc(x.email)} · ${esc(x.role)}${x.org_name?" · "+esc(x.org_name):""}</div></div>
+  const roleName = r=>({owner:"Agency Owner",brand:"Brand",manager:"Manager",corporate:"Corporate"}[r]||r);
+  wrap.innerHTML = list.map(x=>`<div class="row"><div class="r-main"><div class="r-title">${esc(x.name)||esc(x.email)} · <span class="tag">${esc(roleName(x.role))}</span>${x.org_name?" · "+esc(x.org_name):""}</div>
+    <div class="r-sub">${x.official_email?`📧 ${esc(x.official_email)} ${x.email_verified_at?'<span class="tag good">verified</span>':'<span class="tag warn">not verified</span>'}`:esc(x.email)}${x.whatsapp_e164?` · 💬 ${esc(x.whatsapp_e164)}`:""}${x.created_at?` · ${new Date(x.created_at).toLocaleDateString("en-IN")}`:""}</div></div>
     <span><button class="mini-btn" data-approve="${esc(x.id)}">Approve</button> <button class="mini-btn ghost" data-decline="${esc(x.id)}">Decline</button></span></div>`).join("");
   wrap.querySelectorAll("[data-approve]").forEach(b=>b.onclick=async()=>{ await sb.rpc("set_member_status",{p_id:b.dataset.approve,p_status:"active"}); adminApprovals(body); });
   wrap.querySelectorAll("[data-decline]").forEach(b=>b.onclick=async()=>{ await sb.rpc("set_member_status",{p_id:b.dataset.decline,p_status:"declined"}); adminApprovals(body); });
@@ -2636,6 +3015,7 @@ const PAGES = {
   onboarding: (typeof renderOnboarding==="function"?renderOnboarding:()=>""),
   messages: (typeof renderWhatsApp==="function"?renderWhatsApp:()=>""),
   alerts: (typeof renderAlerts==="function"?renderAlerts:()=>""),
+  discover:renderDiscover,
   dashboard:renderDashboard, barter:renderBarter, creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit, admin:renderAdmin,
   campaigns:renderCampaigns, reports:renderReports, growth:renderGrowth, settings:renderSettings,
   celebrity:renderCelebrity, approvals:renderApprovals, marketplace:renderMarketplace,
@@ -3032,6 +3412,7 @@ function renderContent(){
   if(currentPage==="onboarding" && window.ciOps) window.ciOps.loadOnboarding();
   if(currentPage==="growth") loadGrowth();
   if(currentPage==="admin") loadAdmin();
+  if(currentPage==="discover") loadDiscover();
   if(currentPage==="campaigns"){
     loadCampaigns();
     const add = document.getElementById("addCampaignBtn");
@@ -3045,7 +3426,7 @@ function renderContent(){
     loadOrgProfile();
   }
   if(currentPage==="reports"){
-    loadReportRows();
+    (currentRole!=="creator" && window.sb ? loadOrgReports() : Promise.resolve(false)).then(ok=>{ if(!ok) loadReportRows(); });
   }
   if(currentPage==="dashboard"){
     loadDashboard();
@@ -3160,7 +3541,7 @@ function showPending(){
   root.innerHTML = `<div class="auth-wrap"><div class="auth-card" style="max-width:420px;text-align:center;margin:auto">
     <div class="brand-mark" style="margin:0 auto 14px">G</div>
     <h2 style="margin-bottom:8px">Your account is under review</h2>
-    <p class="muted" style="margin-bottom:18px">Thanks for signing up! Agency, brand & manager accounts are approved by our team before full access — we'll email you as soon as you're in (usually within a day).</p>
+    <p class="muted" style="margin-bottom:18px">Thanks for signing up! Your request is with the Geek Super Admin. Agency &amp; brand accounts are approved before full access — we'll message you on WhatsApp/email as soon as you're in (usually within a day).</p>
     <button class="btn ghost" id="pendingSignout">Sign out</button>
   </div></div>`;
   const b = document.getElementById("pendingSignout"); if(b) b.onclick = ()=> window.Auth && Auth.signOut();
@@ -3195,7 +3576,52 @@ function showInstagramGate(){
   document.getElementById("gateSignout").onclick = ()=> window.Auth && Auth.signOut();
 }
 
+// Agency / Brand onboarding, step 2 of 2 (first time only): verify the official email over SMTP OTP.
+function showEmailGate(){
+  const root = document.getElementById("authRoot"); if(!root) return;
+  root.classList.add("open");
+  const P = Auth.profile || {};
+  root.innerHTML = `<div class="auth-wrap"><div class="auth-card" style="max-width:460px;margin:auto">
+    <div class="auth-brand"><div class="brand-mark">G</div><div><div class="brand-name">Verify your official email</div><div class="muted">Step 2 of 2 · ${esc(P.org||"")}</div></div></div>
+    <p class="muted" style="margin:4px 0 12px">WhatsApp verified ✓ Now verify your work email — the Geek Super Admin reviews your account with it.</p>
+    <form id="emForm" class="auth-form">
+      <label>Official email<input name="email" type="email" required placeholder="you@yourcompany.com" autocomplete="email" value="${esc(P.official_email||"")}"></label>
+      <button class="btn auth-submit" type="submit">Send code →</button>
+    </form>
+    <form id="emCodeForm" class="auth-form" style="display:none">
+      <label>6-digit code from your email<input name="code" inputmode="numeric" maxlength="6" placeholder="••••••" required></label>
+      <button class="btn auth-submit" type="submit">Verify →</button>
+      <button class="btn ghost sm" type="button" id="emResend">Use a different email / resend</button>
+    </form>
+    <div class="auth-err" id="emErr"></div><div class="lead-msg" id="emMsg"></div>
+    <button class="btn ghost" id="emSignout" style="margin-top:14px;width:100%">Sign out</button>
+  </div></div>`;
+  const err = document.getElementById("emErr"), msg = document.getElementById("emMsg");
+  const call = async body=>{ const { data, error } = await sb.functions.invoke("email-otp", { body }); if(error) throw new Error(await fnError(error)); if(data && data.error) throw new Error(data.error); return data||{}; };
+  document.getElementById("emForm").onsubmit = async e=>{
+    e.preventDefault(); err.textContent=""; msg.textContent="";
+    const email = String(new FormData(e.target).get("email")||"").trim(); const b = e.target.querySelector("button"); b.disabled=true;
+    try{ const r = await call({ action:"start", email });
+      msg.textContent = `Code sent to ${email}.` + (r.free_mail ? " (Tip: an official company email gets approved faster.)" : ""); msg.className="lead-msg ok";
+      e.target.style.display="none"; document.getElementById("emCodeForm").style.display=""; }
+    catch(ex){ err.textContent = ex.message||ex; } finally{ b.disabled=false; }
+  };
+  document.getElementById("emCodeForm").onsubmit = async e=>{
+    e.preventDefault(); err.textContent="";
+    const code = String(new FormData(e.target).get("code")||"").trim(); const b = e.target.querySelector("button[type=submit]"); b.disabled=true;
+    try{ await call({ action:"verify", code }); if(window.Tracker) Tracker.security("official_email_verified");
+      await Auth.currentSession(); bootOS(); }
+    catch(ex){ err.textContent = ex.message||ex; b.disabled=false; }
+  };
+  document.getElementById("emResend").onclick = ()=>{ document.getElementById("emCodeForm").style.display="none"; document.getElementById("emForm").style.display=""; msg.textContent=""; };
+  document.getElementById("emSignout").onclick = ()=> window.Auth && Auth.signOut();
+}
+
 async function bootOS(){
+  // Agency/brand accounts created through WhatsApp verify their official email first (one time)
+  if(window.Auth && Auth.profile && ["owner","brand"].includes(Auth.profile.role) && Auth.profile.created_via === "whatsapp-login" && !Auth.profile.email_verified_at){
+    showEmailGate(); return;
+  }
   // Gate: agency-side accounts awaiting platform approval don't enter the OS.
   if(window.Auth && Auth.profile && Auth.profile.status === "pending"){ showPending(); return; }
   if(window.Auth && Auth.profile && Auth.profile.role === "creator"){

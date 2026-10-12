@@ -21,30 +21,49 @@ function loginView(role, mode){
   const tabs = LOGIN_ROLES.map(([k,label,ic])=>`<button type="button" class="${k===role?'act':''}" data-role="${k}">${ic} ${label}</button>`).join("");
 
   let body;
-  if(role === "creator"){
+  if(INVITE_TOKEN && mode === "signup"){
+    // team-invite links join the inviting org by matching the invited email, so they keep the email sign-up
+    body = `<div class="auth-note">🎟️ You've been invited to a team — sign up with the invited email to join it.</div>
+      <form id="authForm" class="auth-form">
+        <label>Full name<input name="name" placeholder="Priya Agarwal" required></label>
+        <label>Invited email<input name="email" type="email" required autocomplete="email"></label>
+        <label>Password<input name="password" type="password" minlength="8" required autocomplete="new-password"></label>
+        <div class="auth-err" id="authErr"></div>
+        <button class="btn auth-submit" type="submit">Join team →</button>
+      </form>
+      <div class="muted" style="text-align:center;font-size:12px;margin-top:10px"><a href="#" id="backToWa">Already have an account? Sign in</a></div>`;
+  } else if(role === "creator"){
     body = `
       <div class="auth-note" style="margin-top:4px">Creators sign in with <b>WhatsApp</b> — no password. Next you'll connect Instagram and we build your media kit automatically.</div>
       <button type="button" class="ig-btn wa-btn" id="waLoginBtn" style="margin-top:12px"><span class="ig-ic">💬</span> Continue with WhatsApp</button>
       <div class="muted" style="text-align:center;font-size:12px;margin-top:10px">Signed in with Instagram before? Use WhatsApp — when you connect the same Instagram, your old account is moved over automatically.</div>`;
+  } else if(role === "admin" || mode === "password"){
+    body = `
+      ${role==="admin" ? `<div class="auth-note">Super Admin sign-in. Only accounts approved as platform admins can enter.</div>`
+                       : `<div class="auth-note">Older ${(LOGIN_ROLES.find(r=>r[0]===role)||[])[1]} accounts: sign in with email &amp; password. <a href="#" id="backToWa">Use WhatsApp instead</a></div>`}
+      <form id="authForm" class="auth-form">
+        <label>Email<input name="email" type="email" placeholder="you@company.com" required autocomplete="email"></label>
+        <label>Password<input name="password" type="password" placeholder="••••••••" minlength="6" required autocomplete="current-password"></label>
+        <div class="auth-err" id="authErr"></div>
+        <button class="btn auth-submit" type="submit">Sign in →</button>
+      </form>`;
   } else {
     const roleName = (LOGIN_ROLES.find(r=>r[0]===role)||[])[1];
-    const canSignup = role === "owner" || role === "brand";
     body = `
-      ${canSignup ? `<div class="auth-tabs">
+      <div class="auth-tabs">
         <button type="button" class="${!isUp?'act':''}" data-mode="login">Sign in</button>
         <button type="button" class="${isUp?'act':''}" data-mode="signup">Request access</button>
-      </div>` : `<div class="auth-note">Super Admin sign-in. Only accounts approved as platform admins can enter.</div>`}
-      ${isUp && INVITE_TOKEN ? `<div class="auth-note">🎟️ You've been invited to a team — sign up with the invited email to join it.</div>` : ``}
-      ${isUp ? `<div class="auth-note">New ${roleName} accounts are reviewed by the Geek Super Admin. You can sign in as soon as you're approved.</div>` : ``}
-      <form id="authForm" class="auth-form">
-        ${isUp?`
-        <label>Full name<input name="name" placeholder="Priya Agarwal" required></label>
-        <label>${role==="brand"?"Brand / Company name":"Agency name"}<input name="org" placeholder="${role==="brand"?"Vaaree":"Geek Media"}" required></label>`:""}
-        <label>Email<input name="email" type="email" placeholder="you@company.com" required autocomplete="email"></label>
-        <label>Password<input name="password" type="password" placeholder="••••••••" minlength="8" required autocomplete="${isUp?"new-password":"current-password"}"></label>
+      </div>
+      ${isUp ? `<div class="auth-note">Step 1: verify your WhatsApp · Step 2: verify your official email · then the Geek Super Admin approves your ${roleName} account.</div>`
+             : `<div class="auth-note">${roleName} sign-in with your WhatsApp number — we send a one-time code.</div>`}
+      <form id="waDoorForm" class="auth-form">
+        ${isUp ? `<label>Your full name<input name="name" placeholder="Priya Agarwal" required></label>
+        <label>${role==="brand"?"Brand / company name":"Agency name"}<input name="org" placeholder="${role==="brand"?"Vaaree":"Geek Media"}" required></label>` : ``}
+        <label>WhatsApp number<input name="phone" placeholder="+91 98123 45678" required inputmode="tel" autocomplete="tel"></label>
         <div class="auth-err" id="authErr"></div>
-        <button class="btn auth-submit" type="submit">${isUp?"Send request →":"Sign in →"}</button>
-      </form>`;
+        <button class="btn auth-submit" type="submit">Send WhatsApp code →</button>
+      </form>
+      ${!isUp ? `<div class="muted" style="text-align:center;font-size:12px;margin-top:10px"><a href="#" id="usePassword">Older account? Sign in with email &amp; password</a></div>` : ``}`;
   }
 
   return `
@@ -86,6 +105,18 @@ function mountLogin(mode="login", role){
   const wa = document.getElementById("waLoginBtn");
   if(wa) wa.onclick = ()=>{ if(window.waLogin) window.waLogin.open(); else alert("WhatsApp login is loading — try again in a moment."); };
 
+  const up = document.getElementById("usePassword"); if(up) up.onclick = e=>{ e.preventDefault(); mountLogin("password"); };
+  const bw = document.getElementById("backToWa"); if(bw) bw.onclick = e=>{ e.preventDefault(); mountLogin("login"); };
+  const waDoor = document.getElementById("waDoorForm");
+  if(waDoor) waDoor.onsubmit = e=>{
+    e.preventDefault();
+    const f = new FormData(waDoor), err = document.getElementById("authErr");
+    const phone = String(f.get("phone")||"").trim();
+    if(!/^\+?[0-9 \-]{8,}$/.test(phone)){ err.textContent = "Enter your WhatsApp number in international format, e.g. +91 98123 45678"; return; }
+    if(!window.waLogin){ err.textContent = "WhatsApp login is loading — try again in a moment."; return; }
+    window.waLogin.open({ door:_loginRole, phone, name: f.get("name")||"", org: f.get("org")||"" });
+  };
+
   const form = document.getElementById("authForm");
   if(!form) return;
   form.onsubmit = async e=>{
@@ -96,12 +127,9 @@ function mountLogin(mode="login", role){
     err.textContent = "";
     btn.disabled = true; btn.textContent = "…";
     try{
-      if(mode==="signup"){
-        await Auth.signUp({
-          name:f.get("name"), email:f.get("email"), password:f.get("password"),
-          org:f.get("org"), role:_loginRole, inviteToken: INVITE_TOKEN || undefined
-        });
-      }else{
+      if(INVITE_TOKEN && mode === "signup"){
+        await Auth.signUp({ name:f.get("name"), email:f.get("email"), password:f.get("password"), org:"", role:"creator", inviteToken: INVITE_TOKEN });
+      } else {
         await Auth.signIn({ email:f.get("email"), password:f.get("password") });
         if(_loginRole === "admin"){
           const { data:isAdmin } = await sb.rpc("is_platform_admin");
@@ -115,7 +143,7 @@ function mountLogin(mode="login", role){
     }catch(ex){
       err.textContent = ex.message || "Something went wrong. Try again.";
       btn.disabled = false;
-      btn.textContent = mode==="signup"?"Send request →":"Sign in →";
+      btn.textContent = "Sign in →";
     }
   };
 }

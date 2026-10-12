@@ -79,3 +79,7 @@ verify_jwt = true
 verify_jwt = true
 [functions.instagram-dm]
 verify_jwt = true
+
+# Agency / Brand onboarding step 2: official email OTP over SMTP (port 465) — signed-in agency/brand only.
+[functions.email-otp]
+verify_jwt = true
