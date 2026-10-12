@@ -1756,11 +1756,17 @@ function openMkEdit(section, acct){
 }
 
 function mkComposer(){
-  return `<div class="card" style="margin-top:16px"><h3>Create a post</h3>
-    <p class="muted" style="margin-bottom:10px">Upload an image and caption — it publishes straight to your Instagram.</p>
+  return `<div class="card" style="margin-top:16px"><h3>Publish to Instagram</h3>
+    <p class="muted" style="margin-bottom:10px">Post, Story or Reel — it publishes straight to your Instagram.</p>
     <form id="mkComposer" class="modal-form">
-      <label>Image<input type="file" name="image" accept="image/*" required></label>
-      <label>Caption<textarea name="caption" rows="3" placeholder="Write a caption… #barter"></textarea></label>
+      <label>What are you publishing?<select name="kind" id="mkKind">
+        <option value="feed">Feed post (image)</option>
+        <option value="story">Story (image or video)</option>
+        <option value="reel">Reel (video)</option>
+      </select></label>
+      <label><span id="mkFileLbl">Image</span><input type="file" name="image" id="mkFile" accept="image/jpeg,image/png" required></label>
+      <div class="muted" id="mkHint" style="font-size:12px;margin-top:-4px">JPEG or PNG.</div>
+      <label id="mkCapWrap">Caption<textarea name="caption" rows="3" placeholder="Write a caption… #barter"></textarea></label>
       <div class="auth-err" id="mkErr"></div>
       <div class="lead-msg" id="mkMsg"></div>
       <button class="btn" type="submit">Publish to Instagram →</button>
@@ -1795,35 +1801,55 @@ async function loadMediaKit(){
   }
 }
 
+const MK_KIND = {
+  feed:  { lbl:"Image",          accept:"image/jpeg,image/png",                     hint:"JPEG or PNG.",                                        btn:"Publish post →",  ok:"Posted to Instagram ✅" },
+  story: { lbl:"Image or video", accept:"image/jpeg,image/png,video/mp4,video/quicktime", hint:"9:16 works best. Videos up to 60 seconds. Stories have no caption — add text/stickers in Instagram if needed.", btn:"Publish story →", ok:"Story is live on Instagram ✅" },
+  reel:  { lbl:"Video",          accept:"video/mp4,video/quicktime",                hint:"MP4/MOV, 9:16, 3–90 seconds.",                        btn:"Publish reel →",  ok:"Reel posted to Instagram ✅" }
+};
 function wireMkComposer(){
   const form = document.getElementById("mkComposer");
   if(!form) return;
+  const kindSel=document.getElementById("mkKind"), fileIn=document.getElementById("mkFile");
+  const applyKind=()=>{
+    const k=MK_KIND[kindSel.value]||MK_KIND.feed;
+    document.getElementById("mkFileLbl").textContent=k.lbl; fileIn.accept=k.accept; fileIn.value="";
+    document.getElementById("mkHint").textContent=k.hint;
+    document.getElementById("mkCapWrap").style.display = kindSel.value==="story" ? "none" : "";
+    form.querySelector("button[type=submit]").textContent=k.btn;
+  };
+  kindSel.onchange=applyKind; applyKind();
   form.onsubmit = async e=>{
     e.preventDefault();
     const f = new FormData(form), err=document.getElementById("mkErr"), msg=document.getElementById("mkMsg");
     const btn = form.querySelector("button[type=submit]");
     err.textContent=""; msg.textContent=""; msg.className="lead-msg";
-    const file = f.get("image");
-    if(!file || !file.size){ err.textContent="Pick an image first."; return; }
+    const file = f.get("image"), kind = f.get("kind")||"feed", K = MK_KIND[kind]||MK_KIND.feed;
+    if(!file || !file.size){ err.textContent="Pick a file first."; return; }
+    const isVideo = /^video\//.test(file.type||"");
+    if(kind==="feed" && isVideo){ err.textContent="Feed posts take an image — choose Reel or Story for videos."; return; }
+    if(kind==="reel" && !isVideo){ err.textContent="Reels need a video file."; return; }
+    if(file.size > 50*1024*1024){ err.textContent="File is too large (max 50 MB)."; return; }
     btn.disabled=true; btn.textContent="Uploading…";
     try{
       if(!window.sb) throw new Error("Not connected.");
       const uid = window.Auth && Auth.profile && Auth.profile.id;
       if(!uid) throw new Error("You're signed out. Sign in again to publish.");
-      const safe = (file.name||"post.jpg").replace(/[^a-zA-Z0-9._-]/g,"");
+      const safe = (file.name||(isVideo?"clip.mp4":"post.jpg")).replace(/[^a-zA-Z0-9._-]/g,"");
       const path = `${uid}/${Date.now()}-${safe}`;
-      const up = await sb.storage.from("ig-media").upload(path, file, { upsert:false, contentType:file.type||"image/jpeg" });
+      const up = await sb.storage.from("ig-media").upload(path, file, { upsert:false, contentType:file.type||(isVideo?"video/mp4":"image/jpeg") });
       if(up.error) throw up.error;
       const { data:pub } = sb.storage.from("ig-media").getPublicUrl(path);
-      btn.textContent="Publishing…";
-      const { data, error } = await sb.functions.invoke("instagram-publish", { body:{ image_url: pub.publicUrl, caption: f.get("caption")||"" } });
+      btn.textContent = isVideo ? "Publishing… (videos take up to a minute)" : "Publishing…";
+      const body = { kind, caption: kind==="story" ? "" : (f.get("caption")||"") };
+      if(isVideo) body.video_url = pub.publicUrl; else body.image_url = pub.publicUrl;
+      const { data, error } = await sb.functions.invoke("instagram-publish", { body });
       if(error) throw new Error(await fnError(error));
-      if(data && data.error) throw new Error(data.error);
-      msg.textContent="Posted to Instagram ✅"; msg.className="lead-msg ok"; form.reset();
+      if(data && data.error) throw new Error(data.error + (data.detail && typeof data.detail==="string" ? " — "+data.detail : ""));
+      msg.textContent=K.ok; msg.className="lead-msg ok"; form.reset(); kindSel.value=kind; applyKind();
     }catch(ex){
       err.textContent = (ex.message||ex);
     }finally{
-      btn.disabled=false; btn.textContent="Publish to Instagram →";
+      btn.disabled=false; btn.textContent=(MK_KIND[(document.getElementById("mkKind")||{}).value]||MK_KIND.feed).btn;
     }
   };
 }

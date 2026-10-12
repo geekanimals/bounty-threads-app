@@ -1,5 +1,6 @@
 // Edge Function: instagram-publish
-// Publishes an image post to the signed-in creator's Instagram account.
+// Publishes a feed post (image), a Story (image or video) or a Reel (video) to the signed-in creator's
+// Instagram account.
 //
 // Flow:
 // 1. Authenticate the signed-in Supabase user
@@ -10,12 +11,14 @@
 //
 // Request body:
 // {
-//   image_url: string,
-//   caption?: string
+//   kind?: "feed" | "story" | "reel",   // default "feed" (backwards compatible)
+//   image_url?: string,                 // feed: required; story: image OR video
+//   video_url?: string,                 // reel: required; story: image OR video
+//   caption?: string                    // ignored for stories (Instagram has no story captions)
 // }
 //
-// image_url MUST be a public HTTPS URL because Instagram's servers
-// need to download the image directly.
+// Media URLs MUST be public HTTPS URLs inside the caller's own folder of the ig-media bucket
+// (Instagram's servers download them directly; restricting the folder stops publishing arbitrary URLs).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
@@ -112,29 +115,32 @@ Deno.serve(async (req: Request) => {
     // 2. Read request body
     // ---------------------------------------------------------
 
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
 
-    const image_url = body?.image_url;
-    const caption = body?.caption || "";
+    const kind = String(body?.kind || "feed").toLowerCase();
+    const image_url: string = body?.image_url || "";
+    const video_url: string = body?.video_url || "";
+    const caption = kind === "story" ? "" : (body?.caption || "");
 
-    if (!image_url) {
-      return json(
-        {
-          error: "Missing image_url",
-        },
-        400
-      );
+    if (!["feed", "story", "reel"].includes(kind)) {
+      return json({ error: "kind must be feed, story or reel" }, 400);
     }
+    if (kind === "feed" && !image_url) return json({ error: "A feed post needs an image." }, 400);
+    if (kind === "reel" && !video_url) return json({ error: "A reel needs a video." }, 400);
+    if (kind === "story" && !image_url && !video_url) return json({ error: "A story needs an image or a video." }, 400);
+    if (image_url && video_url) return json({ error: "Send either an image or a video, not both." }, 400);
 
     // ---------------------------------------------------------
-    // 3. Validate image URL
+    // 3. Validate media URL: HTTPS + the caller's own ig-media folder
     // ---------------------------------------------------------
 
-    if (!/^https:\/\//i.test(image_url)) {
+    const mediaUrl = image_url || video_url;
+    const ownPrefix = `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/public/ig-media/${user.id}/`;
+    if (!/^https:\/\//i.test(mediaUrl) || !mediaUrl.startsWith(ownPrefix)) {
       return json(
         {
           error:
-            "Instagram requires a public HTTPS image URL. The uploaded image URL is not HTTPS.",
+            "Upload the file through the Media Kit first — only your own uploaded media can be published.",
         },
         400
       );
@@ -230,8 +236,11 @@ Deno.serve(async (req: Request) => {
 
     const createParams = new URLSearchParams();
 
-    createParams.set("image_url", image_url);
-    createParams.set("caption", caption);
+    if (kind === "story") createParams.set("media_type", "STORIES");
+    if (kind === "reel") createParams.set("media_type", "REELS");
+    if (image_url) createParams.set("image_url", image_url);
+    if (video_url) createParams.set("video_url", video_url);
+    if (caption) createParams.set("caption", caption);
     createParams.set(
       "access_token",
       accessToken
@@ -283,8 +292,9 @@ Deno.serve(async (req: Request) => {
     let statusCode = "IN_PROGRESS";
     let lastStatus: any = null;
 
-    const MAX_ATTEMPTS = 12;
-    const WAIT_MS = 1500;
+    // videos take much longer to process than images (stay under the Edge wall-clock limit)
+    const MAX_ATTEMPTS = video_url ? 40 : 12;
+    const WAIT_MS = video_url ? 3000 : 1500;
 
     for (
       let attempt = 0;
@@ -335,7 +345,7 @@ Deno.serve(async (req: Request) => {
         return json(
           {
             error:
-              "Instagram could not process the uploaded image.",
+              "Instagram could not process the uploaded media.",
             detail:
               getMetaError(lastStatus) ||
               lastStatus,
@@ -353,7 +363,7 @@ Deno.serve(async (req: Request) => {
       return json(
         {
           error:
-            "Instagram is still processing the image. Please try again in a few seconds.",
+            "Instagram is still processing your media. Check your Instagram in a minute — if it isn't there, try again.",
           detail: lastStatus,
           container_id: containerId,
         },
@@ -418,10 +428,13 @@ Deno.serve(async (req: Request) => {
     return json(
       {
         ok: true,
+        kind,
         media_id: published.id,
         container_id: containerId,
         message:
-          "Instagram post published successfully.",
+          kind === "story" ? "Instagram story published successfully."
+          : kind === "reel" ? "Instagram reel published successfully."
+          : "Instagram post published successfully.",
       },
       200
     );
