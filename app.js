@@ -1802,19 +1802,23 @@ function mkComposer(){
     </form></div>`;
 }
 
-async function loadMediaKit(){
-  const wrap = document.getElementById("mkBody");
-  if(!wrap) return;
-  const showConnect = ()=>{ wrap.innerHTML = mkNotConnected(); const b=document.getElementById("mkConnect"); if(b) b.onclick=connectInstagram; };
-  if(!window.sb){ showConnect(); return; }
-  const memberId = (window.Auth && Auth.profile && Auth.profile.id) || null;
-  if(!memberId){ showConnect(); return; }
-  const { data, error } = await sb.from("social_accounts").select("*").eq("platform","instagram").eq("member_id", memberId)
-    .order("updated_at",{ascending:false}).limit(1);
-  const acct = (data && data[0]) || null;
-  if(error || !acct){ showConnect(); return; }
-  wrap.innerHTML = mkHead(acct) + mkComposer();
-  wireMkComposer();
+// Live stories strip (Instagram only returns stories that are live right now — the last 24 h).
+function mkStories(a){
+  const st = Array.isArray(a.recent_stories) ? a.recent_stories : [];
+  if(!st.length) return "";
+  const ago = t=>{ const m=Math.max(1,Math.round((Date.now()-new Date(t).getTime())/60000)); return m<60?`${m}m`:`${Math.round(m/60)}h`; };
+  return `<div class="card" style="margin-top:16px"><h3>Live stories <span class="muted" style="font-weight:400;font-size:13px">· ${st.length} · disappear 24h after posting</span></h3>
+    <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">${st.map(s=>{
+      const img = s.media_type==="VIDEO" ? (s.thumbnail_url||s.media_url) : s.media_url;
+      return `<a href="${esc(safeUrl(s.permalink))}" target="_blank" rel="noopener" style="position:relative;flex:0 0 auto;width:96px;height:170px;border-radius:12px;overflow:hidden;background:#eee;display:block">
+        ${img?`<img src="${esc(safeUrl(img))}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover">`:""}
+        ${s.media_type==="VIDEO"?`<span class="mk-type">▶</span>`:""}
+        <span style="position:absolute;left:6px;bottom:6px;font-size:11px;color:#fff;text-shadow:0 1px 2px #000">${ago(s.timestamp)} ago</span></a>`;
+    }).join("")}</div></div>`;
+}
+
+let _mkTimer = null, _mkSyncedAt = 0;
+function wireMkHead(acct){
   const share = document.getElementById("mkShare");
   if(share) share.onclick = async ()=>{
     const url = location.origin + location.pathname.replace(/[^/]*$/,"") + "p.html?u=" + encodeURIComponent(acct.username||"");
@@ -1823,7 +1827,55 @@ async function loadMediaKit(){
   };
   const cta = document.getElementById("mkComposeCta");
   if(cta) cta.onclick = ()=>{ const c=document.getElementById("mkComposer"); if(c) c.scrollIntoView({behavior:"smooth"}); };
-  wrap.querySelectorAll("[data-mkedit]").forEach(b=> b.onclick = ()=> openMkEdit(b.dataset.mkedit, acct));
+  document.querySelectorAll("#mkHeadWrap [data-mkedit]").forEach(b=> b.onclick = ()=> openMkEdit(b.dataset.mkedit, acct));
+}
+async function mkFetchAcct(){
+  const memberId = (window.Auth && Auth.profile && Auth.profile.id) || null;
+  if(!memberId || !window.sb) return null;
+  const { data, error } = await sb.from("social_accounts").select("*").eq("platform","instagram").eq("member_id", memberId)
+    .order("updated_at",{ascending:false}).limit(1);
+  return error ? null : ((data && data[0]) || null);
+}
+function mkStamp(){
+  const el = document.getElementById("mkSyncStamp"); if(!el) return;
+  el.textContent = _mkSyncedAt ? `Synced with Instagram ${Math.max(0,Math.round((Date.now()-_mkSyncedAt)/1000))}s ago · auto-refreshes every 60s` : "Syncing with Instagram…";
+}
+// Pull fresh posts + live stories from Instagram (server-throttled), then re-render only the head — the composer
+// (and anything the creator is typing) is left untouched.
+async function refreshMediaKit(force){
+  if(!document.getElementById("mkHeadWrap")) return;
+  try{
+    const { data, error } = await sb.functions.invoke("instagram-media-sync", { body:{ force: !!force } });
+    if(!error && data && data.ok && !data.cached) _mkSyncedAt = Date.now();
+    else if(!error && data && data.cached && !_mkSyncedAt) _mkSyncedAt = Date.now() - (60000 - (data.next_in_ms||0));
+  }catch(e){ /* keep showing the last data */ }
+  const acct = await mkFetchAcct(); const hw = document.getElementById("mkHeadWrap");
+  if(acct && hw){ hw.innerHTML = mkHead(acct) + mkStories(acct); wireMkHead(acct); }
+  mkStamp();
+}
+function startMkAutoRefresh(){
+  if(_mkTimer) clearInterval(_mkTimer);
+  _mkTimer = setInterval(()=>{
+    if(typeof currentPage!=="undefined" && currentPage!=="mediakit" || !document.getElementById("mkHeadWrap")){ clearInterval(_mkTimer); _mkTimer=null; return; }
+    mkStamp();
+    if(document.visibilityState==="visible" && Date.now()-(_mkSyncedAt||0) >= 60000) refreshMediaKit(false);
+  }, 5000);
+}
+
+async function loadMediaKit(){
+  const wrap = document.getElementById("mkBody");
+  if(!wrap) return;
+  const showConnect = ()=>{ wrap.innerHTML = mkNotConnected(); const b=document.getElementById("mkConnect"); if(b) b.onclick=connectInstagram; };
+  if(!window.sb){ showConnect(); return; }
+  const acct = await mkFetchAcct();
+  if(!acct){ showConnect(); return; }
+  wrap.innerHTML = `<div class="muted" id="mkSyncStamp" style="font-size:12px;text-align:right;margin-bottom:6px"></div>`
+    + `<div id="mkHeadWrap">${mkHead(acct) + mkStories(acct)}</div>` + mkComposer();
+  wireMkHead(acct);
+  wireMkComposer();
+  _mkSyncedAt = 0; mkStamp();
+  refreshMediaKit(false);          // fresh posts + live stories on open
+  startMkAutoRefresh();            // then every 60 s while the page is open and visible
   // Lazily refresh the Instagram token + re-sync stats if this kit is stale (>7 days).
   if(acct.updated_at && (Date.now() - new Date(acct.updated_at).getTime()) > 7*86400*1000){
     sb.functions.invoke("instagram-refresh").catch(()=>{});
@@ -2028,6 +2080,7 @@ function wireMkComposer(){
       }
       msg.innerHTML = esc(note) + (data && data.permalink ? ` · <a href="${esc(data.permalink)}" target="_blank" rel="noopener">View on Instagram ↗</a>` : "");
       msg.className="lead-msg ok";
+      if(typeof refreshMediaKit==="function"){ setTimeout(()=>refreshMediaKit(true), 3000); setTimeout(()=>refreshMediaKit(true), 15000); }
       cap.value=""; $id("mkTags").value=""; $id("mkStoryText").value=""; $id("mkCollab").value=""; $id("mkAudio").value=""; $id("mkThumb").value=""; $id("mkCover").value=""; $id("mkCamp").value="";
       applyKind(); counter();
     }catch(ex){
