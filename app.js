@@ -53,6 +53,9 @@ function renderNav(){
   if(currentRole!=="creator" && window.__ciIntelEnabled && !keys.includes("cintel")) keys.splice(2,0,"cintel");
   // Phase 1E — Campaign Operations nav is DARK (operational_pilot flag + pilot cohort; hidden in production).
   if(currentRole==="creator" && window.__ciOpsEnabled){ if(!keys.includes("mycampaigns")) keys.splice(2,0,"mycampaigns"); if(!keys.includes("onboarding")) keys.splice(3,0,"onboarding"); }
+  // pilot creators apply through My Campaigns (admin-panel campaigns are bridged there) — hide the legacy
+  // Marketplace so the same campaign never shows two different Apply buttons.
+  if(currentRole==="creator" && window.__ciOpsEnabled){ const mi=keys.indexOf("marketplace"); if(mi>=0) keys.splice(mi,1); }
   if(currentRole!=="creator" && window.__ciOpsEnabled){ if(!keys.includes("campaignops")) keys.splice(2,0,"campaignops"); if(!keys.includes("brandsetup")) keys.splice(3,0,"brandsetup"); }
   if(!keys.includes("messages")) keys.splice(1,0,"messages");   // WhatsApp 1:1 messaging (all roles)
   // Barter-pipeline Alerts inbox is DARK (operational_pilot); shown for all roles when the ops layer is on.

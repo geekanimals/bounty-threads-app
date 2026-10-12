@@ -355,6 +355,9 @@
         + (c.category?'<span>Category: <b>'+esc(c.category)+'</b></span>':'')
         + '<span>Dates: <b>'+fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on)+'</b></span></div>'
         + (where||langs?'<div class="ci-hint">'+(where?'Cities: '+esc(where):'')+(where&&langs?' · ':'')+(langs?'Languages: '+esc(langs):'')+'</div>':'')
+        + (c.platforms?'<div class="ci-hint">Platforms: '+esc(c.platforms)+'</div>':'')
+        + (c.deliverables_text?'<div class="ci-hint">Deliverables: '+esc(c.deliverables_text)+'</div>':'')
+        + (c.brief?'<details class="ci-hint"><summary>Brief</summary><div style="white-space:pre-wrap">'+esc(c.brief)+'</div></details>':'')
         + (tags.length?'<div class="ci-hint">Must include in caption: '+esc(tags.join(" "))+'</div>':'')
         + '</div>';
     }).join("");
