@@ -10,6 +10,19 @@
 
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function api(fn,args){ return window.sb.schema("api").rpc(fn, args||{}); }
+  // A creator who signed in with WhatsApp/email has no creator identity until the first profile action.
+  // Create it once, on demand, then retry the call — instead of surfacing a 403 to the creator.
+  var _idBoot=null;
+  function isNoIdentity(err){ return !!err && /no creator identity|not a creator/i.test(err.message||String(err)); }
+  function ensureIdentity(){
+    if(!_idBoot) _idBoot=Promise.resolve(api("bootstrap_my_profile",{p_correlation:"ui-ops"})).then(function(r){ if(r.error){ _idBoot=null; throw r.error; } return true; });
+    return _idBoot;
+  }
+  async function apiCreator(fn,args){
+    var r=await api(fn,args);
+    if(r && isNoIdentity(r.error)){ await ensureIdentity(); r=await api(fn,args); }
+    return r;
+  }
   function fmtDate(d){ if(!d) return "—"; try{ return new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}); }catch(e){ return String(d); } }
   function fmtDT(d){ if(!d) return "—"; try{ return new Date(d).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(e){ return String(d); } }
   function shortId(id){ return id?String(id).slice(0,8)+"…":"—"; }
@@ -327,13 +340,8 @@
   };
   async function loadMyCampaigns(){
     loadOpenCampaigns();
-    try{ var r=await api("get_my_campaigns"); if(r.error) throw r.error; renderMine(r.data||[]); }
-    catch(e){
-      var m=String((e&&e.message)||e);
-      // a creator who hasn't applied anywhere yet may have no creator identity — that's "no campaigns", not an error
-      if(/no creator identity/i.test(m)){ renderMine([]); return; }
-      var el=document.getElementById("opsMineBody"); if(el) el.innerHTML='<div class="card ci-err-inline">Couldn\'t load: '+esc(m)+'</div>';
-    }
+    try{ var r=await apiCreator("get_my_campaigns"); if(r.error) throw r.error; renderMine(r.data||[]); }
+    catch(e){ var el=document.getElementById("opsMineBody"); if(el) el.innerHTML='<div class="card ci-err-inline">Couldn\'t load: '+esc((e&&e.message)||e)+'</div>'; }
   }
 
   /* ---- creator: browse open campaigns + apply (application-first funnel entry) ---- */
@@ -368,12 +376,7 @@
     if(!confirm("Apply to "+name+"? The Geek team will review your profile and let you know on WhatsApp and in Alerts.")) return;
     btn.disabled=true; btn.textContent="Applying…";
     try{
-      var r=await api("apply_to_campaign",{p_campaign:id});
-      if(r.error && /no creator identity|not a creator/i.test(r.error.message||"")){
-        // first application from a WhatsApp/email creator: create their creator profile, then retry once
-        var b=await api("bootstrap_my_profile",{p_correlation:"ui-apply"}); if(b.error) throw b.error;
-        r=await api("apply_to_campaign",{p_campaign:id});
-      }
+      var r=await apiCreator("apply_to_campaign",{p_campaign:id});
       if(r.error) throw r.error;
       loadMyCampaigns(); if(typeof updateAlertsBadge==="function") updateAlertsBadge();
     }catch(e){
@@ -518,8 +521,9 @@
   };
   async function loadOnboarding(){
     try{
-      var rr=await Promise.all([ api("get_my_onboarding_status"), api("get_my_profile").catch(function(){return{data:null};}) ]);
-      renderOnb(rr[0].data||{}, (rr[1]&&!rr[1].error?rr[1].data:null));
+      var st=await apiCreator("get_my_onboarding_status"); if(st.error) throw st.error;
+      var pr=await api("get_my_profile");   // optional enrichment; resolves with {error} rather than throwing
+      renderOnb(st.data||{}, (pr&&!pr.error?pr.data:null));
     }catch(e){ document.getElementById("opsOnbBody").innerHTML='<div class="card ci-err-inline">Couldn\'t load: '+esc(e.message||e)+'</div>'; }
   }
   function renderOnb(s, prof){
