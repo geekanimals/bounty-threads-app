@@ -83,3 +83,8 @@ verify_jwt = true
 # Agency / Brand onboarding step 2: official email OTP over SMTP (port 465) — signed-in agency/brand only.
 [functions.email-otp]
 verify_jwt = true
+
+# Creates / rotates the Super Admin login from Edge secrets (SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD).
+# No user JWT — callable only with the CI_WORKER_SECRET (constant-time check, fail-closed).
+[functions.super-admin-sync]
+verify_jwt = false

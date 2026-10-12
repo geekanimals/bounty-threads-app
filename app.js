@@ -60,7 +60,7 @@ function renderNav(){
   if(!keys.includes("messages")) keys.splice(1,0,"messages");   // WhatsApp 1:1 messaging (all roles)
   // Barter-pipeline Alerts inbox is DARK (operational_pilot); shown for all roles when the ops layer is on.
   if(window.__ciOpsEnabled && !keys.includes("alerts")) keys.splice(1,0,"alerts");
-  if(window.__isAdmin) keys.push("admin");
+  if(window.__isAdmin){ const ai = keys.indexOf("admin"); if(ai>=0) keys.splice(ai,1); keys.unshift("admin"); }   // Super Admin first
   if(window.__profileGate && !keys.includes("profile")) keys.splice(1,0,"profile");
   keys.forEach(key=>{
     let m = NAV_META[key] || {ic:"🛡", label:key};
@@ -82,8 +82,8 @@ function renderMe(){
   const r = ROLES[currentRole];
   let initials = r.initials, title = r.name;
   if(window.Auth && Auth.profile){
-    title = Auth.profile.name;
-    initials = Auth.profile.name.split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
+    title = Auth.profile.name || Auth.profile.org || "Me";
+    initials = String(title).split(" ").filter(Boolean).map(x=>x[0]).join("").slice(0,2).toUpperCase() || "ME";
   }
   $("#me").textContent = initials;
   $("#me").title = title;
@@ -3816,6 +3816,15 @@ function showEmailGate(){
   document.getElementById("emSignout").onclick = ()=> window.Auth && Auth.signOut();
 }
 
+// Super Admin: label, Admin panel first in the nav, and land on the command centre after sign-in
+function markSuperAdmin(){
+  window.__isAdmin = true;
+  const wrap = document.querySelector(".role-switch");
+  if(wrap) wrap.innerHTML = `<label>Signed in as</label><div class="role-static">🛡 Super Admin</div>`;
+  const deep = new URLSearchParams(location.search).get("go");
+  if(!window.__adminLanded && !deep && (currentPage==="dashboard" || !currentPage)){ window.__adminLanded = true; _adminTab = "overview"; currentPage = "admin"; renderShell(); }
+  else renderNav();
+}
 function gateToast(msg){
   let t = document.getElementById("gateToast");
   if(!t){ t = el("div",""); t.id="gateToast"; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;font-size:14px;max-width:90vw;box-shadow:0 6px 24px rgba(0,0,0,.25)"; document.body.appendChild(t); }
@@ -3874,7 +3883,7 @@ async function bootOS(){
   }
   init();
   // Platform admins get an Admin queue in the nav.
-  if(window.sb){ sb.rpc("is_platform_admin").then(({data})=>{ if(data===true){ window.__isAdmin=true; renderNav(); } }).catch(()=>{}); }
+  if(window.sb){ sb.rpc("is_platform_admin").then(({data})=>{ if(data===true){ markSuperAdmin(); } }).catch(()=>{}); }
 }
 
 /* ---------- Wire up ---------- */
