@@ -1776,9 +1776,16 @@ function mkComposer(){
         <div class="muted" id="mkCount" style="font-size:12px"></div>
       </div>
       <div id="mkPeopleWrap">
-        <label>Tag people<input id="mkTags" placeholder="@friend, @photographer"></label>
-        <label>Collaborators (max 3)<input id="mkCollab" placeholder="@brand"></label>
-        <div class="muted" style="font-size:12px">Collaborators get an invite in Instagram — once they accept, the post shows on both profiles.</div>
+        <label><span id="mkTagsLbl">Tag people</span><input id="mkTags" placeholder="@friend, @photographer"></label>
+        <div id="mkCollabWrap">
+          <label>Collaborators (max 3)<input id="mkCollab" placeholder="@brand"></label>
+          <div class="muted" style="font-size:12px">Collaborators get an invite in Instagram — once they accept, the post shows on both profiles.</div>
+        </div>
+      </div>
+      <div id="mkStoryWrap">
+        <label>Text on your story (optional)<textarea id="mkStoryText" rows="2" maxlength="220" placeholder="e.g. Loving my new Diwali lamp ✨"></textarea></label>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="mkStoryShowMentions" checked style="width:auto"> Also show the @mentions on the story</label>
+        <div class="muted" style="font-size:12px" id="mkStoryNote">Stories don't have captions on Instagram — your text is printed on the photo. Mentioned accounts get notified.</div>
       </div>
       <div id="mkReelWrap">
         <label>Cover image (optional)<input type="file" id="mkCover" accept="image/*"></label>
@@ -1826,7 +1833,7 @@ async function loadMediaKit(){
 // Instagram's publishing API accepts JPEG images only (max 8 MB); feed posts must be between 4:5 and 1.91:1.
 // Convert any picked image (PNG, WebP…) to JPEG in the browser, downscale large ones, and for feed posts pad
 // (never crop) out-of-range shapes with white so the creator's photo is kept whole.
-async function toInstagramJpeg(file, kind){
+async function toInstagramJpeg(file, kind, overlay){
   const bmp = await createImageBitmap(file);
   const maxEdge = kind === "story" ? 1920 : 1440;
   let w = bmp.width, h = bmp.height;
@@ -1837,6 +1844,17 @@ async function toInstagramJpeg(file, kind){
   const g = c.getContext("2d"); g.fillStyle = "#ffffff"; g.fillRect(0,0,cw,ch);
   g.drawImage(bmp, Math.round((cw-w)/2), Math.round((ch-h)/2), w, h);
   if(bmp.close) bmp.close();
+  // story text: printed on a soft band near the bottom (Instagram stories have no caption field)
+  const lines0 = overlay ? [overlay.text, overlay.mentions].map(x=>String(x||"").trim()).filter(Boolean) : [];
+  if(lines0.length){
+    const fs = Math.max(24, Math.round(cw * 0.045)), pad = Math.round(fs*0.6), maxW = cw - pad*4;
+    g.font = `600 ${fs}px -apple-system, "Segoe UI", Roboto, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
+    const lines = [];
+    for(const para of lines0){ let cur=""; for(const word of para.split(/\s+/)){ const t = cur ? cur+" "+word : word; if(g.measureText(t).width > maxW && cur){ lines.push(cur); cur = word; } else cur = t; } if(cur) lines.push(cur); }
+    const lh = Math.round(fs*1.3), boxH = lines.length*lh + pad*2, y0 = Math.round(ch*0.78 - boxH/2);
+    g.fillStyle = "rgba(0,0,0,0.45)"; g.fillRect(pad, y0, cw - pad*2, boxH);
+    g.fillStyle = "#ffffff"; lines.forEach((ln,i)=> g.fillText(ln, cw/2, y0 + pad + lh*i + lh/2));
+  }
   let q = 0.9, blob;
   do { blob = await new Promise(res=>c.toBlob(res, "image/jpeg", q)); q -= 0.1; } while(blob && blob.size > 8*1024*1024 && q > 0.4);
   if(!blob) throw new Error("Couldn't prepare this image — try a JPG.");
@@ -1880,7 +1898,10 @@ function wireMkComposer(){
     $id("mkHint").textContent=k.hint;
     const story = kindSel.value==="story";
     $id("mkCapWrap").style.display = story ? "none" : "";
-    $id("mkPeopleWrap").style.display = story ? "none" : "";
+    $id("mkCollabWrap").style.display = story ? "none" : "";
+    $id("mkStoryWrap").style.display = story ? "" : "none";
+    $id("mkTagsLbl").textContent = story ? "Mention people (they get notified)" : "Tag people";
+    $id("mkTags").placeholder = story ? "@brand, @friend" : "@friend, @photographer";
     $id("mkReelWrap").style.display = kindSel.value==="reel" ? "" : "none";
     btn.textContent=k.btn; $id("mkErr").textContent="";
   };
@@ -1890,6 +1911,11 @@ function wireMkComposer(){
     files = Array.from(fileIn.files||[]);
     if(files.length > k.max){ err.textContent=`Pick at most ${k.max} file${k.max>1?"s":""}.`; files=files.slice(0,k.max); }
     renderPreview();
+    const vidStory = kindSel.value==="story" && files.some(f=>/^video\//.test(f.type||""));
+    $id("mkStoryText").disabled = vidStory; $id("mkStoryShowMentions").disabled = vidStory;
+    $id("mkStoryNote").textContent = vidStory
+      ? "Text can't be printed on a video story here — mentions still work and notify. For text on video, use “Open in Instagram app”."
+      : "Stories don't have captions on Instagram — your text is printed on the photo. Mentioned accounts get notified.";
   };
   cap.oninput = counter;
 
@@ -1903,6 +1929,13 @@ function wireMkComposer(){
   $id("mkAd").onchange = syncAd;
   $id("mkCamp").onchange = ()=>{
     const r = _mkRules.find(x=>x.participation_id===$id("mkCamp").value);
+    if(r && kindSel.value==="story"){
+      const have = mkUsers($id("mkTags").value), add = (r.mentions||[]).map(m=>String(m).replace(/^@/,"")).filter(m=>!have.includes(m));
+      $id("mkTags").value = [...have, ...add].map(u=>"@"+u).join(", ");
+      const tags = (r.hashtags||[]).map(h=>h.startsWith("#")?h:"#"+h).filter(h=>!$id("mkStoryText").value.includes(h));
+      if(tags.length) $id("mkStoryText").value = ($id("mkStoryText").value.trim()+" "+tags.join(" ")+($id("mkAd").checked?" #ad":"")).trim();
+      return;
+    }
     if(r){
       const need = [...(r.hashtags||[]).map(h=>h.startsWith("#")?h:"#"+h), ...(r.mentions||[]).map(m=>"@"+String(m).replace(/^@/,""))];
       const missing = need.filter(t=>!new RegExp("(^|\\s)"+t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"(\\b|$)","i").test(cap.value));
@@ -1955,15 +1988,17 @@ function wireMkComposer(){
       if(!uid) throw new Error("You're signed out. Sign in again to publish.");
       const upload = async (file, convertKind)=>{
         const isVid = /^video\//.test(file.type||"");
-        const m = isVid ? file : await toInstagramJpeg(file, convertKind);
+        const m = isVid ? file : await toInstagramJpeg(file, convertKind, convertKind==="story" ? storyOverlay() : null);
         const path = `${uid}/${Date.now()}-${Math.random().toString(36).slice(2,8)}-${(m.name||(isVid?"clip.mp4":"photo.jpg")).replace(/[^a-zA-Z0-9._-]/g,"")}`;
         const up = await sb.storage.from("ig-media").upload(path, m, { upsert:false, contentType:m.type||(isVid?"video/mp4":"image/jpeg") });
         if(up.error) throw up.error;
         return { type: isVid?"video":"image", url: sb.storage.from("ig-media").getPublicUrl(path).data.publicUrl };
       };
+      const tagsList = mkUsers($id("mkTags").value);
+      const storyOverlay = ()=>({ text: $id("mkStoryText").value, mentions: $id("mkStoryShowMentions").checked ? tagsList.map(u=>"@"+u).join(" ") : "" });
       const media=[];
       for(let i=0;i<files.length;i++){ btn.textContent=`Uploading ${i+1}/${files.length}…`; media.push(await upload(files[i], kind)); }
-      const body = { kind, media, caption: kind==="story" ? "" : cap.value, user_tags: mkUsers($id("mkTags").value), collaborators: collabs };
+      const body = { kind, media, caption: kind==="story" ? "" : cap.value, user_tags: tagsList, collaborators: kind==="story" ? [] : collabs };
       if(kind==="reel"){
         const cov = ($id("mkCover").files||[])[0];
         body.reel = { share_to_feed: $id("mkShareFeed").checked, audio_name: $id("mkAudio").value.trim() };
@@ -1975,7 +2010,8 @@ function wireMkComposer(){
       if(error) throw new Error(await fnError(error));
       if(data && data.error) throw new Error(data.error);
       let note = K.ok + (data && data.carousel ? " (carousel)" : "");
-      if(collabs.length) note += " · collaborator invite sent";
+      if(collabs.length && kind!=="story") note += " · collaborator invite sent";
+      if(kind==="story" && tagsList.length) note += ` · mentioned ${tagsList.map(u=>"@"+u).join(", ")} (they'll be notified)`;
       // campaign post → record it so the brief check runs and the brand report tracks it
       const rule = _mkRules.find(x=>x.participation_id===$id("mkCamp").value);
       if(rule){
@@ -1990,7 +2026,7 @@ function wireMkComposer(){
       }
       msg.innerHTML = esc(note) + (data && data.permalink ? ` · <a href="${esc(data.permalink)}" target="_blank" rel="noopener">View on Instagram ↗</a>` : "");
       msg.className="lead-msg ok";
-      cap.value=""; $id("mkTags").value=""; $id("mkCollab").value=""; $id("mkAudio").value=""; $id("mkThumb").value=""; $id("mkCover").value=""; $id("mkCamp").value="";
+      cap.value=""; $id("mkTags").value=""; $id("mkStoryText").value=""; $id("mkCollab").value=""; $id("mkAudio").value=""; $id("mkThumb").value=""; $id("mkCover").value=""; $id("mkCamp").value="";
       applyKind(); counter();
     }catch(ex){
       err.textContent = (ex.message||ex);

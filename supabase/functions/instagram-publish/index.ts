@@ -3,8 +3,9 @@
 // Instagram Login. Everything Instagram's publishing API supports:
 //   feed  — single image, or a carousel of 2–10 images/videos
 //   reel  — video, with cover image / cover frame, share-to-feed, original-audio name
-//   story — single image or video (the API has no story stickers, mentions, links or music)
-//   all except story — caption (#hashtags, @mentions), people tags, up to 3 collaborators
+//   story — single image or video + @mentions (user_tags: the mentioned accounts are notified).
+//           Stickers (link, poll, location), captions and music are not available through the API.
+//   feed/reel — caption (#hashtags, @mentions), people tags, up to 3 collaborators
 // Instagram's licensed music library is NOT available through any API; the app offers "open in Instagram"
 // on the device instead.
 //
@@ -14,7 +15,7 @@
 //   media?: [{ type: "image" | "video", url }],        // feed: 1–10 (2+ ⇒ carousel); reel/story: exactly 1
 //   image_url?, video_url?,                             // legacy single-media form (still accepted)
 //   caption?: string,                                   // ignored for stories
-//   user_tags?: string[],                               // usernames to tag (images: spread across the photo)
+//   user_tags?: string[],                               // usernames to tag / mention (stories: notified mentions)
 //   collaborators?: string[],                           // ≤ 3 usernames (feed / reel / carousel)
 //   reel?: { cover_url?, thumb_offset_ms?, share_to_feed?, audio_name? }
 // }
@@ -26,7 +27,7 @@ import { corsHeaders, json as jsonRaw } from "../_shared/cors.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const GRAPH = "https://graph.instagram.com/v21.0";
+const GRAPH = "https://graph.instagram.com/v23.0";   // story user_tags (mentions) need a 2025+ API version
 
 // every non-2xx reply is logged (reason only — never tokens) so failures are visible in the function logs
 function json(body: unknown, status = 200) {
@@ -91,7 +92,7 @@ Deno.serve(async (req: Request) => {
     if ((caption.match(/#[\p{L}\p{N}_]+/gu) || []).length > 30) return json({ error: "Instagram allows at most 30 hashtags." }, 400);
     if ((caption.match(/@[A-Za-z0-9._]+/g) || []).length > 20) return json({ error: "Instagram allows at most 20 @mentions." }, 400);
 
-    const userTags = kind === "story" ? [] : cleanUsers(body?.user_tags, 20);
+    const userTags = cleanUsers(body?.user_tags, 20);
     const collaborators = kind === "story" ? [] : cleanUsers(body?.collaborators, 3);
     const reelOpt = body?.reel || {};
 
@@ -173,8 +174,10 @@ Deno.serve(async (req: Request) => {
     if (kind === "story") {
       const m = media[0];
       containerIsVideo = m.type === "video";
-      containerId = await mustCreate(
-        { media_type: "STORIES", ...(containerIsVideo ? { video_url: m.url } : { image_url: m.url }) }, "story");
+      const p: Record<string, string> = { media_type: "STORIES", ...(containerIsVideo ? { video_url: m.url } : { image_url: m.url }) };
+      // mentions without a sticker (x/y optional for stories) — Instagram notifies each mentioned account
+      if (userTags.length) p.user_tags = JSON.stringify(userTags.map((username) => ({ username })));
+      containerId = await mustCreate(p, "story");
     } else if (kind === "reel") {
       const p: Record<string, string> = { media_type: "REELS", video_url: media[0].url };
       if (caption) p.caption = caption;
