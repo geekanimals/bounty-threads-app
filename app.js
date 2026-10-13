@@ -3984,7 +3984,17 @@ async function sendAiMessage(text){
 function closeAi(){ $("#aiOverlay").classList.remove("open"); }
 
 /* ---------- Notifications (real recent activity) ---------- */
+// pin the alerts dropdown + new-alert pop-ups right under the 🔔
+function anchorToBell(){
+  const b = document.getElementById("bellBtn"); if(!b) return;
+  const r = b.getBoundingClientRect(), root = document.documentElement.style;
+  root.setProperty("--bell-top", Math.round(r.bottom + 10) + "px");
+  root.setProperty("--bell-right", Math.max(12, Math.round(window.innerWidth - r.right - 8)) + "px");
+  root.setProperty("--bell-arrow", Math.round(r.width/2 + 2) + "px");
+}
+window.addEventListener("resize", anchorToBell);
 async function openNotif(){
+  anchorToBell();
   $("#notifOverlay").classList.add("open");
   const body = $("#notifBody");
   if(window.__ciOpsEnabled && window.ciOps && window.ciOps.loadAlerts){
@@ -4195,11 +4205,14 @@ async function pollAlerts(){
     const { data, error } = await sb.schema("api").rpc("get_my_notifications", { p_only_unread: true });
     if(error) return;
     const list = data || [];
+    const grew = list.length > (window.__alertsUnread || 0);
     window.__alertsUnread = list.length;
     const bell = document.getElementById("notifCount");
-    if(bell){ bell.textContent = list.length > 9 ? "9+" : list.length; bell.style.display = list.length ? "" : "none"; }
+    if(bell){ bell.textContent = list.length > 9 ? "9+" : list.length; bell.style.display = list.length ? "" : "none";
+      if(grew && _alertSeen){ bell.classList.remove("pulse"); void bell.offsetWidth; bell.classList.add("pulse");
+        const bb = document.getElementById("bellBtn"); if(bb){ bb.classList.remove("ring"); void bb.offsetWidth; bb.classList.add("ring"); } } }
     if(_alertSeen){
-      const fresh = list.filter(n => !_alertSeen.has(n.notification_id)).slice(0, 3);
+      const fresh = list.filter(n => !_alertSeen.has(n.notification_id)).slice(0, 2);
       fresh.reverse().forEach(showAlertToast);
       const drawerOpen = document.getElementById("notifOverlay") && document.getElementById("notifOverlay").classList.contains("open");
       if(fresh.length && drawerOpen && window.ciOps) window.ciOps.loadAlerts(document.getElementById("notifBody"));
@@ -4208,8 +4221,10 @@ async function pollAlerts(){
   }catch(e){}
 }
 function showAlertToast(n){
+  anchorToBell();
   let wrap = document.getElementById("alertToasts");
   if(!wrap){ wrap = el("div",""); wrap.id = "alertToasts"; document.body.appendChild(wrap); }
+  while(wrap.children.length >= 2) wrap.firstElementChild.remove();      // max two pop-ups at a time
   const t = el("div","alert-toast", `<div class="at-ic">${n.kind==="action_required"?"⚡":"🔔"}</div><div class="at-b"><b>${esc(n.title)}</b><span>${esc(n.body||"")}</span></div><button class="at-x" aria-label="Dismiss">✕</button>`);
   wrap.appendChild(t);
   const kill = ()=>{ t.classList.add("out"); setTimeout(()=>t.remove(), 250); };

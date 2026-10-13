@@ -716,3 +716,23 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .alert-toast .at-x{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px}
 @keyframes atIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 @media(max-width:760px){#alertToasts{top:64px;right:12px;left:12px;max-width:none}}
+
+/* ===================== Bell: count badge + dropdown anchored to the bell ===================== */
+.bell .badge{min-width:18px;height:18px;line-height:18px;padding:0 5px;top:-6px;right:-6px;text-align:center;font-size:11px;border:2px solid var(--panel);box-sizing:content-box}
+.bell .badge.pulse{animation:bellPulse 1s ease 2}
+.bell.ring{animation:bellRing .8s ease}
+@keyframes bellPulse{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}
+@keyframes bellRing{0%,100%{transform:rotate(0)}20%{transform:rotate(14deg)}40%{transform:rotate(-12deg)}60%{transform:rotate(8deg)}80%{transform:rotate(-4deg)}}
+#notifOverlay{background:transparent !important;backdrop-filter:none !important}
+#notifDrawer{position:fixed;top:var(--bell-top,64px);right:var(--bell-right,16px);left:auto;height:auto;max-height:min(72vh,640px);width:390px;max-width:calc(100vw - 24px);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 50px rgba(10,12,40,.25);overflow:visible;animation:dropIn .18s ease}
+#notifDrawer::before{content:"";position:absolute;top:-7px;right:var(--bell-arrow,18px);width:12px;height:12px;background:var(--panel);border-left:1px solid var(--line);border-top:1px solid var(--line);transform:rotate(45deg)}
+#notifDrawer .drawer-head{padding:14px 16px}
+#notifBody{overflow-y:auto;max-height:calc(min(72vh,640px) - 64px);padding:10px 12px;border-radius:0 0 16px 16px}
+#notifBody .card{box-shadow:none;border:none;padding:0;background:transparent}
+@keyframes dropIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+/* new-alert pop-ups sit right under the bell, max two at a time */
+#alertToasts{top:var(--bell-top,64px);right:var(--bell-right,16px)}
+@media(max-width:760px){
+  #notifDrawer{right:12px;left:12px;width:auto;max-width:none}
+  #alertToasts{left:12px;right:12px}
+}
