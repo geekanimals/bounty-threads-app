@@ -2327,7 +2327,7 @@ function mkHead(a){
   // Rate card (editable)
   const rates = Array.isArray(E.rate_card)?E.rate_card:[];
   const rateHtml = rates.length
-    ? `<table class="mk-rates"><tbody>${rates.map(r=>`<tr><td>${esc(r.item)}</td><td class="mk-rate-p">${esc(r.price)}</td></tr>`).join("")}</tbody></table>`
+    ? `<table class="mk-rates"><tbody>${rates.map(r=>`<tr><td>${esc(r.item)}</td><td class="mk-rate-p">${/^\s*[\d,.]+\s*$/.test(String(r.price||"")) ? "₹"+fmtNum(String(r.price).replace(/[^\d.]/g,"")) : esc(r.price)}</td></tr>`).join("")}</tbody></table>`
     : `<div class="muted" style="padding:8px">No rate card yet — click <b>Edit</b> to add your rates.</div>`;
 
   return `<div class="mk-kit">
@@ -2479,7 +2479,7 @@ function mkStories(a){
   return `<div class="card" style="margin-top:16px"><h3>Live stories <span class="muted" style="font-weight:400;font-size:13px">· ${st.length} · disappear 24h after posting</span></h3>
     <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">${st.map(s=>{
       const img = s.media_type==="VIDEO" ? (s.thumbnail_url||s.media_url) : s.media_url;
-      return `<a href="${esc(safeUrl(s.permalink))}" target="_blank" rel="noopener" style="position:relative;flex:0 0 auto;width:96px;height:170px;border-radius:12px;overflow:hidden;background:#eee;display:block">
+      return `<a href="${esc(safeUrl(s.permalink))}" target="_blank" rel="noopener" class="mk-story" style="position:relative;flex:0 0 auto;width:96px;height:170px;border-radius:12px;overflow:hidden;display:block">
         ${img?`<img src="${esc(safeUrl(img))}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover">`:""}
         ${s.media_type==="VIDEO"?`<span class="mk-type">▶</span>`:""}
         <span style="position:absolute;left:6px;bottom:6px;font-size:11px;color:#fff;text-shadow:0 1px 2px #000">${ago(s.timestamp)} ago</span></a>`;
@@ -2494,7 +2494,7 @@ function mkCommentsHtml(a){
     <p class="muted" style="margin-bottom:10px">Pick a post to read and manage its comments — reply, hide or delete, without opening Instagram.</p>
     <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px">${media.map(m=>{
       const img = m.media_type==="VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
-      return `<button type="button" data-mkcm="${esc(m.id)}" title="${esc((m.caption||"").slice(0,80))}" style="flex:0 0 auto;width:84px;border:2px solid transparent;border-radius:10px;padding:0;background:#eee;cursor:pointer;position:relative;overflow:hidden">
+      return `<button type="button" data-mkcm="${esc(m.id)}" title="${esc((m.caption||"").slice(0,80))}" style="flex:0 0 auto;width:84px;border:2px solid transparent;border-radius:10px;padding:0;background:var(--mk-soft,#eee);cursor:pointer;position:relative;overflow:hidden">
         ${img?`<img src="${esc(safeUrl(img))}" alt="" loading="lazy" style="width:84px;height:84px;object-fit:cover;display:block">`:`<div style="width:84px;height:84px"></div>`}
         <span style="position:absolute;left:4px;bottom:4px;font-size:11px;color:#fff;text-shadow:0 1px 2px #000">💬 ${fmtNum(m.comments_count||0)}</span></button>`;
     }).join("")}</div>
@@ -2711,7 +2711,7 @@ async function loadMediaKit(){
   _mkLastAcct = acct;
   // Media Kit = view only (reach, audience, stats, best work). Posting, comments and DMs live on the Instagram page.
   wrap.innerHTML = `<div class="muted" id="mkSyncStamp" style="font-size:12px;text-align:right;margin-bottom:6px"></div>`
-    + `<div id="mkHeadWrap"></div><div class="mk-kit" id="mkStoriesWrap"></div>`;
+    + `<div class="mk-kit" id="mkStoriesWrap"></div><div id="mkHeadWrap"></div>`;
   _mkHeadHtml = mkHead(acct); _mkStoriesHtml = mkStories(acct);
   document.getElementById("mkHeadWrap").innerHTML = _mkHeadHtml;
   document.getElementById("mkStoriesWrap").innerHTML = _mkStoriesHtml;
@@ -3987,9 +3987,17 @@ function closeNotif(){ $("#notifOverlay").classList.remove("open"); }
 /* ---------- Theme ---------- */
 function toggleTheme(){
   const d=document.documentElement.getAttribute("data-theme")==="dark";
-  document.documentElement.setAttribute("data-theme",d?"":"dark");
-  $("#themeBtn").textContent=d?"🌙":"☀️";
+  applyTheme(d ? "light" : "dark");
+  try{ localStorage.setItem("geekos_theme", d ? "light" : "dark"); }catch(e){}
 }
+// light / dark: remembered per device; first visit follows the phone / laptop setting
+function applyTheme(t){
+  document.documentElement.setAttribute("data-theme", t==="dark" ? "dark" : "");
+  const b = document.getElementById("themeBtn"); if(b) b.textContent = t==="dark" ? "☀️" : "🌙";
+}
+(function(){ let t=null; try{ t=localStorage.getItem("geekos_theme"); }catch(e){}
+  if(!t && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) t="dark";
+  applyTheme(t||"light"); })();
 
 /* ---------- Boot (called after auth) ---------- */
 function showPending(){
