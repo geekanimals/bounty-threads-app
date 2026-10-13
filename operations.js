@@ -564,15 +564,18 @@
     var box=document.getElementById("opsMineBody"); if(!box) return;
     _mineCache=all||[]; var list=_mineCache;
     var groups={Upcoming:[],Active:[],Completed:[]}; list.forEach(function(c){ groups[mineGroup(c.stage)].push(c); });
+    groups.Upcoming.sort(function(a,b){ return (b.stage==='invited'?1:0)-(a.stage==='invited'?1:0); });
     var st=document.getElementById("opsMineStats");
     var declined=list.filter(function(c){ return ['ineligible','brand_declined','rejected','dropped'].indexOf(c.stage)>=0; }).length;
     if(st) st.innerHTML='<div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));margin-bottom:14px">'
+      +(list.filter(function(c){return c.stage==='invited';}).length?'<div class="ws-stat mc-inv"><b>'+list.filter(function(c){return c.stage==='invited';}).length+'</b><span>🎯 Invitations</span></div>':'')
       +'<div class="ws-stat"><b>'+groups.Active.length+'</b><span>Running now</span></div><div class="ws-stat"><b>'+groups.Upcoming.length+'</b><span>Applied / waiting</span></div>'
       +'<div class="ws-stat"><b>'+list.filter(function(c){return c.stage==="completed";}).length+'</b><span>Completed</span></div>'
       +'<div class="ws-stat"><b>'+declined+'</b><span>Not selected</span></div>'
       +'<div class="ws-stat"><b>'+list.length+'</b><span>All time</span></div></div>';
     if(!list.length){ box.innerHTML='<div class="card"><div class="muted">No campaigns yet. Open <b>Campaigns</b>, apply to one — it shows up here with every next step.</div></div>'; return; }
-    var LBL={Active:"🟢 Running now",Upcoming:"⏳ Applied — waiting for the brand",Completed:"📜 History"};
+    var invites=list.filter(function(c){ return c.stage==='invited'; }).length;
+    var LBL={Active:"🟢 Running now",Upcoming:invites?"🎯 Invitations & applications":"⏳ Applied — waiting for the brand",Completed:"📜 History"};
     var html=["Active","Upcoming","Completed"].map(function(g){ if(!groups[g].length) return ''; return '<div class="ci-sub">'+LBL[g]+'</div>'+groups[g].map(cardMine).join(""); }).join("");
     box.innerHTML=html;
     wireMine();
@@ -582,7 +585,7 @@
     var dl=(c.deliverables||[]), approved=APPROVED_STAGES.indexOf(c.stage)>=0,
         declined=['ineligible','brand_declined','rejected','dropped'].indexOf(c.stage)>=0;
     var acts='';
-    if(c.stage==='invited') acts='<button class="btn sm" data-accept="'+c.participation_id+'">Accept</button><button class="btn sm ghost" data-reject="'+c.participation_id+'">Reject</button>';
+    if(c.stage==='invited') acts='<button class="btn sm" data-accept="'+c.participation_id+'">✅ Accept invite</button><button class="btn sm ghost" data-reject="'+c.participation_id+'">Pass</button>';
     else if(c.stage==='contract_sent') acts='<button class="btn sm" data-contract="'+c.participation_id+'">Review &amp; sign contract</button>';
     else if(c.stage==='contract_signed') acts='<button class="btn sm" data-address="'+c.participation_id+'">Confirm delivery address</button>';
     else if(c.stage==='content_approved') acts='<button class="btn sm" data-post="'+c.participation_id+'">Post from the app</button>';
@@ -628,6 +631,7 @@
             + (d.permalink?' · <a href="'+esc(safeLink(d.permalink))+'" target="_blank" rel="noopener">Open post ↗</a>':'')+'</div>'
             + metricChips(d)+'</div>'; }).join("")+'</div>' : '';
     return '<div class="card ci-match mc-card"><div class="ci-mh"><h4>'+esc(c.campaign||"Campaign")+' <span class="ci-id">'+esc(c.brand||"")+'</span></h4>'+spill(c.stage)+'</div>'
+      + (c.stage==='invited'?'<div class="mc-banner inv">🎯 <b>'+esc(c.brand||'The brand')+' invited you to this campaign.</b> Read the brief below, then accept or pass — there\'s no obligation either way.</div>':'')
       + (approved?'<div class="mc-banner ok">🎉 <b>You\'re approved'+(c.applied_profile?' as @'+esc(c.applied_profile):'')+'</b> — everything about this campaign is below. We\'ll message you on WhatsApp at every step.</div>':'')
       + (declined?'<div class="mc-banner no"><b>Not selected this time.</b>'+(c.reason_label?' Reason: <b>'+esc(c.reason_label)+'</b>.':'')
           +(c.reason&&c.reason!==c.reason_label?'<div class="mc-note">“'+esc(String(c.reason).replace(/^.*?—\s*/,""))+'”</div>':'')
@@ -644,7 +648,7 @@
   }
   function wireMine(){
     document.querySelectorAll("#opsMine [data-accept]").forEach(function(b){ b.onclick=function(){ api("respond_to_campaign",{p_participation:b.getAttribute("data-accept"),p_accept:true,p_reason:null}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
-    document.querySelectorAll("#opsMine [data-reject]").forEach(function(b){ b.onclick=function(){ var reason=prompt("Reason for declining:")||""; if(!reason) return; api("respond_to_campaign",{p_participation:b.getAttribute("data-reject"),p_accept:false,p_reason:reason}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
+    document.querySelectorAll("#opsMine [data-reject]").forEach(function(b){ b.onclick=function(){ var reason=prompt("No problem — tell the brand why you're passing (they see this):")||""; if(!reason) return; api("respond_to_campaign",{p_participation:b.getAttribute("data-reject"),p_accept:false,p_reason:reason}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-upload]").forEach(function(b){ b.onclick=function(){ var url=prompt("Paste your content link (e.g. Instagram post URL):")||""; if(!url) return; var note=prompt("Note / question for the Geek team (optional):")||""; api("submit_content",{p_deliverable:b.getAttribute("data-upload"),p_content_url:url,p_note:note}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-contract]").forEach(function(b){ b.onclick=function(){ openContractModal(b.getAttribute("data-contract")); }; });
     document.querySelectorAll("#opsMine [data-address]").forEach(function(b){ b.onclick=function(){ openAddressModal(b.getAttribute("data-address")); }; });

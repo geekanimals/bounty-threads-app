@@ -922,3 +922,19 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
   .mc-metrics{grid-template-columns:repeat(3,1fr)}
   .cp-petdob{flex-basis:100%}
 }
+
+/* ===== Invite creators panel ===== */
+.inv-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.inv-bar input#invQ{flex:1;min-width:220px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:inherit;font-size:13px}
+.inv-only{display:inline-flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap}
+.inv-only input{accent-color:var(--brand)}
+.inv-card{cursor:default}
+.inv-card:hover{transform:none;box-shadow:none;border-color:var(--line)}
+.inv-score{margin-left:auto;font-size:12px;font-weight:800;color:var(--brand);background:rgba(108,92,231,.12);padding:4px 9px;border-radius:999px;flex:0 0 auto}
+.inv-act{display:flex;justify-content:flex-end}
+.inv-act .btn{width:100%}
+.inv-ex{align-items:flex-start}
+.inv-ex .cp-item-acts a.btn{text-decoration:none;display:inline-flex;align-items:center}
+@media (max-width:640px){ .inv-bar input#invQ{min-width:0;width:100%} .inv-bar .btn{width:100%} }
+.mc-banner.inv{background:rgba(108,92,231,.1);border:1px solid rgba(108,92,231,.4)}
+.ws-stat.mc-inv{border-color:rgba(108,92,231,.5);background:rgba(108,92,231,.08)}

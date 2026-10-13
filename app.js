@@ -1176,7 +1176,7 @@ function campaignCardsHtml(list){
       ${(c.start_date||c.end_date)?`<div class="muted" style="font-size:13px">🗓 ${esc(c.start_date)||"—"} → ${esc(c.end_date)||"—"}</div>`:""}
       <div class="bar" style="margin-top:8px"><span style="width:${prog}%"></span></div>
       <div class="camp-foot"><span class="muted">${prog}% · ${creators} creators</span>
-      <span style="display:flex;gap:6px"><button class="mini-btn" data-opencamp="${esc(c.id)}">Open</button><button class="mini-btn ghost" data-editcamp="${esc(c.id)}">Edit</button></span></div></div>`;
+      <span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini-btn" data-opencamp="${esc(c.id)}">Open</button><button class="mini-btn" data-invcamp="${esc(c.id)}">🎯 Invite</button><button class="mini-btn ghost" data-editcamp="${esc(c.id)}">Edit</button></span></div></div>`;
   }).join("");
 }
 
@@ -1201,6 +1201,7 @@ async function fetchOrgCampaigns(){
 function wireCampaignGrid(grid, all){
   grid.querySelectorAll("[data-editcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.editcamp); if(c) openCampaignModal(c); });
   grid.querySelectorAll("[data-opencamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.opencamp); if(c) openCampaignWorkspace(c.id); });
+  grid.querySelectorAll("[data-invcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.invcamp); if(c) openInvitePanel(c.id, c.name); });
 }
 // Mass Barter / Celebrity Stories pages: their campaigns on top, with a pre-set "New campaign" button
 function campaignSectionHtml(bucket){
@@ -1306,7 +1307,8 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
     <div style="margin-bottom:14px"><button class="btn ghost" id="wsBack">← Campaigns</button></div>
     <div class="page-head"><div><h1>${esc(c.name)} <span class="tag ${st}">${esc(c.status)||"Draft"}</span></h1>
       <p>${[c.brand,c.type,c.objective].filter(Boolean).map(esc).join(" · ")||"Campaign workspace"}</p></div>
-      <button class="btn" id="wsEdit">Edit campaign</button></div>
+      <button class="btn" id="wsInvite">🎯 Invite creators</button>
+      <button class="btn ghost" id="wsEdit">Edit campaign</button></div>
 
     <div class="ws-stats">
       <div class="ws-stat"><b>${applied.length}</b><span>New applicants</span></div>
@@ -1337,6 +1339,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
 
   document.getElementById("wsBack").onclick = ()=>{ currentPage="campaigns"; renderShell(); };
   document.getElementById("wsEdit").onclick = ()=> openCampaignModal(c);
+  document.getElementById("wsInvite").onclick = ()=> openInvitePanel(c.id, c.name);
   const reload = ()=> openCampaignWorkspace(c.id);
   content.querySelectorAll("[data-wsapprove]").forEach(b=>b.onclick=()=>updateStatus("applications", b.dataset.wsapprove, {status:"Approved"}, reload));
   content.querySelectorAll("[data-wsdecline]").forEach(b=>b.onclick=()=>declineLegacyApplication(b.dataset.wsdecline, reload));
@@ -1509,6 +1512,11 @@ function openCampaignModal(existing, preset){
       if(window.Tracker) Tracker.security(existing?"campaign_edit":"campaign_create", { campaign: row.name, type: t });
       m.classList.remove("open");
       if(existing && document.getElementById("wsBack") && _wsCampaign && _wsCampaign.id===existing.id) openCampaignWorkspace(existing.id); else { await loadCampaigns(); loadCampaignSection("barter"); loadCampaignSection("celebrity"); }
+      if(!existing){                      // brand new campaign → show who matches it, ready to invite
+        const { data:fresh } = await sb.from("campaigns").select("id,name").eq("name", row.name).order("created_at",{ascending:false}).limit(1);
+        const made = fresh && fresh[0];
+        if(made) setTimeout(()=> openInvitePanel(made.id, made.name), 350);
+      }
     }catch(ex){ paintFiles(); err.textContent = ex.message||"Couldn't save."; btn.disabled=false; btn.textContent=existing?'Save changes':'Launch Campaign'; }
   };
 }
@@ -1926,12 +1934,15 @@ async function loadDiscover(){
         <div><b><a href="https://instagram.com/${encodeURIComponent(c.username||"")}" target="_blank" rel="noopener">@${esc(c.username||"")}</a></b><div class="muted" style="font-size:12px">${esc(c.name||"")}${c.city?` · ${esc(c.city)}`:""}</div></div></div>
         <div class="dc-stats"><span><b>${fmtNum(c.followers)}</b>followers</span><span><b>${c.engagement!=null?c.engagement+"%":"—"}</b>engagement</span><span><b>${c.avg_reach?fmtNum(Math.round(c.avg_reach)):"—"}</b>avg reach</span></div>
         ${c.bio?`<div class="muted" style="font-size:12px">${esc(c.bio)}</div>`:""}
-        <div class="dc-tags">${(c.categories||[]).map(x=>`<span>${esc(x)}</span>`).join("")}${(c.top_hashtags||[]).slice(0,6).map(x=>`<span>#${esc(x)}</span>`).join("")}</div></div>`).join("")}</div>`
+        <div class="dc-tags">${(c.categories||[]).map(x=>`<span>${esc(x)}</span>`).join("")}${(c.top_hashtags||[]).slice(0,6).map(x=>`<span>#${esc(x)}</span>`).join("")}</div>
+        <div style="margin-top:10px"><button class="btn sm" data-dcinv="${esc(c.username||"")}" data-dcmid="${esc(c.member_id||"")}">🎯 Invite to a campaign</button></div></div>`).join("")}</div>`
       : `<div class="card"><div class="muted">No creators match. Try fewer filters or a broader keyword.</div></div>`;
   };
-  form.onsubmit = e=>{ e.preventDefault(); run(); };
-  document.getElementById("dcReset").onclick = ()=> setTimeout(run, 0);
-  run();
+  const wireInv = ()=> document.querySelectorAll("[data-dcinv]").forEach(b=> b.onclick = ()=> inviteFromDiscovery(b.dataset.dcinv, b.dataset.dcmid||null));
+  const run2 = async ()=>{ await run(); wireInv(); };
+  form.onsubmit = e=>{ e.preventDefault(); run2(); };
+  document.getElementById("dcReset").onclick = ()=> setTimeout(run2, 0);
+  run2();
 }
 
 /* ---------- Reports (agency / brand: own campaigns; Super Admin: all) ---------- */
@@ -2057,13 +2068,14 @@ async function adminCampaigns(body, silent){
         <td>${esc(campTypeLabel(c.campaign_type,c.barter_subtype)||"—")}</td>
         <td><select data-acstatus="${esc(c.id)}">${CAMP_STATUSES.map(s=>`<option${s===c.status?" selected":""}>${s}</option>`).join("")}</select></td>
         <td>${Number(c.applied)+pc.length}</td><td>${pendFor(c.id)?`<span class="tag warn">${pendFor(c.id)}</span>`:"0"}</td><td>${appr}</td><td>${decl}</td>
-        <td style="white-space:nowrap">${c.status==="Approval"?`<button class="mini-btn" data-acgo="${esc(c.id)}">Approve campaign</button> `:""}<button class="mini-btn ghost" data-acopen="${esc(c.id)}">${_acOpen===c.id?"Hide":"Applications"}</button></td></tr>
+        <td style="white-space:nowrap">${c.status==="Approval"?`<button class="mini-btn" data-acgo="${esc(c.id)}">Approve campaign</button> `:""}<button class="mini-btn" data-acinv="${esc(c.id)}" data-acname="${esc(c.name)}">🎯 Invite</button> <button class="mini-btn ghost" data-acopen="${esc(c.id)}">${_acOpen===c.id?"Hide":"Applications"}</button></td></tr>
         ${_acOpen===c.id?`<tr><td colspan="9"><div class="list">${pc.map(p=>applicantRowHtml(p)).join("")}
           ${legacy.filter(a=>a.campaign_id===c.id).map(a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span><div class="r-main"><div class="r-title">${esc(a.creator_name||"Creator")}</div><div class="r-sub">${esc(a.creator_org||"")}${a.decline_reason_code?` · ${esc(a.decline_reason_code)}`:""}${a.decline_note?` — ${esc(a.decline_note)}`:""}</div></div>
             ${a.status==="Applied"?`<span style="display:flex;gap:6px"><button class="mini-btn" data-acappr="${esc(a.id)}">Approve</button><button class="mini-btn ghost" data-acdecl="${esc(a.id)}">Decline</button></span>`:`<span class="tag ${a.status==="Approved"?"good":""}">${esc(a.status)}</span>`}</div>`).join("")}
           ${(!pc.length && !legacy.some(a=>a.campaign_id===c.id))?`<div class="muted" style="padding:8px">No applications yet.</div>`:""}</div></td></tr>`:""}`; }).join("")}
     </tbody></table></div>`:`<div class="muted" style="padding:8px">No campaigns${filter?" with this status":""}.</div>`}</div>`;
   const reload = ()=> adminCampaigns(body, true);
+  body.querySelectorAll("[data-acinv]").forEach(b2=> b2.onclick = ()=> openInvitePanel(b2.dataset.acinv, b2.dataset.acname));
   document.getElementById("acFilter").onchange = ()=> adminCampaigns(body);
   document.getElementById("acType").onchange = ()=> adminCampaigns(body);
   body.querySelectorAll("[data-acgo]").forEach(b=> b.onclick = async ()=>{
@@ -3045,6 +3057,179 @@ function wireMkComposer(){
   };
 }
 
+/* ================= INVITE CREATORS (agency · brand · super admin) =================
+ * Saved a campaign → everyone who matches its ideal profile is listed here with one-tap Invite.
+ * Platform creators get the invite in-app + on WhatsApp + by email, and accept or pass in My Campaigns.
+ * Anyone not on the platform yet is invited by Instagram handle — the invite waits for them and opens
+ * the campaign the moment they sign up and connect Instagram. */
+let _invCamp = null, _invTab = "matches", _invMatches = [], _invExternal = [], _invBusy = false;
+function openInvitePanel(campaignId, campaignName){
+  _invCamp = { id: campaignId, name: campaignName || "this campaign" }; _invTab = "matches";
+  document.getElementById("invPanel")?.remove();
+  const ov = el("div","ac360"); ov.id = "invPanel";
+  ov.innerHTML = `<div class="ac360-box"><div class="ac360-body" id="invBody">${skel("cards",6)}</div></div>`;
+  document.body.appendChild(ov); document.body.style.overflow = "hidden";
+  const close = ()=>{ ov.remove(); document.body.style.overflow=""; document.removeEventListener("keydown", k); };
+  const k = e=>{ if(e.key==="Escape" && !document.querySelector(".modal-overlay.open")) close(); };
+  document.addEventListener("keydown", k); ov.onclick = e=>{ if(e.target===ov) close(); };
+  window.__invClose = close;
+  loadInvitePanel();
+}
+async function loadInvitePanel(){
+  const body = document.getElementById("invBody"); if(!body || !_invCamp) return;
+  const [m, x] = await Promise.all([
+    sb.schema("api").rpc("campaign_matches", { p_campaign:_invCamp.id, p_limit:60 }).then(r=>r, e=>({error:e})),
+    sb.schema("api").rpc("list_external_invites", { p_campaign:_invCamp.id }).then(r=>r, ()=>({data:[]}))
+  ]);
+  if(m.error){ body.innerHTML = `<div class="card"><div class="muted">${esc(m.error.message||m.error)}</div><button class="mini-btn ghost" onclick="window.__invClose&&window.__invClose()">Close</button></div>`; return; }
+  _invMatches = m.data||[]; _invExternal = x.data||[];
+  paintInvitePanel();
+}
+function paintInvitePanel(){
+  const body = document.getElementById("invBody"); if(!body) return;
+  const L = _invMatches, invited = L.filter(c=>c.state==="invited").length, applied = L.filter(c=>["applied","approved"].includes(c.state)).length;
+  const tabs = [["matches",`✨ Matching creators (${L.length})`],["external",`📸 Invite by Instagram handle (${_invExternal.length})`]];
+  body.innerHTML = `<div class="ac360-head"><div style="flex:1;min-width:0"><h3>Invite creators</h3>
+      <div class="muted">${esc(_invCamp.name)} — matched on your ideal influencer profile. Invites go in-app, on WhatsApp and by email.</div></div>
+      <button class="ci-pop-x" id="invX" aria-label="Close">✕</button></div>
+    <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))">
+      <div class="ws-stat"><b>${L.length}</b><span>Match your brief</span></div>
+      <div class="ws-stat"><b>${invited}</b><span>Invited</span></div>
+      <div class="ws-stat"><b>${applied}</b><span>Applied / approved</span></div>
+      <div class="ws-stat"><b>${_invExternal.length}</b><span>Off-platform invites</span></div></div>
+    <div class="admin-tabs ac360-tabs" style="margin-top:12px">${tabs.map(t=>`<button class="${_invTab===t[0]?"act":""}" data-invtab="${t[0]}">${t[1]}</button>`).join("")}</div>
+    <div class="ac360-sec">${_invTab==="matches"?matchesHtml(L):externalHtml()}</div>`;
+  body.querySelector("#invX").onclick = ()=> window.__invClose && window.__invClose();
+  body.querySelectorAll("[data-invtab]").forEach(b=> b.onclick = ()=>{ _invTab = b.dataset.invtab; paintInvitePanel(); });
+  wireInvitePanel();
+}
+function matchesHtml(L){
+  if(!L.length) return `<div class="card"><div class="muted">No creator on the platform matches this brief yet. Widen the follower range or the ideal profile on the campaign, or invite people by their Instagram handle in the next tab.</div></div>`;
+  const badge = s => ({ invited:'<span class="tag warn">Invited</span>', applied:'<span class="tag warn">Applied</span>',
+    approved:'<span class="tag good">On the campaign</span>', declined:'<span class="tag">Declined</span>' })[s] || "";
+  return `<div class="inv-bar"><input id="invQ" placeholder="🔍 Filter by name, handle, city, category…"><label class="inv-only"><input type="checkbox" id="invOnlyNew" ${_invOnlyNew?"checked":""}> Not invited yet</label>
+      <button class="btn sm" id="invAll">Invite all shown</button></div>
+    <div class="acr-grid">${L.map(c=>`<div class="acr-card inv-card">
+      <div class="acr-top">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((c.name||c.username||"?").slice(0,2).toUpperCase())}</span>`}
+        <div style="min-width:0"><div class="acr-name">${esc(c.name||c.username||"Creator")}</div>
+          <div class="muted acr-handle">${c.username?`<a href="https://instagram.com/${encodeURIComponent(c.username)}" target="_blank" rel="noopener">@${esc(c.username)}</a>`:""}</div></div>
+        <span class="inv-score" title="How well they match your brief">${c.score}%</span></div>
+      <div class="acr-stats"><div><b>${fmtNum(c.followers||0)}</b><span>Followers</span></div><div><b>${c.engagement!=null?(Math.round(c.engagement*10)/10)+"%":"—"}</b><span>Engagement</span></div>
+        <div><b>${c.reel_rate?"₹"+fmtNum(c.reel_rate):"—"}</b><span>Per Reel</span></div></div>
+      <div class="acr-meta">${c.city?`📍 ${esc([...new Set([c.city,c.region].filter(Boolean))].join(", "))}`:'<span class="muted">📍 No city yet</span>'}</div>
+      <div class="acr-chips">${(c.why||[]).map(w=>`<span class="cp-tag">✓ ${esc(w)}</span>`).join("")}</div>
+      <div class="inv-act">${c.state==="none"
+        ? `<button class="btn sm" data-inv="${esc(c.member_id)}">🎯 Invite</button>`
+        : badge(c.state)}</div></div>`).join("")}</div>`;
+}
+let _invOnlyNew = false;
+function externalHtml(){
+  const st = { pending:['⏳ Not sent yet','warn'], manual:['✉️ Send the DM yourself','warn'], sent:['✅ DM sent','good'],
+               needs_permission:['Instagram DM needs Meta approval — send it yourself','warn'], failed:['⚠️ Couldn\'t send','warn'] };
+  return `<div class="card"><h4 style="margin-top:0">Invite someone who isn't on Geek OS yet</h4>
+      <p class="muted" style="font-size:13px;margin:0 0 10px">Add their Instagram username. We keep the invite ready — when they sign up and connect Instagram, this campaign opens for them automatically and they get the invite in the app, on WhatsApp and by email.</p>
+      <div class="cp-addrow"><input id="invHandle" placeholder="@username" maxlength="60"><input id="invNote" placeholder="Short note (optional)" maxlength="140"><button class="btn sm" id="invAddEx">+ Add invite</button></div>
+      <div class="cp-hint" id="invExMsg"></div></div>
+    ${_invExternal.length?`<div class="cp-list" style="margin-top:12px">${_invExternal.map(i=>{
+      const s = st[i.dm_status]||[i.dm_status,'warn'];
+      return `<div class="cp-item inv-ex"><div style="min-width:0"><b><a href="https://instagram.com/${encodeURIComponent(i.handle)}" target="_blank" rel="noopener">@${esc(i.handle)}</a></b>
+          ${i.claimed_at?'<span class="tag good">Joined — invite sent ✓</span>':`<span class="tag ${s[1]}">${esc(s[0])}</span>`}
+          ${i.note?`<div class="muted" style="font-size:12px">“${esc(i.note)}”</div>`:""}
+          ${i.dm_error?`<div class="muted" style="font-size:11.5px">${esc(i.dm_error)}</div>`:""}</div>
+        <div class="cp-item-acts">${i.claimed_at?"":`<a class="btn sm" href="https://ig.me/m/${encodeURIComponent(i.handle)}" target="_blank" rel="noopener">Open DM</a>
+          <button class="btn sm ghost" data-invcopy="${esc(i.handle)}">Copy message</button>
+          <button class="btn sm ghost" data-invdel="${esc(i.invite_id)}">Remove</button>`}</div></div>`; }).join("")}</div>`:""}`;
+}
+function inviteMessageFor(handle){
+  const u = (location && location.origin ? location.origin : "https://bountythreads.app") + "/app.html";
+  return `Hi @${handle} 👋 We'd love to have you on "${_invCamp.name}" with us on Geek OS (Bounty & Threads).\n\n`
+    + `Sign up free here and the campaign will be waiting in your account: ${u}\n\n`
+    + `You'll see the full brief, what you get, and you can accept or pass — no obligation.`;
+}
+function wireInvitePanel(){
+  const body = document.getElementById("invBody"); if(!body) return;
+  body.querySelectorAll("[data-inv]").forEach(b=> b.onclick = async ()=>{
+    if(_invBusy) return; _invBusy = true; b.disabled = true; b.textContent = "Inviting…";
+    const { error } = await sb.schema("api").rpc("invite_creator", { p_campaign:_invCamp.id, p_member:b.dataset.inv, p_note:null });
+    _invBusy = false;
+    if(error){ alert(error.message); b.disabled=false; b.textContent="🎯 Invite"; return; }
+    if(window.Tracker) Tracker.security("creator_invited", { campaign:_invCamp.name });
+    const row = _invMatches.find(x=>x.member_id===b.dataset.inv); if(row) row.state = "invited";
+    paintInvitePanel();
+  });
+  const q = body.querySelector("#invQ");
+  if(q){ let t; q.oninput = ()=>{ clearTimeout(t); t = setTimeout(()=>{
+      const v = q.value.trim().toLowerCase();
+      body.querySelectorAll(".inv-card").forEach(card=>{
+        const hay = card.textContent.toLowerCase(), isNew = !!card.querySelector("[data-inv]");
+        card.style.display = (!v || hay.includes(v)) && (!_invOnlyNew || isNew) ? "" : "none"; });
+    }, 200); }; }
+  const only = body.querySelector("#invOnlyNew");
+  if(only) only.onchange = ()=>{ _invOnlyNew = only.checked; body.querySelectorAll(".inv-card").forEach(card=>{
+      card.style.display = (!_invOnlyNew || card.querySelector("[data-inv]")) ? "" : "none"; }); };
+  const all = body.querySelector("#invAll");
+  if(all) all.onclick = async ()=>{
+    const btns = [...body.querySelectorAll(".inv-card")].filter(c=>c.style.display!=="none").map(c=>c.querySelector("[data-inv]")).filter(Boolean);
+    if(!btns.length){ alert("Everyone shown has already been invited."); return; }
+    if(!confirm(`Invite ${btns.length} creator${btns.length>1?"s":""} to ${_invCamp.name}? They each get it in the app, on WhatsApp and by email.`)) return;
+    all.disabled = true;
+    for(let i=0;i<btns.length;i++){ all.textContent = `Inviting ${i+1}/${btns.length}…`;
+      const { error } = await sb.schema("api").rpc("invite_creator", { p_campaign:_invCamp.id, p_member:btns[i].dataset.inv, p_note:null });
+      if(error){ alert(error.message); break; } }
+    loadInvitePanel();
+  };
+  const addEx = body.querySelector("#invAddEx");
+  if(addEx) addEx.onclick = async ()=>{
+    const h = body.querySelector("#invHandle"), note = body.querySelector("#invNote"), msg = body.querySelector("#invExMsg");
+    const handle = String(h.value||"").trim().replace(/^@/,"");
+    if(!/^[A-Za-z0-9._]{1,60}$/.test(handle)){ msg.textContent = "Enter a valid Instagram username."; return; }
+    addEx.disabled = true;
+    const { data, error } = await sb.schema("api").rpc("invite_external", { p_campaign:_invCamp.id, p_handle:handle, p_note:(note.value||"").trim()||null });
+    addEx.disabled = false;
+    if(error){ msg.textContent = error.message; return; }
+    h.value = ""; note.value = "";
+    msg.textContent = data && data.on_platform ? "They're already on Geek OS — invite sent in the app, on WhatsApp and by email ✓"
+                                               : "Invite saved. Send them the DM below — it opens the campaign for them the moment they sign up.";
+    loadInvitePanel();
+  };
+  body.querySelectorAll("[data-invcopy]").forEach(b=> b.onclick = async ()=>{
+    const text = inviteMessageFor(b.dataset.invcopy);
+    try{ await navigator.clipboard.writeText(text); b.textContent = "Copied ✓"; setTimeout(()=>b.textContent="Copy message", 1600); }
+    catch(e){ prompt("Copy this message:", text); } });
+  body.querySelectorAll("[data-invdel]").forEach(b=> b.onclick = async ()=>{
+    const { error } = await sb.schema("api").rpc("delete_external_invite", { p_invite:b.dataset.invdel });
+    if(error) alert(error.message); loadInvitePanel(); });
+}
+// pick a campaign, then invite (used from Discovery)
+async function inviteFromDiscovery(username, memberId){
+  const { data, error } = await sb.from("campaigns").select("id,name,status").order("created_at",{ascending:false}).limit(50);
+  if(error){ alert(error.message); return; }
+  const live = (data||[]).filter(c=>["Sourcing","Live","In Production","Approval"].includes(c.status));
+  if(!live.length){ alert("Create a campaign first — then you can invite creators to it."); return; }
+  let m = document.getElementById("invPick"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id="invPick";
+  m.innerHTML = `<div class="modal"><div class="modal-head"><strong>Invite @${esc(username)}</strong><button class="icon-btn" id="ipX">✕</button></div>
+    <form class="modal-form" id="ipForm"><label>Campaign<select name="cid">${live.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select></label>
+    <label>Note (optional)<input name="note" maxlength="140" placeholder="Why you'd love them on this"></label>
+    <div class="auth-err" id="ipErr"></div><button class="btn" type="submit">Send invite</button></form></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  document.getElementById("ipX").onclick = ()=> m.remove();
+  m.onclick = e=>{ if(e.target.id==="invPick") m.remove(); };
+  document.getElementById("ipForm").onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(e.target), err = document.getElementById("ipErr"), btn = e.target.querySelector("button");
+    btn.disabled = true; btn.textContent = "Sending…"; err.textContent = "";
+    const args = { p_campaign:f.get("cid"), p_note:(f.get("note")||"").trim()||null };
+    const { data, error } = memberId
+      ? await sb.schema("api").rpc("invite_creator", { ...args, p_member:memberId })
+      : await sb.schema("api").rpc("invite_external", { ...args, p_handle:username });
+    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Send invite"; return; }
+    m.remove();
+    alert(memberId || (data && data.on_platform) ? "Invite sent — they'll see it in the app, on WhatsApp and by email."
+      : "Invite saved. Open the campaign's Invite panel to send them the Instagram DM.");
+  };
+}
+
 /* ================= ADMIN (platform team — approve agency signups) ================= */
 /* ================= SUPER ADMIN CONSOLE ================= */
 const ADMIN_TABS = [["overview","🏠 Overview"],["creators","🎨 Creators"],["users","👥 All users"],["approvals","✅ Account approvals"],["campaigns","📣 All campaigns"],["applications","📝 Applications"],["delivery","📨 WhatsApp & email"],["activity","📈 Activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["admins","Super admins"]];
@@ -3703,8 +3888,21 @@ async function adminApprovals(body){
   wrap.innerHTML = list.map(x=>`<div class="row"><div class="r-main"><div class="r-title">${esc(x.name)||esc(x.email)} · <span class="tag">${esc(roleName(x.role))}</span>${x.org_name?" · "+esc(x.org_name):""}</div>
     <div class="r-sub">${x.official_email?`📧 ${esc(x.official_email)} ${x.email_verified_at?'<span class="tag good">verified</span>':'<span class="tag warn">not verified</span>'}`:esc(x.email)}${x.whatsapp_e164?` · 💬 ${esc(x.whatsapp_e164)}`:""}${x.created_at?` · ${new Date(x.created_at).toLocaleDateString("en-IN")}`:""}</div></div>
     <span><button class="mini-btn" data-approve="${esc(x.id)}">Approve</button> <button class="mini-btn ghost" data-decline="${esc(x.id)}">Decline</button></span></div>`).join("");
-  wrap.querySelectorAll("[data-approve]").forEach(b=>b.onclick=async()=>{ await sb.rpc("set_member_status",{p_id:b.dataset.approve,p_status:"active"}); adminApprovals(body); });
-  wrap.querySelectorAll("[data-decline]").forEach(b=>b.onclick=async()=>{ await sb.rpc("set_member_status",{p_id:b.dataset.decline,p_status:"declined"}); adminApprovals(body); });
+  const setStatus = async (id, status, reason)=>{
+    let { error } = await sb.rpc("set_member_status_v2", { p_id:id, p_status:status, p_reason:reason||null });
+    if(error && /function|does not exist/i.test(error.message||"")) ({ error } = await sb.rpc("set_member_status", { p_id:id, p_status:status }));
+    if(error){ alert(error.message); return false; }
+    return true;
+  };
+  wrap.querySelectorAll("[data-approve]").forEach(b=>b.onclick=async()=>{
+    b.disabled = true; b.textContent = "…";
+    if(await setStatus(b.dataset.approve, "active")) adminApprovals(body); else { b.disabled=false; b.textContent="Approve"; }
+  });
+  wrap.querySelectorAll("[data-decline]").forEach(b=>b.onclick=async()=>{
+    const reason = (prompt("Why are you declining this signup?\nThey are told this reason in the app, on WhatsApp and by email.")||"").trim();
+    if(!reason) return;
+    if(await setStatus(b.dataset.decline, "declined", reason)) adminApprovals(body);
+  });
 }
 
 async function adminAdmins(body){
