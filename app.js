@@ -2457,10 +2457,39 @@ async function loadFinance(){
 /* ================= LOGISTICS (barter shipping) ================= */
 function renderLogistics(){
   let html = pageHead("Logistics","Barter shipping — from request to delivery.");
-  html += `<div class="card"><h3>Shipments</h3><div class="list" id="logRows"><div class="muted" style="padding:8px">Loading…</div></div></div>`;
+  html += `<div class="ws-stats" id="logStats" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))"></div>`;
+  html += `<div class="card"><h3>Courier tracking</h3>
+      <p class="muted" style="font-size:13px;margin:0 0 10px">Every product going out on a barter campaign — courier, tracking number, sent and received.</p>
+      <div id="logShip">${skel("table")}</div></div>`;
+  html += `<div class="card"><h3>Barter batches</h3><div class="list" id="logRows"><div class="muted" style="padding:8px">Loading…</div></div></div>`;
   return html;
 }
+async function loadShipments(){
+  const box = document.getElementById("logShip"), stats = document.getElementById("logStats");
+  if(!box || !window.sb) return;
+  const { data, error } = await sb.schema("api").rpc("shipments_board").then(r=>r, e=>({error:e}));
+  if(error){ box.innerHTML = `<div class="muted">${esc(error.message||error)}</div>`; return; }
+  const L = data||[];
+  const n = s => L.filter(x=>x.status===s).length;
+  if(stats) stats.innerHTML = `<div class="ws-stat"><b>${L.length}</b><span>Shipments</span></div>
+      <div class="ws-stat"><b>${n("pending")}</b><span>To send</span></div>
+      <div class="ws-stat"><b>${n("shipped")}</b><span>In transit</span></div>
+      <div class="ws-stat"><b>${n("delivered")}</b><span>Received</span></div>
+      <div class="ws-stat"><b>${L.filter(x=>!x.has_address).length}</b><span>No address yet</span></div>`;
+  const tag = { pending:['⏳ To send','warn'], shipped:['🚚 In transit','brand'], delivered:['✅ Received','good'], failed:['⚠️ Failed','warn'] };
+  box.innerHTML = L.length ? `<table class="tbl"><thead><tr><th>Creator</th><th>Campaign</th><th>Product</th><th>Courier / tracking</th><th>Sent</th><th>Received</th><th>Status</th></tr></thead><tbody>${
+    L.map(s=>{ const c = s.creator||{}, t = tag[s.status]||[s.status,'warn'];
+      return `<tr><td><b>${esc(c.name||c.username||"Creator")}</b>${c.username?`<div class="muted" style="font-size:12px">@${esc(c.username)}</div>`:""}${s.has_address?"":'<div class="muted" style="font-size:11.5px">⚠️ no address on file</div>'}</td>
+        <td>${esc(s.campaign||"—")}<div class="muted" style="font-size:12px">${esc(s.brand||s.org_name||"")}</div></td>
+        <td>${esc(s.product||"—")}</td>
+        <td>${esc(s.courier||"—")}${s.tracking_ref?`<div class="muted" style="font-size:12px">${esc(s.tracking_ref)}</div>`:""}</td>
+        <td>${s.shipped_at?esc(fmtDate(s.shipped_at)):"—"}</td>
+        <td>${s.delivered_at?esc(fmtDate(s.delivered_at)):"—"}</td>
+        <td><span class="tag ${t[1]}">${t[0]}</span></td></tr>`; }).join("")}</tbody></table>`
+    : `<div class="muted">No products shipped yet. Open a barter campaign → <b>Barter process</b> to send the first one — courier and tracking land here.</div>`;
+}
 async function loadLogistics(){
+  loadShipments();
   const wrap=document.getElementById("logRows");
   if(!wrap||!window.sb) return;
   const { data, error } = await sb.from("barter_items").select("*").order("created_at",{ascending:false});
@@ -3600,7 +3629,7 @@ async function openBpReassign(part){
  * Platform creators get the invite in-app + on WhatsApp + by email, and accept or pass in My Campaigns.
  * Anyone not on the platform yet is invited by Instagram handle — the invite waits for them and opens
  * the campaign the moment they sign up and connect Instagram. */
-let _invCamp = null, _invTab = "matches", _invMatches = [], _invExternal = [], _invBusy = false;
+let _invCamp = null, _invTab = "matches", _invMatches = [], _invExternal = [], _invDiscovered = [], _invBusy = false;
 function openInvitePanel(campaignId, campaignName){
   _invCamp = { id: campaignId, name: campaignName || "this campaign" }; _invTab = "matches";
   document.getElementById("invPanel")?.remove();
@@ -3615,18 +3644,20 @@ function openInvitePanel(campaignId, campaignName){
 }
 async function loadInvitePanel(){
   const body = document.getElementById("invBody"); if(!body || !_invCamp) return;
-  const [m, x] = await Promise.all([
+  const [m, x, d] = await Promise.all([
     sb.schema("api").rpc("campaign_matches", { p_campaign:_invCamp.id, p_limit:60 }).then(r=>r, e=>({error:e})),
-    sb.schema("api").rpc("list_external_invites", { p_campaign:_invCamp.id }).then(r=>r, ()=>({data:[]}))
+    sb.schema("api").rpc("list_external_invites", { p_campaign:_invCamp.id }).then(r=>r, ()=>({data:[]})),
+    // people who are NOT on Geek OS yet but match this brief, discovered from Instagram
+    sb.schema("api").rpc("discover_external", { p_filters:{}, p_campaign:_invCamp.id, p_limit:24 }).then(r=>r, ()=>({data:[]}))
   ]);
   if(m.error){ body.innerHTML = `<div class="card"><div class="muted">${esc(m.error.message||m.error)}</div><button class="mini-btn ghost" onclick="window.__invClose&&window.__invClose()">Close</button></div>`; return; }
-  _invMatches = m.data||[]; _invExternal = x.data||[];
+  _invMatches = m.data||[]; _invExternal = x.data||[]; _invDiscovered = (d.data||[]).filter(c=>!c.invited);
   paintInvitePanel();
 }
 function paintInvitePanel(){
   const body = document.getElementById("invBody"); if(!body) return;
   const L = _invMatches, invited = L.filter(c=>c.state==="invited").length, applied = L.filter(c=>["applied","approved"].includes(c.state)).length;
-  const tabs = [["matches",`✨ Matching creators (${L.length})`],["external",`📸 Invite by Instagram handle (${_invExternal.length})`]];
+  const tabs = [["matches",`✨ Matching creators (${L.length})`],["external",`📸 New on Instagram (${_invDiscovered.length})`]];
   body.innerHTML = `<div class="ac360-head"><div style="flex:1;min-width:0"><h3>Invite creators</h3>
       <div class="muted">${esc(_invCamp.name)} — matched on your ideal influencer profile. Invites go in-app, on WhatsApp and by email.</div></div>
       <button class="ci-pop-x" id="invX" aria-label="Close">✕</button></div>
@@ -3634,6 +3665,7 @@ function paintInvitePanel(){
       <div class="ws-stat"><b>${L.length}</b><span>Match your brief</span></div>
       <div class="ws-stat"><b>${invited}</b><span>Invited</span></div>
       <div class="ws-stat"><b>${applied}</b><span>Applied / approved</span></div>
+      <div class="ws-stat"><b>${_invDiscovered.length}</b><span>New on Instagram</span></div>
       <div class="ws-stat"><b>${_invExternal.length}</b><span>Off-platform invites</span></div></div>
     <div class="admin-tabs ac360-tabs" style="margin-top:12px">${tabs.map(t=>`<button class="${_invTab===t[0]?"act":""}" data-invtab="${t[0]}">${t[1]}</button>`).join("")}</div>
     <div class="ac360-sec">${_invTab==="matches"?matchesHtml(L):externalHtml()}</div>`;
@@ -3664,7 +3696,7 @@ let _invOnlyNew = false;
 function externalHtml(){
   const st = { pending:['⏳ Not sent yet','warn'], manual:['✉️ Send the DM yourself','warn'], sent:['✅ DM sent','good'],
                needs_permission:['Instagram DM needs Meta approval — send it yourself','warn'], failed:['⚠️ Couldn\'t send','warn'] };
-  return `<div class="card"><h4 style="margin-top:0">Invite someone who isn't on Geek OS yet</h4>
+  return discoveredHtml() + `<div class="card"><h4 style="margin-top:0">Invite someone who isn't on Geek OS yet</h4>
       <p class="muted" style="font-size:13px;margin:0 0 10px">Add their Instagram username. We keep the invite ready — when they sign up and connect Instagram, this campaign opens for them automatically and they get the invite in the app, on WhatsApp and by email.</p>
       <div class="cp-addrow"><input id="invHandle" placeholder="@username" maxlength="60"><input id="invNote" placeholder="Short note (optional)" maxlength="140"><button class="btn sm" id="invAddEx">+ Add invite</button></div>
       <div class="cp-hint" id="invExMsg"></div></div>
@@ -3677,6 +3709,27 @@ function externalHtml(){
         <div class="cp-item-acts">${i.claimed_at?"":`<a class="btn sm" href="https://ig.me/m/${encodeURIComponent(i.handle)}" target="_blank" rel="noopener">Open DM</a>
           <button class="btn sm ghost" data-invcopy="${esc(i.handle)}">Copy message</button>
           <button class="btn sm ghost" data-invdel="${esc(i.invite_id)}">Remove</button>`}</div></div>`; }).join("")}</div>`:""}`;
+}
+/* Auto-discovered from Instagram, scored against THIS campaign's ideal profile — one tap to invite by DM */
+function discoveredHtml(){
+  const L = _invDiscovered;
+  if(!L.length) return `<div class="card"><h4 style="margin-top:0">📸 New on Instagram</h4>
+    <p class="muted" style="font-size:13px;margin:0">Nobody new matches this brief yet. Open <b>Discovery → 📸 New on Instagram</b> and tap
+    <b>↻ Fetch latest from Instagram</b> — we read the accounts that tagged your Instagram and the @handles inside your creators' posts, then match them to this campaign.</p></div>`;
+  return `<div class="card"><h4 style="margin-top:0">📸 Matching creators who aren't on Geek OS yet</h4>
+      <p class="muted" style="font-size:13px;margin:0 0 10px">Found on Instagram and matched to this brief — their posts, category, location and follower size. Invite and they get an Instagram DM; when they sign up, this campaign is waiting for them.</p>
+      <div class="dc-grid">${L.map(c=>`<div class="card dc-card dx-card">
+        <div class="dc-top">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((c.handle||"?").slice(0,2).toUpperCase())}</span>`}
+          <div style="min-width:0"><b><a href="https://instagram.com/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">@${esc(c.handle)}</a></b>
+            <div class="muted" style="font-size:12px">${esc(c.name||"")}${c.city?` · ${esc(c.city)}`:""}</div></div>
+          <span class="inv-score" title="How well they match this brief">${c.score}</span></div>
+        <div class="dc-stats"><span><b>${c.followers!=null?fmtNum(c.followers):"—"}</b>followers</span><span><b>${c.media_count!=null?fmtNum(c.media_count):"—"}</b>posts</span><span><b>${c.mention_count}</b>mentions</span></div>
+        ${c.bio?`<div class="muted" style="font-size:12px">${esc(c.bio)}</div>`:""}
+        <div class="dc-tags">${(c.why||[]).map(w=>`<span>✓ ${esc(w)}</span>`).join("")}${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(x)}</span>`).join("")}</div>
+        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn sm" data-invdx="${esc(c.handle)}">🎯 Invite to ${esc(_invCamp.name).slice(0,22)}</button>
+          <a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">💬 DM</a>
+          ${c.permalink?`<a class="btn sm ghost" href="${esc(safeUrl(c.permalink))}" target="_blank" rel="noopener">Post</a>`:""}</div></div>`).join("")}</div></div>`;
 }
 function inviteMessageFor(handle){
   const u = (location && location.origin ? location.origin : "https://bountythreads.app") + "/app.html";
@@ -3730,6 +3783,15 @@ function wireInvitePanel(){
                                                : "Invite saved. Send them the DM below — it opens the campaign for them the moment they sign up.";
     loadInvitePanel();
   };
+  // one tap from a discovered Instagram creator straight into this campaign
+  body.querySelectorAll("[data-invdx]").forEach(b=> b.onclick = async ()=>{
+    if(_invBusy) return; _invBusy = true; b.disabled = true; b.textContent = "Inviting…";
+    const { error } = await sb.schema("api").rpc("invite_external", { p_campaign:_invCamp.id, p_handle:b.dataset.invdx, p_note:null });
+    _invBusy = false;
+    if(error){ alert(error.message); b.disabled = false; b.textContent = "🎯 Invite"; return; }
+    if(window.Tracker) Tracker.security("creator_invited_external", { campaign:_invCamp.name });
+    loadInvitePanel();
+  });
   body.querySelectorAll("[data-invcopy]").forEach(b=> b.onclick = async ()=>{
     const text = inviteMessageFor(b.dataset.invcopy);
     try{ await navigator.clipboard.writeText(text); b.textContent = "Copied ✓"; setTimeout(()=>b.textContent="Copy message", 1600); }
