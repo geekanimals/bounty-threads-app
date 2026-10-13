@@ -472,14 +472,47 @@
     var ap=ov.querySelector("[data-apply]"); if(ap) ap.onclick=function(){ close(); applyToCampaign(ap); };
     document.getElementById("ciPopX").focus();
   }
+  // which profiles the creator can apply with: the connected Instagram + pages / profiles they manage
+  async function myApplyProfiles(){
+    var out=[];
+    try{
+      var me=(window.Auth&&Auth.profile&&Auth.profile.id)||null;
+      if(me){ var sa=await window.sb.from("social_accounts").select("username,followers_count").eq("platform","instagram").eq("member_id",me).limit(1);
+        var row=sa&&sa.data&&sa.data[0]; if(row&&row.username) out.push({handle:String(row.username).toLowerCase(),followers:row.followers_count,label:"Connected Instagram"}); }
+    }catch(e){}
+    try{ var m=await apiCreator("get_my_managed_profiles"); ((m&&m.data)||[]).forEach(function(x){ if(!out.some(function(o){return o.handle===x.handle;})) out.push({handle:x.handle,followers:x.followers,label:x.category||"Managed profile"}); }); }catch(e){}
+    return out;
+  }
+  function pickApplyProfile(name){
+    return new Promise(async function(resolve){
+      var profs=await myApplyProfiles();
+      var ov=document.createElement("div"); ov.className="ci-pop"; ov.id="ciApplyPick";
+      ov.innerHTML='<div class="ci-pop-box ci-pick" role="dialog" aria-modal="true" aria-label="Apply with">'
+        +'<div class="ci-pop-head"><div style="min-width:0"><h3>Apply to '+esc(name)+'</h3><div class="muted">Choose the profile you want to apply with. The brand sees this profile.</div></div><button class="ci-pop-x" data-x aria-label="Close">✕</button></div>'
+        +'<div class="ci-pop-body">'+(profs.length?profs.map(function(p,i){
+            return '<label class="ci-pick-row"><input type="radio" name="ciPickP" value="'+esc(p.handle)+'"'+(i===0?' checked':'')+'><span><b>@'+esc(p.handle)+'</b><span class="muted">'+esc(p.label)+(p.followers!=null?' · '+Number(p.followers).toLocaleString("en-IN")+' followers':'')+'</span></span></label>'; }).join("")
+          :'<div class="muted">Your connected Instagram will be used.</div>')
+        +'<div class="cp-hint" style="margin-top:8px">Manage more pages in <b>Creator Profile → Other pages you manage</b>.</div></div>'
+        +'<div class="ci-pop-foot"><button class="btn ghost" data-x>Cancel</button><button class="btn" data-go>Apply</button></div></div>';
+      document.body.appendChild(ov);
+      var done=function(v){ ov.remove(); document.removeEventListener("keydown",k); resolve(v); };
+      var k=function(e){ if(e.key==="Escape") done(undefined); };
+      document.addEventListener("keydown",k);
+      ov.addEventListener("click",function(e){ if(e.target===ov) done(undefined); });
+      ov.querySelectorAll("[data-x]").forEach(function(b){ b.onclick=function(){ done(undefined); }; });
+      ov.querySelector("[data-go]").onclick=function(){ var r=ov.querySelector('input[name="ciPickP"]:checked'); done(r?r.value:null); };
+    });
+  }
   async function applyToCampaign(btn){
     var id=btn.getAttribute("data-apply"), name=btn.getAttribute("data-name")||"this campaign";
-    if(!confirm("Apply to "+name+"? The brand / agency reviews your profile — you'll hear back on WhatsApp and in Alerts.")) return;
+    var prof=await pickApplyProfile(name); if(prof===undefined) return;
     btn.disabled=true; btn.textContent="Applying…";
     try{
-      var r=await apiCreator("apply_to_campaign",{p_campaign:id});
+      var r=await apiCreator("apply_to_campaign_v2",{p_campaign:id,p_profile:prof});
+      if(r.error && /apply_to_campaign_v2|could not find the function/i.test(r.error.message||"")) r=await apiCreator("apply_to_campaign",{p_campaign:id});
       if(r.error) throw r.error;
-      if(window.Tracker) Tracker.security("campaign_apply", { campaign_id: id, campaign: name });
+      if(window.Tracker) Tracker.security("campaign_apply", { campaign_id: id, campaign: name, profile: prof });
+      btn.textContent="Applied"+(prof?" as @"+prof:"");
       loadMyCampaigns(); if(typeof updateAlertsBadge==="function") updateAlertsBadge();
     }catch(e){
       alert((e&&e.message)||e); btn.disabled=false; btn.textContent="Apply";

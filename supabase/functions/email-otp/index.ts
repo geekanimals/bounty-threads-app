@@ -1,4 +1,4 @@
-// Edge Function: email-otp  (verify_jwt = true — the signed-in agency/brand verifying their official email)
+// Edge Function: email-otp  (verify_jwt = true — agency/brand official email, or a creator's backup email)
 // Step 2 of agency/brand onboarding (step 1 is WhatsApp OTP). Sends a 6-digit code over SMTP and verifies it.
 // Supabase Edge blocks outbound ports 25/587, so SMTP must be implicit TLS on port 465.
 // Secrets: SMTP_HOST, SMTP_PORT (465), SMTP_USER, SMTP_PASS, SMTP_FROM ("Geek OS <no-reply@yourdomain.com>"),
@@ -38,12 +38,14 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: "Not authenticated" }, 401);
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
     const { data: member } = await admin.from("members").select("id, role, name, org_name").eq("id", user.id).maybeSingle();
-    if (!member || member.role === "creator") return json({ error: "Email verification is for agency and brand accounts." }, 403);
+    if (!member) return json({ error: "Account not found." }, 403);
+    const isCreator = member.role === "creator";
 
     const body = await req.json().catch(() => ({}));
     if (body?.action === "start") {
       const email = String(body?.email || "").trim().toLowerCase();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 254) return json({ error: "Enter a valid email address." }, 400);
+      if (/@creators\.bountythreads\.app$/i.test(email)) return json({ error: "Use your own email address." }, 400);
       if (!SMTP.host || !SMTP.user || !SMTP.pass) {
         console.error("email-otp: SMTP_* secrets not configured");
         return json({ error: "Email sending isn't configured yet. Please contact Geek support." }, 503);
@@ -60,7 +62,7 @@ Deno.serve(async (req) => {
         text: `Your verification code is ${code}. It expires in 10 minutes.\n\nIf you didn't request this, ignore this email.`,
         html: `<div style="font-family:Arial,sans-serif;font-size:15px;color:#111">
           <p>Hi ${esc(member.name || "there")},</p>
-          <p>Use this code to verify <b>${esc(email)}</b> for <b>${esc(member.org_name || "your organisation")}</b> on Geek Influencer OS:</p>
+          <p>Use this code to verify <b>${esc(email)}</b> ${isCreator ? "as your backup email" : `for <b>${esc(member.org_name || "your organisation")}</b>`} on Geek Influencer OS:</p>
           <p style="font-size:30px;font-weight:700;letter-spacing:6px;margin:18px 0">${code}</p>
           <p style="color:#555">It expires in 10 minutes. If you didn't request this, you can ignore this email.</p></div>`,
       });
@@ -79,6 +81,12 @@ Deno.serve(async (req) => {
       if (row?.status !== "ok") return json({ error: "Incorrect code." }, 401);
 
       const email = String(row.email);
+      if (isCreator) {
+        // creators sign in with WhatsApp: the verified address is their backup / recovery email on the profile
+        const { error: cErr } = await admin.rpc("creator_set_verified_backup_email", { p_member: user.id, p_email: email });
+        if (cErr) throw cErr;
+        return json({ ok: true, email, backup_email: true });
+      }
       await admin.from("members").update({ official_email: email, email: email, email_verified_at: new Date().toISOString() }).eq("id", user.id);
       // make it the account's sign-in email too, unless another login already owns that address
       const { error: uErr } = await admin.auth.admin.updateUserById(user.id, { email, email_confirm: true });

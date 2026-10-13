@@ -1735,6 +1735,7 @@ function applicantRowHtml(p, showCampaign){
   const bits = [cr.followers!=null?fmtNum(cr.followers)+" followers":"", cr.engagement!=null?cr.engagement+"% eng.":"", cr.city||"", (cr.categories||[]).slice(0,2).join(", ")].filter(Boolean).join(" · ");
   return `<div class="row">${pic}
     <div class="r-main"><div class="r-title">${cr.username?`<a href="https://instagram.com/${encodeURIComponent(cr.username)}" target="_blank" rel="noopener">@${esc(cr.username)}</a>`:esc(cr.name||"Creator")}
+      ${p.applied_profile && String(p.applied_profile).toLowerCase()!==String(cr.username||"").toLowerCase()?` <span class="tag" title="Applied with this profile">via <a href="https://instagram.com/${encodeURIComponent(p.applied_profile)}" target="_blank" rel="noopener">@${esc(p.applied_profile)}</a></span>`:""}
       ${showCampaign?`<span class="muted" style="font-weight:400"> → ${esc(p.campaign_name||"")}${p.org_name?` · ${esc(p.org_name)}`:""}</span>`:""} ${typeTag(p.campaign_type)}</div>
       <div class="r-sub">${esc(bits)||"Instagram not connected"}${p.reason && !APPLICANT_PENDING.includes(p.stage)?` · <i>${esc(p.reason)}</i>`:""}</div></div>
     ${APPLICANT_PENDING.includes(p.stage)
@@ -3047,9 +3048,11 @@ async function adminCreatorProfile(member, row){
       ${r("Birthday", per.date_of_birth?`${esc(fmtDate(per.date_of_birth))}${age!=null?` · ${age} yrs`:""}`:"")}
       ${r("Marital status", esc(L[per.marital_status]||per.marital_status||""))}
       ${per.marital_status==="married"?r("Anniversary", esc(fmtDate(per.marriage_anniversary))):""}
-      ${r("Pet", per.has_pet==null?"—":per.has_pet?`Yes — ${esc(per.pet_name||"")} (${esc(per.pet_type||"")})`:"No")}
-      ${r("WhatsApp", esc(con.whatsapp_e164||(row&&row.whatsapp)||""))}
-      ${r("Backup email", synthetic?"":esc(con.email||""))}
+      ${r("Pets", per.has_pet===false?"No":(d.pets||[]).length?(d.pets||[]).map(x=>`${esc(x.name)} (${esc(x.pet_type)})`).join(", "):per.has_pet?`${esc(per.pet_name||"")} (${esc(per.pet_type||"")})`:"—")}
+      ${r("WhatsApp", esc(con.whatsapp_e164||(row&&row.whatsapp)||"")+(con.whatsapp_verified_at?' <span class="tag good">verified</span>':""))}
+      ${r("Backup email", synthetic?"":esc(con.email||"")+(con.email&&!synthetic&&con.email_verified_at?' <span class="tag good">verified</span>':""))}
+      ${r("Travelling to", d.travel&&d.travel.city?esc([d.travel.city,d.travel.state,d.travel.country].filter(Boolean).join(", "))+(d.travel.until_date?` · till ${esc(fmtDate(d.travel.until_date))}`:""):"")}
+      ${r("Other profiles", (d.managed_profiles||[]).map(m=>`@${esc(m.handle)}${m.followers!=null?` · ${fmtNum(m.followers)}`:""}${m.category?` · ${esc(m.category)}`:""}`).join("<br>"))}
     </div></div>
     <div class="cd-block" style="margin-top:10px"><div class="cd-l">Addresses</div><div class="cd-body">${(d.addresses||[]).map(a=>`${a.is_default?"⭐ ":""}${esc([a.label,a.line1,a.line2,a.landmark,a.city,a.state,a.postal_code,a.country].filter(Boolean).join(", "))}`).join("<br>")||"—"}</div></div>
     <div class="muted" style="font-size:11px;margin-top:10px">Private data — this view is recorded in the audit log.</div></div>`;
