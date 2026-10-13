@@ -3,6 +3,29 @@ let currentRole = "owner";
 let currentPage = "dashboard";
 
 const $ = s => document.querySelector(s);
+// Skeleton placeholders shown while live data loads (shimmer, theme-aware; see styles.css .sk*)
+function skel(kind, n){
+  const L = w=>`<div class="sk sk-line ${w||""}"></div>`, T = `<div class="sk sk-title"></div>`;
+  const tiles = k=>`<div class="sk-tiles">${Array.from({length:k}).map(()=>`<div class="sk sk-tile"></div>`).join("")}</div>`;
+  const card = ()=>`<div class="sk-card">${T}${L("w80")}${L("w60")}${L("w40")}<div class="sk" style="height:34px;width:120px;margin-top:12px;border-radius:10px"></div></div>`;
+  const rows = k=>`<div class="card">${T}${Array.from({length:k}).map(()=>`<div class="sk-row"><div class="sk sk-dot"></div><div style="flex:1">${L("w60")}${L("w40")}</div></div>`).join("")}</div>`;
+  if(kind==="kit") return `<div class="card" style="padding:0;overflow:hidden"><div class="sk sk-cover"></div><div class="sk sk-avatar"></div><div style="padding:12px 24px 22px">${T}${L("w40")}${L("w80")}</div></div>${tiles(5)}<div class="card">${T}<div class="sk-grid">${Array.from({length:n||6}).map(()=>`<div class="sk sk-sq"></div>`).join("")}</div></div>`;
+  if(kind==="dash") return `<div class="sk" style="height:64px;border-radius:16px;margin-bottom:14px"></div>${tiles(5)}${tiles(6)}<div class="grid two">${rows(3)}${rows(3)}</div>`;
+  if(kind==="cards") return `<div class="sk-cards">${Array.from({length:n||6}).map(card).join("")}</div>`;
+  if(kind==="list") return rows(n||4);
+  if(kind==="stats") return tiles(n||4);
+  if(kind==="table") return `${tiles(4)}<div class="card">${T}${Array.from({length:n||6}).map(()=>`<div class="sk" style="height:16px;margin:12px 0"></div>`).join("")}</div>`;
+  if(kind==="profile") return `<div class="card">${T}${L("w80")}<div class="sk" style="height:8px;margin-top:12px"></div></div><div class="card" style="margin-top:14px">${T}<div class="cp-grid">${Array.from({length:6}).map(()=>`<div><div class="sk sk-line w40"></div><div class="sk sk-field"></div></div>`).join("")}</div></div>`;
+  return `<div class="card">${T}${L("w80")}${L("w60")}</div>`;
+}
+window.skel = skel;
+// mobile: tap outside the open sidebar closes it
+document.addEventListener("click", e=>{
+  const sb = document.getElementById("sidebar");
+  if(!sb || !sb.classList.contains("open") || window.innerWidth > 760) return;
+  if(sb.contains(e.target) || (e.target.closest && e.target.closest("#menuBtn"))) return;
+  sb.classList.remove("open");
+});
 const el = (tag, cls, html) => { const e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e; };
 
 // Escape any value that comes from the database or a user before it goes into innerHTML.
@@ -327,7 +350,7 @@ function renderDreamSummary(plan){
 let _cdTimer = null, _cdSig = "";
 function renderCreatorDashboard(){
   const first = String((window.Auth && Auth.profile && Auth.profile.name) || window.__igUsername || "creator").split(" ")[0];
-  return pageHead("Dashboard", `Hi ${esc(first)} 👋 — your live creator cockpit.`) + `<div id="cdBody"><div class="card"><div class="muted">Loading your live data…</div></div></div>`;
+  return pageHead("Dashboard", `Hi ${esc(first)} 👋 — your live creator cockpit.`) + `<div id="cdBody">${skel("dash")}</div>`;
 }
 async function loadCreatorDashboard(silent){
   const box = document.getElementById("cdBody"); if(!box || !window.sb) return;
@@ -1064,7 +1087,7 @@ function openCreatorModal(existing){
 
 function renderCampaigns(){
   let html = pageHead("Campaigns","Every campaign type, one connected pipeline.",`<span id="addCampaignBtn">+ New Campaign</span>`);
-  html += `<div class="ci-chips" id="campTypeChips"></div><div class="grid three" id="campaignGrid"><div class="card"><div class="muted">Loading campaigns…</div></div></div>`;
+  html += `<div class="ci-chips" id="campTypeChips"></div><div class="grid three" id="campaignGrid">${skel("cards",3)}</div>`;
   return html;
 }
 
@@ -1114,7 +1137,7 @@ function campaignSectionHtml(bucket){
   return `<div class="card" style="margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <div><h3 style="margin:0">${T[0]}</h3><div class="muted" style="font-size:13px">${T[2]}</div></div>
       <button class="btn" data-newcamp="${bucket}">${T[1]}</button></div>
-    <div class="grid three" id="campSection_${bucket}" style="margin-top:12px"><div class="muted">Loading…</div></div></div>`;
+    <div class="grid three" id="campSection_${bucket}" style="margin-top:12px">${skel("cards",3)}</div></div>`;
 }
 async function loadCampaignSection(bucket){
   const grid = document.getElementById("campSection_"+bucket); if(!grid || !window.sb) return;
@@ -1420,7 +1443,7 @@ function openCampaignModal(existing, preset){
 
 /* ---------- Creator reports: campaign history + Instagram performance, all live, downloadable ---------- */
 function renderCreatorReports(){
-  return pageHead("Reports","Your campaigns and Instagram performance — live, downloadable.") + `<div id="crBody"><div class="card"><div class="muted">Loading…</div></div></div>`;
+  return pageHead("Reports","Your campaigns and Instagram performance — live, downloadable.") + `<div id="crBody">${skel("table")}</div>`;
 }
 async function loadCreatorReports(){
   const box = document.getElementById("crBody"); if(!box || !window.sb) return;
@@ -1877,7 +1900,7 @@ async function loadOrgReports(){
 /* ---------- Super Admin → Applications: every creator application across every workspace ---------- */
 let _apStatus = "pending", _apType = "", _apTimer = null, _apSig = "";
 async function adminApplications(body, silent){
-  if(!silent) body.innerHTML = `<div class="card"><div class="muted">Loading applications…</div></div>`;
+  if(!silent) body.innerHTML = skel("list",5);
   const [pr, ar] = await Promise.all([
     sb.schema("api").rpc("org_applicants", { p_campaign:null, p_stage:null }).then(r=>r, e=>({error:e})),
     sb.rpc("admin_applications", { p_campaign:null, p_status:null }).then(r=>r, ()=>({data:[]}))
@@ -1921,7 +1944,7 @@ async function adminApplications(body, silent){
 let _acTimer = null, _acOpen = null, _acSig = "";
 const CAMP_STATUSES = ["Draft","Approval","Sourcing","In Production","Live","Completed"];
 async function adminCampaigns(body, silent){
-  if(!silent) body.innerHTML = `<div class="card"><div class="muted">Loading campaigns…</div></div>`;
+  if(!silent) body.innerHTML = skel("table",6);
   const filter = (document.getElementById("acFilter")||{}).value || "";
   const tfilter = (document.getElementById("acType")||{}).value || "";
   const [cr, pr, ar] = await Promise.all([
@@ -2250,7 +2273,7 @@ function renderRoster(){
 function renderMediaKit(){
   let html = pageHead("Media Kit","Your reach, audience and best work — auto-built from Instagram and shareable with brands.");
   html += mkGateBanner();
-  html += `<div id="mkBody"><div class="card"><div class="muted">Loading…</div></div></div>`;
+  html += `<div id="mkBody">${skel("kit")}</div>`;
   return html;
 }
 // While the mandatory profile is incomplete, the Media Kit shows a clear "finish your profile" bar on top
@@ -2637,7 +2660,7 @@ async function refreshMediaKit(force){
 let _igTimer = null, _igSyncedAt = 0, _igMediaSig = "", _igTab = "post";
 function renderInstagram(){
   return pageHead("Instagram","Post, reply to comments and answer DMs — without leaving Geek OS.")
-    + `<div id="igBody"><div class="card"><div class="muted">Loading…</div></div></div>`;
+    + `<div id="igBody">${skel("cards",3)}</div>`;
 }
 const IG_TABS = [["post","📤 Post"],["stories","🟣 Stories"],["comments","💬 Comments"],["inbox","✉️ Messages"]];
 function paintIgTabs(){
@@ -2951,7 +2974,7 @@ let _adminDataTable = "creators";
 // Super Admin → All users: who joined, when they signed in, consent, live profile status + full creator profile
 let _auFilter = "all", _auTimer = null, _auSig = "";
 async function adminUsers(body, silent){
-  if(!silent) body.innerHTML = `<div class="card"><div class="muted">Loading users…</div></div>`;
+  if(!silent) body.innerHTML = skel("table",8);
   const { data, error } = await sb.rpc("admin_users");
   if(error){ if(!silent) body.innerHTML = adminErr(error); return; }
   const sig = JSON.stringify(data); if(silent && sig===_auSig) return; _auSig = sig;
@@ -3069,7 +3092,7 @@ async function adminActivityTimeline(member, row){
 function renderAdmin(){
   let html = pageHead("Super Admin","Full cross-workspace control — every record, every change, with timestamps.");
   html += `<div class="admin-tabs">${ADMIN_TABS.map(t=>`<button class="${_adminTab===t[0]?'act':''}" data-atab="${t[0]}">${esc(t[1])}</button>`).join("")}</div>`;
-  html += `<div id="adminBody"><div class="muted" style="padding:16px">Loading…</div></div>`;
+  html += `<div id="adminBody">${skel("table")}</div>`;
   return html;
 }
 
@@ -3145,7 +3168,7 @@ async function runSystemCheck(){
 
 let _ovTimer = null, _ovSig = "";
 async function adminOverview(body, silent){
-  if(!silent) body.innerHTML = `<div class="muted" style="padding:16px">Loading…</div>`;
+  if(!silent) body.innerHTML = skel("dash");
   const { data, error } = await sb.rpc("admin_dashboard");
   if(error){                                    // older database: fall back to the basic counters
     const o = (await sb.rpc("admin_overview")).data || {};
@@ -4148,7 +4171,7 @@ async function bootOS(){
   // Load the feature flags + profile checklist first, so the sidebar is complete on the very first paint
   // (no half sidebar that only fixes itself after a refresh).
   const content = document.getElementById("content");
-  if(content && !window.__osBooted) content.innerHTML = `<div class="card" style="margin:24px"><div class="muted">Loading your workspace…</div></div>`;
+  if(content && !window.__osBooted) content.innerHTML = skel(currentRole==="creator" ? "kit" : "dash");
   const within = (p, ms)=> Promise.race([Promise.resolve(p).catch(()=>{}), new Promise(r=>setTimeout(r, ms))]);
   await Promise.all([
     window.ciProfile && within(window.ciProfile.boot(), 5000),

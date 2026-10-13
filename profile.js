@@ -40,7 +40,7 @@
     }
     return ''
       + '<div id="cpRoot" class="cp">'
-      + '  <div id="cpHead" class="card cp-head"><div class="muted">Loading your profile…</div></div>'
+      + '  <div id="cpHead" class="cp-head">'+(window.skel?skel("profile"):'<div class="card"><div class="muted">Loading your profile…</div></div>')+'</div>'
       + '  <div id="cpBody"></div>'
       + '  <div id="cpErr" class="cp-err" style="display:none"></div>'
       + '</div>';
@@ -289,7 +289,7 @@
       {noSave:true});
 
     // "Get campaign-ready" lives inside the profile (was its own tab)
-    if(window.__ciOpsEnabled) body += section("campready","Get campaign-ready",'<div id="opsOnbBody"><div class="muted">Loading…</div></div>',{noSave:true});
+    if(window.__ciOpsEnabled) body += section("campready","Get campaign-ready",'<div id="opsOnbBody">'+(window.skel?skel("list",2):'')+'</div>',{noSave:true});
     bodyEl.innerHTML = body;
     if(window.__ciOpsEnabled && window.ciOps && window.ciOps.loadOnboarding) window.ciOps.loadOnboarding();
     wire(); wireReq();

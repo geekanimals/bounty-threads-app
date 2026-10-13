@@ -90,7 +90,7 @@
   window.renderAlerts=function(){
     if(!enabled) return '<div class="card"><h3>Alerts</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
     return '<div id="opsAlerts" class="ci"><div class="card ci-intro"><h3>Alerts</h3><div class="muted">Everything that needs you — the same updates we send on WhatsApp and email, with a link straight to the action.</div></div>'
-      + '<div id="opsAlertsBody"><div class="card"><div class="muted">Loading…</div></div></div></div>';
+      + '<div id="opsAlertsBody">'+(window.skel?skel("list",4):'<div class="card"><div class="muted">Loading…</div></div>')+'</div></div>';
   };
   async function loadAlerts(target){
     var body=target||document.getElementById("opsAlertsBody"); if(!body) return;
@@ -377,14 +377,14 @@
     if(!enabled) return '<div class="card"><h3>Campaigns</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
     return '<div id="opsMine" class="ci"><div class="card ci-intro"><h3>Campaigns</h3><div class="muted">Paid, barter and celebrity-story campaigns open for you. Apply in one tap — track everything in My Campaigns.</div></div>'
       + '<div class="ci-chips" id="campChips">'+chipsHtml()+'</div>'
-      + '<div id="opsOpenBody"><div class="card"><div class="muted">Loading…</div></div></div><div id="opsOpenPager" class="ci-pager"></div></div>';
+      + '<div id="opsOpenBody">'+(window.skel?skel("cards",6):'<div class="card"><div class="muted">Loading…</div></div>')+'</div><div id="opsOpenPager" class="ci-pager"></div></div>';
   };
   // My Campaigns: running, applied and history — with every next step (contract, address, content, posting) — then growth
   window.renderMyCampaigns=function(){
     if(!enabled) return '<div class="card"><h3>My Campaigns</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
     return '<div id="opsMine" class="ci"><div class="card ci-intro"><h3>My Campaigns</h3><div class="muted">Everything you applied to — what\'s running now, what\'s waiting, and your full campaign history.</div></div>'
-      + '<div id="opsMineStats"></div><div id="opsMineBody"><div class="card"><div class="muted">Loading…</div></div></div>'
-      + '<div class="ci-sub" style="margin-top:18px">🚀 Your growth</div><div id="growthBody"><div class="card"><div class="muted">Loading…</div></div></div></div>';
+      + '<div id="opsMineStats">'+(window.skel?skel("stats",4):'<div class="card"><div class="muted">Loading…</div></div>')+'</div><div id="opsMineBody">'+(window.skel?skel("list",3):'<div class="card"><div class="muted">Loading…</div></div>')+'</div>'
+      + '<div class="ci-sub" style="margin-top:18px">🚀 Your growth</div><div id="growthBody">'+(window.skel?skel("list",2):'<div class="card"><div class="muted">Loading…</div></div>')+'</div></div>';
   };
   async function loadMyCampaigns(){
     loadOpenCampaigns();
@@ -409,26 +409,63 @@
     if(pg){ pg.innerHTML = pages>1 ? '<button class="btn sm ghost" data-pg="prev"'+(CAMP_PAGE<=1?' disabled':'')+'>‹ Prev</button><span class="muted">Page '+CAMP_PAGE+' of '+pages+' · '+full.length+' campaigns</span><button class="btn sm ghost" data-pg="next"'+(CAMP_PAGE>=pages?' disabled':'')+'>Next ›</button>' : '';
       pg.querySelectorAll("[data-pg]").forEach(function(b){ b.onclick=function(){ CAMP_PAGE+= b.getAttribute("data-pg")==="next"?1:-1; renderOpen(_openCache); var t=document.getElementById("opsMine"); if(t) t.scrollIntoView({behavior:"smooth"}); }; }); }
     if(!list.length){ el.innerHTML='<div class="card"><div class="muted">'+(_openCache.length?'Nothing here right now — try another filter.':'No campaigns are open right now. New ones will show up here.')+'</div></div>'; return; }
-    el.innerHTML=list.map(function(c){
-      var tags=[].concat(c.hashtags||[],(c.mentions||[]).map(function(m){ return String(m).charAt(0)==='@'?m:'@'+m; }));
-      var where=(c.cities||[]).join(", "), langs=(c.languages||[]).join(", ");
+    // compact cards — tap a card for every detail in a pop-up (Apply works from both)
+    el.innerHTML='<div class="ci-cgrid">'+list.map(function(c){
       var act=c.my_stage ? spill(c.my_stage)
         : '<button class="btn sm" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Apply</button>';
-      return '<div class="card ci-match"><div class="ci-mh"><h4>'+esc(c.name||"Campaign")+' <span class="ci-id">'+esc(c.brand||"")+'</span></h4>'+act+'</div>'
-        + '<div class="ci-meta"><span>'+typeBadge(c)+'</span>'+(c.product?'<span>Product: <b>'+esc(c.product)+'</b></span>':'')
-        + (c.category?'<span>Category: <b>'+esc(c.category)+'</b></span>':'')
-        + ((c.starts_on||c.ends_on)?'<span>Dates: <b>'+fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on)+'</b></span>':'')+'</div>'
-        + (where||langs?'<div class="ci-hint">'+(where?'Cities: '+esc(where):'')+(where&&langs?' · ':'')+(langs?'Languages: '+esc(langs):'')+'</div>':'')
-        + (c.campaign_type?'<div class="ci-hint">Type: <b>'+esc(campTypeLabel(c.campaign_type,c.barter_subtype))+'</b>'+(c.creators_needed?' · '+esc(c.creators_needed)+' creators':'')+'</div>':'')
-        + (c.product_link||c.product_value?'<div class="ci-hint">Barter product: '+(c.product_link?'<a href="'+esc(safeLink(c.product_link))+'" target="_blank" rel="noopener">view product ↗</a>':'')+(c.product_value?' · worth ₹'+esc(Number(c.product_value).toLocaleString("en-IN")):'')+'</div>':'')
-        + (c.platforms?'<div class="ci-hint">Platforms: '+esc(c.platforms)+'</div>':'')
-        + (c.deliverables_text?'<div class="ci-hint">Deliverables: '+esc(c.deliverables_text)+'</div>':'')
-        + (c.brief?'<details class="ci-hint"><summary>Brief</summary><div style="white-space:pre-wrap">'+esc(c.brief)+'</div></details>':'')
-        + (tags.length?'<div class="ci-hint">Must include in caption: '+esc(tags.join(" "))+'</div>':'')
-        + ((c.attachments||[]).length?'<div class="ci-hint">Files: '+(c.attachments||[]).map(function(a){ return '<a href="'+esc(safeLink(a.url))+'" target="_blank" rel="noopener">📎 '+esc(a.name||"file")+'</a>'; }).join(" · ")+'</div>':'')
-        + '</div>';
-    }).join("");
-    el.querySelectorAll("[data-apply]").forEach(function(b){ b.onclick=function(){ applyToCampaign(b); }; });
+      var meta=[];
+      if(c.product_value) meta.push('🎁 Worth <b>₹'+esc(Number(c.product_value).toLocaleString("en-IN"))+'</b>');
+      if(c.creators_needed) meta.push('👥 <b>'+esc(c.creators_needed)+'</b> creators');
+      if(c.ends_on) meta.push('🗓 Till <b>'+fmtDate(c.ends_on)+'</b>');
+      if((c.cities||[]).length) meta.push('📍 '+esc((c.cities||[]).slice(0,2).join(", ")));
+      if(c.platforms) meta.push('📱 '+esc(String(c.platforms).split(",")[0]));
+      return '<div class="ci-ccard" tabindex="0" role="button" data-cdetail="'+esc(c.campaign_id)+'">'
+        + '<div class="ci-ccard-top"><div style="min-width:0"><h4>'+esc(c.name||"Campaign")+'</h4><div class="ci-brand">'+esc(c.brand||"")+'</div></div></div>'
+        + '<div>'+typeBadge(c)+'</div>'
+        + (meta.length?'<div class="ci-ccard-meta">'+meta.map(function(m){ return '<span>'+m+'</span>'; }).join("")+'</div>':'')
+        + '<div class="ci-ccard-foot"><span class="ci-more">View details →</span>'+act+'</div></div>';
+    }).join("")+'</div>';
+    el.querySelectorAll("[data-apply]").forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); applyToCampaign(b); }; });
+    el.querySelectorAll("[data-cdetail]").forEach(function(card){
+      var open=function(){ var c=_openCache.filter(function(x){ return String(x.campaign_id)===card.getAttribute("data-cdetail"); })[0]; if(c) openCampaignPopup(c); };
+      card.onclick=open; card.onkeydown=function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); open(); } };
+    });
+  }
+  function openCampaignPopup(c){
+    var old=document.getElementById("ciPop"); if(old) old.remove();
+    var tags=[].concat(c.hashtags||[],(c.mentions||[]).map(function(m){ return String(m).charAt(0)==='@'?m:'@'+m; }));
+    var row=function(k,v){ return v?'<div class="ci-pop-row"><span>'+k+'</span><span>'+v+'</span></div>':''; };
+    var html='<div class="ci-pop-box" role="dialog" aria-modal="true" aria-label="'+esc(c.name||"Campaign")+'">'
+      + '<div class="ci-pop-head"><div style="min-width:0"><h3>'+esc(c.name||"Campaign")+'</h3><div class="muted">'+esc(c.brand||"")+'</div><div style="margin-top:8px">'+typeBadge(c)+'</div></div>'
+      + '<button class="ci-pop-x" id="ciPopX" aria-label="Close">✕</button></div>'
+      + '<div class="ci-pop-body">'
+      + '<div class="ci-pop-sec">Overview</div>'
+      + row("Type", c.campaign_type?esc(campTypeLabel(c.campaign_type,c.barter_subtype)):'')
+      + row("Product", c.product?esc(c.product):'')
+      + row("Product value", c.product_value?'₹'+esc(Number(c.product_value).toLocaleString("en-IN")):'')
+      + row("Product link", c.product_link?'<a href="'+esc(safeLink(c.product_link))+'" target="_blank" rel="noopener">View product ↗</a>':'')
+      + row("Creators needed", c.creators_needed?esc(c.creators_needed):'')
+      + row("Category", c.category?esc(c.category):'')
+      + row("Dates", (c.starts_on||c.ends_on)?fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on):'')
+      + row("Cities", (c.cities||[]).length?esc((c.cities||[]).join(", ")):'')
+      + row("Languages", (c.languages||[]).length?esc((c.languages||[]).join(", ")):'')
+      + row("Platforms", c.platforms?esc(c.platforms):'')
+      + (c.deliverables_text?'<div class="ci-pop-sec">Deliverables</div><div style="white-space:pre-wrap">'+esc(c.deliverables_text)+'</div>':'')
+      + (c.brief?'<div class="ci-pop-sec">Brief</div><div style="white-space:pre-wrap;line-height:1.55">'+esc(c.brief)+'</div>':'')
+      + (tags.length?'<div class="ci-pop-sec">Must include in caption</div><div>'+esc(tags.join(" "))+'</div>':'')
+      + ((c.attachments||[]).length?'<div class="ci-pop-sec">Files</div><div>'+(c.attachments||[]).map(function(a){ return '<a href="'+esc(safeLink(a.url))+'" target="_blank" rel="noopener">📎 '+esc(a.name||"file")+'</a>'; }).join("<br>")+'</div>':'')
+      + '</div>'
+      + '<div class="ci-pop-foot"><button class="btn ghost" id="ciPopClose">Close</button>'
+      + (c.my_stage?spill(c.my_stage):'<button class="btn" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Apply now</button>')+'</div></div>';
+    var ov=document.createElement("div"); ov.className="ci-pop"; ov.id="ciPop"; ov.innerHTML=html;
+    document.body.appendChild(ov); document.body.style.overflow="hidden";
+    var close=function(){ ov.remove(); document.body.style.overflow=""; document.removeEventListener("keydown",esck); };
+    var esck=function(e){ if(e.key==="Escape") close(); };
+    document.addEventListener("keydown",esck);
+    ov.addEventListener("click",function(e){ if(e.target===ov) close(); });
+    document.getElementById("ciPopX").onclick=close; document.getElementById("ciPopClose").onclick=close;
+    var ap=ov.querySelector("[data-apply]"); if(ap) ap.onclick=function(){ close(); applyToCampaign(ap); };
+    document.getElementById("ciPopX").focus();
   }
   async function applyToCampaign(btn){
     var id=btn.getAttribute("data-apply"), name=btn.getAttribute("data-name")||"this campaign";
@@ -585,7 +622,7 @@
   window.renderOnboarding=function(){
     if(!enabled) return '<div class="card"><h3>Get campaign-ready</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
     return '<div id="opsOnb" class="ci"><div class="card ci-intro"><h3>Get campaign-ready</h3><div class="muted">Complete these to be eligible for barter campaigns. Nothing here is a score — it just tracks what\'s done.</div></div>'
-      + '<div id="opsOnbBody"><div class="card"><div class="muted">Loading…</div></div></div></div>';
+      + '<div id="opsOnbBody">'+(window.skel?skel("list",2):'<div class="card"><div class="muted">Loading…</div></div>')+'</div></div>';
   };
   async function loadOnboarding(){
     try{
