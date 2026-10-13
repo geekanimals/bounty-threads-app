@@ -3988,7 +3988,8 @@ async function openNotif(){
   $("#notifOverlay").classList.add("open");
   const body = $("#notifBody");
   if(window.__ciOpsEnabled && window.ciOps && window.ciOps.loadAlerts){
-    const head = document.querySelector("#notifDrawer .drawer-head .muted"); if(head) head.textContent = "Also sent to your WhatsApp & email";
+    const head = document.querySelector("#notifDrawer .drawer-head .muted"); if(head) head.textContent = currentRole==="creator" ? "Live · also sent to your WhatsApp & email" : "Live · updates every few seconds";
+    const t0 = document.querySelector("#notifDrawer .drawer-head strong"); if(t0) t0.textContent = "Alerts";
     body.innerHTML = `<div class="muted" style="padding:12px">Loading…</div>`;
     await window.ciOps.loadAlerts(body);
     return;
@@ -4186,8 +4187,39 @@ async function bootOS(){
 }
 
 /* ---------- Wire up ---------- */
+/* ---------- Live alerts: every role polls its bell every 20s; new ones pop as a toast (tap → open) ---------- */
+let _alertSeen = null, _alertTimer = null;
+async function pollAlerts(){
+  if(!window.__ciOpsEnabled || !window.sb || document.visibilityState === "hidden") return;
+  try{
+    const { data, error } = await sb.schema("api").rpc("get_my_notifications", { p_only_unread: true });
+    if(error) return;
+    const list = data || [];
+    window.__alertsUnread = list.length;
+    const bell = document.getElementById("notifCount");
+    if(bell){ bell.textContent = list.length > 9 ? "9+" : list.length; bell.style.display = list.length ? "" : "none"; }
+    if(_alertSeen){
+      const fresh = list.filter(n => !_alertSeen.has(n.notification_id)).slice(0, 3);
+      fresh.reverse().forEach(showAlertToast);
+      const drawerOpen = document.getElementById("notifOverlay") && document.getElementById("notifOverlay").classList.contains("open");
+      if(fresh.length && drawerOpen && window.ciOps) window.ciOps.loadAlerts(document.getElementById("notifBody"));
+    }
+    _alertSeen = new Set(list.map(n => n.notification_id));
+  }catch(e){}
+}
+function showAlertToast(n){
+  let wrap = document.getElementById("alertToasts");
+  if(!wrap){ wrap = el("div",""); wrap.id = "alertToasts"; document.body.appendChild(wrap); }
+  const t = el("div","alert-toast", `<div class="at-ic">${n.kind==="action_required"?"⚡":"🔔"}</div><div class="at-b"><b>${esc(n.title)}</b><span>${esc(n.body||"")}</span></div><button class="at-x" aria-label="Dismiss">✕</button>`);
+  wrap.appendChild(t);
+  const kill = ()=>{ t.classList.add("out"); setTimeout(()=>t.remove(), 250); };
+  t.onclick = e=>{ if(e.target.closest(".at-x")){ kill(); return; } kill(); openNotif(); };
+  setTimeout(kill, 8000);
+}
+
 function init(){
   window.__osBooted = true;
+  if(!_alertTimer){ _alertTimer = setInterval(pollAlerts, 20000); setTimeout(pollAlerts, 1500); document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") pollAlerts(); }); }
   initRoles();
   // deep link from a WhatsApp / email push: app.html?go=<page> opens that page (then the param is dropped)
   const go = new URLSearchParams(location.search).get("go");

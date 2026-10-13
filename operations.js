@@ -68,7 +68,9 @@
   // route a notification's CTA to the right page (and open the campaign when relevant)
   function routeNotification(n){
     var route=n.action_route; if(!route) return;
-    route = ({onboarding:"profile", alerts:"dashboard", growth:"mycampaigns", barter:"opencampaigns", marketplace:"opencampaigns"})[route] || route;
+    if(route.indexOf("admin:")===0){ if(typeof _adminTab!=="undefined") _adminTab=route.slice(6); route="admin"; }
+    if(typeof currentRole!=="undefined" && currentRole==="creator") route = ({onboarding:"profile", alerts:"dashboard", growth:"mycampaigns", barter:"opencampaigns", marketplace:"opencampaigns", campaignops:"mycampaigns", approvals:"mycampaigns"})[route] || route;
+    else route = ({alerts:"dashboard", mycampaigns:"campaigns", opencampaigns:"campaigns"})[route] || route;
     var dr=document.getElementById("notifOverlay"); if(dr) dr.classList.remove("open");
     if(typeof currentPage!=="undefined"){ currentPage=route; }
     if(typeof renderShell==="function") renderShell();
@@ -100,7 +102,9 @@
   function renderAlertsList(list, target){
     var body=target||document.getElementById("opsAlertsBody");
     if(!list.length){ body.innerHTML='<div class="card"><div class="muted">No alerts yet. When something needs you, it\'ll show here.</div></div>'; return; }
-    body.innerHTML='<div class="card"><div class="ops-alist">'+list.map(function(n){
+    var unread=list.filter(function(n){ return !n.read; }).length;
+    body.innerHTML=(unread?'<div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 8px"><span class="muted">'+unread+' unread</span><button class="mini-btn ghost" id="opsMarkAll">Mark all read</button></div>':'')
+      + '<div class="card"><div class="ops-alist">'+list.map(function(n){
       var cls="ops-alert"+(n.read?"":" unread")+(n.kind==="action_required"?" act":"");
       return '<div class="'+cls+'" data-nid="'+esc(n.notification_id)+'">'
         + '<div class="ops-alert-h"><b>'+esc(n.title)+'</b><span class="ci-hint">'+fmtDT(n.created_at)+'</span></div>'
@@ -108,6 +112,7 @@
         + (n.action_route?'<div class="ci-evrow"><button class="btn sm" data-act="'+esc(n.notification_id)+'">'+esc(n.action_label||"Open")+'</button></div>':'')
         + '</div>';
     }).join("")+'</div></div>';
+    var ma=body.querySelector("#opsMarkAll"); if(ma) ma.onclick=function(){ api("mark_all_notifications_read").then(function(){ updateAlertsBadge(); loadAlerts(body); }); };
     // open CTA → mark acted + route
     body.querySelectorAll("[data-act]").forEach(function(btn){ btn.onclick=function(e){ e.stopPropagation();
       var n=findNotif(list, btn.getAttribute("data-act")); if(!n) return;
