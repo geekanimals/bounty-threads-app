@@ -1209,7 +1209,7 @@ function campaignCardsHtml(list){
       ${(c.start_date||c.end_date)?`<div class="muted" style="font-size:13px">🗓 ${esc(c.start_date)||"—"} → ${esc(c.end_date)||"—"}</div>`:""}
       <div class="bar" style="margin-top:8px"><span style="width:${prog}%"></span></div>
       <div class="camp-foot"><span class="muted">${prog}% · ${creators} creators</span>
-      <span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini-btn" data-opencamp="${esc(c.id)}">Open</button><button class="mini-btn" data-invcamp="${esc(c.id)}">🎯 Invite</button><button class="mini-btn ghost" data-editcamp="${esc(c.id)}">Edit</button></span></div></div>`;
+      <span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini-btn" data-opencamp="${esc(c.id)}">Open</button><button class="mini-btn" data-bpcamp="${esc(c.id)}">🔁 Process</button><button class="mini-btn" data-invcamp="${esc(c.id)}">🎯 Invite</button><button class="mini-btn ghost" data-editcamp="${esc(c.id)}">Edit</button></span></div></div>`;
   }).join("");
 }
 
@@ -1235,6 +1235,7 @@ function wireCampaignGrid(grid, all){
   grid.querySelectorAll("[data-editcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.editcamp); if(c) openCampaignModal(c); });
   grid.querySelectorAll("[data-opencamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.opencamp); if(c) openCampaignWorkspace(c.id); });
   grid.querySelectorAll("[data-invcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.invcamp); if(c) openInvitePanel(c.id, c.name); });
+  grid.querySelectorAll("[data-bpcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.bpcamp); if(c) openBarterProcess(c.id, c.name); });
 }
 // Mass Barter / Celebrity Stories pages: their campaigns on top, with a pre-set "New campaign" button
 function campaignSectionHtml(bucket){
@@ -1340,7 +1341,8 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
     <div style="margin-bottom:14px"><button class="btn ghost" id="wsBack">← Campaigns</button></div>
     <div class="page-head"><div><h1>${esc(c.name)} <span class="tag ${st}">${esc(c.status)||"Draft"}</span></h1>
       <p>${[c.brand,c.type,c.objective].filter(Boolean).map(esc).join(" · ")||"Campaign workspace"}</p></div>
-      <button class="btn" id="wsInvite">🎯 Invite creators</button>
+      <button class="btn" id="wsProcess">🔁 Barter process</button>
+      <button class="btn ghost" id="wsInvite">🎯 Invite creators</button>
       <button class="btn ghost" id="wsEdit">Edit campaign</button></div>
 
     <div class="ws-stats">
@@ -1373,6 +1375,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
   document.getElementById("wsBack").onclick = ()=>{ currentPage="campaigns"; renderShell(); };
   document.getElementById("wsEdit").onclick = ()=> openCampaignModal(c);
   document.getElementById("wsInvite").onclick = ()=> openInvitePanel(c.id, c.name);
+  document.getElementById("wsProcess").onclick = ()=> openBarterProcess(c.id, c.name);
   const reload = ()=> openCampaignWorkspace(c.id);
   content.querySelectorAll("[data-wsapprove]").forEach(b=>b.onclick=()=>updateStatus("applications", b.dataset.wsapprove, {status:"Approved"}, reload));
   content.querySelectorAll("[data-wsdecline]").forEach(b=>b.onclick=()=>declineLegacyApplication(b.dataset.wsdecline, reload));
@@ -2271,7 +2274,7 @@ async function adminCampaigns(body, silent){
         <td>${esc(campTypeLabel(c.campaign_type,c.barter_subtype)||"—")}</td>
         <td><select data-acstatus="${esc(c.id)}">${CAMP_STATUSES.map(s=>`<option${s===c.status?" selected":""}>${s}</option>`).join("")}</select></td>
         <td>${Number(c.applied)+pc.length}</td><td>${pendFor(c.id)?`<span class="tag warn">${pendFor(c.id)}</span>`:"0"}</td><td>${appr}</td><td>${decl}</td>
-        <td style="white-space:nowrap">${c.status==="Approval"?`<button class="mini-btn" data-acgo="${esc(c.id)}">Approve campaign</button> `:""}<button class="mini-btn" data-acinv="${esc(c.id)}" data-acname="${esc(c.name)}">🎯 Invite</button> <button class="mini-btn ghost" data-acopen="${esc(c.id)}">${_acOpen===c.id?"Hide":"Applications"}</button></td></tr>
+        <td style="white-space:nowrap">${c.status==="Approval"?`<button class="mini-btn" data-acgo="${esc(c.id)}">Approve campaign</button> `:""}<button class="mini-btn" data-acbp="${esc(c.id)}" data-acbpname="${esc(c.name)}">🔁 Process</button> <button class="mini-btn" data-acinv="${esc(c.id)}" data-acname="${esc(c.name)}">🎯 Invite</button> <button class="mini-btn ghost" data-acopen="${esc(c.id)}">${_acOpen===c.id?"Hide":"Applications"}</button></td></tr>
         ${_acOpen===c.id?`<tr><td colspan="9"><div class="list">${pc.map(p=>applicantRowHtml(p)).join("")}
           ${legacy.filter(a=>a.campaign_id===c.id).map(a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span><div class="r-main"><div class="r-title">${esc(a.creator_name||"Creator")}</div><div class="r-sub">${esc(a.creator_org||"")}${a.decline_reason_code?` · ${esc(a.decline_reason_code)}`:""}${a.decline_note?` — ${esc(a.decline_note)}`:""}</div></div>
             ${a.status==="Applied"?`<span style="display:flex;gap:6px"><button class="mini-btn" data-acappr="${esc(a.id)}">Approve</button><button class="mini-btn ghost" data-acdecl="${esc(a.id)}">Decline</button></span>`:`<span class="tag ${a.status==="Approved"?"good":""}">${esc(a.status)}</span>`}</div>`).join("")}
@@ -2279,6 +2282,7 @@ async function adminCampaigns(body, silent){
     </tbody></table></div>`:`<div class="muted" style="padding:8px">No campaigns${filter?" with this status":""}.</div>`}</div>`;
   const reload = ()=> adminCampaigns(body, true);
   body.querySelectorAll("[data-acinv]").forEach(b2=> b2.onclick = ()=> openInvitePanel(b2.dataset.acinv, b2.dataset.acname));
+  body.querySelectorAll("[data-acbp]").forEach(b2=> b2.onclick = ()=> openBarterProcess(b2.dataset.acbp, b2.dataset.acbpname));
   document.getElementById("acFilter").onchange = ()=> adminCampaigns(body);
   document.getElementById("acType").onchange = ()=> adminCampaigns(body);
   body.querySelectorAll("[data-acgo]").forEach(b=> b.onclick = async ()=>{
@@ -3294,6 +3298,300 @@ function wireMkComposer(){
     }finally{
       btn.disabled=false; btn.textContent=(MK_KIND[kindSel.value]||MK_KIND.feed).btn;
     }
+  };
+}
+
+/* ================= BARTER PROCESS — one creator at a time, start to finish =================
+ * Outreach message → creator registers → screened against the brand's criteria → final list to the brand →
+ * brand confirms → contract (ASCI, ad rights, collab rights, product, deliverables) → address → courier sent →
+ * courier delivered → video brief → video submitted → changes → client approves → caption + tags → reel → story
+ * → analytics. Every step carries its own timestamp. Your workspace sees only its own campaigns.    */
+const BARTER_STEPS = [
+  ["applied","1. Registered","The creator filled the form / applied"],
+  ["eligible","2. Screened","Geek checked them against the brand's criteria"],
+  ["sent_to_brand","3. Sent to brand","On the final list the brand signs off"],
+  ["brand_confirmed","4. Brand confirmed","The brand picked them"],
+  ["contract_sent","5. Contract sent","ASCI, ad rights, collab rights, product, deliverables"],
+  ["contract_signed","6. Contract signed","Signed by the creator"],
+  ["address_confirmed","7. Address confirmed","Where the product ships"],
+  ["product_sent","8. Courier sent","Product handed to the courier"],
+  ["product_delivered","9. Courier delivered","Product in their hands"],
+  ["content_created","10. Video brief sent","What to shoot, by when"],
+  ["content_submitted","11. Video submitted","Creator sent the cut for review"],
+  ["changes_requested","12. Changes asked","Only if something needed fixing"],
+  ["content_approved","13. Client approved","Brand signed off on the video"],
+  ["published","14. Posted","Reel + story live with caption & tags"],
+  ["completed","15. Done","Analytics collected"]
+];
+let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null;
+function openBarterProcess(campaignId, campaignName){
+  _bpCamp = { id: campaignId, name: campaignName || "this campaign" }; _bpTab = "tracker"; _bpOpen = null;
+  document.getElementById("bpPanel")?.remove();
+  const ov = el("div","ac360"); ov.id = "bpPanel";
+  ov.innerHTML = `<div class="ac360-box"><div class="ac360-body" id="bpBody">${skel("list",5)}</div></div>`;
+  document.body.appendChild(ov); document.body.style.overflow = "hidden";
+  const close = ()=>{ clearInterval(_bpTimer); ov.remove(); document.body.style.overflow=""; document.removeEventListener("keydown", k); };
+  const k = e=>{ if(e.key==="Escape" && !document.querySelector(".modal-overlay.open")) close(); };
+  document.addEventListener("keydown", k); ov.onclick = e=>{ if(e.target===ov) close(); };
+  window.__bpClose = close;
+  loadBarterProcess();
+  clearInterval(_bpTimer);
+  _bpTimer = setInterval(()=>{
+    if(!document.getElementById("bpPanel")){ clearInterval(_bpTimer); return; }
+    if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open")) return;
+    const a = document.activeElement; if(a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA")) return;
+    loadBarterProcess(true);
+  }, 30000);
+}
+async function loadBarterProcess(silent){
+  const body = document.getElementById("bpBody"); if(!body || !_bpCamp) return;
+  const [t, o] = await Promise.all([
+    sb.schema("api").rpc("barter_tracker", { p_campaign:_bpCamp.id }).then(r=>r, e=>({error:e})),
+    sb.schema("api").rpc("get_outreach", { p_campaign:_bpCamp.id }).then(r=>r, ()=>({data:{}}))
+  ]);
+  if(t.error){ if(!silent) body.innerHTML = `<div class="card"><div class="muted">${esc(t.error.message||t.error)}</div></div>`; return; }
+  _bpData = t.data||{}; _bpData.outreach = o.data||{};
+  paintBarterProcess();
+}
+function bpStageIndex(stage){ const i = BARTER_STEPS.findIndex(s=>s[0]===stage); return i<0 ? 0 : i; }
+function paintBarterProcess(){
+  const body = document.getElementById("bpBody"); if(!body) return;
+  const d = _bpData||{}, c = d.campaign||{}, list = d.creators||[];
+  const done = s => list.filter(x=> bpStageIndex(x.stage) >= bpStageIndex(s) && !["dropped","rejected","ineligible","brand_declined"].includes(x.stage)).length;
+  const tabs = [["tracker",`👥 Creators (${list.length})`],["outreach","✉️ Outreach message"],["shortlist","📋 List for the brand"]];
+  body.innerHTML = `<div class="ac360-head"><div style="flex:1;min-width:0"><h3>Barter process</h3>
+      <div class="muted">${esc(c.name||_bpCamp.name)}${c.brand?` · ${esc(c.brand)}`:""}${c.product?` · ${esc(c.product)}`:""} — every creator, every step, live.</div></div>
+      <button class="ci-pop-x" id="bpX" aria-label="Close">✕</button></div>
+    <div class="bp-flow">${BARTER_STEPS.filter(s=>s[0]!=="changes_requested").map(s=>`<div class="bp-fstep"><b>${done(s[0])}</b><span>${esc(s[1].replace(/^\d+\.\s*/,""))}</span></div>`).join("")}</div>
+    <div class="admin-tabs ac360-tabs">${tabs.map(t=>`<button class="${_bpTab===t[0]?"act":""}" data-bptab="${t[0]}">${t[1]}</button>`).join("")}</div>
+    <div class="ac360-sec">${_bpTab==="tracker"?bpTrackerHtml(list):_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(list)}</div>`;
+  body.querySelector("#bpX").onclick = ()=> window.__bpClose && window.__bpClose();
+  body.querySelectorAll("[data-bptab]").forEach(b=> b.onclick = ()=>{ _bpTab = b.dataset.bptab; paintBarterProcess(); });
+  wireBarterProcess();
+}
+function bpTrackerHtml(list){
+  if(!list.length) return `<div class="card"><div class="muted">Nobody in this campaign yet. Send the outreach message, or invite creators from the campaign's 🎯 Invite panel.</div></div>`;
+  const fail = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
+  return list.map(x=>{
+    const cr = x.creator||{}, idx = bpStageIndex(x.stage), st = x.steps||{}, ship = x.shipment||{}, con = x.contract||{};
+    const open = _bpOpen === x.participation_id;
+    const pct = fail(x.stage) ? 0 : Math.round(100*(idx+1)/BARTER_STEPS.length);
+    const metrics = (x.deliverables||[]).map(dv=>dv.metrics||{}).reduce((a,m)=>{ Object.keys(m).forEach(k=>a[k]=(a[k]||0)+Number(m[k]||0)); return a; }, {});
+    return `<div class="card bp-card${open?" open":""}">
+      <div class="bp-head" data-bpopen="${esc(x.participation_id)}">
+        ${cr.profile_picture_url?`<img class="ap-pic" src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((cr.username||"?").slice(0,2).toUpperCase())}</span>`}
+        <div style="flex:1;min-width:0">
+          <div class="r-title">${cr.username?`@${esc(cr.username)}`:esc(cr.name||"Creator")}
+            ${x.applied_profile && x.applied_profile!==cr.username?`<span class="tag">via @${esc(x.applied_profile)}</span>`:""}
+            ${x.blacklisted?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⛔ Blacklisted</span>':""}</div>
+          <div class="r-sub">${cr.followers!=null?fmtNum(cr.followers)+" followers · ":""}${fail(x.stage)?`<b>${esc(String(x.stage).replace(/_/g," "))}</b>${x.reason?` — ${esc(x.reason)}`:""}`:esc((BARTER_STEPS[idx]||["","—"])[1])}</div>
+          <div class="bp-bar"><span style="width:${pct}%${fail(x.stage)?";background:#dc2626":""}"></span></div></div>
+        <span class="bp-caret">${open?"▲":"▼"}</span></div>
+      ${open?`<div class="bp-detail">
+        <ol class="bp-steps">${BARTER_STEPS.map((s,i)=>{
+          const at = st[s[0]] || (s[0]==="applied" ? x.applied_at : null)
+                  || (s[0]==="product_sent" ? ship.shipped_at : null) || (s[0]==="product_delivered" ? ship.delivered_at : null)
+                  || (s[0]==="contract_sent" ? con.issued_at : null) || (s[0]==="contract_signed" ? con.signed_at : null);
+          const reached = !!at || (!fail(x.stage) && i <= idx);
+          if(s[0]==="changes_requested" && !at) return "";
+          return `<li class="${reached?"on":""}"><div><b>${esc(s[1])}</b><span>${esc(s[2])}</span></div>
+            <span class="bp-at">${at?esc(fmtDateTime(at)):reached?"✓":"—"}</span></li>`; }).join("")}</ol>
+        <div class="bp-facts">
+          ${con.signed_at?`<div>📜 Contract signed ${esc(fmtDate(con.signed_at))} · ASCI ${con.asci_ack?"✓":"✕"} · ad rights ${esc(con.ad_rights_months||1)} month${(con.ad_rights_months||1)>1?"s":""} · collab rights ${con.collab_rights?"✓":"✕"}</div>`:""}
+          ${ship.status?`<div>🚚 ${esc(String(ship.status))}${ship.courier?` · ${esc(ship.courier)}`:""}${ship.tracking_ref?` · <b>${esc(ship.tracking_ref)}</b>`:""}${ship.delivered_at?` · delivered ${esc(fmtDate(ship.delivered_at))}`:""}</div>`:""}
+          ${(x.deliverables||[]).map(dv=>`<div>🎬 ${esc(dv.format||"content")}${dv.quantity>1?` ×${dv.quantity}`:""} — <b>${esc(dv.status||"expected")}</b>${dv.expected_by?` · due ${esc(fmtDate(dv.expected_by))}`:""}${dv.permalink?` · <a href="${esc(safeUrl(dv.permalink))}" target="_blank" rel="noopener">open post ↗</a>`:""}</div>`).join("")}
+          ${Object.keys(metrics).length?`<div>📈 ${Object.keys(metrics).map(k=>`${esc(k)}: <b>${fmtNum(metrics[k])}</b>`).join(" · ")}</div>`:""}
+        </div>
+        <div class="bp-acts">
+          ${x.stage==="applied"?`<button class="btn sm" data-bpscreen="${esc(x.participation_id)}">✓ Meets the brief</button><button class="btn sm ghost" data-bpreject="${esc(x.participation_id)}">Not a fit</button>`:""}
+          ${x.stage==="eligible"?`<button class="btn sm" data-bpsend="${esc(x.participation_id)}">📋 Add to the brand's list</button>`:""}
+          ${x.stage==="sent_to_brand"?`<button class="btn sm" data-bpbrand="${esc(x.participation_id)}">✅ Brand confirmed</button><button class="btn sm ghost" data-bpbrandno="${esc(x.participation_id)}">Brand passed</button>`:""}
+          ${x.stage==="brand_confirmed"?`<button class="btn sm" data-bpcontract="${esc(x.participation_id)}">📜 Send contract</button>`:""}
+          ${["address_confirmed","contract_signed"].includes(x.stage)?`<button class="btn sm" data-bpship="${esc(x.participation_id)}">🚚 Record courier</button>`:""}
+          ${!["dropped","rejected","completed"].includes(x.stage)?`<button class="btn sm ghost" data-bpreassign="${esc(x.participation_id)}">↪ Send product to someone else</button>
+            <button class="btn sm ghost" data-bpblack="${esc(x.participation_id)}">⛔ Blacklist</button>`:""}
+        </div></div>`:""}</div>`; }).join("");
+}
+function bpOutreachHtml(){
+  const o = _bpData.outreach||{};
+  return `<div class="card"><h4 style="margin-top:0">The message you send out</h4>
+    <p class="muted" style="font-size:13px;margin:0 0 12px">This is what goes to your creator database, your story and your WhatsApp groups. Everything below is filled into one ready message.</p>
+    <div class="cp-grid">
+      <label class="cp-f"><span>About the brand (USP)</span><textarea id="bpUsp" rows="2" placeholder="India's favourite momos, 400+ outlets">${esc(o.brand_usp||"")}</textarea></label>
+      <label class="cp-f"><span>Who's eligible</span><textarea id="bpElig" rows="2" placeholder="Food creators in Delhi NCR, 10k+ followers">${esc(o.eligibility||"")}</textarea></label>
+      <label class="cp-f"><span>What you get</span><textarea id="bpGet" rows="2" placeholder="Momo box worth ₹1,500 + a feature on our page">${esc(o.what_you_get||"")}</textarea></label>
+      <label class="cp-f"><span>Deliverables</span><textarea id="bpDel" rows="2" placeholder="1 Reel + 2 Stories within 7 days of delivery">${esc(o.deliverables||"")}</textarea></label>
+      <label class="cp-f"><span>Sample video link</span><input id="bpSample" placeholder="https://instagram.com/reel/…" value="${esc(o.sample_link||"")}"></label>
+      <label class="cp-f"><span>Form link</span><input id="bpForm" placeholder="https://… (or leave blank to use the app)" value="${esc(o.form_link||"")}"></label>
+    </div>
+    <label class="cp-f" style="margin-top:12px"><span>Anything else</span><textarea id="bpExtra" rows="2" placeholder="Shoot window, city, do's and don'ts">${esc(o.extra_note||"")}</textarea></label>
+    <div class="cp-addrow"><button class="btn sm" id="bpSaveMsg">Save message</button>
+      <button class="btn sm ghost" id="bpCopyMsg">📋 Copy for story / groups</button>
+      <button class="btn sm ghost" id="bpSendMsg">📣 Send to matching creators</button></div>
+    <div class="cp-hint" id="bpMsgOut"></div>
+    <div class="bp-preview" id="bpPreview">${esc(bpMessageText())}</div></div>`;
+}
+function bpMessageText(){
+  const o = _bpData.outreach||{}, c = _bpData.campaign||{};
+  const link = o.form_link || ((location && location.origin ? location.origin : "https://bountythreads.app") + "/app.html");
+  return [
+    `🎁 ${c.brand||"Brand"} × ${c.name||"Barter campaign"}`,
+    o.brand_usp ? `\nAbout: ${o.brand_usp}` : "",
+    o.eligibility ? `\nWho we're looking for: ${o.eligibility}` : "",
+    o.what_you_get ? `\nWhat you get: ${o.what_you_get}` : "",
+    o.deliverables ? `\nWhat you make: ${o.deliverables}` : "",
+    o.sample_link ? `\nSample video: ${o.sample_link}` : "",
+    o.extra_note ? `\n${o.extra_note}` : "",
+    `\nApply here: ${link}`
+  ].filter(Boolean).join("\n");
+}
+function bpShortlistHtml(list){
+  const ok = list.filter(x=>["eligible","sent_to_brand","brand_confirmed"].includes(x.stage));
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div><h4 style="margin:0">Final list for the brand</h4><div class="muted" style="font-size:13px">Everyone who cleared screening. Download it and send it to the brand to sign off.</div></div>
+      <button class="btn sm" id="bpXls" ${ok.length?"":"disabled"}>⬇ Download Excel</button></div>
+    ${ok.length?`<div style="overflow-x:auto;margin-top:12px"><table class="tbl"><thead><tr><th>#</th><th>Creator</th><th>Followers</th><th>Engagement</th><th>City</th><th>Categories</th><th>Applied with</th><th>Status</th></tr></thead><tbody>
+      ${ok.map((x,i)=>{ const cr=x.creator||{};
+        return `<tr><td>${i+1}</td><td><b>@${esc(cr.username||"")}</b><div class="muted" style="font-size:12px">${esc(cr.name||"")}</div></td>
+          <td>${cr.followers!=null?fmtNum(cr.followers):"—"}</td><td>${cr.engagement!=null?cr.engagement+"%":"—"}</td>
+          <td>${esc(cr.city||"—")}</td><td>${esc((cr.categories||[]).join(", ")||"—")}</td>
+          <td>${x.applied_profile?"@"+esc(x.applied_profile):"—"}</td>
+          <td>${x.stage==="brand_confirmed"?'<span class="tag good">Brand confirmed</span>':x.stage==="sent_to_brand"?'<span class="tag warn">With the brand</span>':'<span class="tag">Screened</span>'}</td></tr>`; }).join("")}
+    </tbody></table></div>`:`<div class="muted" style="padding:10px">Nobody has cleared screening yet — screen the creators in the Creators tab first.</div>`}</div>`;
+}
+function wireBarterProcess(){
+  const body = document.getElementById("bpBody"); if(!body) return;
+  const again = ()=> loadBarterProcess(true);
+  const call = async (fn, args, btn, label)=>{
+    if(btn){ btn.disabled = true; btn.textContent = "…"; }
+    const { error } = await sb.schema("api").rpc(fn, args);
+    if(error){ alert(error.message); if(btn){ btn.disabled=false; btn.textContent=label; } return false; }
+    again(); return true;
+  };
+  body.querySelectorAll("[data-bpopen]").forEach(h=> h.onclick = ()=>{ _bpOpen = _bpOpen===h.dataset.bpopen ? null : h.dataset.bpopen; paintBarterProcess(); });
+  body.querySelectorAll("[data-bpscreen]").forEach(b=> b.onclick = ()=> call("screen_participation", { p_participation:b.dataset.bpscreen, p_eligible:true, p_reason:null }, b, "✓ Meets the brief"));
+  body.querySelectorAll("[data-bpreject]").forEach(b=> b.onclick = async ()=>{
+    const pick = await openReasonModal("Why doesn't this creator fit the brief?"); if(!pick) return;
+    call("screen_participation", { p_participation:b.dataset.bpreject, p_eligible:false, p_reason:(pick.note||pick.code) }, b, "Not a fit"); });
+  body.querySelectorAll("[data-bpsend]").forEach(b=> b.onclick = ()=> call("advance_participation", { p_participation:b.dataset.bpsend, p_to:"sent_to_brand", p_reason:"added to the brand's list" }, b, "📋 Add to the brand's list"));
+  body.querySelectorAll("[data-bpbrand]").forEach(b=> b.onclick = ()=> call("brand_decide_participation", { p_participation:b.dataset.bpbrand, p_confirm:true, p_reason:null }, b, "✅ Brand confirmed"));
+  body.querySelectorAll("[data-bpbrandno]").forEach(b=> b.onclick = async ()=>{
+    const r = (prompt("What did the brand say?")||"").trim(); if(!r) return;
+    call("brand_decide_participation", { p_participation:b.dataset.bpbrandno, p_confirm:false, p_reason:r }, b, "Brand passed"); });
+  body.querySelectorAll("[data-bpcontract]").forEach(b=> b.onclick = ()=> openBpContract(b.dataset.bpcontract));
+  body.querySelectorAll("[data-bpship]").forEach(b=> b.onclick = ()=> openBpShipment(b.dataset.bpship));
+  body.querySelectorAll("[data-bpblack]").forEach(b=> b.onclick = async ()=>{
+    const r = (prompt("Blacklist this creator — why?\nThey stay on the list until you lift it.")||"").trim(); if(!r) return;
+    call("blacklist_creator", { p_participation:b.dataset.bpblack, p_reason:r }, b, "⛔ Blacklist"); });
+  body.querySelectorAll("[data-bpreassign]").forEach(b=> b.onclick = ()=> openBpReassign(b.dataset.bpreassign));
+  const save = body.querySelector("#bpSaveMsg");
+  if(save) save.onclick = async ()=>{
+    const v = id => (document.getElementById(id)||{}).value || "";
+    const payload = { brand_usp:v("bpUsp"), eligibility:v("bpElig"), what_you_get:v("bpGet"), deliverables:v("bpDel"),
+                      sample_link:v("bpSample"), form_link:v("bpForm"), extra_note:v("bpExtra") };
+    save.disabled = true; save.textContent = "Saving…";
+    const { error } = await sb.schema("api").rpc("save_outreach", { p_campaign:_bpCamp.id, p_payload:payload });
+    save.disabled = false; save.textContent = "Save message";
+    const out = document.getElementById("bpMsgOut");
+    if(error){ out.textContent = error.message; return; }
+    _bpData.outreach = Object.assign({}, _bpData.outreach, payload);
+    document.getElementById("bpPreview").textContent = bpMessageText();
+    out.textContent = "Saved ✓";
+  };
+  const copy = body.querySelector("#bpCopyMsg");
+  if(copy) copy.onclick = async ()=>{ try{ await navigator.clipboard.writeText(bpMessageText()); copy.textContent = "Copied ✓"; setTimeout(()=>copy.textContent="📋 Copy for story / groups", 1600); }
+    catch(e){ prompt("Copy this message:", bpMessageText()); } };
+  const send = body.querySelector("#bpSendMsg");
+  if(send) send.onclick = ()=>{ window.__bpClose && window.__bpClose(); openInvitePanel(_bpCamp.id, _bpCamp.name); };
+  const xls = body.querySelector("#bpXls");
+  if(xls) xls.onclick = ()=> bpDownloadShortlist();
+}
+function bpDownloadShortlist(){
+  const list = (_bpData.creators||[]).filter(x=>["eligible","sent_to_brand","brand_confirmed"].includes(x.stage));
+  const c = _bpData.campaign||{};
+  const cols = ["#","Creator","Instagram","Followers","Engagement %","City","Categories","Applied with","Status","Applied on"];
+  const cell = v=>{ v = Array.isArray(v) ? v.join("; ") : (v==null?"":String(v)); return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; };
+  const rows = list.map((x,i)=>{ const cr=x.creator||{};
+    return [i+1, cr.name||"", cr.username?"@"+cr.username:"", cr.followers??"", cr.engagement??"", cr.city||"",
+            (cr.categories||[]).join("; "), x.applied_profile?"@"+x.applied_profile:"",
+            x.stage==="brand_confirmed"?"Brand confirmed":x.stage==="sent_to_brand"?"With the brand":"Screened",
+            x.applied_at?new Date(x.applied_at).toLocaleDateString("en-IN"):""].map(cell).join(","); });
+  const csv = [`${c.name||"Campaign"} — final creator list`, `${c.brand||""}`, "", cols.join(","), ...rows].join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8" }));
+  a.download = `${(c.name||"campaign").replace(/[^\w\-]+/g,"_")}_final_list.csv`; a.click();
+}
+function openBpContract(part){
+  let m = document.getElementById("bpModal"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id = "bpModal";
+  m.innerHTML = `<div class="modal"><div class="modal-head"><strong>Send the contract</strong><button class="icon-btn" id="bpMx">✕</button></div>
+    <form class="modal-form" id="bpCForm">
+      <p class="muted" style="font-size:13px;margin:0">The creator signs this in the app. ASCI disclosure is always required.</p>
+      <div class="mf-row"><label>Ad rights (months)<input name="months" type="number" min="0" max="24" value="1"></label>
+      <label>Product<input name="product" placeholder="Momo box (₹1,500)"></label></div>
+      <label class="cp-check"><input type="checkbox" name="collab" checked> Collab rights — the brand can post this as a collab</label>
+      <label>Deliverables<input name="deliv" placeholder="1 Reel + 2 Stories" required></label>
+      <div class="auth-err" id="bpCErr"></div><button class="btn" type="submit">Send contract</button></form></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  document.getElementById("bpMx").onclick = ()=> m.remove();
+  m.onclick = e=>{ if(e.target.id==="bpModal") m.remove(); };
+  document.getElementById("bpCForm").onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(e.target), err = document.getElementById("bpCErr"), btn = e.target.querySelector("button");
+    const deliv = String(f.get("deliv")||"").trim();
+    if(!deliv){ err.textContent = "Deliverables are required — a contract with none can't be signed."; return; }
+    btn.disabled = true; btn.textContent = "Sending…";
+    const payload = { ad_rights_months: Number(f.get("months"))||1, collab_rights: !!f.get("collab"),
+                      product: String(f.get("product")||"").trim() || null,
+                      deliverables: deliv.split(/\s*\+\s*|,/).map(s=>s.trim()).filter(Boolean).map(s=>({ format:s, quantity:1 })) };
+    const { error } = await sb.schema("api").rpc("send_contract", { p_participation:part, p_payload:payload });
+    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Send contract"; return; }
+    m.remove(); loadBarterProcess(true);
+  };
+}
+function openBpShipment(part){
+  let m = document.getElementById("bpModal"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id = "bpModal";
+  m.innerHTML = `<div class="modal"><div class="modal-head"><strong>Record the courier</strong><button class="icon-btn" id="bpMx">✕</button></div>
+    <form class="modal-form" id="bpSForm">
+      <label>Product<input name="product" placeholder="Momo box" required></label>
+      <div class="mf-row"><label>Courier<input name="courier" placeholder="DTDC"></label>
+      <label>Tracking number<input name="tracking" placeholder="DT123456789"></label></div>
+      <div class="auth-err" id="bpSErr"></div><button class="btn" type="submit">Save — creator gets the tracking</button></form></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  document.getElementById("bpMx").onclick = ()=> m.remove();
+  m.onclick = e=>{ if(e.target.id==="bpModal") m.remove(); };
+  document.getElementById("bpSForm").onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(e.target), err = document.getElementById("bpSErr"), btn = e.target.querySelector("button");
+    btn.disabled = true; btn.textContent = "Saving…";
+    const { error } = await sb.schema("api").rpc("record_shipment", { p_participation:part, p_product:String(f.get("product")||"").trim(),
+      p_courier:String(f.get("courier")||"").trim()||null, p_tracking:String(f.get("tracking")||"").trim()||null });
+    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Save — creator gets the tracking"; return; }
+    m.remove(); loadBarterProcess(true);
+  };
+}
+async function openBpReassign(part){
+  const { data } = await sb.schema("api").rpc("campaign_matches", { p_campaign:_bpCamp.id, p_limit:40 }).then(r=>r, ()=>({data:[]}));
+  const options = (data||[]).filter(c=>c.state==="none" || c.state==="invited");
+  let m = document.getElementById("bpModal"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id = "bpModal";
+  m.innerHTML = `<div class="modal"><div class="modal-head"><strong>Send this product to someone else</strong><button class="icon-btn" id="bpMx">✕</button></div>
+    <form class="modal-form" id="bpRForm">
+      <p class="muted" style="font-size:13px;margin:0">The current creator is dropped from this campaign and the product, contract terms and deliverables move to whoever you pick.</p>
+      <label>Next creator<select name="member" required>${options.length?options.map(c=>`<option value="${esc(c.member_id)}">@${esc(c.username)} · ${fmtNum(c.followers||0)} followers</option>`).join(""):`<option value="">No one else matches this brief yet</option>`}</select></label>
+      <label>Why<input name="reason" placeholder="Creator went silent / product returned" required></label>
+      <div class="auth-err" id="bpRErr"></div><button class="btn" type="submit" ${options.length?"":"disabled"}>Move the product</button></form></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  document.getElementById("bpMx").onclick = ()=> m.remove();
+  m.onclick = e=>{ if(e.target.id==="bpModal") m.remove(); };
+  document.getElementById("bpRForm").onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(e.target), err = document.getElementById("bpRErr"), btn = e.target.querySelector("button");
+    btn.disabled = true; btn.textContent = "Moving…";
+    const { error } = await sb.schema("api").rpc("reassign_product", { p_participation:part, p_to_member:f.get("member"), p_reason:String(f.get("reason")||"").trim() });
+    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Move the product"; return; }
+    m.remove(); loadBarterProcess(true);
   };
 }
 
