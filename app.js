@@ -3275,15 +3275,19 @@ async function adminDelivery(body, silent){
   const d = data||{}, st = d.stats||{}, n = k=> Number(st[k]||0);
   const ago = t=>{ if(!t) return "never"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
   const jobs = d.jobs||[], runs = d.runs||[], recent = d.recent||[];
-  const waSkippedNoTpl = recent.filter(r=>r.channel==="whatsapp" && r.status==="skipped" && /template/i.test(r.error||"")).length;
+  const waWaiting = recent.filter(r=>r.channel==="whatsapp" && r.status==="skipped" && /^Waiting for WhatsApp template approval/i.test(r.error||"")).length;
+  const waSkippedNoTpl = recent.filter(r=>r.channel==="whatsapp" && r.status==="skipped" && /WA_UPDATE_TEMPLATE/i.test(r.error||"")).length;
   const stuck = d.oldest_queued && (Date.now()-new Date(d.oldest_queued).getTime()) > 5*60000;
   const checks = [
     [d.worker_configured, "Dispatcher connected", d.worker_configured ? "Database can trigger sends instantly" : "Run the one-time connect command (see below) after deploying ops-notify-dispatch"],
     [jobs.some(j=>j.name==="ci-notify-dispatch" && j.active), "Every-minute safety run", jobs.length ? jobs.map(j=>`${j.name} (${j.schedule})`).join(", ") : "pg_cron schedule not found"],
     [!stuck, "Queue moving", stuck ? `Oldest queued message waiting since ${ago(d.oldest_queued)}` : "No messages stuck in the queue"],
-    [n("whatsapp:sent")>0 && !waSkippedNoTpl, "WhatsApp delivering", waSkippedNoTpl ? `${waSkippedNoTpl} recent WhatsApp alert(s) skipped — WhatsApp template not set (WA_UPDATE_TEMPLATE)` : n("whatsapp:sent") ? `Last sent ${ago(d.last_sent&&d.last_sent.whatsapp)}` : "Nothing sent on WhatsApp yet"],
+    [n("whatsapp:sent")>0 && !waSkippedNoTpl && !waWaiting, waWaiting ? "⏳ WhatsApp waiting for template approval" : "WhatsApp delivering",
+      waWaiting ? `${waWaiting} WhatsApp alert(s) are parked until Meta approves the template — they will send automatically (checked every 10 min)`
+      : waSkippedNoTpl ? `${waSkippedNoTpl} recent WhatsApp alert(s) skipped — WhatsApp template not set (WA_UPDATE_TEMPLATE)`
+      : n("whatsapp:sent") ? `Last sent ${ago(d.last_sent&&d.last_sent.whatsapp)}` : "Nothing sent on WhatsApp yet"],
     [n("email:sent")>0 && !n("email:failed"), "Email delivering", n("email:failed") ? `${n("email:failed")} failed in 7 days — check SMTP secrets` : n("email:sent") ? `Last sent ${ago(d.last_sent&&d.last_sent.email)}` : "Nothing sent by email yet"]];
-  const tag = s=> ({sent:'<span class="tag good">sent</span>', queued:'<span class="tag warn">queued</span>', sending:'<span class="tag warn">sending</span>', failed:'<span class="tag bad" style="background:rgba(239,68,68,.12);color:#dc2626">failed</span>', skipped:'<span class="tag">skipped</span>'})[s] || esc(s);
+  const tag = s=> ({sent:'<span class="tag good">sent</span>', queued:'<span class="tag warn">queued</span>', sending:'<span class="tag warn">sending</span>', failed:'<span class="tag bad" style="background:rgba(239,68,68,.12);color:#dc2626">failed</span>', skipped:'<span class="tag">skipped</span>', waiting:'<span class="tag warn">⏳ waiting</span>'})[s] || esc(s);
   body.innerHTML = `
     <div class="rp-kpis">
       <div><b>${n("whatsapp:sent")}</b>WhatsApp sent · 7d</div><div><b>${n("whatsapp:skipped")+n("whatsapp:failed")}</b>WhatsApp not sent</div>
@@ -3301,7 +3305,7 @@ async function adminDelivery(body, silent){
       <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>When</th><th>Channel</th><th>To</th><th>Alert</th><th>Status</th><th>Why / note</th></tr></thead><tbody>
       ${recent.map(r=>`<tr><td style="white-space:nowrap;font-size:12px">${esc(fmtDateTime(r.created_at))}</td><td>${r.channel==="whatsapp"?"💬 WhatsApp":"✉️ Email"}</td>
         <td style="font-size:12px"><b>${esc(r.who||"—")}</b>${r.role?` <span class="muted">${esc(r.role)}</span>`:""}<div class="muted">${esc(r.to)}</div></td>
-        <td style="font-size:12px;max-width:280px">${esc(r.title||r.template||"")}</td><td>${tag(r.status)}${r.attempts>1?` <span class="muted" style="font-size:11px">×${r.attempts}</span>`:""}</td>
+        <td style="font-size:12px;max-width:280px">${esc(r.title||r.template||"")}</td><td>${tag(r.status==="skipped" && /^Waiting for WhatsApp template approval/i.test(r.error||"") ? "waiting" : r.status)}${r.attempts>1?` <span class="muted" style="font-size:11px">×${r.attempts}</span>`:""}</td>
         <td style="font-size:12px;max-width:260px" class="muted">${esc(r.error||(r.sent_at?"Sent "+ago(r.sent_at):""))}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">No messages yet.</td></tr>`}
       </tbody></table></div></div>`;
   document.getElementById("dlvRetry").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_retry", { p_channel: null });

@@ -36,6 +36,8 @@ Deno.serve(async (req) => {
   const api = admin.schema("api");
   // let the database call us (instant kick on new alerts + 1-minute cron); best-effort, idempotent
   try { await api.rpc("ops_register_worker", { p_secret: Deno.env.get("CI_WORKER_SECRET") || "", p_url: SUPABASE_URL }); } catch (_e) { /* ignore */ }
+  // WhatsApp alerts parked while the template awaits Meta approval are retried every 10 minutes
+  try { await api.rpc("ops_outbox_requeue_waiting"); } catch (_e) { /* ignore */ }
   const { data: rows, error } = await api.rpc("ops_outbox_claim", { p_limit: 50 });
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
 
@@ -93,8 +95,15 @@ Deno.serve(async (req) => {
       await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "sent", p_provider_ref: ref });
       sent++;
     } catch (e) {
-      await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "failed", p_error: (e as Error).message });
-      failed++;
+      const msg = (e as Error).message || "send failed";
+      if (row.channel === "whatsapp" && /template[^]*?(not active|pending|not approved|in review)/i.test(msg)) {
+        // template still with Meta — park it; it is re-queued automatically and goes out once approved
+        await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped", p_error: `Waiting for WhatsApp template approval — ${msg}`.slice(0, 300) });
+        skipped++;
+      } else {
+        await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "failed", p_error: msg });
+        failed++;
+      }
     }
   }
   return new Response(JSON.stringify({ ok: true, processed: (rows ?? []).length, sent, failed, skipped }), { headers: { "Content-Type": "application/json" } });
