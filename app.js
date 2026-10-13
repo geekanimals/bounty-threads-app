@@ -2961,7 +2961,7 @@ function wireMkComposer(){
 
 /* ================= ADMIN (platform team — approve agency signups) ================= */
 /* ================= SUPER ADMIN CONSOLE ================= */
-const ADMIN_TABS = [["overview","🏠 Overview"],["users","👥 All users"],["approvals","✅ Account approvals"],["campaigns","📣 All campaigns"],["applications","📝 Applications"],["activity","📈 Activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["admins","Super admins"]];
+const ADMIN_TABS = [["overview","🏠 Overview"],["creators","🎨 Creators"],["users","👥 All users"],["approvals","✅ Account approvals"],["campaigns","📣 All campaigns"],["applications","📝 Applications"],["activity","📈 Activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["admins","Super admins"]];
 const ADMIN_TABLES = [
   ["members","Members (all accounts)"],["creators","Agency creator rosters"],["campaigns","Campaigns"],["barter_items","Barter items"],
   ["applications","Applications"],["invites","Invites"],["irm_contacts","IRM contacts"],
@@ -3014,50 +3014,184 @@ async function adminUsers(body, silent){
   _auTimer = setInterval(()=>{
     const b = document.getElementById("adminBody");
     if(currentPage!=="admin" || _adminTab!=="users" || !b){ clearInterval(_auTimer); return; }
-    if(document.visibilityState!=="visible" || document.getElementById("auDetail")?.innerHTML || document.getElementById("actTimeline")?.innerHTML || document.activeElement?.tagName==="SELECT") return;
+    if(document.visibilityState!=="visible" || document.getElementById("ac360") || document.getElementById("auDetail")?.innerHTML || document.getElementById("actTimeline")?.innerHTML || document.activeElement?.tagName==="SELECT") return;
     adminUsers(b, true);
   }, 30000);
 }
+// Super Admin → Creators: live directory of every creator + Creator 360 (profile, Instagram, campaigns, activity)
+let _acrQ = "", _acrF = "all", _acrSort = "new", _acrTimer = null, _acrSig = "", _acrData = [], _acrPage = 0;
+const ACR_PAGE = 24;
+const agoTxt = t=>{ if(!t) return "—"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
+const kNum = n=> n==null ? "—" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(n);
+async function adminCreators(body, silent){
+  if(!silent) body.innerHTML = skel("cards",8);
+  const { data, error } = await sb.rpc("admin_creators");
+  if(error){ if(!silent) body.innerHTML = adminErr(error); return; }
+  const sig = JSON.stringify(data); if(silent && sig===_acrSig) return; _acrSig = sig;
+  _acrData = data||[];
+  const all = _acrData, n = f=>all.filter(f).length;
+  body.innerHTML = `<div class="rp-kpis acr-kpis">
+      ${[["all","Creators",all.length],["ig","Instagram connected",n(c=>c.ig_username)],["complete","Profile complete",n(c=>c.complete)],["incomplete","Profile incomplete",n(c=>!c.complete)],
+         ["barter","Open to barter",n(c=>c.accepts_barter)],["rate","Reel rate added",n(c=>c.reel_rate)],["applied","Applied to campaigns",n(c=>c.applied>0)],["approved","Approved in campaigns",n(c=>c.approved>0)]]
+        .map(([k,l,v])=>`<div data-acrf="${k}" class="${_acrF===k?"act":""}" style="cursor:pointer"><b>${fmtNum(v)}</b>${l}</div>`).join("")}</div>
+    <div class="card"><div class="acr-bar">
+      <h3 style="margin:0">Creators <span class="muted" style="font-size:12px;font-weight:400">· live, refreshes every 30s</span></h3>
+      <div class="acr-tools"><input id="acrQ" placeholder="🔍 Name, @handle, city, niche, phone…" value="${esc(_acrQ)}">
+        <select id="acrF">${[["all","All creators"],["ig","Instagram connected"],["noig","Instagram not connected"],["complete","Profile complete"],["incomplete","Profile incomplete"],["barter","Open to barter"],["rate","Reel rate added"],["applied","Applied to campaigns"],["pending","Waiting for approval"],["approved","Approved in campaigns"],["travel","Travelling now"],["pages","Manages other pages"]]
+          .map(([k,l])=>`<option value="${k}"${_acrF===k?" selected":""}>${l}</option>`).join("")}</select>
+        <select id="acrSort">${[["new","Newest first"],["followers","Most followers"],["eng","Best engagement"],["seen","Recently active"],["applied","Most applications"]].map(([k,l])=>`<option value="${k}"${_acrSort===k?" selected":""}>${l}</option>`).join("")}</select>
+        <button class="mini-btn ghost" id="acrCsv">⬇ CSV</button></div></div>
+      <div id="acrGrid"></div></div>`;
+  paintCreators();
+  const qi = document.getElementById("acrQ"); let tq;
+  qi.oninput = ()=>{ clearTimeout(tq); tq = setTimeout(()=>{ _acrQ = qi.value; _acrPage = 0; paintCreators(); }, 200); };
+  document.getElementById("acrF").onchange = e=>{ _acrF = e.target.value; _acrPage = 0; adminCreators(body); };
+  document.getElementById("acrSort").onchange = e=>{ _acrSort = e.target.value; paintCreators(); };
+  body.querySelectorAll("[data-acrf]").forEach(d=> d.onclick = ()=>{ _acrF = d.dataset.acrf; _acrPage = 0; _acrSig=""; adminCreators(body); });
+  document.getElementById("acrCsv").onclick = ()=>{
+    const cols = ["name","ig_username","followers","engagement","whatsapp","email","city","state","categories","gender","accepts_barter","reel_rate","done","total","applied","approved","completed","joined_at","last_seen"];
+    const cell = v=>{ v = Array.isArray(v) ? v.join("; ") : (v==null?"":String(v)); return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; };
+    const csv = [cols.join(",")].concat(filteredCreators().map(c=>cols.map(k=>cell(c[k])).join(","))).join("\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download = "creators.csv"; a.click(); };
+  clearInterval(_acrTimer);
+  _acrTimer = setInterval(()=>{
+    const b = document.getElementById("adminBody");
+    if(currentPage!=="admin" || _adminTab!=="creators" || !b){ clearInterval(_acrTimer); return; }
+    if(document.visibilityState!=="visible" || document.getElementById("ac360") || document.activeElement?.id==="acrQ" || document.activeElement?.tagName==="SELECT") return;
+    adminCreators(b, true);
+  }, 30000);
+}
+function filteredCreators(){
+  const q = _acrQ.trim().toLowerCase();
+  const F = { all:()=>true, ig:c=>c.ig_username, noig:c=>!c.ig_username, complete:c=>c.complete, incomplete:c=>!c.complete, barter:c=>c.accepts_barter,
+              rate:c=>c.reel_rate, applied:c=>c.applied>0, pending:c=>c.pending>0, approved:c=>c.approved>0, travel:c=>c.travel_city, pages:c=>c.pages>0 }[_acrF] || (()=>true);
+  const S = { new:(a,b)=>new Date(b.joined_at||0)-new Date(a.joined_at||0), followers:(a,b)=>(b.followers||0)-(a.followers||0), eng:(a,b)=>(b.engagement||0)-(a.engagement||0),
+              seen:(a,b)=>new Date(b.last_seen||0)-new Date(a.last_seen||0), applied:(a,b)=>(b.applied||0)-(a.applied||0) }[_acrSort];
+  return _acrData.filter(F).filter(c=> !q || [c.name,c.ig_username,c.city,c.state,c.whatsapp,c.email,(c.categories||[]).join(" "),(c.skills||[]).join(" ")].join(" ").toLowerCase().includes(q)).sort(S);
+}
+function paintCreators(){
+  const g = document.getElementById("acrGrid"); if(!g) return;
+  const list = filteredCreators(), pages = Math.max(1, Math.ceil(list.length/ACR_PAGE)); _acrPage = Math.min(_acrPage, pages-1);
+  const shown = list.slice(_acrPage*ACR_PAGE, (_acrPage+1)*ACR_PAGE);
+  g.innerHTML = list.length ? `<div class="acr-grid">${shown.map(c=>{
+      const pct = c.total ? Math.round(100*(c.done||0)/c.total) : 0;
+      const pic = c.pic ? `<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${esc(String(c.name||"?").slice(0,2).toUpperCase())}'}))">`
+                        : `<span class="avatar">${esc(String(c.name||"?").slice(0,2).toUpperCase())}</span>`;
+      return `<div class="acr-card" data-acr="${esc(c.member_id)}" tabindex="0">
+        <div class="acr-top">${pic}<div style="min-width:0"><div class="acr-name">${esc(c.name)}</div>
+          <div class="muted acr-handle">${c.ig_username?"@"+esc(c.ig_username):'<span class="tag warn">Instagram not connected</span>'}</div></div>
+          ${c.complete?'<span class="tag good">Ready</span>':`<span class="tag warn">${c.done??0}/${c.total??"?"}</span>`}</div>
+        <div class="acr-stats"><div><b>${kNum(c.followers)}</b><span>Followers</span></div><div><b>${c.engagement!=null?c.engagement+"%":"—"}</b><span>Engagement</span></div>
+          <div><b>${c.reel_rate?"₹"+kNum(Number(c.reel_rate)):"—"}</b><span>Per Reel</span></div><div><b>${c.applied||0}<small>/${c.approved||0}</small></b><span>Applied / ✓</span></div></div>
+        <div class="acr-meta">${c.city?`📍 ${esc([c.city,c.state].filter(Boolean).join(", "))}`:'<span class="muted">📍 No address yet</span>'}${c.travel_city?` · ✈️ ${esc(c.travel_city)}`:""}</div>
+        <div class="acr-chips">${(c.categories||[]).slice(0,3).map(x=>`<span class="cp-tag">${esc(x)}</span>`).join("")}${c.accepts_barter?'<span class="cp-tag">🎁 Barter</span>':""}${c.pets?`<span class="cp-tag">🐾 ${c.pets}</span>`:""}${c.pages?`<span class="cp-tag">+${c.pages} page${c.pages>1?"s":""}</span>`:""}</div>
+        <div class="acr-bar2"><span style="width:${pct}%"></span></div>
+        <div class="acr-foot muted">Joined ${esc(fmtDate(c.joined_at))} · active ${agoTxt(c.last_seen)}</div></div>`; }).join("")}</div>
+      ${pages>1?`<div class="acr-pager"><button class="mini-btn ghost" data-acrp="-1"${_acrPage?"":" disabled"}>← Prev</button><span class="muted">Page ${_acrPage+1} of ${pages} · ${list.length} creators</span><button class="mini-btn ghost" data-acrp="1"${_acrPage<pages-1?"":" disabled"}>Next →</button></div>`:`<div class="muted" style="font-size:12px;margin-top:10px">${list.length} creator${list.length===1?"":"s"}</div>`}`
+    : `<div class="muted" style="padding:14px">No creators in this view.</div>`;
+  g.querySelectorAll("[data-acr]").forEach(el=>{ const open = ()=> adminCreatorProfile(el.dataset.acr, _acrData.find(c=>c.member_id===el.dataset.acr)); el.onclick = open; el.onkeydown = e=>{ if(e.key==="Enter") open(); }; });
+  g.querySelectorAll("[data-acrp]").forEach(b=> b.onclick = ()=>{ _acrPage += Number(b.dataset.acrp); paintCreators(); document.getElementById("acrGrid").scrollIntoView({behavior:"smooth",block:"start"}); });
+}
+
+// Creator 360 — full-screen panel, opened from Creators, All users, Applications
+let _ac360Tab = "profile";
 async function adminCreatorProfile(member, row){
-  const box = document.getElementById("auDetail"); if(!box) return;
-  box.innerHTML = `<div class="card"><div class="muted">Loading profile…</div></div>`;
+  document.getElementById("ac360")?.remove();
+  const ov = document.createElement("div"); ov.id = "ac360"; ov.className = "ac360";
+  ov.innerHTML = `<div class="ac360-box" role="dialog" aria-modal="true"><div class="ac360-body">${skel("profile")}</div></div>`;
+  document.body.appendChild(ov); document.body.style.overflow = "hidden";
+  const close = ()=>{ ov.remove(); document.body.style.overflow = ""; document.removeEventListener("keydown", k); };
+  const k = e=>{ if(e.key==="Escape") close(); };
+  document.addEventListener("keydown", k); ov.addEventListener("click", e=>{ if(e.target===ov) close(); });
   const { data:d, error } = await sb.rpc("admin_creator_profile", { p_member: member });
-  if(error){ box.innerHTML = `<div class="card"><div class="muted">${esc(error.message)}</div></div>`; return; }
-  if(!d || !d.identity_id){ box.innerHTML = `<div class="card"><div class="muted">This creator hasn't started their profile yet.</div></div>`; return; }
-  const per=d.personal||{}, con=d.contact||{}, cp=d.commercial_preference||{}, pro=d.professional||{}, req=d.requirements||{};
-  const age = per.date_of_birth ? Math.floor((Date.now()-new Date(per.date_of_birth).getTime())/31557600000) : null;
-  const yn = v => v===true?"Yes":v===false?"No":"—";
+  const bodyEl = ov.querySelector(".ac360-body");
+  if(error){ bodyEl.innerHTML = `<div class="card"><div class="muted">${esc(error.message)}</div><button class="mini-btn ghost" id="acX">Close</button></div>`; ov.querySelector("#acX").onclick = close; return; }
+  const D = d||{}, mem = D.member||{}, ig = D.instagram||{}, per = D.personal||{}, con = D.contact||{}, cp = D.commercial_preference||{}, pro = D.professional||{}, req = D.requirements||{};
+  const name = (row&&row.name) || mem.name || [per.first_name,per.last_name].filter(Boolean).join(" ") || ig.username || "Creator";
   const L = { prefer_not_to_say:"Prefer not to say", single:"Unmarried", married:"Married", divorced:"Divorced", widowed:"Widowed", non_binary:"Non-binary", female:"Female", male:"Male", other:"Other" };
-  const r = (k,v)=>`<div class="cd-row"><span class="cd-l">${esc(k)}</span><span class="cd-v">${v==null||v===""?"—":v}</span></div>`;
+  const yn = v => v===true?"Yes":v===false?"No":"—";
+  const r = (kk,v)=>`<div class="cd-row"><span class="cd-l">${esc(kk)}</span><span class="cd-v">${v==null||v===""?"—":v}</span></div>`;
   const synthetic = /@creators\.bountythreads\.app$/i.test(con.email||"");
-  box.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><h3 style="margin:0">${esc((row&&row.name)||"Creator")} ${row&&row.ig_username?`<span class="muted" style="font-weight:400">@${esc(row.ig_username)}</span>`:""}</h3>
-      <span>${req.complete?'<span class="tag good">Profile complete</span>':`<span class="tag warn">${req.done}/${req.total} done</span>`} <button class="mini-btn ghost" id="auClose">Close</button></span></div>
-    ${!req.complete&&(req.missing||[]).length?`<div class="muted" style="margin:8px 0">Missing: ${req.missing.map(esc).join(" · ")}</div>`:""}
-    <div class="grid two" style="margin-top:10px"><div>
-      ${r("Rate card", (d.rate_items||[]).map(i=>`${esc(i.deliverable_type)} — ${fmtMoney(i.amount)}`).join("<br>"))}
-      ${r("Open to barter", yn(cp.accepts_barter))}
-      ${r("Barter min value", cp.min_product_value!=null?fmtMoney(cp.min_product_value):"")}
-      ${r("Favourite brands", (d.fav_brands||[]).map(esc).join(", "))}
-      ${r("Brands worked with", (d.brands_worked||[]).map(b=>esc(b.brand)+(b.type?` (${esc(b.type)})`:"")).join(", "))}
-      ${r("Skills", (d.skills||[]).map(esc).join(", "))}
-      ${r("Resources", (d.resources||[]).map(esc).join(", "))}
-      ${r("Categories", (pro.categories||[]).map(esc).join(", "))}
-    </div><div>
-      ${r("Name", esc([per.first_name,per.last_name].filter(Boolean).join(" ")))}
-      ${r("Gender", esc(L[per.gender]||per.gender||""))}
-      ${r("Birthday", per.date_of_birth?`${esc(fmtDate(per.date_of_birth))}${age!=null?` · ${age} yrs`:""}`:"")}
-      ${r("Marital status", esc(L[per.marital_status]||per.marital_status||""))}
-      ${per.marital_status==="married"?r("Anniversary", esc(fmtDate(per.marriage_anniversary))):""}
-      ${r("Pets", per.has_pet===false?"No":(d.pets||[]).length?(d.pets||[]).map(x=>`${esc(x.name)} (${esc(x.pet_type)})`).join(", "):per.has_pet?`${esc(per.pet_name||"")} (${esc(per.pet_type||"")})`:"—")}
-      ${r("WhatsApp", esc(con.whatsapp_e164||(row&&row.whatsapp)||"")+(con.whatsapp_verified_at?' <span class="tag good">verified</span>':""))}
-      ${r("Backup email", synthetic?"":esc(con.email||"")+(con.email&&!synthetic&&con.email_verified_at?' <span class="tag good">verified</span>':""))}
-      ${r("Travelling to", d.travel&&d.travel.city?esc([d.travel.city,d.travel.state,d.travel.country].filter(Boolean).join(", "))+(d.travel.until_date?` · till ${esc(fmtDate(d.travel.until_date))}`:""):"")}
-      ${r("Other profiles", (d.managed_profiles||[]).map(m=>`@${esc(m.handle)}${m.followers!=null?` · ${fmtNum(m.followers)}`:""}${m.category?` · ${esc(m.category)}`:""}`).join("<br>"))}
-    </div></div>
-    <div class="cd-block" style="margin-top:10px"><div class="cd-l">Addresses</div><div class="cd-body">${(d.addresses||[]).map(a=>`${a.is_default?"⭐ ":""}${esc([a.label,a.line1,a.line2,a.landmark,a.city,a.state,a.postal_code,a.country].filter(Boolean).join(", "))}`).join("<br>")||"—"}</div></div>
-    <div class="muted" style="font-size:11px;margin-top:10px">Private data — this view is recorded in the audit log.</div></div>`;
-  document.getElementById("auClose").onclick = ()=>{ box.innerHTML = ""; };
-  box.scrollIntoView({behavior:"smooth"});
+  const age = per.date_of_birth ? Math.floor((Date.now()-new Date(per.date_of_birth).getTime())/31557600000) : null;
+  const wa = con.whatsapp_e164 || mem.whatsapp || "";
+  const media = ig.media||[], eng = ig.followers && media.length ? (media.reduce((s,m)=>s+(m.likes||0)+(m.comments||0),0)/media.length/ig.followers*100).toFixed(2) : null;
+  const camps = D.campaigns||[], mk = D.marketplace||[];
+  const stageTag = s=>{ const [l,c] = APPLICANT_STAGE[s] || [String(s||"").replace(/_/g," "), "brand"]; return `<span class="tag ${c}">${esc(l)}</span>`; };
+  const tabs = [["profile","👤 Profile"],["instagram","📸 Instagram"],["campaigns",`📣 Campaigns (${camps.length+mk.length})`],["activity","📈 Activity"]];
+  const pic = ig.pic ? `<img class="ac360-pic" src="${esc(safeUrl(ig.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : `<span class="avatar ac360-pic">${esc(String(name).slice(0,2).toUpperCase())}</span>`;
+  const sections = {
+    profile: !D.identity_id ? `<div class="card"><div class="muted">This creator hasn't started their profile yet (signed in, profile not created).</div></div>` : `
+      ${!req.complete&&(req.missing||[]).length?`<div class="ac360-miss"><b>Still missing:</b> ${req.missing.map(esc).join(" · ")}</div>`:""}
+      <div class="ac360-cols">
+        <div class="card"><h4>Personal</h4>
+          ${r("Name", esc([per.first_name,per.last_name].filter(Boolean).join(" ")))}
+          ${r("Gender", esc(L[per.gender]||per.gender||""))}
+          ${r("Birthday", per.date_of_birth?`${esc(fmtDate(per.date_of_birth))}${age!=null?` · ${age} yrs`:""}`:"")}
+          ${r("Marital status", esc(L[per.marital_status]||per.marital_status||""))}
+          ${per.marital_status==="married"?r("Anniversary", esc(fmtDate(per.marriage_anniversary))):""}
+          ${r("Pets", per.has_pet===false?"No":(D.pets||[]).length?(D.pets||[]).map(x=>`🐾 ${esc(x.name)} (${esc(x.pet_type)})`).join("<br>"):per.has_pet?`${esc(per.pet_name||"")} (${esc(per.pet_type||"")})`:"")}</div>
+        <div class="card"><h4>Contact</h4>
+          ${r("WhatsApp", wa?`<a href="https://wa.me/${esc(wa.replace(/\D/g,""))}" target="_blank" rel="noopener">${esc(wa)}</a>${con.whatsapp_verified_at||mem.whatsapp?' <span class="tag good">verified</span>':""}`:"")}
+          ${r("Backup email", !synthetic&&con.email?`<a href="mailto:${esc(con.email)}">${esc(con.email)}</a>${con.email_verified_at?' <span class="tag good">verified</span>':' <span class="tag warn">not verified</span>'}`:"")}
+          ${r("Addresses", (D.addresses||[]).map(a=>`${a.is_default?"⭐ ":""}<b>${esc(a.label||"")}</b> ${esc([a.line1,a.line2,a.landmark,a.city,a.state,a.postal_code,a.country].filter(Boolean).join(", "))}`).join("<br>"))}
+          ${r("Travelling to", D.travel&&D.travel.city?esc([D.travel.city,D.travel.state,D.travel.country].filter(Boolean).join(", "))+(D.travel.until_date?` · till ${esc(fmtDate(D.travel.until_date))}`:""):"")}</div>
+        <div class="card"><h4>Professional</h4>
+          ${r("Display name", esc(pro.display_name||""))}
+          ${r("Primary city", esc([pro.city_coarse,pro.state_coarse].filter(Boolean).join(", ")))}
+          ${r("Niche", (pro.categories||[]).map(esc).join(", "))}
+          ${r("Languages", (pro.languages||[]).map(esc).join(", "))}
+          ${r("Travel willingness", esc(String(pro.travel_willingness||"").replace(/_/g," ")))}
+          ${r("Availability", esc(pro.availability_status||""))}
+          ${r("Management", esc(String(pro.management_status||"").replace(/_/g," ")))}
+          ${r("Other profiles", (D.managed_profiles||[]).map(m=>`<a href="https://instagram.com/${encodeURIComponent(m.handle)}" target="_blank" rel="noopener">@${esc(m.handle)}</a>${m.followers!=null?` · ${kNum(m.followers)}`:""}${m.category?` · ${esc(m.category)}`:""}`).join("<br>"))}</div>
+        <div class="card"><h4>Commercials</h4>
+          ${r("Rate card", (D.rate_items||[]).map(i=>`${esc(i.deliverable_type)} — <b>${fmtMoney(i.amount)}</b>`).join("<br>"))}
+          ${r("Open to barter", yn(cp.accepts_barter))}
+          ${cp.accepts_barter?r("Barter scope", esc(String(cp.barter_preference||"any relevant brand").replace(/_/g," "))):""}
+          ${cp.accepts_barter?r("Min product value", cp.min_product_value!=null?fmtMoney(cp.min_product_value):""):""}
+          ${r("Favourite brands", (D.fav_brands||[]).map(esc).join(", "))}
+          ${r("Brands worked with", (D.brands_worked||[]).map(b=>`${esc(b.brand)}${b.type?` <span class="muted">(${esc(String(b.type).replace(/_/g," "))})</span>`:""}${b.detected?' <span class="cp-badge cp-ig">IG</span>':""}`).join("<br>"))}</div>
+        <div class="card"><h4>Skills & resources</h4>
+          <div class="acr-chips">${(D.skills||[]).map(x=>`<span class="cp-tag">${esc(x)}</span>`).join("")||'<span class="muted">No skills</span>'}</div>
+          <div class="acr-chips" style="margin-top:10px">${(D.resources||[]).map(x=>`<span class="cp-tag">🎒 ${esc(x)}</span>`).join("")||'<span class="muted">No resources</span>'}</div></div>
+      </div>`,
+    instagram: !ig.username ? `<div class="card"><div class="muted">Instagram not connected yet.</div></div>` : `
+      <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">
+        <div class="ws-stat"><b>${kNum(ig.followers)}</b><span>Followers</span></div><div class="ws-stat"><b>${kNum(ig.follows)}</b><span>Following</span></div>
+        <div class="ws-stat"><b>${kNum(ig.media_count)}</b><span>Posts</span></div><div class="ws-stat"><b>${eng!=null?eng+"%":"—"}</b><span>Engagement</span></div>
+        <div class="ws-stat"><b>${ig.avg_reach!=null?kNum(Math.round(ig.avg_reach)):"—"}</b><span>Avg reach</span></div></div>
+      <div class="card" style="margin-top:12px">${r("Account", `<a href="https://instagram.com/${encodeURIComponent(ig.username)}" target="_blank" rel="noopener">@${esc(ig.username)}</a> ${ig.account_type?`<span class="tag">${esc(String(ig.account_type).replace(/_/g," ").toLowerCase())}</span>`:""}`)}
+        ${r("Bio", esc(ig.biography||""))}${ig.website?r("Website", `<a href="${esc(safeUrl(ig.website))}" target="_blank" rel="noopener">${esc(ig.website)}</a>`):""}
+        ${r("Connected", esc(fmtDateTime(ig.connected_at)))}${r("Last synced", agoTxt(ig.synced_at))}</div>
+      <div class="ac360-media">${media.map(m=>`<a href="${esc(safeUrl(m.permalink||"#"))}" target="_blank" rel="noopener" class="ac360-post">${m.img?`<img src="${esc(safeUrl(m.img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:""}
+          <span>❤ ${kNum(m.likes||0)} · 💬 ${kNum(m.comments||0)}</span></a>`).join("")||'<div class="muted">No recent posts synced.</div>'}</div>`,
+    campaigns: `<div class="card">${camps.length||mk.length ? `<div class="list">${camps.map(c=>`<div class="row"><div class="r-main">
+          <div class="r-title">${esc(c.campaign||"Campaign")} ${typeTag(c.campaign_type)}</div>
+          <div class="r-sub">${esc([c.brand,c.org_name].filter(Boolean).join(" · "))}${c.applied_profile?` · as <b>@${esc(c.applied_profile)}</b>`:""} · applied ${esc(fmtDate(c.applied_at))}${c.starts_on?` · runs ${esc(fmtDate(c.starts_on))} – ${esc(fmtDate(c.ends_on))}`:""}${c.reason?` · <i>${esc(c.reason)}</i>`:""}</div></div>
+          ${stageTag(c.stage)}</div>`).join("")}
+        ${mk.map(a=>`<div class="row"><div class="r-main"><div class="r-title">${esc(a.campaign_name||a.campaign||"Marketplace campaign")}</div><div class="r-sub">Marketplace · applied ${esc(fmtDate(a.applied_at))}</div></div><span class="tag ${a.status==="Approved"?"good":a.status==="Rejected"?"":"warn"}">${esc(a.status||"Applied")}</span></div>`).join("")}</div>
+        <div style="margin-top:10px"><button class="mini-btn ghost" id="acGoApps">Open Applications tab →</button></div>`
+        : `<div class="muted">No campaign applications yet.</div>`}</div>`,
+    activity: `<div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
+        <div class="ws-stat"><b>${esc(fmtDate(mem.joined_at))}</b><span>Joined</span></div><div class="ws-stat"><b>${agoTxt(mem.last_sign_in_at)}</b><span>Last sign-in</span></div>
+        <div class="ws-stat"><b>${fmtNum(mem.logins||0)}</b><span>Logins</span></div><div class="ws-stat"><b>${agoTxt(mem.last_seen)}</b><span>Last seen</span></div>
+        <div class="ws-stat"><b>${esc(mem.consent||"—")}</b><span>Cookies</span></div><div class="ws-stat"><b>${esc(mem.last_city||"—")}</b><span>Last location</span></div></div>
+      <div id="ac360Tl" style="margin-top:12px">${skel("list",3)}</div>` };
+  const paint = ()=>{
+    bodyEl.innerHTML = `<div class="ac360-head">${pic}<div style="min-width:0;flex:1"><h3>${esc(name)}</h3>
+        <div class="muted">${ig.username?`<a href="https://instagram.com/${encodeURIComponent(ig.username)}" target="_blank" rel="noopener">@${esc(ig.username)}</a> · ${kNum(ig.followers)} followers · `:""}${esc(mem.status||"")} · joined ${esc(fmtDate(mem.joined_at))}</div>
+        <div class="ac360-prog">${D.identity_id?(req.complete?'<span class="tag good">✅ Profile complete — campaign ready</span>':`<span class="tag warn">Profile ${req.done??0}/${req.total??"?"}</span>`):'<span class="tag warn">No profile yet</span>'}
+          ${wa?`<a class="mini-btn ghost" href="https://wa.me/${esc(wa.replace(/\D/g,""))}" target="_blank" rel="noopener">💬 WhatsApp</a>`:""}${!synthetic&&con.email?`<a class="mini-btn ghost" href="mailto:${esc(con.email)}">✉️ Email</a>`:""}</div></div>
+        <button class="ci-pop-x" id="acX" aria-label="Close">✕</button></div>
+      <div class="admin-tabs ac360-tabs">${tabs.map(t=>`<button class="${_ac360Tab===t[0]?"act":""}" data-ac360="${t[0]}">${t[1]}</button>`).join("")}</div>
+      <div class="ac360-sec">${sections[_ac360Tab]}</div>
+      <div class="muted" style="font-size:11px;margin-top:12px">Private data — this view is recorded in the audit log.</div>`;
+    bodyEl.querySelector("#acX").onclick = close;
+    bodyEl.querySelectorAll("[data-ac360]").forEach(b=> b.onclick = ()=>{ _ac360Tab = b.dataset.ac360; paint(); });
+    const ga = bodyEl.querySelector("#acGoApps"); if(ga) ga.onclick = ()=>{ close(); _adminTab = "applications"; currentPage = "admin"; renderShell(); };
+    if(_ac360Tab==="activity") adminActivityTimeline(member, { name }, bodyEl.querySelector("#ac360Tl"));
+  };
+  paint();
 }
 
 // Super Admin → Creator activity: who is on the platform, from where, for how long, doing what.
@@ -3078,8 +3212,8 @@ async function adminActivity(body){
     </tbody></table></div>` : `<div class="muted" style="padding:8px">No activity yet.</div>`}</div><div id="actTimeline"></div>`;
   body.querySelectorAll("[data-acttl]").forEach(b=> b.onclick = ()=> adminActivityTimeline(b.dataset.acttl, rows.find(r=>r.member_id===b.dataset.acttl)));
 }
-async function adminActivityTimeline(member, row){
-  const box = document.getElementById("actTimeline"); if(!box) return;
+async function adminActivityTimeline(member, row, target){
+  const box = target || document.getElementById("actTimeline"); if(!box) return;
   box.innerHTML = `<div class="card"><div class="muted">Loading timeline…</div></div>`;
   const { data, error } = await sb.rpc("admin_activity_timeline", { p_member: member, p_limit: 300 });
   if(error){ box.innerHTML = `<div class="card"><div class="muted">${esc(error.message)}</div></div>`; return; }
@@ -3089,7 +3223,7 @@ async function adminActivityTimeline(member, row){
       <td style="max-width:260px;font-size:12px">${esc(JSON.stringify(e.detail||{})==="{}"?"":JSON.stringify(e.detail))}</td><td><code>${esc(e.ip||"")}</code></td>
       <td>${esc([e.city,e.region,e.country].filter(Boolean).join(", "))}</td><td style="max-width:200px;font-size:11px" class="muted">${esc((e.user_agent||"").slice(0,90))}</td></tr>`).join("")}
   </tbody></table></div></div>`;
-  box.scrollIntoView({behavior:"smooth"});
+  if(!target) box.scrollIntoView({behavior:"smooth"});
 }
 
 function renderAdmin(){
@@ -3103,7 +3237,7 @@ function loadAdmin(){
   document.querySelectorAll("[data-atab]").forEach(b=> b.onclick = ()=>{ _adminTab = b.dataset.atab; currentPage="admin"; renderShell(); });
   const body = document.getElementById("adminBody");
   if(!body || !window.sb) return;
-  ({ overview:adminOverview, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+  ({ overview:adminOverview, creators:adminCreators, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
 }
 
 /* System check — live-verifies the deployed database matches the code (tables, columns, RPCs).
@@ -3187,7 +3321,7 @@ async function adminOverview(body, silent){
     ["campaigns_awaiting","📣","Campaigns waiting for approval","campaigns"],
     ["contracts_to_send","✍️","Approved creators — send contract","@campaignops"],
     ["content_to_review","🎬","Content submitted — review","@campaignops"],
-    ["creators_incomplete","👤","Creators who haven't finished their profile","users"]];
+    ["creators_incomplete","👤","Creators who haven't finished their profile","creators:incomplete"]];
   const open = todo.filter(x=>Number(t[x[0]])>0);
   const ago = s=>{ const m=Math.round((Date.now()-new Date(s).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
   const EV = { login:"signed in", sign_out:"signed out", consent:"chose cookies", campaign_apply:"applied to a campaign", instagram_connect:"connected Instagram",
@@ -3202,8 +3336,8 @@ async function adminOverview(body, silent){
         : `<div class="muted" style="padding:6px">All clear — nothing waiting on you right now ✅</div>`}</div>
     <div class="ci-sub">People</div>
     <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
-      ${stat(pe.total,"Total users","users")}${stat(pe.creators,"Creators","users")}${stat(pe.agencies,"Agencies","users")}${stat(pe.brands,"Brands","users")}
-      ${stat(pe.instagram_connected,"Instagram connected","users")}${stat(pe.joined_today,"Joined today","users")}${stat(pe.signed_in_today,"Signed in today","activity")}</div>
+      ${stat(pe.total,"Total users","users")}${stat(pe.creators,"Creators","creators")}${stat(pe.agencies,"Agencies","users")}${stat(pe.brands,"Brands","users")}
+      ${stat(pe.instagram_connected,"Instagram connected","creators:ig")}${stat(pe.joined_today,"Joined today","users")}${stat(pe.signed_in_today,"Signed in today","activity")}</div>
     <div class="ci-sub" style="margin-top:14px">Campaigns</div>
     <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
       ${stat(c.total,"Campaigns","campaigns")}${stat(c.live,"Open now","campaigns")}${stat(c.paid,"💰 Paid","campaigns")}${stat(c.barter,"🎁 Barter","campaigns")}
@@ -3215,7 +3349,8 @@ async function adminOverview(body, silent){
   body.querySelectorAll("[data-ovgo]").forEach(el=> el.onclick = ()=>{
     const go = el.dataset.ovgo;
     if(go.startsWith("@")){ currentPage = go.slice(1); renderShell(); return; }
-    _adminTab = go; currentPage = "admin"; renderShell(); });
+    const [tab, f] = go.split(":"); if(tab==="creators"){ _acrF = f || "all"; _acrPage = 0; }
+    _adminTab = tab; currentPage = "admin"; renderShell(); });
   clearInterval(_ovTimer);
   _ovTimer = setInterval(()=>{
     const b = document.getElementById("adminBody");
