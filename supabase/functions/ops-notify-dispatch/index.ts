@@ -6,7 +6,9 @@
 // RPCs (atomic claim — overlapping runs never double-send; failures retry with backoff).
 // WhatsApp sends are mirrored into the creator's "Campaign updates" thread so delivery statuses land and the
 // creator's replies show up in the app inbox. Outside Meta's 24h window a send needs an approved template;
-// without one the row is marked 'skipped' (the in-app + email copies still reach the creator).
+// WA_UPDATE_TEMPLATE (one approved utility template, variables {{1}} name · {{2}} update · {{3}} link) covers every
+// alert that has no template of its own; without any template the row is marked 'skipped' (in-app + email still go).
+// On each authorised run the dispatcher stores its secret + project URL in Vault so pg_cron / pg_net can call it.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { workerGuard } from "../_shared/worker_auth.ts";
 import { getProvider } from "../_shared/wa_provider.ts";
@@ -15,6 +17,10 @@ import { getEmailProvider, renderEmailHtml } from "../_shared/email_provider.ts"
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APP_URL = (Deno.env.get("APP_URL") || "").replace(/\/+$/, "");   // e.g. https://bountythreads.app
+const WA_UPDATE_TEMPLATE = (Deno.env.get("WA_UPDATE_TEMPLATE") || "").trim();
+const WA_UPDATE_TEMPLATE_LANG = (Deno.env.get("WA_UPDATE_TEMPLATE_LANG") || "en").trim();
+// WhatsApp template parameters may not contain new lines / tabs / 4+ spaces
+const waParam = (s: string, max = 900) => String(s || "").replace(/\s*[\r\n\t]+\s*/g, " · ").replace(/ {4,}/g, "   ").trim().slice(0, max) || "-";
 
 // app nav key ('mycampaigns') → absolute deep link the app opens on boot (app.html?go=<route>)
 function deepLink(route?: string | null): string | null {
@@ -28,6 +34,8 @@ Deno.serve(async (req) => {
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
   const api = admin.schema("api");
+  // let the database call us (instant kick on new alerts + 1-minute cron); best-effort, idempotent
+  try { await api.rpc("ops_register_worker", { p_secret: Deno.env.get("CI_WORKER_SECRET") || "", p_url: SUPABASE_URL }); } catch (_e) { /* ignore */ }
   const { data: rows, error } = await api.rpc("ops_outbox_claim", { p_limit: 50 });
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
 
@@ -51,8 +59,16 @@ Deno.serve(async (req) => {
         let out: Record<string, unknown>;
         if (open) out = { to: row.to_address, text };
         else if (p.wa_template) out = { to: row.to_address, template: String(p.wa_template), variables: (p.wa_vars as string[]) || [] };
-        else {
-          await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped", p_error: "outside 24h window and no approved wa_template" });
+        else if (WA_UPDATE_TEMPLATE) {
+          let name = "there";
+          try {
+            const { data: m } = await admin.from("members").select("name").eq("id", row.recipient_member_id).maybeSingle();
+            if (m?.name) name = String(m.name).split(" ")[0];
+          } catch (_e) { /* keep default */ }
+          out = { to: row.to_address, template: WA_UPDATE_TEMPLATE, lang: WA_UPDATE_TEMPLATE_LANG,
+                  variables: [waParam(name, 60), waParam([p.title, p.text].filter(Boolean).join(" — ")), waParam(link || APP_URL || "the app", 300)] };
+        } else {
+          await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped", p_error: "WhatsApp 24h window closed — set WA_UPDATE_TEMPLATE to an approved template" });
           skipped++; continue;
         }
         const res = await getProvider().send(out as any);
@@ -63,7 +79,7 @@ Deno.serve(async (req) => {
           const { data: convId } = await admin.rpc("wa_system_conversation", { p_user: row.recipient_member_id, p_phone: row.to_address });
           if (convId) {
             await admin.from("wa_messages").insert({ conversation_id: convId, sender_user_id: null, direction: "outbound",
-              body: open ? text : `[template:${p.wa_template}] ${p.title || ""}`.trim(), wa_message_id: ref, status: "sent" });
+              body: open ? text : [p.title, p.text].filter(Boolean).join("\n\n"), wa_message_id: ref, status: "sent" });
             await admin.from("wa_conversations").update({ last_message_at: new Date().toISOString() }).eq("id", convId);
           }
         } catch (_e) { /* mirroring never blocks delivery */ }

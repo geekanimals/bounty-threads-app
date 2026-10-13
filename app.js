@@ -90,8 +90,8 @@ function renderNav(){
   if(currentRole==="creator" && window.__ciOpsEnabled){ const mi=keys.indexOf("marketplace"); if(mi>=0) keys.splice(mi,1); }
   if(currentRole!=="creator" && window.__ciOpsEnabled){ if(!keys.includes("campaignops")) keys.splice(2,0,"campaignops"); if(!keys.includes("brandsetup")) keys.splice(3,0,"brandsetup"); }
   if(!keys.includes("messages")) keys.splice(1,0,"messages");   // WhatsApp 1:1 messaging (all roles)
-  // Barter-pipeline Alerts inbox is DARK (operational_pilot); shown for all roles when the ops layer is on.
-  if(window.__ciOpsEnabled && !keys.includes("alerts")) keys.splice(1,0,"alerts");
+  // Alerts live only in the top-right bell (no sidebar entry for any role).
+  { const ai = keys.indexOf("alerts"); if(ai>=0) keys.splice(ai,1); }
   if(window.__isAdmin){ const ai = keys.indexOf("admin"); if(ai>=0) keys.splice(ai,1); keys.unshift("admin"); }   // Super Admin first
   renderNavKeys(nav, keys);
 }
@@ -3033,7 +3033,7 @@ function wireMkComposer(){
 
 /* ================= ADMIN (platform team — approve agency signups) ================= */
 /* ================= SUPER ADMIN CONSOLE ================= */
-const ADMIN_TABS = [["overview","🏠 Overview"],["creators","🎨 Creators"],["users","👥 All users"],["approvals","✅ Account approvals"],["campaigns","📣 All campaigns"],["applications","📝 Applications"],["activity","📈 Activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["admins","Super admins"]];
+const ADMIN_TABS = [["overview","🏠 Overview"],["creators","🎨 Creators"],["users","👥 All users"],["approvals","✅ Account approvals"],["campaigns","📣 All campaigns"],["applications","📝 Applications"],["delivery","📨 WhatsApp & email"],["activity","📈 Activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["admins","Super admins"]];
 const ADMIN_TABLES = [
   ["members","Members (all accounts)"],["creators","Agency creator rosters"],["campaigns","Campaigns"],["barter_items","Barter items"],
   ["applications","Applications"],["invites","Invites"],["irm_contacts","IRM contacts"],
@@ -3266,6 +3266,55 @@ async function adminCreatorProfile(member, row){
   paint();
 }
 
+// Super Admin → WhatsApp & email: is every alert actually reaching people? (outbox health, reasons, retry, test)
+let _dlvTimer = null;
+async function adminDelivery(body, silent){
+  if(!silent) body.innerHTML = skel("table",6);
+  const { data, error } = await sb.rpc("admin_delivery");
+  if(error){ if(!silent) body.innerHTML = adminErr(error); return; }
+  const d = data||{}, st = d.stats||{}, n = k=> Number(st[k]||0);
+  const ago = t=>{ if(!t) return "never"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
+  const jobs = d.jobs||[], runs = d.runs||[], recent = d.recent||[];
+  const waSkippedNoTpl = recent.filter(r=>r.channel==="whatsapp" && r.status==="skipped" && /template/i.test(r.error||"")).length;
+  const stuck = d.oldest_queued && (Date.now()-new Date(d.oldest_queued).getTime()) > 5*60000;
+  const checks = [
+    [d.worker_configured, "Dispatcher connected", d.worker_configured ? "Database can trigger sends instantly" : "Run the one-time connect command (see below) after deploying ops-notify-dispatch"],
+    [jobs.some(j=>j.name==="ci-notify-dispatch" && j.active), "Every-minute safety run", jobs.length ? jobs.map(j=>`${j.name} (${j.schedule})`).join(", ") : "pg_cron schedule not found"],
+    [!stuck, "Queue moving", stuck ? `Oldest queued message waiting since ${ago(d.oldest_queued)}` : "No messages stuck in the queue"],
+    [n("whatsapp:sent")>0 && !waSkippedNoTpl, "WhatsApp delivering", waSkippedNoTpl ? `${waSkippedNoTpl} recent WhatsApp alert(s) skipped — WhatsApp template not set (WA_UPDATE_TEMPLATE)` : n("whatsapp:sent") ? `Last sent ${ago(d.last_sent&&d.last_sent.whatsapp)}` : "Nothing sent on WhatsApp yet"],
+    [n("email:sent")>0 && !n("email:failed"), "Email delivering", n("email:failed") ? `${n("email:failed")} failed in 7 days — check SMTP secrets` : n("email:sent") ? `Last sent ${ago(d.last_sent&&d.last_sent.email)}` : "Nothing sent by email yet"]];
+  const tag = s=> ({sent:'<span class="tag good">sent</span>', queued:'<span class="tag warn">queued</span>', sending:'<span class="tag warn">sending</span>', failed:'<span class="tag bad" style="background:rgba(239,68,68,.12);color:#dc2626">failed</span>', skipped:'<span class="tag">skipped</span>'})[s] || esc(s);
+  body.innerHTML = `
+    <div class="rp-kpis">
+      <div><b>${n("whatsapp:sent")}</b>WhatsApp sent · 7d</div><div><b>${n("whatsapp:skipped")+n("whatsapp:failed")}</b>WhatsApp not sent</div>
+      <div><b>${n("email:sent")}</b>Emails sent · 7d</div><div><b>${n("email:failed")+n("email:skipped")}</b>Emails not sent</div>
+      <div><b>${n("whatsapp:queued")+n("email:queued")+n("whatsapp:sending")+n("email:sending")}</b>In queue</div></div>
+    <div class="card"><h3 style="margin-top:0">Health</h3><div class="list">${checks.map(([ok,t,s])=>`<div class="row"><span class="dot ${ok?"good":"warn"}"></span>
+        <div class="r-main"><div class="r-title">${ok?"✅":"⚠️"} ${esc(t)}</div><div class="r-sub">${esc(s)}</div></div></div>`).join("")}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button class="mini-btn" id="dlvRetry">↻ Retry skipped / failed (3 days)</button>
+        <input id="dlvPhone" placeholder="+91… WhatsApp" style="padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;min-width:150px">
+        <input id="dlvEmail" placeholder="email" style="padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;min-width:170px">
+        <button class="mini-btn ghost" id="dlvTest">Send test</button><span class="muted" id="dlvMsg" style="font-size:12px;align-self:center"></span></div>
+      ${runs.length?`<div class="muted" style="font-size:12px;margin-top:10px">Last runs: ${runs.slice(0,3).map(r=>`${esc(r.job)} ${esc(r.status)} ${ago(r.at)}`).join(" · ")}</div>`:""}</div>
+    <div class="card" style="margin-top:14px"><h3 style="margin-top:0">Latest messages <span class="muted" style="font-size:12px;font-weight:400">· every alert goes in-app + WhatsApp + email</span></h3>
+      <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>When</th><th>Channel</th><th>To</th><th>Alert</th><th>Status</th><th>Why / note</th></tr></thead><tbody>
+      ${recent.map(r=>`<tr><td style="white-space:nowrap;font-size:12px">${esc(fmtDateTime(r.created_at))}</td><td>${r.channel==="whatsapp"?"💬 WhatsApp":"✉️ Email"}</td>
+        <td style="font-size:12px"><b>${esc(r.who||"—")}</b>${r.role?` <span class="muted">${esc(r.role)}</span>`:""}<div class="muted">${esc(r.to)}</div></td>
+        <td style="font-size:12px;max-width:280px">${esc(r.title||r.template||"")}</td><td>${tag(r.status)}${r.attempts>1?` <span class="muted" style="font-size:11px">×${r.attempts}</span>`:""}</td>
+        <td style="font-size:12px;max-width:260px" class="muted">${esc(r.error||(r.sent_at?"Sent "+ago(r.sent_at):""))}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">No messages yet.</td></tr>`}
+      </tbody></table></div></div>`;
+  document.getElementById("dlvRetry").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_retry", { p_channel: null });
+    document.getElementById("dlvMsg").textContent = e ? e.message : `${k||0} message(s) re-queued`; setTimeout(()=>adminDelivery(body,true), 3000); };
+  document.getElementById("dlvTest").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_test", { p_phone: document.getElementById("dlvPhone").value.trim()||null, p_email: document.getElementById("dlvEmail").value.trim()||null });
+    document.getElementById("dlvMsg").textContent = e ? e.message : `${k} test message(s) queued — status updates below`; setTimeout(()=>adminDelivery(body,true), 4000); };
+  clearInterval(_dlvTimer);
+  _dlvTimer = setInterval(()=>{ const b = document.getElementById("adminBody");
+    if(currentPage!=="admin" || _adminTab!=="delivery" || !b){ clearInterval(_dlvTimer); return; }
+    if(document.visibilityState!=="visible" || ["dlvPhone","dlvEmail"].includes(document.activeElement?.id)) return;
+    adminDelivery(b, true); }, 20000);
+}
+
 // Super Admin → Creator activity: who is on the platform, from where, for how long, doing what.
 async function adminActivity(body){
   body.innerHTML = `<div class="card"><div class="muted">Loading activity…</div></div>`;
@@ -3309,7 +3358,7 @@ function loadAdmin(){
   document.querySelectorAll("[data-atab]").forEach(b=> b.onclick = ()=>{ _adminTab = b.dataset.atab; currentPage="admin"; renderShell(); });
   const body = document.getElementById("adminBody");
   if(!body || !window.sb) return;
-  ({ overview:adminOverview, creators:adminCreators, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+  ({ overview:adminOverview, creators:adminCreators, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, delivery:adminDelivery, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
 }
 
 /* System check — live-verifies the deployed database matches the code (tables, columns, RPCs).
@@ -4125,6 +4174,8 @@ function renderShell(){
     const MOVED = { alerts:"dashboard", onboarding:"profile", growth:"mycampaigns", marketplace: window.__ciOpsEnabled ? "opencampaigns" : "marketplace" };
     if(MOVED[currentPage]) currentPage = MOVED[currentPage];
   }
+  // the old Alerts page is now the bell dropdown, for every role
+  if(currentPage==="alerts"){ currentPage = window.__isAdmin ? "admin" : "dashboard"; setTimeout(()=>{ try{ openNotif(); }catch(e){} }, 300); }
   if(window.__profileGate && !GATE_OPEN_PAGES.includes(currentPage)) currentPage = "mediakit";
   if(window.Tracker) Tracker.page(currentPage);
   renderNav(); renderMe(); renderContent();
@@ -4332,6 +4383,7 @@ function markSuperAdmin(){
   window.__isAdmin = true;
   const wrap = document.querySelector(".role-switch");
   if(wrap) wrap.innerHTML = `<label>Signed in as</label><div class="role-static">🛡 Super Admin</div>`;
+  if(window.__pendingAdminTab){ _adminTab = window.__pendingAdminTab; delete window.__pendingAdminTab; window.__adminLanded = true; currentPage = "admin"; renderShell(); return; }
   const deep = new URLSearchParams(location.search).get("go");
   if(!window.__adminLanded && !deep && (currentPage==="dashboard" || !currentPage)){ window.__adminLanded = true; _adminTab = "overview"; currentPage = "admin"; renderShell(); }
   else renderNav();
@@ -4447,8 +4499,15 @@ function init(){
   if(!_alertTimer){ _alertTimer = setInterval(pollAlerts, 20000); setTimeout(pollAlerts, 1500); document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") pollAlerts(); }); }
   initRoles();
   // deep link from a WhatsApp / email push: app.html?go=<page> opens that page (then the param is dropped)
-  const go = new URLSearchParams(location.search).get("go");
-  if(go && PAGES[go]){ currentPage = go; history.replaceState({}, "", location.pathname); }
+  // deep links from WhatsApp / email alerts: app.html?go=<route>  (role-aware; "admin:<tab>" opens a Super Admin tab)
+  let go = new URLSearchParams(location.search).get("go");
+  if(go){
+    history.replaceState({}, "", location.pathname);
+    if(/^admin:/.test(go)){ const tab = go.split(":")[1] || "overview"; if(window.__isAdmin){ _adminTab = tab; go = "admin"; } else { window.__pendingAdminTab = tab; go = "dashboard"; } }
+    if(currentRole==="creator") go = ({ onboarding:"profile", alerts:"dashboard", campaigns:"mycampaigns", approvals:"mycampaigns", campaignops:"mycampaigns", marketplace:"opencampaigns" })[go] || go;
+    else go = ({ mycampaigns:"campaigns", opencampaigns:"campaigns", onboarding:"dashboard", profile:"dashboard", mediakit:"dashboard" })[go] || go;
+    if(PAGES[go]) currentPage = go;
+  }
   renderShell();
   wireSignOut();
   $("#searchTrigger").onclick=openPalette;
