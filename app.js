@@ -234,6 +234,21 @@ async function paintMeCard(){
   anchorMeCard();
 }
 
+
+/* ---------- Live pages: every workspace page re-reads the database on its own ----------
+ * One timer at a time, paused when the tab is hidden, a modal is open or the operator is typing. */
+let _liveTimer = null, _livePage = null;
+function livePage(page, fn, ms){
+  clearInterval(_liveTimer); _livePage = page;
+  _liveTimer = setInterval(()=>{
+    if(currentPage !== page){ clearInterval(_liveTimer); _liveTimer = null; return; }
+    if(document.visibilityState !== "visible") return;
+    if(document.querySelector(".modal-overlay.open") || document.getElementById("invPanel") || document.getElementById("ac360")) return;
+    const a = document.activeElement;
+    if(a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT")) return;
+    try{ fn(); }catch(e){}
+  }, ms || 30000);
+}
 /* ---------- Pages ---------- */
 function pageHead(title, sub, action){
   return `<div class="page-head"><div><h1>${title}</h1><p>${sub}</p></div>${action?`<button class="btn">${action}</button>`:""}</div>`;
@@ -487,7 +502,7 @@ function renderDashboard(){
   let html = pageHead("Dashboard", `Welcome back, ${esc(first)} — here's your live cockpit.`);
   html += `<div id="onboardCard"></div>`;
   html += kpiRow(role);
-  if(role!=="creator") html += `<div id="inboundAppsCard"></div>`;
+  if(role!=="creator") html += `<div id="wsLive"></div><div id="inboundAppsCard"></div>`;
   html += `<div class="grid two"><div class="grid" style="gap:16px">
       <div class="card"><h3>Today's Tasks</h3><div class="list" id="tasksList"><div class="muted" style="padding:8px">Loading…</div></div></div>
       <div class="card"><h3>Recent Activity</h3><div class="list" id="activityList"><div class="muted" style="padding:8px">Loading…</div></div></div>
@@ -546,11 +561,29 @@ async function loadDashboard(){
       ]
     );
     loadInboundApplications();
+    loadWorkspaceLive();
   }
   renderTasks(campaigns, barter);
   renderActivity(buildActivityItems(creators, campaigns, barter));
 }
 
+
+// One live strip across the top of the workspace dashboard — the same numbers the sidebar pages show.
+async function loadWorkspaceLive(){
+  const box = document.getElementById("wsLive"); if(!box || !window.sb) return;
+  const { data, error } = await sb.schema("api").rpc("workspace_live").then(r=>r, e=>({error:e}));
+  if(error || !data){ box.innerHTML = ""; return; }
+  const d = data, c = d.campaigns||{}, ap = d.applications||{}, ba = d.barter||{}, co = d.content||{}, ig = d.instagram||{}, dx = d.discovery||{};
+  const tile = (v,l,page)=>`<div class="ws-stat"${page?` data-wsgo="${page}" style="cursor:pointer"`:""}><b>${fmtNum(v||0)}</b><span>${l}</span></div>`;
+  box.innerHTML = `<div class="ci-sub">${d.scope==="platform"?"Across every workspace":"Your workspace"} <span class="muted" style="font-weight:400;font-size:12px">· live</span></div>
+    <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));margin-bottom:16px">
+      ${tile(c.live,"Campaigns live","campaigns")}${c.awaiting?tile(c.awaiting,"Awaiting approval","approvals"):""}
+      ${tile(ap.pending,"Creators to decide","approvals")}${tile(ap.invited,"Invites out","campaigns")}
+      ${tile(ap.approved,"Creators on board","campaigns")}${tile(co.published,"Posts published","reports")}
+      ${co.due_7d?tile(co.due_7d,"Due in 7 days","campaignops"):""}${tile(ba.delivered,"Products delivered","logistics")}
+      ${tile(ig.connected,"Instagram connected","creators")}${tile(dx.pool,"New on Instagram","discover")}</div>`;
+  box.querySelectorAll("[data-wsgo]").forEach(el2=> el2.onclick = ()=>{ currentPage = el2.dataset.wsgo; renderShell(); });
+}
 // Agency-side: show creator applications to THIS org's campaigns, right on the dashboard,
 // so they're noticed without digging into Approvals. Approve/decline inline.
 async function loadInboundApplications(){
@@ -1738,40 +1771,90 @@ function openStoryModal(){
 }
 
 /* ================= APPROVALS (campaigns + applications) ================= */
+/* ---------- Approvals: every decision waiting on you, in one live place ----------
+ * Super Admin: agency / brand signups + every workspace's campaigns and creator applications.
+ * Agency & brand: their own campaigns and the creators who applied to them. */
+let _apvTimer = null, _apvSig = "";
 function renderApprovals(){
-  let html = pageHead("Approvals","Campaigns & creator applications awaiting sign-off.");
-  html += `<div class="grid two">
-    <div class="card"><h3>Campaigns awaiting approval</h3><div class="list" id="campApprovals"><div class="muted" style="padding:8px">Loading…</div></div></div>
-    <div class="card"><h3>Creator applications</h3><div class="list" id="appApprovals"><div class="muted" style="padding:8px">Loading…</div></div></div>
-  </div>`;
-  return html;
+  return pageHead("Approvals","Everything waiting on your decision — signups, campaigns and creators, live.")
+    + `<div id="apvBody">${skel("list",4)}</div>`;
 }
-async function loadApprovals(){
-  if(!window.sb) return;
-  const camps=document.getElementById("campApprovals"), apps=document.getElementById("appApprovals");
-  const [c,a] = await Promise.all([
-    sb.from("campaigns").select("*").eq("status","Approval").order("created_at",{ascending:false}),
-    sb.from("applications").select("*").eq("status","Applied").order("created_at",{ascending:false})
-  ]);
-  const cl=c.data||[], al=a.data||[];
-  if(camps){ camps.innerHTML = cl.length ? cl.map(x=>`<div class="row"><div class="r-main"><div class="r-title">${esc(x.name)}</div><div class="r-sub">${esc(x.brand)||"—"} · ${esc(x.type)||""}</div></div>
-    <span><button class="mini-btn" data-capprove="${esc(x.id)}">Approve</button> <button class="mini-btn ghost" data-creject="${esc(x.id)}">Reject</button></span></div>`).join("") : `<div class="muted" style="padding:8px">Nothing awaiting approval 🎉</div>`; }
-  if(apps){ apps.innerHTML = al.length ? al.map(x=>`<div class="row"><div class="r-main"><div class="r-title">${esc(x.creator_name)||"Creator"}</div><div class="r-sub">${esc(x.campaign_name)||""}</div></div>
-    <span><button class="mini-btn" data-aapprove="${esc(x.id)}">Approve</button> <button class="mini-btn ghost" data-adecline="${esc(x.id)}">Decline</button></span></div>`).join("") : `<div class="muted" style="padding:8px">No pending applications.</div>`; }
-  document.querySelectorAll("[data-capprove]").forEach(b=>b.onclick=()=>updateStatus("campaigns", b.dataset.capprove, {status:"Sourcing"}, loadApprovals));
-  document.querySelectorAll("[data-creject]").forEach(b=>b.onclick=()=>updateStatus("campaigns", b.dataset.creject, {status:"Draft"}, loadApprovals));
-  document.querySelectorAll("[data-aapprove]").forEach(b=>b.onclick=()=>updateStatus("applications", b.dataset.aapprove, {status:"Approved"}, loadApprovals));
-  document.querySelectorAll("[data-adecline]").forEach(b=>b.onclick=()=>declineLegacyApplication(b.dataset.adecline, loadApprovals));
-  // creators who applied from their Media Kit (pipeline) to this org's campaigns
-  if(apps){
-    const r = await sb.schema("api").rpc("org_applicants", { p_campaign:null, p_stage:null }).then(x=>x, ()=>({data:[]}));
-    const pend = (r.data||[]).filter(p=>["applied","eligible","sent_to_brand"].includes(p.stage));
-    if(pend.length){
-      if(!al.length) apps.innerHTML = "";
-      apps.insertAdjacentHTML("afterbegin", pend.map(p=>applicantRowHtml(p, true)).join(""));
-      wireApplicantButtons(apps, loadApprovals);
-    }
-  }
+async function loadApprovals(silent){
+  const body = document.getElementById("apvBody"); if(!body || !window.sb) return;
+  const { data, error } = await sb.schema("api").rpc("approvals_inbox").then(r=>r, e=>({error:e}));
+  if(error){ if(!silent) body.innerHTML = `<div class="card"><div class="muted">${esc(error.message||error)}</div></div>`; return; }
+  const d = data||{}, sig = JSON.stringify(d); if(silent && sig===_apvSig) return; _apvSig = sig;
+  const signups = d.signups||[], camps = d.campaigns||[], apps = d.applicants||[], mk = d.marketplace||[];
+  const total = signups.length + camps.length + apps.length + mk.length;
+  const ago = t=>{ if(!t) return ""; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
+  const roleName = r=>({owner:"Agency Owner",brand:"Brand",manager:"Manager",corporate:"Corporate"}[r]||r);
+  body.innerHTML = `<div class="rp-kpis">
+      ${d.is_admin?`<div><b>${signups.length}</b>Account signups</div>`:""}
+      <div><b>${camps.length}</b>Campaigns to approve</div>
+      <div><b>${apps.length+mk.length}</b>Creators to decide</div>
+      <div><b>${total}</b>Total waiting</div></div>
+    ${total? "" : `<div class="card"><div class="muted" style="padding:8px">All clear — nothing waiting on you right now ✅</div></div>`}
+    ${d.is_admin && signups.length ? `<div class="card"><h3 style="margin-top:0">🏢 Agency & brand signups</h3><div class="list">
+      ${signups.map(x=>`<div class="row"><div class="r-main">
+        <div class="r-title">${esc(x.name||x.email||"—")} <span class="tag">${esc(roleName(x.role))}</span>${x.org_name?` · ${esc(x.org_name)}`:""}</div>
+        <div class="r-sub">${x.email?`📧 ${esc(x.email)} ${x.email_verified?'<span class="tag good">verified</span>':'<span class="tag warn">not verified</span>'}`:""}${x.whatsapp?` · 💬 ${esc(x.whatsapp)}`:""} · ${ago(x.created_at)}</div></div>
+        <span style="display:flex;gap:6px"><button class="mini-btn" data-apvsign="${esc(x.id)}">Approve</button><button class="mini-btn ghost" data-apvsignno="${esc(x.id)}">Decline</button></span></div>`).join("")}
+      </div></div>` : ""}
+    ${camps.length ? `<div class="card" style="margin-top:14px"><h3 style="margin-top:0">📣 Campaigns awaiting approval</h3><div class="list">
+      ${camps.map(c=>`<div class="row"><div class="r-main">
+        <div class="r-title">${esc(c.name)} ${typeTag(c.campaign_type)}</div>
+        <div class="r-sub">${esc([c.brand,c.org_name].filter(Boolean).join(" · "))}${c.budget?` · ₹${fmtNum(c.budget)}`:""}${c.start_date?` · starts ${esc(fmtDate(c.start_date))}`:""} · ${ago(c.created_at)}</div></div>
+        <span style="display:flex;gap:6px"><button class="mini-btn" data-apvcamp="${esc(c.id)}">Approve</button><button class="mini-btn ghost" data-apvcampno="${esc(c.id)}">Send back</button>
+        <button class="mini-btn ghost" data-apvinv="${esc(c.id)}" data-apvname="${esc(c.name)}">🎯 Invite</button></span></div>`).join("")}
+      </div></div>` : ""}
+    ${apps.length || mk.length ? `<div class="card" style="margin-top:14px"><h3 style="margin-top:0">🙋 Creators waiting on a decision</h3><div class="list" id="apvApplicants">
+      ${apps.map(p=>applicantRowHtml(p, true)).join("")}
+      ${mk.map(a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span>
+        <div class="r-main"><div class="r-title">${esc(a.creator_name||"Creator")} <span class="muted" style="font-weight:400">→ ${esc(a.campaign_name||"")}${a.org_name?` · ${esc(a.org_name)}`:""}</span></div>
+        <div class="r-sub">Marketplace application · ${ago(a.created_at)}</div></div>
+        <span style="display:flex;gap:6px"><button class="mini-btn" data-apvmk="${esc(a.id)}">Approve</button><button class="mini-btn ghost" data-apvmkno="${esc(a.id)}">Decline</button></span></div>`).join("")}
+      </div></div>` : ""}
+    <div class="muted" style="font-size:12px;margin-top:12px">Live — refreshes every 20s. Everyone you approve or decline is told in the app, on WhatsApp and by email.</div>`;
+  const again = ()=>{ _apvSig = ""; loadApprovals(true); };
+  // signups (Super Admin)
+  body.querySelectorAll("[data-apvsign]").forEach(b=> b.onclick = async ()=>{
+    b.disabled = true; b.textContent = "…";
+    const { error } = await sb.rpc("set_member_status_v2", { p_id:b.dataset.apvsign, p_status:"active", p_reason:null });
+    if(error){ alert(error.message); b.disabled=false; b.textContent="Approve"; return; } again();
+  });
+  body.querySelectorAll("[data-apvsignno]").forEach(b=> b.onclick = async ()=>{
+    const reason = (prompt("Why are you declining this signup?\nThey are told this reason in the app, on WhatsApp and by email.")||"").trim();
+    if(!reason) return;
+    const { error } = await sb.rpc("set_member_status_v2", { p_id:b.dataset.apvsignno, p_status:"declined", p_reason:reason });
+    if(error){ alert(error.message); return; } again();
+  });
+  // campaigns
+  body.querySelectorAll("[data-apvcamp]").forEach(b=> b.onclick = async ()=>{
+    b.disabled = true; b.textContent = "…";
+    const { error } = await sb.schema("api").rpc("decide_campaign", { p_campaign:b.dataset.apvcamp, p_approve:true, p_reason:null });
+    if(error){ alert(error.message); b.disabled=false; b.textContent="Approve"; return; }
+    if(window.Tracker) Tracker.security("campaign_approved", { campaign_id:b.dataset.apvcamp });
+    again();
+  });
+  body.querySelectorAll("[data-apvcampno]").forEach(b=> b.onclick = async ()=>{
+    const reason = (prompt("Send this campaign back as a draft — what needs changing?")||"").trim();
+    const { error } = await sb.schema("api").rpc("decide_campaign", { p_campaign:b.dataset.apvcampno, p_approve:false, p_reason:reason||null });
+    if(error){ alert(error.message); return; } again();
+  });
+  body.querySelectorAll("[data-apvinv]").forEach(b=> b.onclick = ()=> openInvitePanel(b.dataset.apvinv, b.dataset.apvname));
+  // creators
+  wireApplicantButtons(body, again);
+  body.querySelectorAll("[data-apvmk]").forEach(b=> b.onclick = async ()=>{
+    const { error } = await sb.rpc("decide_application", { p_id:b.dataset.apvmk, p_approve:true, p_reason_code:null, p_note:null });
+    if(error) alert(error.message); again();
+  });
+  body.querySelectorAll("[data-apvmkno]").forEach(b=> b.onclick = ()=> declineLegacyApplication(b.dataset.apvmkno, again));
+  clearInterval(_apvTimer);
+  _apvTimer = setInterval(()=>{
+    if(currentPage!=="approvals" || !document.getElementById("apvBody")){ clearInterval(_apvTimer); return; }
+    if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open") || document.getElementById("invPanel")) return;
+    loadApprovals(true);
+  }, 20000);
 }
 
 /* ================= AGENCY / BRAND: applicants, reasons, discovery, reports, super-admin campaigns ================= */
@@ -2874,6 +2957,43 @@ async function refreshMediaKit(force){
     if(acct.profile_picture_url && acct.profile_picture_url !== _igAvatarUrl){ _igAvatarUrl = acct.profile_picture_url; _igAvatarAt = Date.now(); window.__igUsername = acct.username || window.__igUsername; paintIgAvatar(); }
   }
   mkStamp();
+}
+
+/* ---------- Messages: WhatsApp and the Instagram inbox side by side (every role) ---------- */
+let _msgTab = "wa";
+async function mountMessagesTabs(){
+  const host = document.getElementById("content"); if(!host || document.getElementById("msgTabs")) return;
+  const wa = document.getElementById("waChat"); if(!wa) return;
+  const bar = el("div","ci-chips"); bar.id = "msgTabs"; bar.style.margin = "0 0 12px";
+  bar.innerHTML = `<button class="ci-chip on" data-msgtab="wa">💬 WhatsApp</button><button class="ci-chip" data-msgtab="ig">📸 Instagram DMs</button>`;
+  const igPane = el("div",""); igPane.id = "msgIg"; igPane.style.display = "none";
+  igPane.innerHTML = `<div class="card"><div class="muted">Loading your Instagram inbox…</div></div>`;
+  wa.parentNode.insertBefore(bar, wa);
+  wa.parentNode.insertBefore(igPane, wa.nextSibling);
+  const paint = ()=>{
+    bar.querySelectorAll("[data-msgtab]").forEach(b=> b.classList.toggle("on", b.dataset.msgtab===_msgTab));
+    wa.style.display = _msgTab==="wa" ? "" : "none";
+    const st = document.getElementById("waStatus"); if(st) st.style.display = _msgTab==="wa" ? "" : "none";
+    igPane.style.display = _msgTab==="ig" ? "" : "none";
+    if(_msgTab==="ig" && !igPane.dataset.loaded){ igPane.dataset.loaded = "1"; loadMessagesInstagram(); }
+  };
+  bar.querySelectorAll("[data-msgtab]").forEach(b=> b.onclick = ()=>{ _msgTab = b.dataset.msgtab; paint(); });
+  paint();
+}
+async function loadMessagesInstagram(){
+  const pane = document.getElementById("msgIg"); if(!pane) return;
+  const acct = await mkFetchAcct();
+  if(!pane.isConnected) return;
+  if(!acct){
+    pane.innerHTML = `<div class="card"><h3 style="margin-top:0">📸 Instagram DMs</h3>
+      <p class="muted" style="font-size:13.5px">Connect your Instagram and your DMs open right here — reply to creators without leaving Geek OS. Invites you send also go out from this handle.</p>
+      <button class="btn" id="msgIgConnect">Connect Instagram</button></div>`;
+    const b = document.getElementById("msgIgConnect");
+    if(b) b.onclick = ()=>{ try{ localStorage.setItem("geekos_after_ig","messages"); }catch(e){} connectInstagram(); };
+    return;
+  }
+  pane.innerHTML = `<div class="muted" style="font-size:12.5px;margin-bottom:10px">Instagram inbox of <b>@${esc(acct.username||"")}</b> — replies send from this account.</div>${mkInboxHtml()}`;
+  loadMkInbox();
 }
 /* ---------- Instagram: post (feed / carousel / reel / story), live stories, comments and DMs ---------- */
 let _igTimer = null, _igSyncedAt = 0, _igMediaSig = "", _igTab = "post";
@@ -3997,34 +4117,9 @@ function openAuditDiff(d){
 }
 
 async function adminApprovals(body){
-  body.innerHTML = `<div class="card"><h3>Awaiting approval</h3><div class="list" id="adminRows"><div class="muted" style="padding:8px">Loading…</div></div></div>`;
-  const wrap=document.getElementById("adminRows");
-  let { data, error } = await sb.rpc("pending_members_v2");
-  if(error){ ({ data, error } = await sb.rpc("pending_members")); }      // before the migration is applied
-  if(error){ wrap.innerHTML=adminErr(error); return; }
-  const list=data||[];
-  if(!list.length){ wrap.innerHTML=`<div class="muted" style="padding:8px">No pending signups 🎉</div>`; return; }
-  const roleName = r=>({owner:"Agency Owner",brand:"Brand",manager:"Manager",corporate:"Corporate"}[r]||r);
-  wrap.innerHTML = list.map(x=>`<div class="row"><div class="r-main"><div class="r-title">${esc(x.name)||esc(x.email)} · <span class="tag">${esc(roleName(x.role))}</span>${x.org_name?" · "+esc(x.org_name):""}</div>
-    <div class="r-sub">${x.official_email?`📧 ${esc(x.official_email)} ${x.email_verified_at?'<span class="tag good">verified</span>':'<span class="tag warn">not verified</span>'}`:esc(x.email)}${x.whatsapp_e164?` · 💬 ${esc(x.whatsapp_e164)}`:""}${x.created_at?` · ${new Date(x.created_at).toLocaleDateString("en-IN")}`:""}</div></div>
-    <span><button class="mini-btn" data-approve="${esc(x.id)}">Approve</button> <button class="mini-btn ghost" data-decline="${esc(x.id)}">Decline</button></span></div>`).join("");
-  const setStatus = async (id, status, reason)=>{
-    let { error } = await sb.rpc("set_member_status_v2", { p_id:id, p_status:status, p_reason:reason||null });
-    if(error && /function|does not exist/i.test(error.message||"")) ({ error } = await sb.rpc("set_member_status", { p_id:id, p_status:status }));
-    if(error){ alert(error.message); return false; }
-    return true;
-  };
-  wrap.querySelectorAll("[data-approve]").forEach(b=>b.onclick=async()=>{
-    b.disabled = true; b.textContent = "…";
-    if(await setStatus(b.dataset.approve, "active")) adminApprovals(body); else { b.disabled=false; b.textContent="Approve"; }
-  });
-  wrap.querySelectorAll("[data-decline]").forEach(b=>b.onclick=async()=>{
-    const reason = (prompt("Why are you declining this signup?\nThey are told this reason in the app, on WhatsApp and by email.")||"").trim();
-    if(!reason) return;
-    if(await setStatus(b.dataset.decline, "declined", reason)) adminApprovals(body);
-  });
+  body.innerHTML = `<div id="apvBody">${skel("list",4)}</div>`;
+  loadApprovals();
 }
-
 async function adminAdmins(body){
   body.innerHTML = `<div class="card"><h3>Add a super admin</h3>
       <form id="addAdminForm" class="modal-form" style="padding:0">
@@ -4441,7 +4536,7 @@ function renderContent(){
   const card = document.getElementById("openAiFromCard");
   if(card) card.onclick = openAi;
   if(currentPage==="creators" || currentPage==="roster"){
-    loadCreators();
+    loadCreators(); livePage(currentPage, loadCreators, 45000);
     const add = document.getElementById("addCreatorBtn");
     if(add) add.onclick = openCreatorModal;
     const imp = document.getElementById("importCreatorBtn");
@@ -4452,22 +4547,22 @@ function renderContent(){
   }
   if(currentPage==="celebrity"){
     loadCampaignSection("celebrity");
-    loadStories();
+    loadStories(); livePage("celebrity", ()=>{ loadCampaignSection("celebrity"); loadStories(); }, 45000);
     const add = document.getElementById("addStoryBtn");
     if(add) add.onclick = openStoryModal;
   }
   if(currentPage==="irm"){
-    loadIRM();
+    loadIRM(); livePage("irm", loadIRM, 45000);
     const add = document.getElementById("addIrmBtn");
     if(add) add.onclick = openIrmModal;
   }
-  if(currentPage==="listening") loadListening();
-  if(currentPage==="messages" && window.waChat) window.waChat.load();
-  if(currentPage==="approvals") loadApprovals();
+  if(currentPage==="listening"){ loadListening(); livePage("listening", loadListening, 60000); }
+  if(currentPage==="messages"){ if(window.waChat) window.waChat.load(); mountMessagesTabs(); }
+  if(currentPage==="approvals") loadApprovals();          // keeps its own 20s timer
   if(currentPage==="marketplace") loadMarketplace();
-  if(currentPage==="brands" || currentPage==="portfolio") loadBrands();
-  if(currentPage==="finance") loadFinance();
-  if(currentPage==="logistics") loadLogistics();
+  if(currentPage==="brands" || currentPage==="portfolio"){ loadBrands(); livePage(currentPage, loadBrands, 30000); }
+  if(currentPage==="finance"){ loadFinance(); livePage("finance", loadFinance, 30000); }
+  if(currentPage==="logistics"){ loadLogistics(); livePage("logistics", loadLogistics, 30000); }
   if(currentPage==="mediakit") loadMediaKit();
   if(currentPage==="profile" && window.ciProfile) window.ciProfile.load();
   if(currentPage==="intelligence" && window.ciIntel) window.ciIntel.loadSelf();
@@ -4483,7 +4578,7 @@ function renderContent(){
   if(currentPage==="opencampaigns" && window.ciOps) window.ciOps.loadOpenCampaigns();
   if(currentPage==="discover") loadDiscover();
   if(currentPage==="campaigns"){
-    loadCampaigns();
+    loadCampaigns(); livePage("campaigns", loadCampaigns, 30000);
     const add = document.getElementById("addCampaignBtn");
     if(add) add.onclick = ()=> openCampaignModal();
   }
@@ -4495,16 +4590,17 @@ function renderContent(){
     loadOrgProfile();
   }
   if(currentPage==="reports"){
-    if(currentRole==="creator") loadCreatorReports();
-    else (window.sb ? loadOrgReports() : Promise.resolve(false)).then(ok=>{ if(!ok) loadReportRows(); });
+    const rep = ()=>{ if(currentRole==="creator") loadCreatorReports();
+      else (window.sb ? loadOrgReports() : Promise.resolve(false)).then(ok=>{ if(!ok) loadReportRows(); }); };
+    rep(); livePage("reports", rep, 60000);
   }
   if(currentPage==="dashboard"){
-    loadDashboard();
+    loadDashboard(); livePage("dashboard", ()=>{ loadDashboard(); loadKPIs(); }, 30000);
   }
   if(currentPage==="barter" && currentRole==="creator" && window.__ciOpsEnabled && window.ciOps){ window.ciOps.loadOpenCampaigns(); }
   else if(currentPage==="barter"){
     loadCampaignSection("barter");
-    loadBarter();
+    loadBarter(); livePage("barter", ()=>{ loadCampaignSection("barter"); loadBarter(); }, 45000);
     const add = document.getElementById("addBarterBtn");
     if(add) add.onclick = ()=> openBarterModal();
   }
