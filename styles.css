@@ -938,3 +938,10 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 @media (max-width:640px){ .inv-bar input#invQ{min-width:0;width:100%} .inv-bar .btn{width:100%} }
 .mc-banner.inv{background:rgba(108,92,231,.1);border:1px solid rgba(108,92,231,.4)}
 .ws-stat.mc-inv{border-color:rgba(108,92,231,.5);background:rgba(108,92,231,.08)}
+.dx-ig{display:flex;justify-content:flex-start;align-items:center;gap:8px;flex-wrap:wrap;padding:11px 13px;border-radius:12px;background:rgba(108,92,231,.08);border:1px solid rgba(108,92,231,.25);margin-bottom:14px;font-size:13px}
+.dx-ig.ok{background:rgba(16,185,129,.09);border-color:rgba(16,185,129,.3)}
+.dx-card .dc-tags span{background:rgba(16,185,129,.12)}
+.dx-card .dc-stats{justify-content:space-between;gap:8px}
+.dx-card .dc-stats span{flex:1;text-align:center}
+.dx-ig b{white-space:nowrap}
+.dx-card .btn.sm{text-decoration:none}

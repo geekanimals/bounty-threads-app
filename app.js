@@ -1899,9 +1899,14 @@ document.addEventListener("click", e=>{
 
 /* ---------- Discovery: search creators by #hashtag, keyword and filters ---------- */
 let _discoverPreset = null;
+/* ---------- Discovery: creators already on Geek OS, and creators found on Instagram ---------- */
+let _dcTab = "platform";
 function renderDiscover(){
-  let html = pageHead("Discovery","Find creators on the platform by #hashtag, keyword and filters.");
-  html += `<div class="card"><form id="dcForm" class="modal-form" style="padding:0">
+  let html = pageHead("Discovery","Find creators on Geek OS, or discover new ones straight from Instagram.");
+  html += `<div class="admin-tabs" id="dcTabs">
+      <button class="${_dcTab==="platform"?"act":""}" data-dctab="platform">👥 On Geek OS</button>
+      <button class="${_dcTab==="external"?"act":""}" data-dctab="external">📸 New on Instagram</button></div>`;
+  html += `<div id="dcPlatform" style="${_dcTab==="platform"?"":"display:none"}"><div class="card"><form id="dcForm" class="modal-form" style="padding:0">
     <div class="mf-row"><label>Keyword<input name="q" placeholder="food, travel, @username, bio words…"></label>
     <label>#Hashtag<input name="tag" placeholder="#delhifood"></label></div>
     <div class="dc-filters">
@@ -1915,9 +1920,115 @@ function renderDiscover(){
     </div>
     <div style="margin-top:12px;display:flex;gap:8px"><button class="btn" type="submit">🔎 Search</button><button class="btn ghost" type="reset" id="dcReset">Clear</button></div>
   </form></div>
-  <div id="dcResults" style="margin-top:16px"></div>`;
+  <div id="dcResults" style="margin-top:16px"></div></div>`;
+  html += `<div id="dcExternal" style="${_dcTab==="external"?"":"display:none"}">
+    <div class="card"><div id="dxIg"></div>
+      <form id="dxForm" class="modal-form" style="padding:0">
+        <div class="dc-filters">
+          <label>#Hashtag from their posts<input name="hashtag" placeholder="#delhifood"></label>
+          <label>Creator type / category<input name="category" placeholder="Food, Travel…"></label>
+          <label>Location<input name="location" placeholder="Delhi"></label>
+          <label>Handle contains<input name="q" placeholder="foodie"></label>
+          <label>Min followers<input name="min_followers" type="number" min="0" placeholder="5000"></label>
+          <label>Max followers<input name="max_followers" type="number" min="0" placeholder="200000"></label>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" type="submit">🔎 Search Instagram</button>
+          <button class="btn ghost" type="button" id="dxRefresh">↻ Fetch latest from Instagram</button></div>
+      </form>
+      <div class="cp-hint" id="dxMsg" style="margin-top:10px"></div>
+      <div class="cp-addrow" style="margin-top:10px"><input id="dxHandle" placeholder="Know the handle? @username" maxlength="60">
+        <button class="btn sm ghost" id="dxAdd">+ Look up &amp; add</button></div>
+    </div>
+    <div id="dxResults" style="margin-top:16px"></div></div>`;
   return html;
 }
+async function loadDiscoverExternal(){
+  const box = document.getElementById("dxResults"); if(!box) return;
+  const form = document.getElementById("dxForm");
+  // show which Instagram account this workspace discovers and DMs from
+  igConnectStrip();
+  const run = async ()=>{
+    const f = new FormData(form), filters = {};
+    ["hashtag","category","location","q","min_followers","max_followers"].forEach(k=>{ const v=String(f.get(k)||"").trim(); if(v) filters[k]=v; });
+    box.innerHTML = skel("cards",6);
+    const [r, st] = await Promise.all([
+      sb.schema("api").rpc("discover_external", { p_filters:filters, p_campaign:null, p_limit:60 }).then(x=>x, e=>({error:e})),
+      sb.schema("api").rpc("external_pool_stats").then(x=>x, ()=>({data:null}))
+    ]);
+    if(r.error){ box.innerHTML = `<div class="card"><div class="muted">${esc(r.error.message||r.error)}</div></div>`; return; }
+    const list = r.data||[], s = st.data||{};
+    box.innerHTML = `<div class="muted" style="margin-bottom:10px;font-size:13px">${list.length} creator${list.length===1?"":"s"} found on Instagram who aren't on Geek OS yet${s.total?` · ${s.total} in your discovery pool, ${s.tagged_brand||0} have tagged your brand`:""}</div>`
+      + (list.length ? `<div class="dc-grid">${list.map(c=>`<div class="card dc-card dx-card">
+          <div class="dc-top">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((c.handle||"?").slice(0,2).toUpperCase())}</span>`}
+            <div style="min-width:0"><b><a href="https://instagram.com/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">@${esc(c.handle)}</a></b>
+              <div class="muted" style="font-size:12px">${esc(c.name||"")}${c.city?` · ${esc(c.city)}`:""}</div></div>
+            <span class="inv-score" title="How well they match your filters">${c.score}</span></div>
+          <div class="dc-stats"><span><b>${c.followers!=null?fmtNum(c.followers):"—"}</b>followers</span><span><b>${c.media_count!=null?fmtNum(c.media_count):"—"}</b>posts</span><span><b>${c.mention_count}</b>mentions</span></div>
+          ${c.bio?`<div class="muted" style="font-size:12px">${esc(c.bio)}</div>`:""}
+          <div class="dc-tags">${(c.why||[]).map(w=>`<span>✓ ${esc(w)}</span>`).join("")}${(c.categories||[]).map(x=>`<span>${esc(x)}</span>`).join("")}${(c.hashtags||[]).slice(0,4).map(x=>`<span>#${esc(x)}</span>`).join("")}</div>
+          ${c.followers==null?`<div class="cp-hint">Follower count not fetched yet — “Look up &amp; add” with their handle to pull it from Instagram.</div>`:""}
+          <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+            ${c.invited?`<span class="tag good">Invited ✓</span>`:`<button class="btn sm" data-dxinv="${esc(c.handle)}">🎯 Invite to a campaign</button>`}
+            <a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">💬 DM</a>
+            ${c.permalink?`<a class="btn sm ghost" href="${esc(safeUrl(c.permalink))}" target="_blank" rel="noopener">Post</a>`:""}</div></div>`).join("")}</div>`
+        : `<div class="card"><div class="muted">Nobody new yet with these filters. Tap <b>↻ Fetch latest from Instagram</b> — we read the accounts that tagged your Instagram and the @handles inside the posts of creators you already work with.</div></div>`);
+    box.querySelectorAll("[data-dxinv]").forEach(b=> b.onclick = ()=> inviteFromDiscovery(b.dataset.dxinv, null));
+  };
+  form.onsubmit = e=>{ e.preventDefault(); run(); };
+  document.getElementById("dxRefresh").onclick = async ()=>{
+    const btn = document.getElementById("dxRefresh"), msg = document.getElementById("dxMsg");
+    btn.disabled = true; btn.textContent = "Fetching…"; msg.textContent = "";
+    let added = 0;
+    let tagged = 0;
+    try{                                   // read the accounts that tagged this workspace's Instagram
+      const { data } = await sb.functions.invoke("ig-discover", { body:{ action:"tagged" } });
+      if(data && data.saved) tagged = data.saved;
+      else if(data && data.error) msg.textContent = data.error;
+    }catch(e){}
+    const { data, error } = await sb.schema("api").rpc("refresh_external_pool");
+    btn.disabled = false; btn.textContent = "↻ Fetch latest from Instagram";
+    if(error){ msg.textContent = error.message; return; }
+    added = data||0;
+    const total = added + tagged;
+    msg.textContent = total ? `Found ${total} Instagram creator${total===1?"":"s"}${tagged?` · ${tagged} tagged your account`:""}.`
+      : (msg.textContent || "No new handles this time — connect your Instagram, get tagged, or add a handle below.");
+    run();
+  };
+  document.getElementById("dxAdd").onclick = async ()=>{
+    const inp = document.getElementById("dxHandle"), msg = document.getElementById("dxMsg");
+    const handle = String(inp.value||"").trim().replace(/^@/,"");
+    if(!/^[A-Za-z0-9._]{2,30}$/.test(handle)){ msg.textContent = "Enter a valid Instagram username."; return; }
+    const btn = document.getElementById("dxAdd"); btn.disabled = true; btn.textContent = "Looking up…";
+    let item = { handle, source:"manual" };
+    try{                                    // ask Instagram for their public numbers (needs the business-discovery permission)
+      const { data } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:handle } });
+      if(data && data.profile) item = Object.assign(item, data.profile);
+      else if(data && data.error) msg.textContent = data.error + " — added without the numbers.";
+    }catch(e){ msg.textContent = "Added without Instagram numbers (lookup isn't available yet)."; }
+    const { error } = await sb.schema("api").rpc("save_external_candidates", { p_items:[item] });
+    btn.disabled = false; btn.textContent = "+ Look up & add";
+    if(error){ msg.textContent = error.message; return; }
+    inp.value = ""; if(!msg.textContent) msg.textContent = `@${handle} added to your discovery pool.`;
+    run();
+  };
+  run();
+}
+// which Instagram this workspace discovers and DMs from
+async function igConnectStrip(){
+  const box = document.getElementById("dxIg"); if(!box) return;
+  let row = null;
+  try{
+    const me = window.Auth && Auth.profile && Auth.profile.id;
+    if(me){ const r = await sb.from("social_accounts").select("username,profile_picture_url").eq("platform","instagram").eq("member_id", me).limit(1); row = r.data && r.data[0]; }
+  }catch(e){}
+  box.innerHTML = row && row.username
+    ? `<div class="dx-ig ok">📸 Discovering and messaging from <b>@${esc(row.username)}</b> <span class="muted">— creators who tag this account show up here first.</span></div>`
+    : `<div class="dx-ig"><div>📸 <b>Connect your Instagram</b> <span class="muted">— then creators who tag you appear here automatically, and invites go out from your own handle.</span></div>
+       <button class="btn sm" id="dxConnect">Connect Instagram</button></div>`;
+  const c = document.getElementById("dxConnect");
+  if(c) c.onclick = ()=>{ try{ localStorage.setItem("geekos_after_ig","discover"); }catch(e){} connectInstagram(); };
+}
+
 async function loadDiscover(){
   const form = document.getElementById("dcForm"); if(!form) return;
   if(_discoverPreset){ Object.entries(_discoverPreset).forEach(([k,v])=>{ if(form.elements[k]!=null) form.elements[k].value = v; }); _discoverPreset = null; }
@@ -1938,6 +2049,15 @@ async function loadDiscover(){
         <div style="margin-top:10px"><button class="btn sm" data-dcinv="${esc(c.username||"")}" data-dcmid="${esc(c.member_id||"")}">🎯 Invite to a campaign</button></div></div>`).join("")}</div>`
       : `<div class="card"><div class="muted">No creators match. Try fewer filters or a broader keyword.</div></div>`;
   };
+  document.querySelectorAll("[data-dctab]").forEach(b=> b.onclick = ()=>{
+    _dcTab = b.dataset.dctab;
+    document.querySelectorAll("#dcTabs button").forEach(x=> x.classList.toggle("act", x.dataset.dctab===_dcTab));
+    document.getElementById("dcPlatform").style.display = _dcTab==="platform" ? "" : "none";
+    document.getElementById("dcExternal").style.display = _dcTab==="external" ? "" : "none";
+    if(_dcTab==="external" && !document.getElementById("dxResults").dataset.loaded){
+      document.getElementById("dxResults").dataset.loaded = "1"; loadDiscoverExternal(); }
+  });
+  if(_dcTab==="external"){ document.getElementById("dxResults").dataset.loaded = "1"; loadDiscoverExternal(); }
   const wireInv = ()=> document.querySelectorAll("[data-dcinv]").forEach(b=> b.onclick = ()=> inviteFromDiscovery(b.dataset.dcinv, b.dataset.dcmid||null));
   const run2 = async ()=>{ await run(); wireInv(); };
   form.onsubmit = e=>{ e.preventDefault(); run2(); };
@@ -4028,7 +4148,10 @@ async function finishInstagram(code){
       localStorage.setItem("geekos_conn_instagram","1");
       if(window.Tracker) Tracker.security("instagram_connected", { merged: !!(data && data.merged) });
       if(window.Auth) await Auth.currentSession(); // startApp skipped it while __igLoggingIn was set
-      currentPage = "mediakit";
+      let back = null; try{ back = localStorage.getItem("geekos_after_ig"); localStorage.removeItem("geekos_after_ig"); }catch(e){}
+      const role = (window.Auth && Auth.profile && Auth.profile.role) || "";
+      currentPage = back ? back : (role === "creator" ? "mediakit" : "discover");
+      if(currentPage === "discover") _dcTab = "external";
       if(window.__osBooted){ if(typeof renderShell==="function") renderShell(); }
       else if(typeof bootOS==="function") bootOS();
       return;
