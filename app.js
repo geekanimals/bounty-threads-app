@@ -119,7 +119,7 @@ function renderMe(){
     initials = String(title).split(" ").filter(Boolean).map(x=>x[0]).join("").slice(0,2).toUpperCase() || "ME";
   }
   $("#me").textContent = initials;
-  $("#me").title = title;
+  $("#me").title = title + " — view profile";
   applyIgAvatar();
   // Badge = count of real pending tasks (set by the dashboard loader); 0 until known.
   const unread = window.__alertsUnread != null ? window.__alertsUnread : (window.__geekTasks != null ? window.__geekTasks : 0);
@@ -160,6 +160,78 @@ function paintIgAvatar(){
   }
   const who = document.getElementById("whoLabel");
   if(who && window.__igUsername) who.textContent = "@" + window.__igUsername;
+}
+
+
+/* ---------- Profile card (top-right avatar) — creator sees their live Instagram at a glance ---------- */
+function closeMeCard(){ const c = document.getElementById("meCard"); if(c) c.remove(); document.removeEventListener("keydown", meCardKey); document.removeEventListener("click", meCardOutside, true); $("#me")?.setAttribute("aria-expanded","false"); }
+function meCardKey(e){ if(e.key==="Escape") closeMeCard(); }
+function meCardOutside(e){ const c = document.getElementById("meCard"); if(c && !c.contains(e.target) && !e.target.closest("#me")) closeMeCard(); }
+function anchorMeCard(){
+  const m = document.getElementById("me"), c = document.getElementById("meCard"); if(!m || !c) return;
+  const r = m.getBoundingClientRect();
+  c.style.top = Math.round(r.bottom + 10) + "px";
+  c.style.right = window.innerWidth > 560 ? Math.max(12, Math.round(window.innerWidth - r.right)) + "px" : "";
+}
+window.addEventListener("resize", anchorMeCard);
+async function toggleMeCard(){
+  if(document.getElementById("meCard")){ closeMeCard(); return; }
+  closeNotif && document.getElementById("notifOverlay")?.classList.contains("open") && closeNotif();
+  const c = document.createElement("div"); c.id = "meCard"; c.className = "me-card"; c.setAttribute("role","dialog"); c.setAttribute("aria-label","Your profile");
+  c.innerHTML = `<div class="me-card-in">${skel("list",2)}</div>`;
+  document.body.appendChild(c); anchorMeCard(); $("#me").setAttribute("aria-expanded","true");
+  document.addEventListener("keydown", meCardKey); setTimeout(()=> document.addEventListener("click", meCardOutside, true), 0);
+  await paintMeCard();
+}
+async function paintMeCard(){
+  const c = document.getElementById("meCard"); if(!c) return;
+  const P = (window.Auth && Auth.profile) || {}, isCreator = currentRole === "creator";
+  const acct = isCreator ? await mkFetchAcct().catch(()=>null) : null;
+  if(!document.getElementById("meCard")) return;
+  const a = acct || {}, media = (Array.isArray(a.recent_media) ? a.recent_media : []);
+  const name = a.name || P.name || P.org || "Me", handle = a.username || window.__igUsername || "";
+  const posts = media.filter(m=>m && (m.like_count!=null || m.comments_count!=null));
+  const eng = a.followers_count && posts.length ? (posts.reduce((s,m)=>s+(m.like_count||0)+(m.comments_count||0),0)/posts.length/a.followers_count*100) : null;
+  const k = n=> n==null ? "—" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e4 ? Math.round(n/1e3)+"K" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(n);
+  const initials = String(name).split(" ").filter(Boolean).map(x=>x[0]).join("").slice(0,2).toUpperCase() || "ME";
+  const pic = a.profile_picture_url || _igAvatarUrl;
+  const req = window.__profileReq, pct = req && req.total ? Math.round(100*req.done/req.total) : null;
+  const synced = a.last_media_sync_at || a.updated_at;
+  const ago = t=>{ if(!t) return ""; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+" min ago":m<1440?Math.round(m/60)+" h ago":Math.round(m/1440)+" d ago"; };
+  const type = a.account_type ? String(a.account_type).replace(/_/g," ").toLowerCase() : "";
+  const go = (pg,label,ic)=>`<button class="me-link" data-mego="${pg}"><span>${ic}</span>${label}</button>`;
+  const roleLabel = window.__isAdmin ? "Super Admin" : ((ROLES[currentRole] && (ROLES[currentRole].label || ROLES[currentRole].name)) || currentRole);
+  c.innerHTML = `<div class="me-card-in">
+    <div class="me-head">
+      <div class="me-ring${handle?"":" off"}">${pic?`<img src="${esc(safeUrl(pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'me-ini',textContent:'${esc(initials)}'}))">`:`<span class="me-ini">${esc(initials)}</span>`}</div>
+      <div class="me-id"><div class="me-name">${esc(name)}</div>
+        ${handle?`<a class="me-handle" href="https://instagram.com/${encodeURIComponent(handle)}" target="_blank" rel="noopener">@${esc(handle)} ↗</a>`:`<div class="muted" style="font-size:12.5px">${esc(roleLabel)}${P.org&&!isCreator?" · "+esc(P.org):""}</div>`}
+        ${type?`<span class="me-type">${esc(type)}</span>`:""}</div>
+      <button class="me-x" id="meX" aria-label="Close">✕</button></div>
+    ${isCreator && handle ? `
+      <div class="me-stats">
+        <div><b>${k(a.media_count)}</b><span>Posts</span></div><div><b>${k(a.followers_count)}</b><span>Followers</span></div>
+        <div><b>${k(a.follows_count)}</b><span>Following</span></div><div><b>${eng!=null?eng.toFixed(1)+"%":"—"}</b><span>Engagement</span></div></div>
+      ${a.biography?`<div class="me-bio">${esc(a.biography)}</div>`:""}
+      ${a.website?`<a class="me-web" href="${esc(safeUrl(a.website))}" target="_blank" rel="noopener">🔗 ${esc(String(a.website).replace(/^https?:\/\//,"").replace(/\/$/,""))}</a>`:""}
+      ${media.length?`<div class="me-grid">${media.slice(0,6).map(m=>{ const src = m.thumbnail_url || m.media_url;
+          return `<a href="${esc(safeUrl(m.permalink||"#"))}" target="_blank" rel="noopener" class="me-post">${src?`<img src="${esc(safeUrl(src))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:""}${m.media_type==="VIDEO"?'<i>▶</i>':m.media_type==="CAROUSEL_ALBUM"?'<i>❐</i>':""}<span>❤ ${k(m.like_count||0)}</span></a>`; }).join("")}</div>`:""}
+      <div class="me-sync"><span>${a.avg_reach!=null?`📈 Avg reach <b>${k(Math.round(a.avg_reach))}</b> · `:""}Synced ${ago(synced)||"—"}</span><button class="me-mini" id="meSync">↻ Refresh</button></div>`
+    : isCreator ? `<div class="me-empty">📸 Connect Instagram to show your posts, followers and engagement here.<button class="btn sm" data-mego="mediakit" style="margin-top:10px">Connect Instagram</button></div>` : ""}
+    ${isCreator && pct!=null ? `<button class="me-prof" data-mego="profile"><div><b>${req.complete?"✅ Profile complete":"Profile "+pct+"% complete"}</b><span>${req.complete?"You're ready for campaigns":(req.total-req.done)+" item"+(req.total-req.done===1?"":"s")+" left to unlock campaigns"}</span></div><div class="me-bar"><span style="width:${pct}%"></span></div></button>`:""}
+    <div class="me-links">${isCreator
+      ? go("mediakit","Media Kit","🪪")+go("profile","Creator Profile","👤")+go("instagram","Instagram","📸")+go("mycampaigns","My Campaigns","🎯")
+      : go("dashboard","Dashboard","🏠")+(window.__isAdmin?go("admin","Super Admin","🛡"):"")}</div>
+    <button class="me-out" id="meOut">↪ Sign out</button></div>`;
+  c.querySelector("#meX").onclick = closeMeCard;
+  c.querySelectorAll("[data-mego]").forEach(b=> b.onclick = ()=>{ const pg = b.dataset.mego; closeMeCard();
+    if(window.__profileGate && typeof GATE_OPEN_PAGES!=="undefined" && !GATE_OPEN_PAGES.includes(pg)){ gateToast("Complete your profile first"); currentPage = "profile"; } else currentPage = pg; renderShell(); });
+  c.querySelector("#meOut").onclick = ()=>{ if(window.Tracker) Tracker.security("sign_out"); setTimeout(()=> window.Auth && Auth.signOut(), 150); };
+  const sy = c.querySelector("#meSync");
+  if(sy) sy.onclick = async ()=>{ sy.disabled = true; sy.textContent = "Syncing…";
+    try{ await sb.functions.invoke("instagram-media-sync", { body:{ force:true } }); }catch(e){}
+    applyIgAvatar(true); paintMeCard(); };
+  anchorMeCard();
 }
 
 /* ---------- Pages ---------- */
@@ -4386,6 +4458,8 @@ function init(){
   $("#aiLaunch").onclick=openAi; $("#aiClose").onclick=closeAi;
   $("#aiOverlay").onclick=e=>{if(e.target.id==="aiOverlay")closeAi();};
   $("#bellBtn").onclick=openNotif; $("#notifClose").onclick=closeNotif;
+  const meEl = $("#me"); if(meEl){ meEl.setAttribute("role","button"); meEl.setAttribute("tabindex","0"); meEl.setAttribute("aria-haspopup","dialog"); meEl.title = "Your profile";
+    meEl.onclick = toggleMeCard; meEl.onkeydown = e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); toggleMeCard(); } }; }
   $("#notifOverlay").onclick=e=>{if(e.target.id==="notifOverlay")closeNotif();};
   $("#themeBtn").onclick=toggleTheme;
   $("#menuBtn").onclick=()=>$("#sidebar").classList.toggle("open");
