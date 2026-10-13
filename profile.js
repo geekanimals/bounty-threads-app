@@ -83,7 +83,7 @@
   }
   var SKILLS = ["Modelling","Live / Video Creator","Video Editor","Photographer","Draw / Paint / Doodle","Performance Arts","Content Writer","Singer",
     "Dancer","Comedy / Acting","Illustrator","MC / Host","Research","DJ / Music","Graphic Designer / UI UX","Sustainability","Performing Artist",
-    "Hacker","Coder / Developer","Caregiver","Digital Marketing","Storytelling","Meme"];
+    "Ethical Hacking","Coder / Developer","Caregiver","Digital Marketing","Storytelling","Meme"];
   var RESOURCES = ["Studio","Camera","Car","Bike","Meeting or Shooting Space","Tripod","Speaker","Mike","Lights"];
   var PET_TYPES = [["dog","Dog"],["cat","Cat"],["bird","Bird"],["fish","Fish"],["rabbit","Rabbit"],["hamster","Hamster"],["small_mammal","Small mammal"],["reptile","Reptile"],["horse","Horse"],["other","Other"]];
   // niche keywords → category, used only to pre-fill an empty category list (the creator can edit it)
@@ -113,6 +113,8 @@
     (IG.mentions||[]).forEach(function(m){ if(m && m.username) add(m.username, false, m.permalink); });
     return Object.keys(out).slice(0,40).map(function(k){ return out[k]; });
   }
+  function petAge(m){ if(m==null) return ""; var y=Math.floor(m/12), r=m%12;
+    return y<1 ? (m||1)+" mo" : (r ? y+" yr "+r+" mo" : y+" yr"); }
   function defaultAddr(){ var a = (DATA && DATA.addresses) || []; return a.filter(function(x){ return x.is_default; })[0] || a[0] || null; }
   function fullName(){ var p = (DATA && DATA.personal) || {}; return [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || (IG && IG.name) || ""; }
 
@@ -242,10 +244,13 @@
       + '<div id="cp_pet_more" class="cp-sub-block" style="'+(hasPet==="yes"?"":"display:none")+'"><div class="cp-hint"><b>Your pets</b> — add every one</div>'
       +   '<div class="cp-list">'+(PETS.length?PETS.map(function(x){
               var t = (PET_TYPES.filter(function(p){ return p[0]===x.pet_type; })[0]||[0,x.pet_type])[1];
-              return '<div class="cp-item"><div>🐾 <b>'+esc(x.name)+'</b> <span class="muted">· '+esc(t)+'</span></div><button class="btn sm ghost" data-delpet="'+esc(x.pet_id)+'">Remove</button></div>'; }).join("")
+              return '<div class="cp-item"><div>🐾 <b>'+esc(x.name)+'</b> <span class="muted">· '+esc(t)+(x.age_months!=null?' · '+petAge(x.age_months):'')+'</span></div><button class="btn sm ghost" data-delpet="'+esc(x.pet_id)+'">Remove</button></div>'; }).join("")
             : '<div class="muted">No pets added yet.</div>')+'</div>'
       +   '<div class="cp-addrow"><input id="cp_pet_name" placeholder="Pet name" maxlength="60"><select id="cp_pet_type"><option value="">Type…</option>'
-      +   PET_TYPES.map(function(p){ return '<option value="'+p[0]+'">'+p[1]+'</option>'; }).join("")+'</select><button class="btn sm" id="cp_pet_add">+ Add pet</button></div></div>'
+      +   PET_TYPES.map(function(p){ return '<option value="'+p[0]+'">'+p[1]+'</option>'; }).join("")+'</select>'
+      +   '<label class="cp-petdob"><span>Birthday</span><input id="cp_pet_dob" type="date" max="'+new Date().toISOString().slice(0,10)+'"></label>'
+      +   '<button class="btn sm" id="cp_pet_add">+ Add pet</button></div>'
+      +   '<div class="cp-hint">Pet birthday is optional — we use it to send you gifting campaigns around their age and birthday. Age is calculated, never stored.</div></div>'
       + '<div class="cp-note">* Required. “Prefer not to say” is a valid answer. Private — used only to personalise campaigns (birthday / anniversary gifting, pet brands), never shown to brands.</div>');
 
     // B Contact — WhatsApp from the verified login; backup email verified by OTP
@@ -628,7 +633,8 @@
     var pa=document.getElementById("cp_pet_add");
     if(pa) pa.onclick=async function(){ var n=document.getElementById("cp_pet_name").value.trim(), t=document.getElementById("cp_pet_type").value;
       if(!n || !t){ alert("Add the pet's name and type."); return; } pa.disabled=true;
-      var r=await api("add_pet",{ p_name:n, p_type:t }); if(r.error){ alert(r.error.message||r.error); pa.disabled=false; return; } load(); };
+      var dob=(document.getElementById("cp_pet_dob")||{}).value || null;
+      var r=await api("add_pet",{ p_name:n, p_type:t, p_birth_date:dob }); if(r.error){ alert(r.error.message||r.error); pa.disabled=false; return; } load(); };
     // managed pages
     var pg=document.getElementById("cp_pg_add");
     if(pg) pg.onclick=async function(){

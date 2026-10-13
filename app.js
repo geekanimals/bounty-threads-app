@@ -1971,7 +1971,7 @@ async function loadOrgReports(){
 }
 
 /* ---------- Super Admin → Applications: every creator application across every workspace ---------- */
-let _apStatus = "pending", _apType = "", _apTimer = null, _apSig = "";
+let _apCampaign = "", _apQ = "", _apStatus = "pending", _apType = "", _apTimer = null, _apSig = "";
 async function adminApplications(body, silent){
   if(!silent) body.innerHTML = skel("list",5);
   const [pr, ar] = await Promise.all([
@@ -1986,12 +1986,23 @@ async function adminApplications(body, silent){
   const tpass = t => !_apType || (_apType==="paid" ? ["paid","barter_paid"].includes(t) : ["barter","barter_paid"].includes(t));
   const pipe = (pr.data||[]), legacy = (ar.data||[]);
   const cnt = g => pipe.filter(p=>grp(p.stage)===g && tpass(p.campaign_type)).length + legacy.filter(a=>lgrp(a.status)===g && !_apType).length;
-  const P = pipe.filter(p=> (_apStatus==="all" || grp(p.stage)===_apStatus) && tpass(p.campaign_type));
-  const Lg = _apType ? [] : legacy.filter(a=> _apStatus==="all" || lgrp(a.status)===_apStatus);
+  // one dropdown of every campaign that has applications (pipeline + marketplace), with counts
+  const campCount = {};
+  pipe.forEach(p=>{ const n=p.campaign_name||"—"; campCount[n]=(campCount[n]||0)+1; });
+  legacy.forEach(a=>{ const n=a.campaign_name||"—"; campCount[n]=(campCount[n]||0)+1; });
+  const campNames = Object.keys(campCount).sort((a,b)=>a.localeCompare(b));
+  if(_apCampaign && !campCount[_apCampaign]) _apCampaign = "";
+  const cpass = n => !_apCampaign || (n||"—")===_apCampaign;
+  const qpass = o => !_apQ || [o.campaign_name,o.brand,o.org_name,o.agency_org,o.creator_name,(o.creator&&o.creator.username),(o.creator&&o.creator.name)]
+      .filter(Boolean).join(" ").toLowerCase().includes(_apQ.toLowerCase());
+  const P = pipe.filter(p=> (_apStatus==="all" || grp(p.stage)===_apStatus) && tpass(p.campaign_type) && cpass(p.campaign_name) && qpass(p));
+  const Lg = _apType ? [] : legacy.filter(a=> (_apStatus==="all" || lgrp(a.status)===_apStatus) && cpass(a.campaign_name) && qpass(a));
   body.innerHTML = `<div class="rp-kpis"><div><b>${cnt("pending")}</b>Pending</div><div><b>${cnt("approved")}</b>Approved</div><div><b>${cnt("declined")}</b>Declined</div><div><b>${pipe.length+legacy.length}</b>Total</div></div>
     <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center">
       <h3 style="margin:0">Applications <span class="muted" style="font-size:12px;font-weight:400">· every workspace, live</span></h3>
-      <span style="display:flex;gap:6px"><select id="apType"><option value="">Paid + Barter</option><option value="paid"${_apType==="paid"?" selected":""}>💰 Paid</option><option value="barter"${_apType==="barter"?" selected":""}>🎁 Barter</option></select>
+      <span style="display:flex;gap:6px;flex-wrap:wrap"><input id="apQ" placeholder="🔍 Creator, brand, campaign…" value="${esc(_apQ)}" style="padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;font-size:13px;min-width:190px">
+      <select id="apCampaign"><option value="">📣 All campaigns (${campNames.length})</option>${campNames.map(n=>`<option value="${esc(n)}"${n===_apCampaign?" selected":""}>${esc(n)} (${campCount[n]})</option>`).join("")}</select>
+      <select id="apType"><option value="">Paid + Barter</option><option value="paid"${_apType==="paid"?" selected":""}>💰 Paid</option><option value="barter"${_apType==="barter"?" selected":""}>🎁 Barter</option></select>
       <select id="apStatus">${[["pending","⏳ Pending"],["approved","✅ Approved"],["declined","✖ Declined"],["all","All"]].map(([k,l])=>`<option value="${k}"${k===_apStatus?" selected":""}>${l}</option>`).join("")}</select></span></div>
     <div class="list" style="margin-top:10px">${P.map(p=>applicantRowHtml(p, true)).join("")}
       ${Lg.map(a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span><div class="r-main"><div class="r-title">${esc(a.creator_name||"Creator")} <span class="muted" style="font-weight:400">→ ${esc(a.campaign_name||"")}${a.agency_org?` · ${esc(a.agency_org)}`:""}</span></div>
@@ -2001,6 +2012,9 @@ async function adminApplications(body, silent){
   const again = ()=>{ _apSig=""; adminApplications(body, true); };
   document.getElementById("apStatus").onchange = e=>{ _apStatus = e.target.value; again(); };
   document.getElementById("apType").onchange = e=>{ _apType = e.target.value; again(); };
+  document.getElementById("apCampaign").onchange = e=>{ _apCampaign = e.target.value; again(); };
+  const apq = document.getElementById("apQ"); let apqT;
+  apq.oninput = ()=>{ clearTimeout(apqT); apqT = setTimeout(()=>{ _apQ = apq.value; again(); }, 250); };
   wireApplicantButtons(body, again);
   body.querySelectorAll("[data-apappr]").forEach(b=> b.onclick = async ()=>{ const { error } = await sb.rpc("decide_application", { p_id:b.dataset.apappr, p_approve:true, p_reason_code:null, p_note:null }); if(error) alert(error.message); again(); });
   body.querySelectorAll("[data-apdecl]").forEach(b=> b.onclick = ()=> declineLegacyApplication(b.dataset.apdecl, again));
@@ -2008,7 +2022,7 @@ async function adminApplications(body, silent){
   _apTimer = setInterval(()=>{
     const b = document.getElementById("adminBody");
     if(currentPage!=="admin" || _adminTab!=="applications" || !b){ clearInterval(_apTimer); return; }
-    if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open") || document.activeElement?.tagName==="SELECT") return;
+    if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open") || document.activeElement?.tagName==="SELECT" || document.activeElement?.id==="apQ") return;
     adminApplications(b, true);
   }, 30000);
 }
@@ -3201,7 +3215,11 @@ async function adminCreatorProfile(member, row){
           ${r("Birthday", per.date_of_birth?`${esc(fmtDate(per.date_of_birth))}${age!=null?` · ${age} yrs`:""}`:"")}
           ${r("Marital status", esc(L[per.marital_status]||per.marital_status||""))}
           ${per.marital_status==="married"?r("Anniversary", esc(fmtDate(per.marriage_anniversary))):""}
-          ${r("Pets", per.has_pet===false?"No":(D.pets||[]).length?(D.pets||[]).map(x=>`🐾 ${esc(x.name)} (${esc(x.pet_type)})`).join("<br>"):per.has_pet?`${esc(per.pet_name||"")} (${esc(per.pet_type||"")})`:"")}</div>
+          ${r("Pets", per.has_pet===false?"No":(D.pets||[]).length?(D.pets||[]).map(x=>{
+              const mo = x.birth_date ? Math.max(0, Math.round((Date.now()-new Date(x.birth_date).getTime())/2629800000)) : null;
+              const age = mo==null ? "" : mo<12 ? ` · ${mo} mo` : ` · ${Math.floor(mo/12)} yr${mo%12?" "+(mo%12)+" mo":""}`;
+              return `🐾 ${esc(x.name)} (${esc(x.pet_type)})${age}${x.birth_date?` <span class="muted">· b. ${esc(fmtDate(x.birth_date))}</span>`:""}`;
+            }).join("<br>"):per.has_pet?`${esc(per.pet_name||"")} (${esc(per.pet_type||"")})`:"")}</div>
         <div class="card"><h4>Contact</h4>
           ${r("WhatsApp", wa?`<a href="https://wa.me/${esc(wa.replace(/\D/g,""))}" target="_blank" rel="noopener">${esc(wa)}</a>${con.whatsapp_verified_at||mem.whatsapp?' <span class="tag good">verified</span>':""}`:"")}
           ${r("Backup email", !synthetic&&con.email?`<a href="mailto:${esc(con.email)}">${esc(con.email)}</a>${con.email_verified_at?' <span class="tag good">verified</span>':' <span class="tag warn">not verified</span>'}`:"")}

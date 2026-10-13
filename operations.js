@@ -394,7 +394,7 @@
   async function loadMyCampaigns(){
     loadOpenCampaigns();
     if(document.getElementById("growthBody") && typeof loadGrowth==="function") loadGrowth();
-    try{ var r=await apiCreator("get_my_campaigns"); if(r.error) throw r.error; renderMine(r.data||[]); }
+    try{ var r=await apiCreator("get_my_campaigns"); if(r.error) throw r.error; await igMediaMap(); renderMine(r.data||[]); }
     catch(e){ var el=document.getElementById("opsMineBody"); if(el) el.innerHTML='<div class="card ci-err-inline">Couldn\'t load: '+esc((e&&e.message)||e)+'</div>'; }
   }
 
@@ -487,12 +487,12 @@
     return new Promise(async function(resolve){
       var profs=await myApplyProfiles();
       var ov=document.createElement("div"); ov.className="ci-pop"; ov.id="ciApplyPick";
-      ov.innerHTML='<div class="ci-pop-box ci-pick" role="dialog" aria-modal="true" aria-label="Apply with">'
-        +'<div class="ci-pop-head"><div style="min-width:0"><h3>Apply to '+esc(name)+'</h3><div class="muted">Choose the profile you want to apply with. The brand sees this profile.</div></div><button class="ci-pop-x" data-x aria-label="Close">✕</button></div>'
+      ov.innerHTML='<div class="ci-pop-box ci-ppick" role="dialog" aria-modal="true" aria-label="Apply with">'
+        +'<div class="ci-pop-head"><div style="min-width:0"><h3>Apply to '+esc(name)+'</h3><div class="muted">Pick the profile you want to apply with — the brand reviews this one.</div></div><button class="ci-pop-x" data-x aria-label="Close">✕</button></div>'
         +'<div class="ci-pop-body">'+(profs.length?profs.map(function(p,i){
-            return '<label class="ci-pick-row"><input type="radio" name="ciPickP" value="'+esc(p.handle)+'"'+(i===0?' checked':'')+'><span><b>@'+esc(p.handle)+'</b><span class="muted">'+esc(p.label)+(p.followers!=null?' · '+Number(p.followers).toLocaleString("en-IN")+' followers':'')+'</span></span></label>'; }).join("")
+            return '<label class="ci-ppick-row"><input type="radio" name="ciPickP" value="'+esc(p.handle)+'"'+(i===0?' checked':'')+'><span><b>@'+esc(p.handle)+'</b><span class="muted">'+esc(p.label)+(p.followers!=null?' · '+Number(p.followers).toLocaleString("en-IN")+' followers':'')+'</span></span></label>'; }).join("")
           :'<div class="muted">Your connected Instagram will be used.</div>')
-        +'<div class="cp-hint" style="margin-top:8px">Manage more pages in <b>Creator Profile → Other pages you manage</b>.</div></div>'
+        +'<div class="cp-hint" style="margin-top:4px">Add more pages in <b>Creator Profile → Other pages you manage</b>.</div></div>'
         +'<div class="ci-pop-foot"><button class="btn ghost" data-x>Cancel</button><button class="btn" data-go>Apply</button></div></div>';
       document.body.appendChild(ov);
       var done=function(v){ ov.remove(); document.removeEventListener("keydown",k); resolve(v); };
@@ -501,6 +501,7 @@
       ov.addEventListener("click",function(e){ if(e.target===ov) done(undefined); });
       ov.querySelectorAll("[data-x]").forEach(function(b){ b.onclick=function(){ done(undefined); }; });
       ov.querySelector("[data-go]").onclick=function(){ var r=ov.querySelector('input[name="ciPickP"]:checked'); done(r?r.value:null); };
+      ov.querySelectorAll(".ci-ppick-row").forEach(function(el){ el.onclick=function(){ var i=el.querySelector("input"); if(i){ i.checked=true; } }; });
     });
   }
   async function applyToCampaign(btn){
@@ -518,6 +519,42 @@
       alert((e&&e.message)||e); btn.disabled=false; btn.textContent="Apply";
     }
   }
+  // live Instagram numbers for the creator's own posts (freshest source: the synced media list)
+  var _igMedia = null;
+  async function igMediaMap(){
+    if(_igMedia) return _igMedia;
+    _igMedia = {};
+    try{
+      var me = window.Auth && Auth.profile && Auth.profile.id;
+      if(me && window.sb.from){
+        var r = await window.sb.from("social_accounts").select("recent_media").eq("platform","instagram").eq("member_id", me).limit(1);
+        ((r.data && r.data[0] && r.data[0].recent_media) || []).forEach(function(m){
+          var k = String(m.permalink||"").replace(/\/+$/,""); if(k) _igMedia[k] = m;
+        });
+      }
+    }catch(e){}
+    return _igMedia;
+  }
+  function liveMetrics(d){
+    var m = d.metrics || {}, ig = _igMedia && _igMedia[String(d.permalink||"").replace(/\/+$/,"")];
+    var out = { views: m.views != null ? m.views : (m.plays != null ? m.plays : m.impressions),
+                likes: m.likes, comments: m.comments, reach: m.reach, saves: m.saved != null ? m.saved : m.saves, shares: m.shares };
+    if(ig){                                    // Instagram sync wins — it refreshes every minute
+      if(ig.like_count != null) out.likes = ig.like_count;
+      if(ig.comments_count != null) out.comments = ig.comments_count;
+      if(ig.view_count != null) out.views = ig.view_count;
+    }
+    return out;
+  }
+  function metricChips(d){
+    var v = liveMetrics(d), rows = [["👁","Views",v.views],["❤️","Likes",v.likes],["💬","Comments",v.comments],["📈","Reach",v.reach],["🔖","Saves",v.saves],["↗️","Shares",v.shares]]
+      .filter(function(x){ return x[2] != null; });
+    if(!rows.length) return '';
+    return '<div class="mc-metrics">'+rows.map(function(x){ return '<div><b>'+kfmt(x[2])+'</b><span>'+x[0]+' '+x[1]+'</span></div>'; }).join("")+'</div>';
+  }
+  function kfmt(n){ n = Number(n)||0; return n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(n); }
+  var DSTAT = { expected:["Not submitted yet","warn"], submitted:["In review","warn"], approved:["Approved ✓","ok"], published:["Published 🎉","ok"], missed:["Missed","no"] };
+
   function mineGroup(stage){
     if(['shortlisted','invited','applied','eligible','sent_to_brand'].indexOf(stage)>=0) return 'Upcoming';
     if(['completed','rejected','dropped','ineligible','brand_declined'].indexOf(stage)>=0) return 'Completed';
@@ -528,27 +565,79 @@
     _mineCache=all||[]; var list=_mineCache;
     var groups={Upcoming:[],Active:[],Completed:[]}; list.forEach(function(c){ groups[mineGroup(c.stage)].push(c); });
     var st=document.getElementById("opsMineStats");
+    var declined=list.filter(function(c){ return ['ineligible','brand_declined','rejected','dropped'].indexOf(c.stage)>=0; }).length;
     if(st) st.innerHTML='<div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));margin-bottom:14px">'
       +'<div class="ws-stat"><b>'+groups.Active.length+'</b><span>Running now</span></div><div class="ws-stat"><b>'+groups.Upcoming.length+'</b><span>Applied / waiting</span></div>'
-      +'<div class="ws-stat"><b>'+list.filter(function(c){return c.stage==="completed";}).length+'</b><span>Completed</span></div><div class="ws-stat"><b>'+list.length+'</b><span>All time</span></div></div>';
+      +'<div class="ws-stat"><b>'+list.filter(function(c){return c.stage==="completed";}).length+'</b><span>Completed</span></div>'
+      +'<div class="ws-stat"><b>'+declined+'</b><span>Not selected</span></div>'
+      +'<div class="ws-stat"><b>'+list.length+'</b><span>All time</span></div></div>';
     if(!list.length){ box.innerHTML='<div class="card"><div class="muted">No campaigns yet. Open <b>Campaigns</b>, apply to one — it shows up here with every next step.</div></div>'; return; }
     var LBL={Active:"🟢 Running now",Upcoming:"⏳ Applied — waiting for the brand",Completed:"📜 History"};
     var html=["Active","Upcoming","Completed"].map(function(g){ if(!groups[g].length) return ''; return '<div class="ci-sub">'+LBL[g]+'</div>'+groups[g].map(cardMine).join(""); }).join("");
-    document.getElementById("opsMineBody").innerHTML=html;
+    box.innerHTML=html;
     wireMine();
   }
+  var APPROVED_STAGES = ['brand_confirmed','contract_sent','contract_signed','address_confirmed','product_sent','product_delivered','content_created','content_submitted','changes_requested','content_approved','published','completed'];
   function cardMine(c){
-    var dl=(c.deliverables||[]);
+    var dl=(c.deliverables||[]), approved=APPROVED_STAGES.indexOf(c.stage)>=0,
+        declined=['ineligible','brand_declined','rejected','dropped'].indexOf(c.stage)>=0;
     var acts='';
     if(c.stage==='invited') acts='<button class="btn sm" data-accept="'+c.participation_id+'">Accept</button><button class="btn sm ghost" data-reject="'+c.participation_id+'">Reject</button>';
     else if(c.stage==='contract_sent') acts='<button class="btn sm" data-contract="'+c.participation_id+'">Review &amp; sign contract</button>';
     else if(c.stage==='contract_signed') acts='<button class="btn sm" data-address="'+c.participation_id+'">Confirm delivery address</button>';
     else if(c.stage==='content_approved') acts='<button class="btn sm" data-post="'+c.participation_id+'">Post from the app</button>';
-    else if(['product_sent','content_created','changes_requested'].indexOf(c.stage)>=0 && dl.length) acts='<button class="btn sm" data-upload="'+(dl[0].deliverable_id)+'">Upload content link</button>';
-    return '<div class="card ci-match"><div class="ci-mh"><h4>'+esc(c.campaign||"Campaign")+' <span class="ci-id">'+esc(c.brand||"")+'</span></h4>'+spill(c.stage)+'</div>'
-      + '<div class="ci-meta"><span>'+typeBadge(c)+'</span>'+(c.product?'<span>Product: <b>'+esc(c.product)+'</b></span>':'')+'<span>Deadline: <b>'+fmtDate(c.deadline)+'</b></span></div>'
-      + '<div class="ci-hint">Deliverables: '+(dl.length?dl.map(function(x){return esc(vlabel("content_formats",x.format))+' ×'+esc(x.quantity||1)+' ['+esc(x.status)+']';}).join(", "):'—')+'</div>'
-      + (c.reason?'<div class="ci-hint">Note: '+esc(c.reason)+'</div>':'')
+    else if(['product_sent','product_delivered','content_created','changes_requested'].indexOf(c.stage)>=0 && dl.length) acts='<button class="btn sm" data-upload="'+(dl[0].deliverable_id)+'">Upload content link</button>';
+    var row=function(k,v){ return v?'<div class="mc-row"><span>'+k+'</span><span>'+v+'</span></div>':''; };
+    var tags=[].concat(c.hashtags||[],(c.mentions||[]).map(function(m){ return String(m).charAt(0)==='@'?m:'@'+m; }));
+    var sh=c.shipment, shTxt = sh ? ({pending:'📦 Product not shipped yet',shipped:'🚚 On the way',delivered:'✅ Delivered',failed:'⚠️ Delivery failed'}[sh.status]||sh.status)
+      + (sh.courier?' · '+esc(sh.courier):'') + (sh.tracking_ref?' · <b>'+esc(sh.tracking_ref)+'</b>':'')
+      + (sh.delivered_at?' · '+fmtDate(sh.delivered_at):sh.shipped_at?' · sent '+fmtDate(sh.shipped_at):'') : '';
+    var detail = declined
+      ? '<div class="mc-detail"><div class="mc-grid">'
+        + row('Brand', esc(c.brand||'—') + (c.org_name?' <span class="muted">· '+esc(c.org_name)+'</span>':''))
+        + row('Applied with', c.applied_profile?'<b>@'+esc(c.applied_profile)+'</b>':'')
+        + row('Applied on', c.applied_at?fmtDate(c.applied_at):'')
+        + '</div></div>'
+      : ''
+      + '<div class="mc-detail">'
+      +   '<div class="mc-grid">'
+      +     row('Brand', esc(c.brand||'—') + (c.org_name?' <span class="muted">· '+esc(c.org_name)+'</span>':''))
+      +     row('Type', typeBadge(c))
+      +     row('Product', c.product?esc(c.product):'')
+      +     row('Product value', c.product_value?'₹'+esc(Number(c.product_value).toLocaleString("en-IN")):'')
+      +     row('Campaign dates', (c.starts_on||c.ends_on)?fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on):'')
+      +     row('Your deadline', c.deadline?fmtDate(c.deadline):'')
+      +     row('Applied with', c.applied_profile?'<b>@'+esc(c.applied_profile)+'</b>':'')
+      +     row('Applied on', c.applied_at?fmtDate(c.applied_at):'')
+      +     row('Cities', (c.cities||[]).length?esc((c.cities||[]).join(", ")):'')
+      +     row('Languages', (c.languages||[]).length?esc((c.languages||[]).join(", ")):'')
+      +     row('Platforms', c.platforms?esc(c.platforms):'')
+      +     row('Product link', c.product_link?'<a href="'+esc(safeLink(c.product_link))+'" target="_blank" rel="noopener">View product ↗</a>':'')
+      +   '</div>'
+      +   (c.brief?'<div class="mc-sec">Brief</div><div class="mc-text">'+esc(c.brief)+'</div>':'')
+      +   (c.deliverables_text?'<div class="mc-sec">What to make</div><div class="mc-text">'+esc(c.deliverables_text)+'</div>':'')
+      +   (tags.length?'<div class="mc-sec">Must include in your caption</div><div class="mc-tags">'+tags.map(function(t){ return '<span>'+esc(t)+'</span>'; }).join("")+'</div>':'')
+      +   ((c.attachments||[]).length?'<div class="mc-sec">Files from the brand</div><div>'+(c.attachments||[]).map(function(a){ return '<a href="'+esc(safeLink(a.url))+'" target="_blank" rel="noopener">📎 '+esc(a.name||"file")+'</a>'; }).join("<br>")+'</div>':'')
+      + '</div>';
+    var delivHtml = dl.length ? '<div class="mc-dl">'+dl.map(function(d){
+          var s=DSTAT[d.status]||[d.status||'—','na'];
+          return '<div class="mc-dlrow"><div class="mc-dlh"><b>'+esc(vlabel("content_formats",d.format))+(d.quantity>1?' ×'+d.quantity:'')+'</b>'
+            + '<span class="ci-pill ci-'+s[1]+'">'+esc(s[0])+'</span></div>'
+            + '<div class="muted" style="font-size:12px">'+(d.expected_by?'Due '+fmtDate(d.expected_by):'No due date')
+            + (d.posted_at?' · posted '+fmtDate(d.posted_at):'')
+            + (d.permalink?' · <a href="'+esc(safeLink(d.permalink))+'" target="_blank" rel="noopener">Open post ↗</a>':'')+'</div>'
+            + metricChips(d)+'</div>'; }).join("")+'</div>' : '';
+    return '<div class="card ci-match mc-card"><div class="ci-mh"><h4>'+esc(c.campaign||"Campaign")+' <span class="ci-id">'+esc(c.brand||"")+'</span></h4>'+spill(c.stage)+'</div>'
+      + (approved?'<div class="mc-banner ok">🎉 <b>You\'re approved'+(c.applied_profile?' as @'+esc(c.applied_profile):'')+'</b> — everything about this campaign is below. We\'ll message you on WhatsApp at every step.</div>':'')
+      + (declined?'<div class="mc-banner no"><b>Not selected this time.</b>'+(c.reason_label?' Reason: <b>'+esc(c.reason_label)+'</b>.':'')
+          +(c.reason&&c.reason!==c.reason_label?'<div class="mc-note">“'+esc(String(c.reason).replace(/^.*?—\s*/,""))+'”</div>':'')
+          +'<div class="muted" style="font-size:12px;margin-top:4px">Keep your profile and rates updated — new campaigns open every week.</div></div>':'')
+      + (declined?'' : '<div class="ci-meta">'+(c.campaign_type||c.comp_type?'<span>'+typeBadge(c)+'</span>':'')+(c.product?'<span>Product: <b>'+esc(c.product)+'</b></span>':'')
+      +   (c.deadline?'<span>Deadline: <b>'+fmtDate(c.deadline)+'</b></span>':'')+(c.applied_profile?'<span>As <b>@'+esc(c.applied_profile)+'</b></span>':'')+'</div>')
+      + (shTxt?'<div class="mc-ship">'+shTxt+'</div>':'')
+      + delivHtml
+      + (!approved&&!declined&&c.reason?'<div class="ci-hint">Note: '+esc(c.reason)+'</div>':'')
+      + detail
       + (acts?'<div class="ci-evrow">'+acts+'</div>':'')
       + (c.stage==='completed'? creatorCampaignFeedback(c.campaign_id):'')
       + '</div>';
