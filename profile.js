@@ -22,13 +22,15 @@
   function deriveAge(dob){ if(!dob) return null; var d=new Date(dob); if(isNaN(d)) return null; var t=new Date(), a=t.getFullYear()-d.getFullYear(); var m=t.getMonth()-d.getMonth(); if(m<0||(m===0&&t.getDate()<d.getDate()))a--; return a>=0&&a<130?a:null; }
 
   /* ---------- flag boot ---------- */
-  async function boot(){
+  var _bootP = null;
+  function boot(){ if(!_bootP) _bootP = bootOnce(); return _bootP; }
+  async function bootOnce(){
     try{
       if(!window.sb || !window.sb.schema) { enabled=false; }
       else { var r = await api("creator_profile_api_enabled"); enabled = !!(r && !r.error && r.data === true); }
     }catch(e){ enabled=false; }
     window.__ciProfileEnabled = enabled;
-    if(enabled && typeof renderShell === "function") renderShell();
+    if(enabled && window.__osBooted && typeof renderShell === "function") renderShell();
   }
 
   /* ---------- page skeleton ---------- */
@@ -74,7 +76,8 @@
   }
   function reqBanner(){
     if(!REQ) return "";
-    if(REQ.complete) return '<div class="cp-req"><b>✓ Profile complete</b> <span class="muted">— all '+REQ.total+' required details added. Keep them up to date.</span></div>';
+    if(REQ.complete) return '<div class="cp-req cp-ready"><div><b>✅ You\'re ready for campaigns</b> <span class="muted">— all '+REQ.total+' required details added. Keep them up to date.</span></div>'
+      + '<button class="btn sm" id="cpGoCampaigns">Browse campaigns →</button></div>';
     return '<div class="cp-req"><div class="cp-req-h"><b>🔒 Complete your profile to unlock Geek OS</b><span>'+REQ.done+' / '+REQ.total+' done</span></div>'
       + '<div class="cp-bar"><span style="width:'+Math.round(100*REQ.done/Math.max(REQ.total,1))+'%"></span></div>'
       + '<div class="cp-req-list">'+(REQ.items||[]).map(function(it){
@@ -285,7 +288,10 @@
       + '<div class="cp-note">Disabling data sharing may reduce Verified Data Coverage — it never lowers Performance, raises Fraud risk, or labels you unreliable.</div>',
       {noSave:true});
 
+    // "Get campaign-ready" lives inside the profile (was its own tab)
+    if(window.__ciOpsEnabled) body += section("campready","Get campaign-ready",'<div id="opsOnbBody"><div class="muted">Loading…</div></div>',{noSave:true});
     bodyEl.innerHTML = body;
+    if(window.__ciOpsEnabled && window.ciOps && window.ciOps.loadOnboarding) window.ciOps.loadOnboarding();
     wire(); wireReq();
     maybeOnboard();
   }
@@ -417,6 +423,7 @@
 
   async function refreshCompletion(){ try{ var c=await api("get_profile_completion"); if(c&&!c.error){ COMP=c.data; } await loadReq(); var h=document.getElementById("cpHead"); if(h){ h.outerHTML=header(); wireReq(); } }catch(e){} }
   function wireReq(){
+    var gc=document.getElementById("cpGoCampaigns"); if(gc) gc.onclick=function(){ currentPage = window.__ciOpsEnabled ? "opencampaigns" : "marketplace"; renderShell(); };
     document.querySelectorAll("[data-goto]").forEach(function(a){ a.onclick=function(e){ e.preventDefault();
       var sec=document.querySelector('.cp-sec[data-sec="'+a.getAttribute("data-goto")+'"]'); if(sec){ sec.scrollIntoView({behavior:"smooth",block:"start"}); sec.classList.add("cp-flash"); setTimeout(function(){ sec.classList.remove("cp-flash"); },1600); } }; });
   }
@@ -492,6 +499,7 @@
     st.textContent='.cp-req{border:1px solid rgba(108,92,231,.35);background:rgba(108,92,231,.06);border-radius:12px;padding:12px 14px;margin-bottom:14px}'
       +'.cp-req-h{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap}.cp-req-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}'
       +'.cp-req-it{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid rgba(0,0,0,.12);text-decoration:none;color:inherit}'
+      +'.cp-ready{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-color:rgba(16,185,129,.4);background:rgba(16,185,129,.07)}'
       +'.cp-req-it.done{opacity:.55;text-decoration:line-through}.cp-flash{box-shadow:0 0 0 3px rgba(108,92,231,.45);transition:box-shadow .3s}';
     document.head.appendChild(st); })();
   window.ciProfile = { boot: boot, load: load, loadReq: loadReq };

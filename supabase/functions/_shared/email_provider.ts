@@ -37,10 +37,26 @@ class ResendProvider implements EmailProvider {
   }
 }
 
+// SMTP (the same SMTP_* secrets the email-OTP function uses; implicit TLS on 465 — Edge blocks 25/587)
+class SmtpProvider implements EmailProvider {
+  async send(msg: EmailOut): Promise<EmailResult> {
+    const host = Deno.env.get("SMTP_HOST") || "", user = Deno.env.get("SMTP_USER") || "", pass = Deno.env.get("SMTP_PASS") || "";
+    const port = Number(Deno.env.get("SMTP_PORT") || 465);
+    const from = Deno.env.get("EMAIL_FROM") || Deno.env.get("SMTP_FROM") || user;
+    if (!host || !user || !pass) throw new Error("email not configured (SMTP_HOST / SMTP_USER / SMTP_PASS).");
+    const nodemailer = (await import("npm:nodemailer@6.9.16")).default;
+    const t = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
+    const info = await t.sendMail({ from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text });
+    return { id: info?.messageId ?? null, raw: { accepted: info?.accepted ?? [] } };
+  }
+}
+
 export function getEmailProvider(): EmailProvider {
-  const which = (Deno.env.get("EMAIL_PROVIDER") || "resend").toLowerCase();
+  const which = (Deno.env.get("EMAIL_PROVIDER") || "").toLowerCase();
   const from = Deno.env.get("EMAIL_FROM") || "";
-  if (which === "resend") return new ResendProvider(Deno.env.get("RESEND_API_KEY") || "", from);
+  // SMTP when chosen explicitly, or automatically when SMTP is set up and Resend isn't
+  if (which === "smtp" || (!Deno.env.get("RESEND_API_KEY") && Deno.env.get("SMTP_HOST"))) return new SmtpProvider();
+  if (which === "resend" || !which) return new ResendProvider(Deno.env.get("RESEND_API_KEY") || "", from);
   // room for ses / sendgrid adapters later — same interface
   return new ResendProvider(Deno.env.get("RESEND_API_KEY") || "", from);
 }

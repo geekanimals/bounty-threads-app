@@ -32,13 +32,15 @@
   }
 
   /* ---------- flag boot (mirrors profile.js) ---------- */
-  async function boot(){
+  var _bootP = null;
+  function boot(){ if(!_bootP) _bootP = bootOnce(); return _bootP; }
+  async function bootOnce(){
     try{
       if(!window.sb || !window.sb.schema){ enabled=false; }
       else { var r = await api("creator_profile_api_enabled"); enabled = !!(r && !r.error && r.data === true); }
     }catch(e){ enabled=false; }
     window.__ciIntelEnabled = enabled;
-    if(enabled && typeof renderNav === "function") renderNav();
+    if(enabled && window.__osBooted && typeof renderNav === "function") renderNav();
   }
 
   /* =====================================================================

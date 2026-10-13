@@ -41,14 +41,16 @@
   var LIFE = { draft:"Draft", creator_discovery:"Creator discovery", in_execution:"In execution", reporting:"Reporting", completed:"Completed", cancelled:"Cancelled" };
   function spill(st){ var x=STAGE[st]||[st||"—","na"]; return '<span class="ci-pill ci-'+x[1]+'">'+esc(x[0])+'</span>'; }
 
-  async function boot(){
+  var _bootP=null;
+  function boot(){ if(!_bootP) _bootP=bootOnce(); return _bootP; }
+  async function bootOnce(){
     try{
       if(!window.sb||!window.sb.schema){ enabled=false; }
       else { var r=await api("ops_vocab"); enabled=!!(r && !r.error && r.data); if(enabled) VOCAB=r.data; }
     }catch(e){ enabled=false; }
     if(enabled){ try{ var p=await api("get_campaign_pipeline",{p_filters:{}}); isOperator=!!(p && !p.error); }catch(e){ isOperator=false; } }
     window.__ciOpsEnabled=enabled; window.__ciOpsOperator=isOperator;
-    if(enabled && typeof renderNav==="function") renderNav();
+    if(enabled && window.__osBooted && typeof renderNav==="function") renderNav();
     if(enabled) updateAlertsBadge();
   }
 
@@ -66,6 +68,8 @@
   // route a notification's CTA to the right page (and open the campaign when relevant)
   function routeNotification(n){
     var route=n.action_route; if(!route) return;
+    route = ({onboarding:"profile", alerts:"dashboard", growth:"mycampaigns", barter:"opencampaigns", marketplace:"opencampaigns"})[route] || route;
+    var dr=document.getElementById("notifOverlay"); if(dr) dr.classList.remove("open");
     if(typeof currentPage!=="undefined"){ currentPage=route; }
     if(typeof renderShell==="function") renderShell();
     if(route==="campaignops" && n.campaign_id){ setTimeout(function(){ openCampaignDetail(n.campaign_id); },60); }
@@ -75,6 +79,8 @@
     try{
       var r=await api("get_my_notifications",{p_only_unread:true});
       var n=(r && !r.error && Array.isArray(r.data))?r.data.length:0;
+      window.__alertsUnread=n;
+      var bell=document.getElementById("notifCount"); if(bell){ bell.textContent=n>9?"9+":String(n); bell.style.display=n>0?"":"none"; }
       var a=document.querySelector('#nav a[data-page="alerts"]'); if(!a) return;
       var b=a.querySelector(".ops-badge"); if(!b){ b=document.createElement("span"); b.className="ops-badge"; a.appendChild(b); }
       if(n>0){ b.textContent=n>9?"9+":String(n); b.style.display=""; } else { b.style.display="none"; }
@@ -86,13 +92,13 @@
     return '<div id="opsAlerts" class="ci"><div class="card ci-intro"><h3>Alerts</h3><div class="muted">Everything that needs you — the same updates we send on WhatsApp and email, with a link straight to the action.</div></div>'
       + '<div id="opsAlertsBody"><div class="card"><div class="muted">Loading…</div></div></div></div>';
   };
-  async function loadAlerts(){
-    var body=document.getElementById("opsAlertsBody"); if(!body) return;
-    try{ var r=await api("get_my_notifications",{p_only_unread:false}); if(r.error) throw r.error; renderAlertsList(r.data||[]); }
+  async function loadAlerts(target){
+    var body=target||document.getElementById("opsAlertsBody"); if(!body) return;
+    try{ var r=await api("get_my_notifications",{p_only_unread:false}); if(r.error) throw r.error; renderAlertsList(r.data||[], body); }
     catch(e){ body.innerHTML='<div class="card ci-err-inline">Couldn\'t load alerts: '+esc(e.message||e)+'</div>'; }
   }
-  function renderAlertsList(list){
-    var body=document.getElementById("opsAlertsBody");
+  function renderAlertsList(list, target){
+    var body=target||document.getElementById("opsAlertsBody");
     if(!list.length){ body.innerHTML='<div class="card"><div class="muted">No alerts yet. When something needs you, it\'ll show here.</div></div>'; return; }
     body.innerHTML='<div class="card"><div class="ops-alist">'+list.map(function(n){
       var cls="ops-alert"+(n.read?"":" unread")+(n.kind==="action_required"?" act":"");
@@ -338,37 +344,51 @@
   /* ============================ 2. CREATOR "MY CAMPAIGNS" ============================ */
   // Paid / Barter split: "Campaigns" page has All · Paid · Barter filters; the creator "Barter" page is the same
   // view locked to barter (Barter + Paid shows under both). Apply works the same everywhere.
-  var CAMP_FILTER="all", CAMP_LOCKED=false, _openCache=[], _mineCache=[];
+  var CAMP_FILTER="all", CAMP_PAGE=1, PAGE_SIZE=9, _openCache=[], _mineCache=[];
+  var PENDING_ST=["applied","eligible","sent_to_brand","shortlisted","invited"], DECL_ST=["ineligible","brand_declined","dropped","rejected"];
   function kindOf(c){ return c.campaign_type || ({cash:"paid",hybrid:"barter_paid",barter:"barter"})[c.comp_type] || ""; }
-  function matchFilter(c){ var t=kindOf(c); if(CAMP_FILTER==="paid") return t==="paid"||t==="barter_paid"; if(CAMP_FILTER==="barter") return t==="barter"||t==="barter_paid"; return true; }
-  function typeBadge(c){ var t=kindOf(c), L={paid:"💰 Paid",barter:"🎁 Barter",barter_paid:"🎁 Barter + 💰 Paid"}; return t?'<span class="ci-type ci-type-'+t+'">'+L[t]+'</span>':'<span class="ci-type">—</span>'; }
+  function isCeleb(c){ return c.barter_subtype==="celebrity_story"; }
+  function matchFilter(c){ var t=kindOf(c);
+    if(CAMP_FILTER==="paid") return (t==="paid"||t==="barter_paid") && !(isCeleb(c) && t!=="barter_paid");
+    if(CAMP_FILTER==="barter") return (t==="barter"||t==="barter_paid") && !isCeleb(c);
+    if(CAMP_FILTER==="celebrity") return isCeleb(c);
+    if(CAMP_FILTER==="applied") return !!c.my_stage && PENDING_ST.indexOf(c.my_stage)>=0;
+    if(CAMP_FILTER==="approved") return !!c.my_stage && PENDING_ST.indexOf(c.my_stage)<0 && DECL_ST.indexOf(c.my_stage)<0;
+    return true; }
+  function typeBadge(c){ var t=kindOf(c), L={paid:"💰 Paid",barter:"🎁 Barter",barter_paid:"🎁 Barter + 💰 Paid"};
+    return (isCeleb(c)?'<span class="ci-type ci-type-barter_paid">👑 Celebrity story</span> ':'')+(t?'<span class="ci-type ci-type-'+t+'">'+L[t]+'</span>':'<span class="ci-type">—</span>'); }
+  var CHIPS=[["all","All"],["paid","💰 Paid"],["barter","🎁 Barter"],["celebrity","👑 Celebrity story"],["applied","⏳ Applied"],["approved","✅ Approved"]];
   function chipsHtml(){
-    if(CAMP_LOCKED) return '';
     var n=function(f){ var keep=CAMP_FILTER; CAMP_FILTER=f; var k=_openCache.filter(matchFilter).length; CAMP_FILTER=keep; return k; };
-    return [["all","All"],["paid","💰 Paid"],["barter","🎁 Barter"]].map(function(x){
-      return '<button class="ci-chip'+(CAMP_FILTER===x[0]?' on':'')+'" data-campf="'+x[0]+'">'+x[1]+(_openCache.length?' <span>'+n(x[0])+'</span>':'')+'</button>'; }).join("");
+    return CHIPS.map(function(x){ return '<button class="ci-chip'+(CAMP_FILTER===x[0]?' on':'')+'" data-campf="'+x[0]+'">'+x[1]+(_openCache.length?' <span>'+n(x[0])+'</span>':'')+'</button>'; }).join("");
   }
   function paintChips(){ var el=document.getElementById("campChips"); if(!el) return; el.innerHTML=chipsHtml();
-    el.querySelectorAll("[data-campf]").forEach(function(b){ b.onclick=function(){ CAMP_FILTER=b.getAttribute("data-campf"); paintChips(); renderOpen(_openCache); renderMine(_mineCache); }; }); }
+    el.querySelectorAll("[data-campf]").forEach(function(b){ b.onclick=function(){ CAMP_FILTER=b.getAttribute("data-campf"); CAMP_PAGE=1; paintChips(); renderOpen(_openCache); }; }); }
   (function(){ if(document.getElementById("ciTypeCss")) return; var st=document.createElement("style"); st.id="ciTypeCss";
     st.textContent='.ci-chips{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 14px}.ci-chip{border:1px solid var(--line,#ddd);background:var(--panel,#fff);border-radius:999px;padding:7px 14px;font-weight:600;cursor:pointer;color:inherit}'
       +'.ci-chip.on{background:var(--brand,#6c5ce7);color:#fff;border-color:transparent}.ci-chip span{opacity:.7;font-weight:500;margin-left:4px}'
       +'.ci-type{font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;background:rgba(0,0,0,.06)}.ci-type-paid{background:rgba(16,185,129,.14);color:#047857}'
-      +'.ci-type-barter{background:rgba(245,158,11,.16);color:#b45309}.ci-type-barter_paid{background:rgba(108,92,231,.14);color:#5b4bd6}';
+      +'.ci-type-barter{background:rgba(245,158,11,.16);color:#b45309}.ci-type-barter_paid{background:rgba(108,92,231,.14);color:#5b4bd6}'
+      +'.ci-pager{display:flex;gap:6px;align-items:center;justify-content:center;margin:14px 0}.ci-pager button{min-width:36px}';
     document.head.appendChild(st); })();
-  window.renderMyCampaigns=function(mode){
-    CAMP_LOCKED = mode==="barter"; if(CAMP_LOCKED) CAMP_FILTER="barter"; else if(mode==="paid") CAMP_FILTER="paid"; else if(CAMP_FILTER==="barter" && !mode) CAMP_FILTER="all";
-    var title = CAMP_LOCKED ? "Barter campaigns" : "Campaigns";
-    var sub = CAMP_LOCKED ? "Get products from brands in exchange for content. Apply, then track contract, delivery, content and posting here."
-                          : "Paid and barter campaigns open for you. Apply, then track every step here — contract, delivery, content and posting.";
-    if(!enabled) return '<div class="card"><h3>'+title+'</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
-    return '<div id="opsMine" class="ci"><div class="card ci-intro"><h3>'+title+'</h3><div class="muted">'+sub+'</div></div>'
+  // Campaigns (browse): every open campaign — filter by Paid / Barter / Celebrity story / Applied / Approved, 9 per page
+  window.renderOpenCampaigns=function(preset){
+    if(preset) { CAMP_FILTER=preset; CAMP_PAGE=1; }
+    if(!enabled) return '<div class="card"><h3>Campaigns</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
+    return '<div id="opsMine" class="ci"><div class="card ci-intro"><h3>Campaigns</h3><div class="muted">Paid, barter and celebrity-story campaigns open for you. Apply in one tap — track everything in My Campaigns.</div></div>'
       + '<div class="ci-chips" id="campChips">'+chipsHtml()+'</div>'
-      + '<div class="ci-sub">Open '+(CAMP_LOCKED?'barter ':'')+'campaigns</div><div id="opsOpenBody"><div class="card"><div class="muted">Loading…</div></div></div>'
-      + '<div class="ci-sub">My '+(CAMP_LOCKED?'barter ':'')+'campaigns</div><div id="opsMineBody"><div class="card"><div class="muted">Loading…</div></div></div></div>';
+      + '<div id="opsOpenBody"><div class="card"><div class="muted">Loading…</div></div></div><div id="opsOpenPager" class="ci-pager"></div></div>';
+  };
+  // My Campaigns: running, applied and history — with every next step (contract, address, content, posting) — then growth
+  window.renderMyCampaigns=function(){
+    if(!enabled) return '<div class="card"><h3>My Campaigns</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
+    return '<div id="opsMine" class="ci"><div class="card ci-intro"><h3>My Campaigns</h3><div class="muted">Everything you applied to — what\'s running now, what\'s waiting, and your full campaign history.</div></div>'
+      + '<div id="opsMineStats"></div><div id="opsMineBody"><div class="card"><div class="muted">Loading…</div></div></div>'
+      + '<div class="ci-sub" style="margin-top:18px">🚀 Your growth</div><div id="growthBody"><div class="card"><div class="muted">Loading…</div></div></div></div>';
   };
   async function loadMyCampaigns(){
     loadOpenCampaigns();
+    if(document.getElementById("growthBody") && typeof loadGrowth==="function") loadGrowth();
     try{ var r=await apiCreator("get_my_campaigns"); if(r.error) throw r.error; renderMine(r.data||[]); }
     catch(e){ var el=document.getElementById("opsMineBody"); if(el) el.innerHTML='<div class="card ci-err-inline">Couldn\'t load: '+esc((e&&e.message)||e)+'</div>'; }
   }
@@ -382,8 +402,13 @@
   function renderOpen(all){
     var el=document.getElementById("opsOpenBody"); if(!el) return;
     _openCache=all||[]; paintChips();
-    var list=_openCache.filter(matchFilter);
-    if(!list.length){ el.innerHTML='<div class="card"><div class="muted">'+(_openCache.length?'No '+(CAMP_FILTER==="paid"?'paid':'barter')+' campaigns open right now — check the other tab.':'No campaigns are open right now. New ones will show up here.')+'</div></div>'; return; }
+    var full=_openCache.filter(matchFilter), pages=Math.max(1,Math.ceil(full.length/PAGE_SIZE));
+    if(CAMP_PAGE>pages) CAMP_PAGE=pages;
+    var list=full.slice((CAMP_PAGE-1)*PAGE_SIZE, CAMP_PAGE*PAGE_SIZE);
+    var pg=document.getElementById("opsOpenPager");
+    if(pg){ pg.innerHTML = pages>1 ? '<button class="btn sm ghost" data-pg="prev"'+(CAMP_PAGE<=1?' disabled':'')+'>‹ Prev</button><span class="muted">Page '+CAMP_PAGE+' of '+pages+' · '+full.length+' campaigns</span><button class="btn sm ghost" data-pg="next"'+(CAMP_PAGE>=pages?' disabled':'')+'>Next ›</button>' : '';
+      pg.querySelectorAll("[data-pg]").forEach(function(b){ b.onclick=function(){ CAMP_PAGE+= b.getAttribute("data-pg")==="next"?1:-1; renderOpen(_openCache); var t=document.getElementById("opsMine"); if(t) t.scrollIntoView({behavior:"smooth"}); }; }); }
+    if(!list.length){ el.innerHTML='<div class="card"><div class="muted">'+(_openCache.length?'Nothing here right now — try another filter.':'No campaigns are open right now. New ones will show up here.')+'</div></div>'; return; }
     el.innerHTML=list.map(function(c){
       var tags=[].concat(c.hashtags||[],(c.mentions||[]).map(function(m){ return String(m).charAt(0)==='@'?m:'@'+m; }));
       var where=(c.cities||[]).join(", "), langs=(c.languages||[]).join(", ");
@@ -425,10 +450,15 @@
   }
   function renderMine(all){
     var box=document.getElementById("opsMineBody"); if(!box) return;
-    _mineCache=all||[]; var list=_mineCache.filter(matchFilter);
-    if(!list.length){ box.innerHTML='<div class="card"><div class="muted">No '+(CAMP_FILTER==="all"?'':CAMP_FILTER+' ')+'campaigns yet. Apply to an open campaign above — it will show up here with every next step.</div></div>'; return; }
+    _mineCache=all||[]; var list=_mineCache;
     var groups={Upcoming:[],Active:[],Completed:[]}; list.forEach(function(c){ groups[mineGroup(c.stage)].push(c); });
-    var html=Object.keys(groups).map(function(g){ if(!groups[g].length) return ''; return '<div class="ci-sub">'+g+'</div>'+groups[g].map(cardMine).join(""); }).join("");
+    var st=document.getElementById("opsMineStats");
+    if(st) st.innerHTML='<div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));margin-bottom:14px">'
+      +'<div class="ws-stat"><b>'+groups.Active.length+'</b><span>Running now</span></div><div class="ws-stat"><b>'+groups.Upcoming.length+'</b><span>Applied / waiting</span></div>'
+      +'<div class="ws-stat"><b>'+list.filter(function(c){return c.stage==="completed";}).length+'</b><span>Completed</span></div><div class="ws-stat"><b>'+list.length+'</b><span>All time</span></div></div>';
+    if(!list.length){ box.innerHTML='<div class="card"><div class="muted">No campaigns yet. Open <b>Campaigns</b>, apply to one — it shows up here with every next step.</div></div>'; return; }
+    var LBL={Active:"🟢 Running now",Upcoming:"⏳ Applied — waiting for the brand",Completed:"📜 History"};
+    var html=["Active","Upcoming","Completed"].map(function(g){ if(!groups[g].length) return ''; return '<div class="ci-sub">'+LBL[g]+'</div>'+groups[g].map(cardMine).join(""); }).join("");
     document.getElementById("opsMineBody").innerHTML=html;
     wireMine();
   }

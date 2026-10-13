@@ -42,8 +42,17 @@ function initRoles(){
 }
 
 /* ---------- Sidebar ---------- */
+const GATE_OPEN_PAGES = ["mediakit","profile"];     // pages a creator can use before the profile is complete
+function creatorNavKeys(){
+  let keys = ROLES.creator.nav.slice();
+  if(!window.__ciProfileEnabled) keys = keys.filter(k=>k!=="profile");
+  if(!window.__ciOpsEnabled) keys = keys.map(k=> k==="opencampaigns" ? "marketplace" : k).filter(k=>k!=="mycampaigns");
+  if(window.__ciIntelEnabled) keys.push("intelligence");
+  return keys;
+}
 function renderNav(){
   const nav = $("#nav"); nav.innerHTML="";
+  if(currentRole==="creator") return renderNavKeys(nav, creatorNavKeys());
   const keys = ROLES[currentRole].nav.slice();
   // Creator Profile nav is DARK: shown only when the api.creator_profile_api feature is enabled
   // (in production the api schema is unexposed, so this stays hidden and legacy nav is unchanged).
@@ -61,15 +70,16 @@ function renderNav(){
   // Barter-pipeline Alerts inbox is DARK (operational_pilot); shown for all roles when the ops layer is on.
   if(window.__ciOpsEnabled && !keys.includes("alerts")) keys.splice(1,0,"alerts");
   if(window.__isAdmin){ const ai = keys.indexOf("admin"); if(ai>=0) keys.splice(ai,1); keys.unshift("admin"); }   // Super Admin first
-  if(window.__profileGate && !keys.includes("profile")) keys.splice(1,0,"profile");
+  renderNavKeys(nav, keys);
+}
+function renderNavKeys(nav, keys){
   keys.forEach(key=>{
     let m = NAV_META[key] || {ic:"🛡", label:key};
-    if(currentRole==="creator" && key==="barter") m = {ic:"🎁", label:"Barter Campaigns"};
-    if(currentRole==="creator" && key==="mycampaigns") m = {ic:"📣", label:"Campaigns"};
+    if(currentRole==="creator" && key==="profile" && window.__profileReq && window.__profileReq.complete) m = {ic:"✅", label:"Creator Profile"};
     const a = el("a","", `<span class="ic">${m.ic}</span><span>${m.label}</span>`);
     a.setAttribute("data-page", key);
     if(key===currentPage) a.classList.add("active");
-    const locked = window.__profileGate && key!=="profile";
+    const locked = window.__profileGate && !GATE_OPEN_PAGES.includes(key);
     if(locked){ a.style.opacity = ".45"; a.title = "Complete your profile to unlock"; a.querySelector(".ic").textContent = "🔒"; }
     a.onclick = ()=>{
       if(locked){ gateToast("Complete your profile first — "+((window.__profileReq&&window.__profileReq.total)-(window.__profileReq&&window.__profileReq.done)||"a few")+" items left."); return; }
@@ -89,7 +99,8 @@ function renderMe(){
   $("#me").title = title;
   applyIgAvatar();
   // Badge = count of real pending tasks (set by the dashboard loader); 0 until known.
-  $("#notifCount").textContent = window.__geekTasks != null ? window.__geekTasks : 0;
+  const unread = window.__alertsUnread != null ? window.__alertsUnread : (window.__geekTasks != null ? window.__geekTasks : 0);
+  $("#notifCount").textContent = unread > 9 ? "9+" : unread; $("#notifCount").style.display = unread > 0 ? "" : "none";
 }
 
 // Creator's live Instagram profile picture in the top-right avatar and the sidebar corner.
@@ -312,7 +323,70 @@ function renderDreamSummary(plan){
   const b=document.getElementById("openDream"); if(b) b.onclick=()=>{ currentPage="growth"; renderShell(); };
 }
 
+/* ---------- Creator dashboard: one live cockpit (Instagram + profile + campaigns + alerts), refreshes every 60s ---------- */
+let _cdTimer = null, _cdSig = "";
+function renderCreatorDashboard(){
+  const first = String((window.Auth && Auth.profile && Auth.profile.name) || window.__igUsername || "creator").split(" ")[0];
+  return pageHead("Dashboard", `Hi ${esc(first)} 👋 — your live creator cockpit.`) + `<div id="cdBody"><div class="card"><div class="muted">Loading your live data…</div></div></div>`;
+}
+async function loadCreatorDashboard(silent){
+  const box = document.getElementById("cdBody"); if(!box || !window.sb) return;
+  const api = (fn,a)=> sb.schema("api").rpc(fn, a||{}).then(r=>r, ()=>({data:null}));
+  const [acct, open, mine, notes] = await Promise.all([
+    mkFetchAcct(),
+    window.__ciOpsEnabled ? api("list_open_campaigns") : Promise.resolve({data:[]}),
+    window.__ciOpsEnabled ? api("get_my_campaigns") : Promise.resolve({data:[]}),
+    window.__ciOpsEnabled ? api("get_my_notifications", { p_only_unread:false }) : Promise.resolve({data:[]})
+  ]);
+  if(!box.isConnected) return;
+  const a = acct || {}, media = Array.isArray(a.recent_media) ? a.recent_media : [];
+  const eng = a.followers_count && media.length ? (100 * media.reduce((x,m)=> x + (Number(m.like_count)||0) + (Number(m.comments_count)||0), 0) / media.length / a.followers_count) : null;
+  const O = open.data||[], M = mine.data||[], N = (notes.data||[]).slice(0,6), req = window.__profileReq;
+  const PEND = ["applied","eligible","sent_to_brand","shortlisted","invited"], DONE = ["completed"], DECL = ["ineligible","brand_declined","dropped","rejected"];
+  const running = M.filter(c=>!PEND.includes(c.stage) && !DONE.includes(c.stage) && !DECL.includes(c.stage));
+  const kind = c => c.campaign_type || ({cash:"paid",hybrid:"barter_paid",barter:"barter"})[c.comp_type] || "";
+  const sig = JSON.stringify([a.followers_count, a.media_count, a.avg_reach, media.length, O.length, M.map(c=>c.stage), N.map(n=>n.notification_id+n.read), req&&req.done]);
+  if(silent && sig === _cdSig) return; _cdSig = sig;
+  const stat = (v,l,go)=>`<div class="ws-stat"${go?` data-cdgo="${go}" style="cursor:pointer"`:""}><b>${v}</b><span>${l}</span></div>`;
+  const top = media.slice().sort((x,y)=>((y.like_count||0)+(y.comments_count||0))-((x.like_count||0)+(x.comments_count||0))).slice(0,4);
+  box.innerHTML = `
+    ${req && !req.complete ? `<div class="card" style="margin-bottom:14px;border:1px solid rgba(108,92,231,.35);background:rgba(108,92,231,.06);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+        <div><b>🔒 Finish your profile to apply for campaigns</b><div class="muted" style="font-size:13px">${req.done}/${req.total} done · next: ${esc((req.missing||[])[0]||"")}</div></div><button class="btn" data-cdgo="profile">Complete profile →</button></div>`
+      : req ? `<div class="card" style="margin-bottom:14px;border:1px solid rgba(16,185,129,.4);background:rgba(16,185,129,.07);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+        <div><b>✅ You're ready for campaigns</b><div class="muted" style="font-size:13px">${O.filter(c=>!c.my_stage).length} campaigns open for you right now</div></div><button class="btn" data-cdgo="opencampaigns">Browse campaigns →</button></div>` : ""}
+    <div class="ci-sub">📸 Instagram ${a.username?`<span class="muted" style="font-weight:400">@${esc(a.username)} · synced ${a.updated_at?esc(fmtDateTime(a.updated_at)):"—"}</span>`:""}</div>
+    <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
+      ${stat(fmtNum(a.followers_count||0),"Followers","mediakit")}${stat(fmtNum(a.media_count||0),"Posts","mediakit")}
+      ${stat(a.avg_reach?fmtNum(Math.round(a.avg_reach)):"—","Avg reach / post","mediakit")}${stat(eng!=null?eng.toFixed(2)+"%":"—","Engagement","mediakit")}
+      ${stat((a.recent_stories||[]).length||0,"Live stories","instagram")}</div>
+    <div class="ci-sub" style="margin-top:14px">📣 Campaigns</div>
+    <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
+      ${stat(O.length,"Open for you","opencampaigns")}${stat(O.filter(c=>["paid","barter_paid"].includes(kind(c))).length,"💰 Paid","opencampaigns")}
+      ${stat(O.filter(c=>["barter","barter_paid"].includes(kind(c))).length,"🎁 Barter","opencampaigns")}
+      ${stat(M.filter(c=>PEND.includes(c.stage)).length,"Applied / waiting","mycampaigns")}${stat(running.length,"Running now","mycampaigns")}
+      ${stat(M.filter(c=>DONE.includes(c.stage)).length,"Completed","mycampaigns")}</div>
+    <div class="grid two" style="margin-top:14px">
+      <div class="card"><h3 style="margin-top:0">🔔 Latest alerts <span class="muted" style="font-size:12px;font-weight:400">· also on WhatsApp & email</span></h3>
+        ${N.length ? `<div class="list">${N.map(n=>`<div class="row"><span class="dot ${n.read?"":"warn"}"></span><div class="r-main"><div class="r-title">${esc(n.title)}</div><div class="r-sub">${esc(n.body)}</div></div>${n.action_route?`<button class="mini-btn" data-cdgo="${esc(n.action_route)}">${esc(n.action_label||"Open")}</button>`:""}</div>`).join("")}</div>`
+          : `<div class="muted" style="padding:6px">No alerts yet.</div>`}</div>
+      <div class="card"><h3 style="margin-top:0">🟢 Running campaigns</h3>
+        ${running.length ? `<div class="list">${running.slice(0,6).map(c=>`<div class="row" data-cdgo="mycampaigns" style="cursor:pointer"><div class="r-main"><div class="r-title">${esc(c.campaign||"Campaign")}</div><div class="r-sub">${esc(c.brand||"")} · ${esc(String(c.stage||"").replace(/_/g," "))}${c.deadline?` · due ${esc(fmtDate(c.deadline))}`:""}</div></div></div>`).join("")}</div>`
+          : `<div class="muted" style="padding:6px">Nothing running yet — apply from Campaigns.</div>`}</div></div>
+    ${top.length ? `<div class="card" style="margin-top:14px"><h3 style="margin-top:0">🔥 Your top posts</h3><div class="mk-grid">${top.map(m=>{ const img = m.media_type==="VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
+        return `<a href="${esc(safeUrl(m.permalink))}" target="_blank" rel="noopener" class="mk-post">${img?`<img src="${esc(safeUrl(img))}" alt="" loading="lazy">`:""}<span class="mk-meta">❤ ${fmtNum(m.like_count||0)} · 💬 ${fmtNum(m.comments_count||0)}</span></a>`; }).join("")}</div></div>` : ""}`;
+  box.querySelectorAll("[data-cdgo]").forEach(el=> el.onclick = ()=>{
+    let go = el.dataset.cdgo; go = ({onboarding:"profile", alerts:"dashboard", growth:"mycampaigns", marketplace:"opencampaigns", barter:"opencampaigns"})[go] || go;
+    if(window.__profileGate && !GATE_OPEN_PAGES.includes(go)){ gateToast("Complete your profile first."); currentPage="profile"; renderShell(); return; }
+    currentPage = go; renderShell(); });
+  if(_cdTimer) clearInterval(_cdTimer);
+  _cdTimer = setInterval(()=>{
+    if(currentPage!=="dashboard" || currentRole!=="creator" || !document.getElementById("cdBody")){ clearInterval(_cdTimer); _cdTimer=null; return; }
+    if(document.visibilityState==="visible") loadCreatorDashboard(true);
+  }, 60000);
+}
+
 function renderDashboard(){
+  if(currentRole==="creator") return renderCreatorDashboard();
   const role = currentRole;
   const first = ((window.Auth && Auth.profile && Auth.profile.name) || ROLES[role].name).split(" ")[0];
   let html = pageHead("Dashboard", `Welcome back, ${esc(first)} — here's your live cockpit.`);
@@ -339,6 +413,7 @@ function buildActivityItems(creators, campaigns, barter){
 
 async function loadDashboard(){
   if(!window.sb) return;
+  if(currentRole==="creator"){ loadCreatorDashboard(); try{ window.sb.functions.invoke("instagram-media-sync", { body:{ force:false } }).then(()=> loadCreatorDashboard(true)).catch(()=>{}); }catch(e){} return; }
   const role = currentRole;
   const [cr, ca, ba] = await Promise.all([
     sb.from("creators").select("name,created_at").order("created_at",{ascending:false}),
@@ -1343,7 +1418,47 @@ function openCampaignModal(existing, preset){
   };
 }
 
+/* ---------- Creator reports: campaign history + Instagram performance, all live, downloadable ---------- */
+function renderCreatorReports(){
+  return pageHead("Reports","Your campaigns and Instagram performance — live, downloadable.") + `<div id="crBody"><div class="card"><div class="muted">Loading…</div></div></div>`;
+}
+async function loadCreatorReports(){
+  const box = document.getElementById("crBody"); if(!box || !window.sb) return;
+  const [acct, mine] = await Promise.all([ mkFetchAcct(),
+    window.__ciOpsEnabled ? sb.schema("api").rpc("get_my_campaigns").then(r=>r, ()=>({data:[]})) : Promise.resolve({data:[]}) ]);
+  const a = acct||{}, media = Array.isArray(a.recent_media) ? a.recent_media : [], M = mine.data||[];
+  const PEND = ["applied","eligible","sent_to_brand","shortlisted","invited"], DECL = ["ineligible","brand_declined","dropped","rejected"];
+  const approved = M.filter(c=>!PEND.includes(c.stage) && !DECL.includes(c.stage));
+  const since = Date.now() - 30*86400000, last30 = media.filter(m=> m.timestamp && new Date(m.timestamp).getTime() >= since);
+  const eng = a.followers_count && media.length ? (100 * media.reduce((x,m)=> x + (Number(m.like_count)||0) + (Number(m.comments_count)||0), 0) / media.length / a.followers_count) : null;
+  const kind = c => ({cash:"Paid",hybrid:"Barter + Paid",barter:"Barter"})[c.comp_type] || "—";
+  const posts = media.slice().sort((x,y)=> new Date(y.timestamp||0) - new Date(x.timestamp||0));
+  box.innerHTML = `<div class="rp-kpis">
+      <div><b>${M.length}</b>Applications</div><div><b>${approved.length}</b>Approved</div><div><b>${M.filter(c=>c.stage==="completed").length}</b>Completed</div>
+      <div><b>${fmtNum(a.followers_count||0)}</b>Followers</div><div><b>${a.avg_reach?fmtNum(Math.round(a.avg_reach)):"—"}</b>Avg reach</div>
+      <div><b>${eng!=null?eng.toFixed(2)+"%":"—"}</b>Engagement</div><div><b>${last30.length}</b>Posts (30 days)</div></div>
+    <div class="card"><h3 style="margin-top:0">Campaign history</h3>
+      ${M.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Campaign</th><th>Brand</th><th>Type</th><th>Status</th><th>Deadline</th></tr></thead><tbody>
+        ${M.map(c=>`<tr><td><b>${esc(c.campaign||"—")}</b></td><td>${esc(c.brand||"—")}</td><td>${kind(c)}</td><td>${esc(String(c.stage||"").replace(/_/g," "))}</td><td>${esc(fmtDate(c.deadline))}</td></tr>`).join("")}</tbody></table></div>`
+        : `<div class="muted" style="padding:6px">No campaigns yet.</div>`}</div>
+    <div class="card" style="margin-top:14px"><h3 style="margin-top:0">Instagram posts</h3>
+      ${posts.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Date</th><th>Type</th><th>Caption</th><th>Likes</th><th>Comments</th><th></th></tr></thead><tbody>
+        ${posts.map(m=>`<tr><td>${esc(fmtDate(m.timestamp))}</td><td>${esc(({VIDEO:"Reel / video",CAROUSEL_ALBUM:"Carousel",IMAGE:"Photo"})[m.media_type]||m.media_type||"")}</td>
+          <td style="max-width:320px;font-size:12px">${esc((m.caption||"").slice(0,90))}</td><td>${fmtNum(m.like_count||0)}</td><td>${fmtNum(m.comments_count||0)}</td>
+          <td>${m.permalink?`<a href="${esc(safeUrl(m.permalink))}" target="_blank" rel="noopener">Open ↗</a>`:""}</td></tr>`).join("")}</tbody></table></div>`
+        : `<div class="muted" style="padding:6px">No posts synced yet.</div>`}</div>
+    <div style="margin-top:14px"><button class="mini-btn" id="crCsv">⬇ Download CSV</button></div>`;
+  document.getElementById("crCsv").onclick = ()=>{
+    const rows = [["Section","Name / date","Brand / type","Status / likes","Deadline / comments"]]
+      .concat(M.map(c=>["Campaign", c.campaign, c.brand, c.stage, c.deadline||""]))
+      .concat(posts.map(m=>["Post", m.timestamp||"", m.media_type||"", m.like_count||0, m.comments_count||0]));
+    const csv = rows.map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\n");
+    const l = document.createElement("a"); l.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"})); l.download = "my-creator-report.csv"; l.click();
+  };
+}
+
 function renderReports(){
+  if(currentRole==="creator") return renderCreatorReports();
   let html = pageHead("Reports","Live campaign performance for your org.");
   html += kpiRow(currentRole);
   html += `<div class="card"><h3>Campaign Performance</h3>
@@ -2133,10 +2248,23 @@ function renderRoster(){
 
 /* ================= MEDIA KIT (Instagram) ================= */
 function renderMediaKit(){
-  let html = pageHead("Media Kit","Your Instagram, auto-built into a professional, shareable kit.");
+  let html = pageHead("Media Kit","Your reach, audience and best work — auto-built from Instagram and shareable with brands.");
+  html += mkGateBanner();
   html += `<div id="mkBody"><div class="card"><div class="muted">Loading…</div></div></div>`;
   return html;
 }
+// While the mandatory profile is incomplete, the Media Kit shows a clear "finish your profile" bar on top
+function mkGateBanner(){
+  const r = window.__profileReq;
+  if(currentRole!=="creator" || !window.__profileGate || !r) return `<div id="mkGateBanner"></div>`;
+  return `<div id="mkGateBanner" class="card" style="margin-bottom:14px;border:1px solid rgba(108,92,231,.35);background:rgba(108,92,231,.06)">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div><b>🔒 Complete your profile to unlock campaigns, Instagram tools & more</b>
+        <div class="muted" style="font-size:13px">${r.done} of ${r.total} done · next: ${esc((r.missing||[])[0]||"")}</div></div>
+      <button class="btn" id="mkGoProfile">Complete profile →</button></div>
+    <div class="cp-bar" style="margin-top:10px;height:6px;border-radius:6px;background:rgba(0,0,0,.08);overflow:hidden"><span style="display:block;height:100%;width:${Math.round(100*r.done/Math.max(r.total,1))}%;background:var(--brand,#6c5ce7)"></span></div></div>`;
+}
+document.addEventListener("click", e=>{ if(e.target && e.target.id==="mkGoProfile"){ currentPage="profile"; renderShell(); } });
 
 function mkNotConnected(){
   return `<div class="card mk-connect">
@@ -2418,8 +2546,9 @@ async function loadMkInbox(){
   const r = await mkDmCall({ action:"conversations" });
   if(r.error){
     box.innerHTML = r.needs_permission
-      ? `<div class="ai-suggest"><span class="spark">💬</span><div class="s-body"><b>DMs will show here</b><p>${esc(r.error)}</p></div></div>`
+      ? `<div class="ai-suggest"><span class="spark">💬</span><div class="s-body"><b>Turn on Instagram messages</b><p>Reconnect Instagram once and allow <b>messages</b> — your DMs then show here.</p><button class="btn sm" id="mkDmReconnect">Reconnect Instagram</button></div></div>`
       : `<div style="padding:6px">${esc(r.error)}</div>`;
+    const rc = document.getElementById("mkDmReconnect"); if(rc) rc.onclick = connectInstagram;
     return;
   }
   const t = r.threads || [];
@@ -2462,7 +2591,10 @@ function wireMkHead(acct){
     catch(e){ prompt("Your public media kit link:", url); }
   };
   const cta = document.getElementById("mkComposeCta");
-  if(cta) cta.onclick = ()=>{ const c=document.getElementById("mkComposer"); if(c) c.scrollIntoView({behavior:"smooth"}); };
+  if(cta) cta.onclick = ()=>{
+    if(window.__profileGate){ gateToast("Complete your profile first to post from Geek OS."); return; }
+    const c=document.getElementById("mkComposer"); if(c){ c.scrollIntoView({behavior:"smooth"}); return; }
+    currentPage = "instagram"; renderShell(); };
   document.querySelectorAll("#mkHeadWrap [data-mkedit]").forEach(b=> b.onclick = ()=> openMkEdit(b.dataset.mkedit, acct));
 }
 async function mkFetchAcct(){
@@ -2479,7 +2611,7 @@ function mkStamp(){
 // Pull fresh posts + live stories from Instagram (server-throttled), then re-render only the head — the composer
 // (and anything the creator is typing) is left untouched.
 async function refreshMediaKit(force){
-  if(!document.getElementById("mkHeadWrap")) return;
+  if(!document.getElementById("mkHeadWrap")){ if(document.getElementById("igBody")) return refreshInstagram(force); return; }
   try{
     const { data, error } = await sb.functions.invoke("instagram-media-sync", { body:{ force: !!force } });
     if(!error && data && data.ok && !data.cached) _mkSyncedAt = Date.now();
@@ -2501,6 +2633,64 @@ async function refreshMediaKit(force){
   }
   mkStamp();
 }
+/* ---------- Instagram: post (feed / carousel / reel / story), live stories, comments and DMs ---------- */
+let _igTimer = null, _igSyncedAt = 0, _igMediaSig = "", _igTab = "post";
+function renderInstagram(){
+  return pageHead("Instagram","Post, reply to comments and answer DMs — without leaving Geek OS.")
+    + `<div id="igBody"><div class="card"><div class="muted">Loading…</div></div></div>`;
+}
+const IG_TABS = [["post","📤 Post"],["stories","🟣 Stories"],["comments","💬 Comments"],["inbox","✉️ Messages"]];
+function paintIgTabs(){
+  document.querySelectorAll("[data-igtab]").forEach(b=> b.classList.toggle("on", b.dataset.igtab===_igTab));
+  IG_TABS.forEach(([k])=>{ const p=document.getElementById("igPane_"+k); if(p) p.style.display = k===_igTab ? "" : "none"; });
+}
+async function loadInstagram(){
+  const wrap = document.getElementById("igBody"); if(!wrap) return;
+  const acct = await mkFetchAcct();
+  if(!wrap.isConnected) return;
+  if(!acct){ wrap.innerHTML = mkNotConnected(); const b=document.getElementById("mkConnect"); if(b) b.onclick=connectInstagram; return; }
+  _mkLastAcct = acct;
+  wrap.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <div class="ci-chips" style="margin:0">${IG_TABS.map(([k,l])=>`<button class="ci-chip" data-igtab="${k}">${l}</button>`).join("")}</div>
+      <div class="muted" id="mkSyncStamp" style="font-size:12px"></div></div>
+    <div id="igPane_post"><div class="mk-kit" id="mkComposerWrap"></div></div>
+    <div id="igPane_stories"><div class="mk-kit" id="mkStoriesWrap"></div></div>
+    <div id="igPane_comments"><div class="mk-kit" id="mkCommentsWrap"></div></div>
+    <div id="igPane_inbox"><div class="mk-kit" id="mkInboxWrap"></div></div>`;
+  document.getElementById("mkComposerWrap").innerHTML = mkComposer();
+  document.getElementById("mkStoriesWrap").innerHTML = mkStories(acct) || `<div class="card"><div class="muted">No live stories right now. Post one from the 📤 Post tab — it shows here for 24 hours.</div></div>`;
+  document.getElementById("mkCommentsWrap").innerHTML = mkCommentsHtml(acct) || `<div class="card"><div class="muted">No posts yet — comments on your posts will show here.</div></div>`;
+  document.getElementById("mkInboxWrap").innerHTML = mkInboxHtml();
+  _igMediaSig = JSON.stringify((acct.recent_media||[]).map(m=>[m.id,m.comments_count]));
+  wireMkComposer(); wireMkComments(acct); loadMkInbox();
+  document.querySelectorAll("[data-igtab]").forEach(b=> b.onclick = ()=>{ _igTab = b.dataset.igtab; paintIgTabs(); });
+  paintIgTabs();
+  _mkSyncedAt = 0; mkStamp(); refreshInstagram(false);
+  if(_igTimer) clearInterval(_igTimer);
+  _igTimer = setInterval(()=>{
+    if(currentPage!=="instagram" || !document.getElementById("igBody")){ clearInterval(_igTimer); _igTimer=null; return; }
+    mkStamp();
+    if(document.visibilityState==="visible" && Date.now()-(_mkSyncedAt||0) >= 60000) refreshInstagram(false);
+  }, 5000);
+}
+// silent sync: stories + the comments post-picker repaint only when Instagram data changed; the composer and an
+// open comment thread / DM conversation are never touched
+async function refreshInstagram(force){
+  try{
+    const { data, error } = await sb.functions.invoke("instagram-media-sync", { body:{ force: !!force } });
+    if(!error && data && data.ok && !data.cached) _mkSyncedAt = Date.now();
+    else if(!error && data && data.cached && !_mkSyncedAt) _mkSyncedAt = Date.now() - (60000 - (data.next_in_ms||0));
+  }catch(e){}
+  const acct = await mkFetchAcct(); if(!acct || !document.getElementById("igBody")) return;
+  _mkLastAcct = acct;
+  const sw = document.getElementById("mkStoriesWrap"), st = mkStories(acct);
+  if(sw && st && st !== _mkStoriesHtml){ sw.innerHTML = st; _mkStoriesHtml = st; }
+  const sig = JSON.stringify((acct.recent_media||[]).map(m=>[m.id,m.comments_count]));
+  const cw = document.getElementById("mkCommentsWrap");
+  if(cw && sig !== _igMediaSig && !document.querySelector("[data-mkcm][style*='var(--brand)']")){ cw.innerHTML = mkCommentsHtml(acct); wireMkComments(acct); }
+  _igMediaSig = sig; mkStamp();
+}
+
 function startMkAutoRefresh(){
   if(_mkTimer) clearInterval(_mkTimer);
   _mkTimer = setInterval(()=>{
@@ -2516,21 +2706,16 @@ async function loadMediaKit(){
   const showConnect = ()=>{ wrap.innerHTML = mkNotConnected(); const b=document.getElementById("mkConnect"); if(b) b.onclick=connectInstagram; };
   if(!window.sb){ showConnect(); return; }
   const acct = await mkFetchAcct();
+  if(!wrap.isConnected) return;               // page changed while loading — a newer render takes over
   if(!acct){ showConnect(); return; }
   _mkLastAcct = acct;
+  // Media Kit = view only (reach, audience, stats, best work). Posting, comments and DMs live on the Instagram page.
   wrap.innerHTML = `<div class="muted" id="mkSyncStamp" style="font-size:12px;text-align:right;margin-bottom:6px"></div>`
-    + `<div id="mkHeadWrap"></div><div class="mk-kit" id="mkStoriesWrap"></div><div class="mk-kit" id="mkComposerWrap"></div>`
-    + `<div class="mk-kit" id="mkCommentsWrap"></div><div class="mk-kit" id="mkInboxWrap"></div>`;
+    + `<div id="mkHeadWrap"></div><div class="mk-kit" id="mkStoriesWrap"></div>`;
   _mkHeadHtml = mkHead(acct); _mkStoriesHtml = mkStories(acct);
   document.getElementById("mkHeadWrap").innerHTML = _mkHeadHtml;
   document.getElementById("mkStoriesWrap").innerHTML = _mkStoriesHtml;
-  document.getElementById("mkComposerWrap").innerHTML = mkComposer();
-  document.getElementById("mkCommentsWrap").innerHTML = mkCommentsHtml(acct);
-  document.getElementById("mkInboxWrap").innerHTML = mkInboxHtml();
   wireMkHead(acct);
-  wireMkComposer();
-  wireMkComments(acct);
-  loadMkInbox();
   _mkSyncedAt = 0; mkStamp();
   refreshMediaKit(false);          // fresh posts + live stories on open
   startMkAutoRefresh();            // then every 60 s while the page is open and visible
@@ -3270,7 +3455,9 @@ const PAGES = {
   messages: (typeof renderWhatsApp==="function"?renderWhatsApp:()=>""),
   alerts: (typeof renderAlerts==="function"?renderAlerts:()=>""),
   discover:renderDiscover,
-  dashboard:renderDashboard, barter:()=> (currentRole==="creator" && window.__ciOpsEnabled && window.renderMyCampaigns) ? window.renderMyCampaigns("barter") : renderBarter(), creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit, admin:renderAdmin,
+  instagram:renderInstagram,
+  opencampaigns:()=> window.renderOpenCampaigns ? window.renderOpenCampaigns() : "",
+  dashboard:renderDashboard, barter:()=> (currentRole==="creator" && window.__ciOpsEnabled && window.renderOpenCampaigns) ? window.renderOpenCampaigns("barter") : renderBarter(), creators:renderCreators, roster:renderRoster, mediakit:renderMediaKit, admin:renderAdmin,
   campaigns:renderCampaigns, reports:renderReports, growth:renderGrowth, settings:renderSettings,
   celebrity:renderCelebrity, approvals:renderApprovals, marketplace:renderMarketplace,
   brands:renderBrands, portfolio:renderPortfolio, finance:renderFinance, logistics:renderLogistics,
@@ -3308,7 +3495,7 @@ const OAUTH = {
 
 /* ---------- Instagram (Instagram Login) — real integration ---------- */
 const INSTAGRAM_APP_ID = "944216414793314"; // Instagram app ID (public)
-const IG_SCOPES = "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights,instagram_business_manage_comments";
+const IG_SCOPES = "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights,instagram_business_manage_comments,instagram_business_manage_messages";
 // Must EXACTLY match the redirect registered in Meta → Instagram login settings.
 const IG_REDIRECT = location.origin + location.pathname.replace(/[^/]*$/,"") + "app.html";
 
@@ -3667,6 +3854,8 @@ function renderContent(){
   if(currentPage==="onboarding" && window.ciOps) window.ciOps.loadOnboarding();
   if(currentPage==="growth") loadGrowth();
   if(currentPage==="admin") loadAdmin();
+  if(currentPage==="instagram") loadInstagram();
+  if(currentPage==="opencampaigns" && window.ciOps) window.ciOps.loadOpenCampaigns();
   if(currentPage==="discover") loadDiscover();
   if(currentPage==="campaigns"){
     loadCampaigns();
@@ -3681,12 +3870,13 @@ function renderContent(){
     loadOrgProfile();
   }
   if(currentPage==="reports"){
-    (currentRole!=="creator" && window.sb ? loadOrgReports() : Promise.resolve(false)).then(ok=>{ if(!ok) loadReportRows(); });
+    if(currentRole==="creator") loadCreatorReports();
+    else (window.sb ? loadOrgReports() : Promise.resolve(false)).then(ok=>{ if(!ok) loadReportRows(); });
   }
   if(currentPage==="dashboard"){
     loadDashboard();
   }
-  if(currentPage==="barter" && currentRole==="creator" && window.__ciOpsEnabled && window.ciOps){ window.ciOps.loadMyCampaigns(); }
+  if(currentPage==="barter" && currentRole==="creator" && window.__ciOpsEnabled && window.ciOps){ window.ciOps.loadOpenCampaigns(); }
   else if(currentPage==="barter"){
     loadCampaignSection("barter");
     loadBarter();
@@ -3698,7 +3888,11 @@ function renderContent(){
 }
 
 function renderShell(){
-  if(window.__profileGate && currentPage!=="profile") currentPage = "profile";
+  if(currentRole==="creator"){
+    const MOVED = { alerts:"dashboard", onboarding:"profile", growth:"mycampaigns", marketplace: window.__ciOpsEnabled ? "opencampaigns" : "marketplace" };
+    if(MOVED[currentPage]) currentPage = MOVED[currentPage];
+  }
+  if(window.__profileGate && !GATE_OPEN_PAGES.includes(currentPage)) currentPage = "mediakit";
   if(window.Tracker) Tracker.page(currentPage);
   renderNav(); renderMe(); renderContent();
 }
@@ -3770,6 +3964,12 @@ function closeAi(){ $("#aiOverlay").classList.remove("open"); }
 async function openNotif(){
   $("#notifOverlay").classList.add("open");
   const body = $("#notifBody");
+  if(window.__ciOpsEnabled && window.ciOps && window.ciOps.loadAlerts){
+    const head = document.querySelector("#notifDrawer .drawer-head .muted"); if(head) head.textContent = "Also sent to your WhatsApp & email";
+    body.innerHTML = `<div class="muted" style="padding:12px">Loading…</div>`;
+    await window.ciOps.loadAlerts(body);
+    return;
+  }
   body.innerHTML = `<div class="muted" style="padding:12px">Loading…</div>`;
   if(!window.sb){ body.innerHTML = `<div class="muted" style="padding:12px">No activity yet.</div>`; return; }
   const [cr, ca, ba] = await Promise.all([
@@ -3896,9 +4096,10 @@ window.onProfileRequirements = function(req){
   window.__profileGate = !req.complete;
   if(wasGated && req.complete){
     if(window.Tracker) Tracker.security("profile_completed");
-    gateToast("🎉 Profile complete — everything is unlocked!");
-    currentPage = "mediakit"; renderShell();
+    gateToast("🎉 Profile complete — you're ready for campaigns! Everything is unlocked.");
+    renderNav();
   } else if(wasGated !== !!window.__profileGate){ renderNav(); }
+  if(currentPage==="mediakit"){ const gb=document.getElementById("mkGateBanner"); if(gb) gb.outerHTML = mkGateBanner(); }
 };
 // Cookie choice is required once per account (server-recorded so the Super Admin sees it on every device)
 async function ensureConsent(){
@@ -3932,14 +4133,22 @@ async function bootOS(){
   }
   if(window.Tracker) Tracker.start();
   await ensureConsent();
-  if(window.Auth && Auth.profile && Auth.profile.role === "creator"){
-    await creatorProfileGate();
-    if(window.__profileGate) currentPage = "profile";
-  }
   // Seed the signed-in user's role into the shell.
   if(window.Auth && Auth.profile && ROLES[Auth.profile.role]){
     currentRole = Auth.profile.role;
   }
+  // Load the feature flags + profile checklist first, so the sidebar is complete on the very first paint
+  // (no half sidebar that only fixes itself after a refresh).
+  const content = document.getElementById("content");
+  if(content && !window.__osBooted) content.innerHTML = `<div class="card" style="margin:24px"><div class="muted">Loading your workspace…</div></div>`;
+  const within = (p, ms)=> Promise.race([Promise.resolve(p).catch(()=>{}), new Promise(r=>setTimeout(r, ms))]);
+  await Promise.all([
+    window.ciProfile && within(window.ciProfile.boot(), 5000),
+    window.ciOps && within(window.ciOps.boot(), 5000),
+    window.ciIntel && within(window.ciIntel.boot(), 5000),
+    (window.Auth && Auth.profile && Auth.profile.role === "creator") ? within(creatorProfileGate(), 5000) : null
+  ]);
+  if(window.__profileGate && !GATE_OPEN_PAGES.includes(currentPage)) currentPage = "mediakit";
   init();
   // Platform admins get an Admin queue in the nav.
   if(window.sb){ sb.rpc("is_platform_admin").then(({data})=>{ if(data===true){ markSuperAdmin(); } }).catch(()=>{}); }

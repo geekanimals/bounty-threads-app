@@ -24,7 +24,8 @@ const ROLES = {
   },
   creator: {
     label: "Creator", initials: "CR", name: "Creator",
-    nav: ["dashboard","mediakit","marketplace","barter","growth","reports"],
+    // creator sidebar order: Dashboard → Media Kit → Profile → Instagram → Messages → Campaigns → My Campaigns → Reports
+    nav: ["dashboard","mediakit","profile","instagram","messages","opencampaigns","mycampaigns","reports"],
     ai: { title:"Creator Agent", sub:"Your career coach" }
   }
 };
@@ -33,6 +34,7 @@ const NAV_META = {
   messages:{ic:"💬",label:"Messages"},
   alerts:{ic:"🔔",label:"Alerts"},
   discover:{ic:"🔎",label:"Discovery"},
+  instagram:{ic:"📷",label:"Instagram"}, opencampaigns:{ic:"📣",label:"Campaigns"},
   dashboard:{ic:"🏠",label:"Dashboard"}, brands:{ic:"🏢",label:"Brand CRM"},
   portfolio:{ic:"🗂",label:"Portfolio"}, roster:{ic:"🎬",label:"My Roster"},
   campaigns:{ic:"📣",label:"Campaigns"}, marketplace:{ic:"🛒",label:"Marketplace"},
