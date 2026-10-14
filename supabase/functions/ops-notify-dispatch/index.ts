@@ -20,7 +20,9 @@ import { getEmailProvider, renderEmailHtml } from "../_shared/email_provider.ts"
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APP_URL = (Deno.env.get("APP_URL") || "https://bounty-threads-app.vercel.app").replace(/\/+$/, "");   // e.g. https://bountythreads.app
-const WA_UPDATE_TEMPLATE = (Deno.env.get("WA_UPDATE_TEMPLATE") || "").trim();
+// the one approved Utility template that carries every update + invite. Default name, so creating it in snapto
+// with this exact name is all it takes — nothing to save anywhere; held messages go out the moment Meta approves it.
+const WA_UPDATE_TEMPLATE = (Deno.env.get("WA_UPDATE_TEMPLATE") || "geek_campaign_update").trim();
 const WA_UPDATE_TEMPLATE_LANG = (Deno.env.get("WA_UPDATE_TEMPLATE_LANG") || "en").trim();
 // WhatsApp template parameters may not contain new lines / tabs / 4+ spaces
 const waParam = (s: string, max = 900) => String(s || "").replace(/\s*[\r\n\t]+\s*/g, " · ").replace(/ {4,}/g, "   ").trim().slice(0, max) || "-";

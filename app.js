@@ -4937,13 +4937,14 @@ let _dlvTimer = null;
 // The one WhatsApp template that carries every campaign update (any campaign, any step). Meta allows free text
 // only within 24 h of the creator's last message, so without an approved template WhatsApp updates are held.
 const WA_UPD_NAME = "geek_campaign_update";
-const WA_UPD_BODY = "Hi {{1}}, there's an update on your campaign: {{2}}\n\nOpen the app for details and your next step: {{3}} — thank you!";
+const WA_UPD_BODY = "Hi {{1}} 👋\n\n📢 *Campaign update from Geek*\n{{2}}\n\n👉 See details and your next step here: {{3}}\n\nThank you,\nTeam Geek";
 const WA_UPD_FOOT = "Reply STOP to stop WhatsApp updates";
 async function adminWaSettingsCard(){
   const box = document.getElementById("dlvWaSet"); if(!box) return;
   const { data, error } = await sb.rpc("admin_wa_settings").then(r=>r, e=>({error:e}));
   if(error){ box.innerHTML = `<h3 style="margin-top:0">WhatsApp updates</h3><div class="muted">${esc(error.message||error)} — run <code>supabase db push</code> first.</div>`; return; }
-  const d = data||{}, on = !!d.template;
+  const d = data||{}, on = true;
+  if(!d.template){ d.template = WA_UPD_NAME; d.__default = true; }
   box.innerHTML = `<h3 style="margin-top:0">${on?"✅":"⚠️"} WhatsApp campaign updates ${on?`<span class="tag good">on · ${esc(d.template)}</span>`:`<span class="tag warn">not set — WhatsApp updates are held</span>`}</h3>
     <p class="muted" style="font-size:13px;margin:0 0 10px">WhatsApp only allows free text within 24 hours of the creator's last message. Every other update needs <b>one approved Utility template</b> — the same one carries every campaign and every step (contract, courier, brief, video, approval…).
       ${d.held?` <b style="color:#b45309">${esc(d.held)} update(s) are waiting</b> and go out the moment you save an approved template.`:""}</p>
@@ -4977,6 +4978,34 @@ async function adminWaSettingsCard(){
 }
 // One WhatsApp UTILITY template per campaign (created by wa-template-sync). Updates for a campaign go out on
 // its template once approved; held messages are re-sent automatically then.
+// who got what in the last 7 days, and exactly why not
+async function adminDeliveryDoctor(){
+  const box = document.getElementById("dlvDoctor"); if(!box) return;
+  const { data, error } = await sb.rpc("admin_delivery_doctor").then(r=>r, e=>({error:e}));
+  if(error){ box.innerHTML = `<h3 style="margin-top:0">Delivery doctor</h3><div class="muted">${esc(error.message||error)} — run <code>supabase db push</code> first.</div>`; return; }
+  const L = data||[];
+  const why = (c, x, kind)=>{
+    const o = x||{}, any = (o.sent||0)+(o.held||0)+(o.failed||0)+(o.queued||0);
+    if(kind==="wa"){
+      if(c.wa_off) return `<span class="tag warn">replied STOP</span>`;
+      if(!c.wa_number) return `<span class="tag warn">no WhatsApp number</span><div class="muted dd-why">Signed up without WhatsApp — ask them to link WhatsApp (Messages → Link WhatsApp)</div>`;
+    } else {
+      if(c.email_off) return `<span class="tag warn">unsubscribed</span>`;
+      if(!any) return `<span class="tag warn">no email</span><div class="muted dd-why">No real email on the account — the backup email in their profile fixes it</div>`;
+    }
+    const parts = [];
+    if(o.sent) parts.push(`<span class="tag good">✓ ${o.sent} sent</span>`);
+    if(o.queued) parts.push(`<span class="tag">… ${o.queued} sending</span>`);
+    if(o.held) parts.push(`<span class="tag warn">⏸ ${o.held} waiting</span>`);
+    if(o.failed) parts.push(`<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">✗ ${o.failed} failed</span>`);
+    return (parts.join(" ")||'<span class="muted">—</span>') + (o.error && !o.sent ? `<div class="muted dd-why">${esc(String(o.error).slice(0,160))}</div>` : "");
+  };
+  box.innerHTML = `<h3 style="margin-top:0">🩺 Delivery doctor <span class="muted" style="font-size:12px;font-weight:400">— last 7 days, everyone who had an update</span></h3>
+    ${L.length ? `<div style="overflow-x:auto"><table class="tbl dd-tbl"><thead><tr><th>Who</th><th>Updates</th><th>WhatsApp</th><th>Email</th></tr></thead><tbody>
+      ${L.map(c=>`<tr><td><b>${esc(c.who||"—")}</b><div class="muted" style="font-size:12px">${esc(c.role||"")}${c.wa_number?` · ${esc(c.wa_number)}`:""}</div></td>
+        <td>${esc(c.alerts)}</td><td>${why(c, c.wa, "wa")}</td><td>${why(c, c.email, "email")}${c.email&&c.email.to?`<div class="muted" style="font-size:11.5px">${esc(c.email.to)}</div>`:""}</td></tr>`).join("")}
+    </tbody></table></div>` : `<div class="muted">No updates in the last 7 days.</div>`}`;
+}
 async function adminWaTemplates(){
   const box = document.getElementById("dlvTpl"); if(!box) return;
   const { data, error } = await sb.rpc("admin_wa_templates").then(r=>r, e=>({error:e}));
@@ -5045,6 +5074,7 @@ async function adminDelivery(body, silent){
       <div><b>${n("email:sent")}</b>Emails sent · 7d</div><div><b>${n("email:failed")+n("email:skipped")}</b>Emails not sent</div>
       <div><b>${n("whatsapp:queued")+n("email:queued")+n("whatsapp:sending")+n("email:sending")}</b>In queue</div></div>
     <div class="card wa-set" id="dlvWaSet"></div>
+    <div class="card" id="dlvDoctor" style="margin-top:12px"></div>
     <div class="card"><h3 style="margin-top:0">Health</h3><div class="list">${checks.map(([ok,t,s])=>`<div class="row"><span class="dot ${ok?"good":"warn"}"></span>
         <div class="r-main"><div class="r-title">${ok?"✅":"⚠️"} ${esc(t)}</div><div class="r-sub">${esc(s)}</div></div></div>`).join("")}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
@@ -5061,7 +5091,7 @@ async function adminDelivery(body, silent){
         <td style="font-size:12px;max-width:260px" class="muted">${esc(r.error||(r.sent_at?"Sent "+ago(r.sent_at):""))}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">No messages yet.</td></tr>`}
       </tbody></table></div></div>
     <div class="card" style="margin-top:14px" id="dlvTpl"></div>`;
-  adminWaTemplates(); adminWaSettingsCard();
+  adminWaTemplates(); adminWaSettingsCard(); adminDeliveryDoctor();
   document.getElementById("dlvRetry").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_retry", { p_channel: null });
     document.getElementById("dlvMsg").textContent = e ? e.message : `${k||0} message(s) re-queued`; setTimeout(()=>adminDelivery(body,true), 3000); };
   document.getElementById("dlvTest").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_test", { p_phone: document.getElementById("dlvPhone").value.trim()||null, p_email: document.getElementById("dlvEmail").value.trim()||null });
