@@ -855,8 +855,12 @@
         + '<div id="opsCtAccept" style="display:none">'
         +   '<label class="cp-check" style="margin-top:12px"><input type="checkbox" id="opsAsci"> <span>I have read the whole contract, I will follow the <b>ASCI</b> guidelines, and I will <b>post only after the brand approves my video</b> in the app.</span></label>'
         +   (risky?'<label class="cp-check"><input type="checkbox" id="opsTerms"> <span>I understand that if I receive the product and don\'t submit my video within 7 days, <b>my account is blocked</b> and I <b>must send the product to another creator at my own cost</b>.</span></label>':'')
-        +   '<label class="wa-f"><span>Type your full name to sign</span><input id="opsSig" placeholder="e.g. Asha Kumar"></label>'
-        +   '<div class="cp-ob-actions"><button class="btn sm" id="opsCtSign">Sign contract</button></div>'
+        +   (k.sign_as
+              ? '<label class="wa-f"><span>Type your name exactly as on your profile: <b>'+esc(k.sign_as)+'</b></span><input id="opsSig" autocomplete="off" placeholder="'+esc(k.sign_as)+'"></label>'
+                + '<div class="ci-hint" id="opsSigHint">Only the name on your Geek OS profile can sign this contract.</div>'
+              : '<div class="ci-err-inline" style="margin-top:10px">Add your <b>first and last name</b> in Creator Profile first — the contract is signed with that name.</div>'
+                + '<div class="cp-ob-actions" style="justify-content:flex-start"><button class="btn sm ghost" id="opsGoProfile">Open Creator Profile</button></div>')
+        +   '<div class="cp-ob-actions"><button class="btn sm" id="opsCtSign"'+(k.sign_as?'':' disabled')+'>Sign contract</button></div>'
         + '</div>'
         + '<div class="ci-hint cp-err-inline" id="opsCtErr"></div>';
       (function(){ var sc=document.getElementById("opsCtScroll"), gate=document.getElementById("opsCtGate"), acc=document.getElementById("opsCtAccept");
@@ -864,6 +868,15 @@
         if(!sc || sc.scrollHeight <= sc.clientHeight + 4){ open(); return; }
         sc.addEventListener("scroll", function(){ if(sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 8) open(); });
         gate.onclick=function(){ sc.scrollBy({top:sc.clientHeight*0.8, behavior:"smooth"}); }; })();
+      // the signature must match the profile name (checked again on the server)
+      var normName=function(x){ return String(x||"").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu," ").replace(/\s+/g," ").trim(); };
+      var sigIn=document.getElementById("opsSig"), sigHint=document.getElementById("opsSigHint");
+      if(sigIn && k.sign_as) sigIn.oninput=function(){
+        var ok=normName(sigIn.value)===normName(k.sign_as);
+        sigHint.innerHTML = !sigIn.value.trim() ? "Only the name on your Geek OS profile can sign this contract."
+          : ok ? '<span style="color:#12b76a;font-weight:600">✓ Matches your profile</span>' : 'Doesn\'t match — type <b>'+esc(k.sign_as)+'</b>';
+      };
+      var gp=document.getElementById("opsGoProfile"); if(gp) gp.onclick=function(){ closeModal(); if(typeof currentPage!=="undefined") currentPage="profile"; if(typeof renderShell==="function") renderShell(); };
       if(k.signed_at){ var sbn=document.getElementById("opsCtSign"); sbn.disabled=true; sbn.textContent="Signed "+fmtDate(k.signed_at); }
       document.getElementById("opsCtSign").onclick=function(){
         var err=document.getElementById("opsCtErr"); err.textContent="";
@@ -872,12 +885,10 @@
         if(!asci){ err.textContent="Please accept the ASCI guidelines to sign."; return; }
         if(!terms){ err.textContent="Please accept the non-delivery terms to sign."; return; }
         if(!sig){ err.textContent="Please type your name to sign."; return; }
+        if(k.sign_as && normName(sig)!==normName(k.sign_as)){ err.innerHTML="Type your name exactly as on your profile: <b>"+esc(k.sign_as)+"</b>"; return; }
         var btn=this; btn.disabled=true; btn.textContent="Signing…";
         if(window.Tracker) Tracker.security("contract_sign", { participation_id: part });
         api("sign_contract_v2",{p_participation:part,p_signature_name:sig,p_asci_ack:true,p_terms_ack:terms}).then(function(r2){
-          if(r2.error && /sign_contract_v2/.test(r2.error.message||"")) return api("sign_contract",{p_participation:part,p_signature_name:sig,p_asci_ack:true});
-          return r2;
-        }).then(function(r2){
           if(r2.error){ err.textContent=r2.error.message||r2.error; btn.disabled=false; btn.textContent="Sign contract"; return; }
           closeModal(); loadMyCampaigns(); updateAlertsBadge();
         });
