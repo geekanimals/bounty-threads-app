@@ -391,11 +391,25 @@
       + '<div id="opsMineStats">'+(window.skel?skel("stats",4):'<div class="card"><div class="muted">Loading…</div></div>')+'</div><div id="opsMineBody">'+(window.skel?skel("list",3):'<div class="card"><div class="muted">Loading…</div></div>')+'</div>'
       + '<div class="ci-sub" style="margin-top:18px">🚀 Your growth</div><div id="growthBody">'+(window.skel?skel("list",2):'<div class="card"><div class="muted">Loading…</div></div>')+'</div></div>';
   };
-  async function loadMyCampaigns(){
-    loadOpenCampaigns();
-    if(document.getElementById("growthBody") && typeof loadGrowth==="function") loadGrowth();
-    try{ var r=await apiCreator("get_my_campaigns"); if(r.error) throw r.error; await igMediaMap(); renderMine(r.data||[]); }
-    catch(e){ var el=document.getElementById("opsMineBody"); if(el) el.innerHTML='<div class="card ci-err-inline">Couldn\'t load: '+esc((e&&e.message)||e)+'</div>'; }
+  var _mineSig="", _mineTimer=null;
+  async function loadMyCampaigns(silent){
+    if(!silent){
+      loadOpenCampaigns();
+      if(document.getElementById("growthBody") && typeof loadGrowth==="function") loadGrowth();
+      _mineSig="";
+      // live: re-read every 30 s, redraw only when something changed (cards keep their place)
+      clearInterval(_mineTimer);
+      _mineTimer=setInterval(function(){
+        if(!document.getElementById("opsMineBody")){ clearInterval(_mineTimer); return; }
+        if(document.visibilityState!=="visible" || document.getElementById("opsModal")) return;
+        var a=document.activeElement; if(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
+        loadMyCampaigns(true);
+      }, 30000);
+    }
+    try{ var r=await apiCreator("get_my_campaigns"); if(r.error) throw r.error;
+      var sig=JSON.stringify(r.data||[]); if(silent && sig===_mineSig) return; _mineSig=sig;
+      await igMediaMap(); renderMine(r.data||[]); }
+    catch(e){ if(silent) return; var el=document.getElementById("opsMineBody"); if(el) el.innerHTML='<div class="card ci-err-inline">Couldn\'t load: '+esc((e&&e.message)||e)+'</div>'; }
   }
 
   /* ---- creator: browse open campaigns + apply (application-first funnel entry) ---- */
@@ -561,7 +575,7 @@
     return 'Active';
   }
   // My Campaigns: tabs (from the stat tiles) + 5 per page; long text stays folded until the creator opens it
-  var MINE_TAB=null, MINE_PAGE=1, MINE_SIZE=5, MINE_OPEN={};
+  var MINE_TAB=null, MINE_PAGE=1, MINE_SIZE=3, MINE_OPEN={};
   var MINE_TABS=[["Active","🟢 Running now"],["Upcoming","⏳ Applied / waiting"],["Done","🏁 Completed"],["Declined","Not selected"],["All","All time"]];
   function mineTabOf(c){ var g=mineGroup(c.stage); if(g==='Completed') return c.stage==='completed'?'Done':'Declined'; return g; }
   function renderMine(all){
@@ -575,18 +589,24 @@
         return '<button class="mc-tab'+(MINE_TAB===t[0]?' act':'')+'" data-minetab="'+t[0]+'"><b>'+count[t[0]]+'</b><span>'+t[1]+(t[0]==='Upcoming'&&invites?' · 🎯 '+invites+' invite'+(invites>1?'s':''):'')+'</span></button>'; }).join("")+'</div>';
     if(!list.length){ box.innerHTML='<div class="card"><div class="muted">No campaigns yet. Open <b>Campaigns</b>, apply to one — it shows up here with every next step.</div></div>'; wireMineTabs(); return; }
     var rows=list.filter(function(c){ return MINE_TAB==="All" || mineTabOf(c)===MINE_TAB; });
-    // the ones that need the creator first, then most recently updated
-    var needs=function(c){ return ['invited','contract_sent','contract_signed','content_created','changes_requested','content_approved'].indexOf(c.stage)>=0 || (c.stage==='product_sent'&&c.shipment&&c.shipment.status==='shipped') ? 0 : 1; };
-    rows.sort(function(a,b){ return needs(a)-needs(b) || String(b.updated_at||"").localeCompare(String(a.updated_at||"")); });
+    // fixed order: newest application first — a card never jumps when its status changes
+    rows.sort(function(a,b){ return String(b.applied_at||"").localeCompare(String(a.applied_at||"")) || String(a.participation_id).localeCompare(String(b.participation_id)); });
     var pages=Math.max(1, Math.ceil(rows.length/MINE_SIZE)); if(MINE_PAGE>pages) MINE_PAGE=pages;
     var slice=rows.slice((MINE_PAGE-1)*MINE_SIZE, MINE_PAGE*MINE_SIZE);
-    box.innerHTML=(slice.length?slice.map(cardMine).join(""):'<div class="card"><div class="muted">Nothing here right now.</div></div>')
-      +(pages>1?'<div class="ci-pager" id="mcPager"><button class="btn sm ghost" data-mpg="prev"'+(MINE_PAGE<=1?' disabled':'')+'>‹ Prev</button>'
-        +'<span class="muted">Page '+MINE_PAGE+' of '+pages+' · '+rows.length+' campaigns</span><button class="btn sm ghost" data-mpg="next"'+(MINE_PAGE>=pages?' disabled':'')+'>Next ›</button></div>':'');
+    var pager = rows.length ? '<div class="ci-pager mc-pager"><button class="btn sm ghost" data-mpg="prev"'+(MINE_PAGE<=1?' disabled':'')+'>‹ Prev</button>'
+        + Array.from({length:pages},function(_,i){ return '<button class="btn sm '+(i+1===MINE_PAGE?'':'ghost')+'" data-mpgn="'+(i+1)+'">'+(i+1)+'</button>'; }).join("")
+        + '<button class="btn sm ghost" data-mpg="next"'+(MINE_PAGE>=pages?' disabled':'')+'>Next ›</button>'
+        + '<span class="muted">'+((MINE_PAGE-1)*MINE_SIZE+1)+'–'+Math.min(MINE_PAGE*MINE_SIZE,rows.length)+' of '+rows.length+'</span></div>' : '';
+    // keep the screen where it is when the list refreshes on its own
+    var y=window.scrollY, h=box.offsetHeight; if(h) box.style.minHeight=h+'px';
+    box.innerHTML=(slice.length?slice.map(cardMine).join(""):'<div class="card"><div class="muted">Nothing here right now.</div></div>') + pager;
+    box.style.minHeight=''; if(Math.abs(window.scrollY-y)>2) window.scrollTo(0,y);
     wireMineTabs(); wireMine();
   }
   function wireMineTabs(){
     document.querySelectorAll("#opsMine [data-minetab]").forEach(function(b){ b.onclick=function(){ MINE_TAB=b.getAttribute("data-minetab"); MINE_PAGE=1; renderMine(_mineCache); }; });
+    document.querySelectorAll("#opsMine [data-mpgn]").forEach(function(b){ b.onclick=function(){ MINE_PAGE=+b.getAttribute("data-mpgn"); renderMine(_mineCache);
+      var t=document.getElementById("opsMineStats"); if(t) t.scrollIntoView({behavior:"smooth",block:"start"}); }; });
     document.querySelectorAll("#opsMine [data-mpg]").forEach(function(b){ b.onclick=function(){ MINE_PAGE+= b.getAttribute("data-mpg")==="next"?1:-1; renderMine(_mineCache);
       var t=document.getElementById("opsMineStats"); if(t) t.scrollIntoView({behavior:"smooth",block:"start"}); }; });
     // remember which folded sections the creator opened, so a live refresh doesn't close them

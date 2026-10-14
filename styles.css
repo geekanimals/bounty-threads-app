@@ -1073,3 +1073,5 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .ac-pick-f b{display:block;font-size:17px}
 .ac-pick-f span{font-size:11px;color:var(--muted)}
 .ac-pick-f .z{opacity:.5}
+.mc-pager{flex-wrap:wrap;margin:16px 0 4px}
+.mc-pager .muted{margin-left:6px;font-size:13px}
