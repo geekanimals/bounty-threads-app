@@ -81,20 +81,37 @@ Deno.serve(async (req) => {
         const update = waParam([p.title, p.text].filter(Boolean).join(" — "));
         const target = waParam(link || APP_URL || "the app", 300);
 
-        let out: Record<string, unknown> | null = null;
-        if (open) out = { to: row.to_address, text };
-        else if (p.wa_template) out = { to: row.to_address, template: String(p.wa_template), variables: (p.wa_vars as string[]) || [] };
-        if (!out && row.campaign_id) {
+        // every way this update can go out, best first. A template that fails (not approved yet, wrong language,
+        // wrong variable count…) no longer blocks the update: the next option is tried.
+        const tries: Record<string, unknown>[] = [];
+        if (open && !p.force_template) tries.push({ to: row.to_address, text });
+        if (p.wa_template) tries.push({ to: row.to_address, template: String(p.wa_template), variables: (p.wa_vars as string[]) || [] });
+        if (row.campaign_id) {
           const { data: t } = await api.rpc("ops_wa_template_for", { p_campaign: row.campaign_id });
-          if (t?.name) out = { to: row.to_address, template: String(t.name), lang: String(t.lang || "en"), variables: [name, update, target] };
+          if (t?.name) tries.push({ to: row.to_address, template: String(t.name), lang: String(t.lang || "en"), variables: [name, update, target] });
         }
-        if (!out && genTpl) out = { to: row.to_address, template: genTpl, lang: genLang, variables: [name, update, target] };
-        if (!out) {
+        if (genTpl) tries.push({ to: row.to_address, template: genTpl, lang: genLang, variables: [name, update, target] });
+        if (!tries.length) {
           await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped",
             p_error: "WhatsApp 24h window closed — no approved update template yet. Super Admin → WhatsApp & email → set the template name (it goes out automatically then)" });
           skipped++; continue;
         }
-        const res = await getProvider().send(out as any);
+        const errs: string[] = [];
+        let res: { wamid: string | null } | null = null;
+        for (const out of tries) {
+          // a language mismatch ("en" vs "en_US") is the commonest template error — try the other code too
+          const langs = "template" in out ? [String(out.lang || "en"), String(out.lang || "en") === "en" ? "en_US" : "en"] : [""];
+          for (const lang of langs) {
+            try { res = await getProvider().send(("template" in out ? { ...out, lang } : out) as any); break; }
+            catch (e) {
+              const m = (e as Error).message || "send failed";
+              errs.push(("template" in out ? `${out.template}/${lang}: ` : "text: ") + m);
+              if (!/language|translation|132001/i.test(m)) break;
+            }
+          }
+          if (res) break;
+        }
+        if (!res) throw new Error(errs.join(" | ").slice(0, 600));
         ref = res.wamid;
 
         try {
@@ -119,7 +136,7 @@ Deno.serve(async (req) => {
       sent++;
     } catch (e) {
       const msg = (e as Error).message || "send failed";
-      if (row.channel === "whatsapp" && /template[^]*?(not active|pending|not approved|in review|does not exist|not found)/i.test(msg)) {
+      if (row.channel === "whatsapp" && (/template[^]*?(not active|pending|not approved|in review|does not exist|not found|paused|disabled)/i.test(msg) || /#132\d{3}/.test(msg))) {
         await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped", p_error: `Waiting for WhatsApp template approval — ${msg}`.slice(0, 300) });
         skipped++;
       } else {

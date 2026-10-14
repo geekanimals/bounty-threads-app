@@ -19,6 +19,20 @@ export function normalizeMsisdn(raw: string): string {
 // canonical +E.164 for storage/matching
 export function toE164(raw: string): string { const d = normalizeMsisdn(raw); return d ? "+" + d : ""; }
 
+// the readable reason inside any provider error body (snapto / Meta shapes), incl. Meta's error code
+export function providerError(raw: any): string {
+  if (!raw) return "";
+  const e = raw.error ?? raw.errors?.[0] ?? raw.data?.error;
+  const parts = [
+    typeof e === "string" ? e : (e?.error_user_msg || e?.message || e?.title),
+    e?.error_data?.details || e?.details,
+    raw.message, raw.detail, raw.msg,
+  ].filter((x) => typeof x === "string" && x.trim());
+  const code = e?.code ?? raw.code;
+  const uniq = [...new Set(parts as string[])].join(" — ");
+  return (uniq + (code ? ` (#${code})` : "")).slice(0, 400);
+}
+
 export interface Provider { send(msg: WaOutbound): Promise<WaResult>; }
 
 class MetaProvider implements Provider {
@@ -44,7 +58,7 @@ class MetaProvider implements Provider {
       body: JSON.stringify(payload),
     });
     const raw = await r.json();
-    if (!r.ok) throw new Error(raw?.error?.message || "WhatsApp send failed");
+    if (!r.ok) throw new Error(providerError(raw) || "WhatsApp send failed");
     const wamid = raw?.messages?.[0]?.id ?? null;
     return { wamid, raw };
   }
@@ -65,9 +79,12 @@ class SnaptoProvider implements Provider {
     const headers: Record<string, string> = { "x-api-key": this.apiKey, "Content-Type": "application/json" };
     if (this.phoneId) headers["x-phone-id"] = this.phoneId;
     const r = await fetch(`${this.base}/api/v1/whatsapp/sendMessage`, { method: "POST", headers, body: JSON.stringify(body) });
-    const raw = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error((raw as any)?.error?.message || (raw as any)?.detail || "snapto send failed");
-    return { wamid: (raw as any)?.waMessageId ?? (raw as any)?.id ?? null, raw };
+    const txt = await r.text();
+    let raw: any = {};
+    try { raw = JSON.parse(txt); } catch (_e) { raw = { message: txt }; }
+    const refused = raw?.success === false || raw?.status === "error" || raw?.status === "failed";
+    if (!r.ok || refused) throw new Error(`snapto ${r.status}: ${providerError(raw) || txt.slice(0, 240) || "send failed"}`);
+    return { wamid: raw?.waMessageId ?? raw?.id ?? raw?.data?.waMessageId ?? raw?.data?.id ?? null, raw };
   }
 }
 

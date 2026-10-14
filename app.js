@@ -4551,6 +4551,8 @@ async function adminWaSettingsCard(){
   box.innerHTML = `<h3 style="margin-top:0">${on?"✅":"⚠️"} WhatsApp campaign updates ${on?`<span class="tag good">on · ${esc(d.template)}</span>`:`<span class="tag warn">not set — WhatsApp updates are held</span>`}</h3>
     <p class="muted" style="font-size:13px;margin:0 0 10px">WhatsApp only allows free text within 24 hours of the creator's last message. Every other update needs <b>one approved Utility template</b> — the same one carries every campaign and every step (contract, courier, brief, video, approval…).
       ${d.held?` <b style="color:#b45309">${esc(d.held)} update(s) are waiting</b> and go out the moment you save an approved template.`:""}</p>
+    <div class="wa-health" style="font-size:13px;margin:0 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px"><span>Last 3 days on WhatsApp:</span> <b style="color:#12b76a">${esc(d.sent||0)} sent</b> · <b${d.failed?' style="color:#dc2626"':''}>${esc(d.failed||0)} failed</b> · <b>${esc(d.held||0)} waiting</b>
+      ${d.last_error?`<div style="margin-top:6px;color:#b45309;word-break:break-word"><b>Latest problem:</b> ${esc(d.last_error)}</div>`:""}</div>
     <div class="wa-steps">
       <div><b>1.</b> In <b>snapto</b> → Templates → New: category <b>Utility</b>, language <b>English</b>, name <code>${WA_UPD_NAME}</code> <button class="mini-btn ghost" data-wacopy="${WA_UPD_NAME}">⧉</button></div>
       <div><b>2.</b> Body <button class="mini-btn ghost" data-wacopy="${esc(WA_UPD_BODY)}">Copy body</button> · Footer <button class="mini-btn ghost" data-wacopy="${esc(WA_UPD_FOOT)}">Copy footer</button>
@@ -4565,7 +4567,7 @@ async function adminWaSettingsCard(){
       ${on?`<button class="mini-btn ghost" id="waTplOff">Turn off</button>`:""}
       <span class="muted" id="waTplMsg" style="font-size:12px"></span></div>
     <div class="muted" style="font-size:12px;margin-top:10px">Then use <b>Send test</b> below with your own WhatsApp number to check it arrives.
-      ${d.no_number?` · ${esc(d.no_number)} recent alert(s) went to people with no verified WhatsApp number (they get app + email only).`:""}
+      ${d.no_number?` · ${esc(d.no_number)} recent people have no WhatsApp number on their account (they get app + email only).`:""}
       ${d.opted_out?` · ${esc(d.opted_out)} people replied STOP.`:""}</div>`;
   box.querySelectorAll("[data-wacopy]").forEach(b=> b.onclick = async ()=>{ try{ await navigator.clipboard.writeText(b.dataset.wacopy); const t=b.textContent; b.textContent="✓ copied"; setTimeout(()=>b.textContent=t,1200); }catch(e){ prompt("Copy:", b.dataset.wacopy); } });
   const save = async (name)=>{ const msg = document.getElementById("waTplMsg");

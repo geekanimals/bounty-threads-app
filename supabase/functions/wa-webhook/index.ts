@@ -72,6 +72,15 @@ Deno.serve(async (req) => {
           if (s.status === "read") patch.read_at = new Date().toISOString();
           if (s.status === "failed") patch.error = s?.errors?.[0]?.title ?? "failed";
           await admin.from("wa_messages").update(patch).eq("wa_message_id", s.id);
+          // Meta's late "failed" also goes back to the outbox (Super Admin → Delivery shows the real reason;
+          // a closed 24h window is re-sent on the approved template)
+          if (s.status === "failed") {
+            const er = s?.errors?.[0] ?? {};
+            try {
+              await admin.schema("api").rpc("ops_outbox_wa_status", { p_ref: String(s.id), p_status: "failed",
+                p_code: Number(er.code) || null, p_error: [er.title, er.error_data?.details || er.message].filter(Boolean).join(" — ") || "failed" });
+            } catch (_e) { /* never blocks the webhook */ }
+          }
         }
       }
     }
