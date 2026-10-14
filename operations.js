@@ -560,25 +560,42 @@
     if(['completed','rejected','dropped','ineligible','brand_declined'].indexOf(stage)>=0) return 'Completed';
     return 'Active';
   }
+  // My Campaigns: tabs (from the stat tiles) + 5 per page; long text stays folded until the creator opens it
+  var MINE_TAB=null, MINE_PAGE=1, MINE_SIZE=5, MINE_OPEN={};
+  var MINE_TABS=[["Active","🟢 Running now"],["Upcoming","⏳ Applied / waiting"],["Done","🏁 Completed"],["Declined","Not selected"],["All","All time"]];
+  function mineTabOf(c){ var g=mineGroup(c.stage); if(g==='Completed') return c.stage==='completed'?'Done':'Declined'; return g; }
   function renderMine(all){
     var box=document.getElementById("opsMineBody"); if(!box) return;
     _mineCache=all||[]; var list=_mineCache;
-    var groups={Upcoming:[],Active:[],Completed:[]}; list.forEach(function(c){ groups[mineGroup(c.stage)].push(c); });
-    groups.Upcoming.sort(function(a,b){ return (b.stage==='invited'?1:0)-(a.stage==='invited'?1:0); });
-    var st=document.getElementById("opsMineStats");
-    var declined=list.filter(function(c){ return ['ineligible','brand_declined','rejected','dropped'].indexOf(c.stage)>=0; }).length;
-    if(st) st.innerHTML='<div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));margin-bottom:14px">'
-      +(list.filter(function(c){return c.stage==='invited';}).length?'<div class="ws-stat mc-inv"><b>'+list.filter(function(c){return c.stage==='invited';}).length+'</b><span>🎯 Invitations</span></div>':'')
-      +'<div class="ws-stat"><b>'+groups.Active.length+'</b><span>Running now</span></div><div class="ws-stat"><b>'+groups.Upcoming.length+'</b><span>Applied / waiting</span></div>'
-      +'<div class="ws-stat"><b>'+list.filter(function(c){return c.stage==="completed";}).length+'</b><span>Completed</span></div>'
-      +'<div class="ws-stat"><b>'+declined+'</b><span>Not selected</span></div>'
-      +'<div class="ws-stat"><b>'+list.length+'</b><span>All time</span></div></div>';
-    if(!list.length){ box.innerHTML='<div class="card"><div class="muted">No campaigns yet. Open <b>Campaigns</b>, apply to one — it shows up here with every next step.</div></div>'; return; }
+    var count={Active:0,Upcoming:0,Done:0,Declined:0,All:list.length}; list.forEach(function(c){ count[mineTabOf(c)]++; });
+    if(!MINE_TAB || (MINE_TAB!=="All" && !count[MINE_TAB])) MINE_TAB = count.Active?"Active":count.Upcoming?"Upcoming":"All";
     var invites=list.filter(function(c){ return c.stage==='invited'; }).length;
-    var LBL={Active:"🟢 Running now",Upcoming:invites?"🎯 Invitations & applications":"⏳ Applied — waiting for the brand",Completed:"📜 History"};
-    var html=["Active","Upcoming","Completed"].map(function(g){ if(!groups[g].length) return ''; return '<div class="ci-sub">'+LBL[g]+'</div>'+groups[g].map(cardMine).join(""); }).join("");
-    box.innerHTML=html;
-    wireMine();
+    var st=document.getElementById("opsMineStats");
+    if(st) st.innerHTML='<div class="mc-tabs">'+MINE_TABS.map(function(t){
+        return '<button class="mc-tab'+(MINE_TAB===t[0]?' act':'')+'" data-minetab="'+t[0]+'"><b>'+count[t[0]]+'</b><span>'+t[1]+(t[0]==='Upcoming'&&invites?' · 🎯 '+invites+' invite'+(invites>1?'s':''):'')+'</span></button>'; }).join("")+'</div>';
+    if(!list.length){ box.innerHTML='<div class="card"><div class="muted">No campaigns yet. Open <b>Campaigns</b>, apply to one — it shows up here with every next step.</div></div>'; wireMineTabs(); return; }
+    var rows=list.filter(function(c){ return MINE_TAB==="All" || mineTabOf(c)===MINE_TAB; });
+    // the ones that need the creator first, then most recently updated
+    var needs=function(c){ return ['invited','contract_sent','contract_signed','content_created','changes_requested','content_approved'].indexOf(c.stage)>=0 || (c.stage==='product_sent'&&c.shipment&&c.shipment.status==='shipped') ? 0 : 1; };
+    rows.sort(function(a,b){ return needs(a)-needs(b) || String(b.updated_at||"").localeCompare(String(a.updated_at||"")); });
+    var pages=Math.max(1, Math.ceil(rows.length/MINE_SIZE)); if(MINE_PAGE>pages) MINE_PAGE=pages;
+    var slice=rows.slice((MINE_PAGE-1)*MINE_SIZE, MINE_PAGE*MINE_SIZE);
+    box.innerHTML=(slice.length?slice.map(cardMine).join(""):'<div class="card"><div class="muted">Nothing here right now.</div></div>')
+      +(pages>1?'<div class="ci-pager" id="mcPager"><button class="btn sm ghost" data-mpg="prev"'+(MINE_PAGE<=1?' disabled':'')+'>‹ Prev</button>'
+        +'<span class="muted">Page '+MINE_PAGE+' of '+pages+' · '+rows.length+' campaigns</span><button class="btn sm ghost" data-mpg="next"'+(MINE_PAGE>=pages?' disabled':'')+'>Next ›</button></div>':'');
+    wireMineTabs(); wireMine();
+  }
+  function wireMineTabs(){
+    document.querySelectorAll("#opsMine [data-minetab]").forEach(function(b){ b.onclick=function(){ MINE_TAB=b.getAttribute("data-minetab"); MINE_PAGE=1; renderMine(_mineCache); }; });
+    document.querySelectorAll("#opsMine [data-mpg]").forEach(function(b){ b.onclick=function(){ MINE_PAGE+= b.getAttribute("data-mpg")==="next"?1:-1; renderMine(_mineCache);
+      var t=document.getElementById("opsMineStats"); if(t) t.scrollIntoView({behavior:"smooth",block:"start"}); }; });
+    // remember which folded sections the creator opened, so a live refresh doesn't close them
+    document.querySelectorAll("#opsMine details[data-fold]").forEach(function(d){ d.addEventListener("toggle", function(){ MINE_OPEN[d.getAttribute("data-fold")]=d.open; }); });
+  }
+  function fold(id, title, hint, inner, openByDefault){
+    var open = MINE_OPEN[id]!=null ? MINE_OPEN[id] : !!openByDefault;
+    return '<details class="mc-fold" data-fold="'+esc(id)+'"'+(open?' open':'')+'><summary><span class="mc-fold-t">'+title+'</span>'
+      +(hint?'<span class="mc-fold-h">'+hint+'</span>':'')+'<span class="mc-fold-c"></span></summary><div class="mc-fold-b">'+inner+'</div></details>';
   }
   /* ---- creator: where am I, and what do I do now (one card per campaign) ---- */
   var JOURNEY = [
@@ -605,7 +622,7 @@
     var days=k.content_days||7;
     var box=function(icon,title,text,btns,tone){ return '<div class="jr-now '+(tone||'')+'"><div class="jr-now-h">'+icon+' <b>'+title+'</b></div>'+(text?'<div class="jr-now-t">'+text+'</div>':'')+(btns?'<div class="ci-evrow">'+btns+'</div>':'')+'</div>'; };
     switch(c.stage){
-      case 'invited': return box('🎯','You\'re invited','Read the brief below, then accept or pass.','<button class="btn sm" data-accept="'+P+'">✅ Accept invite</button><button class="btn sm ghost" data-reject="'+P+'">Pass</button>');
+      case 'invited': return box('🎯','You\'re invited','Read the campaign details below, then accept or pass.','<button class="btn sm" data-accept="'+P+'">✅ Accept invite</button><button class="btn sm ghost" data-reject="'+P+'">Pass</button>');
       case 'applied': case 'eligible': case 'shortlisted': return box('⏳','Application received','Geek is checking your profile against the brand\'s brief. You\'ll get a WhatsApp the moment there\'s news.');
       case 'sent_to_brand': return box('📋','With the brand','You\'re on the final list the brand is reviewing.');
       case 'brand_confirmed': case 'accepted': return box('🎉','You\'re selected!','Your contract is being prepared — it will appear here in a moment.');
@@ -618,7 +635,7 @@
           (sh.courier?'Courier: <b>'+esc(sh.courier)+'</b>':'')+(sh.tracking_ref?' · Tracking no. <b>'+esc(sh.tracking_ref)+'</b>':'')+(sh.shipped_at?' · sent '+fmtDate(sh.shipped_at):'')
           +'<div class="muted" style="font-size:12px;margin-top:4px">Got it? Tap below — your video brief unlocks straight away and your '+days+'-day timer starts.</div>',
           (sh.tracking_url?'<a class="btn sm ghost" href="'+esc(safeLink(sh.tracking_url))+'" target="_blank" rel="noopener">Track parcel ↗</a>':'')+'<button class="btn sm" data-received="'+P+'">📦 I received it</button>','act');
-      case 'content_created': return box('🎬','Shoot your video','Follow the brief below'+(due?' and submit by <b>'+fmtDate(due)+'</b>':'')+'. Upload the video to Google Drive / Dropbox / WeTransfer and paste the link.',
+      case 'content_created': return box('🎬','Shoot your video','Open the <b>Video brief</b> below'+(due?' and submit by <b>'+fmtDate(due)+'</b>':'')+'. Upload the video to Google Drive / Dropbox / WeTransfer and paste the link.',
           '<button class="btn sm" data-video="'+P+'">🎬 Submit my video</button>','act');
       case 'changes_requested': return box('✏️','The brand asked for a few changes',(rv&&rv.reason?'<div class="mc-note" style="border-color:rgba(247,144,9,.6)">“'+esc(rv.reason)+'”</div>':'')+(due?'<div style="margin-top:4px">Due <b>'+fmtDate(due)+'</b></div>':''),
           '<button class="btn sm" data-video="'+P+'">🎬 Submit the new version</button>','act');
@@ -651,69 +668,50 @@
         +(rows.length?'<div class="mc-metrics">'+rows.map(function(x){ return '<div><b>'+kfmt(x[2])+'</b><span>'+x[0]+' '+x[1]+'</span></div>'; }).join("")+'</div>':'<div class="muted" style="font-size:12px">Numbers appear within a few hours.</div>')+'</div>';
     }).join("")+'</div>';
   }
-  var APPROVED_STAGES = ['brand_confirmed','contract_sent','contract_signed','address_confirmed','product_sent','product_delivered','content_created','content_submitted','changes_requested','content_approved','published','completed'];
+  var APPROVED_STAGES = ['brand_confirmed','accepted','contract_sent','contract_signed','address_confirmed','product_sent','product_delivered','content_created','content_submitted','changes_requested','content_approved','published','completed'];
   function cardMine(c){
-    var dl=(c.deliverables||[]), approved=APPROVED_STAGES.indexOf(c.stage)>=0,
+    var P=c.participation_id, dl=(c.deliverables||[]), approved=APPROVED_STAGES.indexOf(c.stage)>=0,
         declined=['ineligible','brand_declined','rejected','dropped'].indexOf(c.stage)>=0;
-    var acts='';   // every action now lives in nextStepHtml()
     var row=function(k,v){ return v?'<div class="mc-row"><span>'+k+'</span><span>'+v+'</span></div>':''; };
     var tags=[].concat(c.hashtags||[],(c.mentions||[]).map(function(m){ return String(m).charAt(0)==='@'?m:'@'+m; }));
-    var sh=c.shipment, shTxt = sh ? ({pending:'📦 Product not shipped yet',shipped:'🚚 On the way',delivered:'✅ Delivered',failed:'⚠️ Delivery failed'}[sh.status]||sh.status)
+    var sh=c.shipment, shTxt = sh && !(c.stage==='product_sent' && sh.status==='shipped') && sh.status!=='pending' ? ({shipped:'🚚 On the way',delivered:'✅ Product delivered',failed:'⚠️ Delivery failed'}[sh.status]||sh.status)
       + (sh.courier?' · '+esc(sh.courier):'') + (sh.tracking_ref?' · <b>'+esc(sh.tracking_ref)+'</b>':'')
-      + (sh.delivered_at?' · '+fmtDate(sh.delivered_at):sh.shipped_at?' · sent '+fmtDate(sh.shipped_at):'')
-      + (sh.tracking_url&&sh.status==='shipped'?' · <a href="'+esc(safeLink(sh.tracking_url))+'" target="_blank" rel="noopener">Track ↗</a>':'') : '';
-    if(c.stage==='product_sent' && sh && sh.status==='shipped') shTxt='';
-    var detail = declined
-      ? '<div class="mc-detail"><div class="mc-grid">'
-        + row('Brand', esc(c.brand||'—') + (c.org_name?' <span class="muted">· '+esc(c.org_name)+'</span>':''))
-        + row('Applied with', c.applied_profile?'<b>@'+esc(c.applied_profile)+'</b>':'')
-        + row('Applied on', c.applied_at?fmtDate(c.applied_at):'')
-        + '</div></div>'
-      : ''
-      + '<div class="mc-detail">'
-      +   '<div class="mc-grid">'
-      +     row('Brand', esc(c.brand||'—') + (c.org_name?' <span class="muted">· '+esc(c.org_name)+'</span>':''))
-      +     row('Type', typeBadge(c))
-      +     row('Product', c.product?esc(c.product):'')
-      +     row('Product value', c.product_value?'₹'+esc(Number(c.product_value).toLocaleString("en-IN")):'')
-      +     row('Campaign dates', (c.starts_on||c.ends_on)?fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on):'')
-      +     row('Your deadline', c.deadline?fmtDate(c.deadline):'')
-      +     row('Applied with', c.applied_profile?'<b>@'+esc(c.applied_profile)+'</b>':'')
-      +     row('Applied on', c.applied_at?fmtDate(c.applied_at):'')
-      +     row('Cities', (c.cities||[]).length?esc((c.cities||[]).join(", ")):'')
-      +     row('Languages', (c.languages||[]).length?esc((c.languages||[]).join(", ")):'')
-      +     row('Platforms', c.platforms?esc(c.platforms):'')
-      +     row('Product link', c.product_link?'<a href="'+esc(safeLink(c.product_link))+'" target="_blank" rel="noopener">View product ↗</a>':'')
-      +   '</div>'
-      +   (c.brief?'<div class="mc-sec">Brief</div><div class="mc-text">'+esc(c.brief)+'</div>':'')
-      +   (c.deliverables_text?'<div class="mc-sec">What to make</div><div class="mc-text">'+esc(c.deliverables_text)+'</div>':'')
-      +   (tags.length?'<div class="mc-sec">Must include in your caption</div><div class="mc-tags">'+tags.map(function(t){ return '<span>'+esc(t)+'</span>'; }).join("")+'</div>':'')
-      +   ((c.attachments||[]).length?'<div class="mc-sec">Files from the brand</div><div>'+(c.attachments||[]).map(function(a){ return '<a href="'+esc(safeLink(a.url))+'" target="_blank" rel="noopener">📎 '+esc(a.name||"file")+'</a>'; }).join("<br>")+'</div>':'')
-      + '</div>';
-    var delivHtml = dl.length ? '<div class="mc-dl">'+dl.map(function(d){
+      + (sh.delivered_at?' · '+fmtDate(sh.delivered_at):sh.shipped_at?' · sent '+fmtDate(sh.shipped_at):'') : '';
+    var preview=function(t){ t=String(t||"").replace(/\s+/g," ").trim(); return t.length>90?esc(t.slice(0,90))+'…':esc(t); };
+    var details = '<div class="mc-grid">'
+      + row('Brand', esc(c.brand||'—') + (c.org_name?' <span class="muted">· '+esc(c.org_name)+'</span>':''))
+      + row('Type', typeBadge(c))
+      + row('Product', c.product?esc(c.product):'')
+      + row('Product value', c.product_value?'₹'+esc(Number(c.product_value).toLocaleString("en-IN")):'')
+      + row('Campaign dates', (c.starts_on||c.ends_on)?fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on):'')
+      + row('Applied with', c.applied_profile?'<b>@'+esc(c.applied_profile)+'</b>':'')
+      + row('Applied on', c.applied_at?fmtDate(c.applied_at):'')
+      + row('Cities', (c.cities||[]).length?esc((c.cities||[]).join(", ")):'')
+      + row('Platforms', c.platforms?esc(c.platforms):'')
+      + row('Product link', c.product_link?'<a href="'+esc(safeLink(c.product_link))+'" target="_blank" rel="noopener">View product ↗</a>':'')
+      + '</div>'
+      + (c.brief?'<div class="mc-sec">Brief</div><div class="mc-text">'+esc(c.brief)+'</div>':'')
+      + (c.deliverables_text?'<div class="mc-sec">What to make</div><div class="mc-text">'+esc(c.deliverables_text)+'</div>':'')
+      + (tags.length?'<div class="mc-sec">Must include in your caption</div><div class="mc-tags">'+tags.map(function(t){ return '<span>'+esc(t)+'</span>'; }).join("")+'</div>':'')
+      + ((c.attachments||[]).length?'<div class="mc-sec">Files from the brand</div><div>'+(c.attachments||[]).map(function(a){ return '<a href="'+esc(safeLink(a.url))+'" target="_blank" rel="noopener">📎 '+esc(a.name||"file")+'</a>'; }).join("<br>")+'</div>':'');
+    var delivHtml = dl.length && !(c.posts||[]).length ? '<div class="mc-dchips">'+dl.map(function(d){
           var s=DSTAT[d.status]||[d.status||'—','na'];
-          return '<div class="mc-dlrow"><div class="mc-dlh"><b>'+esc(vlabel("content_formats",d.format))+(d.quantity>1?' ×'+d.quantity:'')+'</b>'
-            + '<span class="ci-pill ci-'+s[1]+'">'+esc(s[0])+'</span></div>'
-            + '<div class="muted" style="font-size:12px">'+(d.expected_by?'Due '+fmtDate(d.expected_by):'No due date')
-            + (d.posted_at?' · posted '+fmtDate(d.posted_at):'')
-            + (d.permalink?' · <a href="'+esc(safeLink(d.permalink))+'" target="_blank" rel="noopener">Open post ↗</a>':'')+'</div>'
-            + metricChips(d)+'</div>'; }).join("")+'</div>' : '';
-    return '<div class="card ci-match mc-card"><div class="ci-mh"><h4>'+esc(c.campaign||"Campaign")+' <span class="ci-id">'+esc(c.brand||"")+'</span></h4>'+spill(c.stage)+'</div>'
-      + (c.stage==='invited'?'<div class="mc-banner inv">🎯 <b>'+esc(c.brand||'The brand')+' invited you to this campaign.</b> Read the brief below, then accept or pass — there\'s no obligation either way.</div>':'')
-      + (approved?'<div class="mc-banner ok">🎉 <b>You\'re approved'+(c.applied_profile?' as @'+esc(c.applied_profile):'')+'</b> — everything about this campaign is below. We\'ll message you on WhatsApp at every step.</div>':'')
+          return '<span class="mc-dchip"><b>'+esc(vlabel("content_formats",d.format))+(d.quantity>1?' ×'+d.quantity:'')+'</b><i class="ci-'+s[1]+'">'+esc(s[0])+'</i></span>'; }).join("")+'</div>' : '';
+    var meta = [c.campaign_type||c.comp_type?typeBadge(c):'', c.product?'🎁 <b>'+esc(c.product)+'</b>':'',
+      c.deadline&&!declined?'⏳ Due <b>'+fmtDate(c.deadline)+'</b>':'', c.applied_profile?'as <b>@'+esc(c.applied_profile)+'</b>':'',
+      (c.starts_on||c.ends_on)?'🗓 '+fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on):''].filter(Boolean);
+    var vb=c.video_brief, vbHint=vb?preview(vb.what_to_shoot||vb.key_messages||''):'';
+    return '<div class="card mc-card'+(declined?' mc-off':'')+'">'
+      + '<div class="mc-top"><div class="mc-title"><h4>'+esc(c.campaign||"Campaign")+'</h4><span class="muted">'+esc(c.brand||"")+(c.org_name?' · '+esc(c.org_name):'')+'</span></div>'+spill(c.stage)+'</div>'
+      + (meta.length?'<div class="mc-meta">'+meta.map(function(m){ return '<span>'+m+'</span>'; }).join("")+'</div>':'')
       + (declined?'<div class="mc-banner no"><b>Not selected this time.</b>'+(c.reason_label?' Reason: <b>'+esc(c.reason_label)+'</b>.':'')
-          +(c.reason&&c.reason!==c.reason_label?'<div class="mc-note">“'+esc(String(c.reason).replace(/^.*?—\s*/,""))+'”</div>':'')
-          +'<div class="muted" style="font-size:12px;margin-top:4px">Keep your profile and rates updated — new campaigns open every week.</div></div>':'')
-      + (declined?'' : '<div class="ci-meta">'+(c.campaign_type||c.comp_type?'<span>'+typeBadge(c)+'</span>':'')+(c.product?'<span>Product: <b>'+esc(c.product)+'</b></span>':'')
-      +   (c.deadline?'<span>Deadline: <b>'+fmtDate(c.deadline)+'</b></span>':'')+(c.applied_profile?'<span>As <b>@'+esc(c.applied_profile)+'</b></span>':'')+'</div>')
-      + (declined?'':journeyHtml(c))
-      + (declined?'':nextStepHtml(c))
+          +(c.reason&&c.reason!==c.reason_label?'<div class="mc-note">“'+esc(String(c.reason).replace(/^.*?—\s*/,""))+'”</div>':'')+'</div>'
+        : journeyHtml(c) + nextStepHtml(c))
       + (shTxt?'<div class="mc-ship">'+shTxt+'</div>':'')
-      + briefHtml(c)
       + ((c.posts||[]).length?postsHtml(c):delivHtml)
+      + (vb?fold('vb-'+P,'🎬 Video brief'+(c.deadline&&['content_created','changes_requested'].indexOf(c.stage)>=0?' <span class="ci-pill ci-warn" style="margin-left:6px">Due '+fmtDate(c.deadline)+'</span>':''), vbHint, briefHtml(c), false):'')
+      + fold('cd-'+P,'📄 Campaign details &amp; brief', c.brief?preview(c.brief):'', details, c.stage==='invited')
       + (!approved&&!declined&&c.reason?'<div class="ci-hint">Note: '+esc(c.reason)+'</div>':'')
-      + detail
-      + (acts?'<div class="ci-evrow">'+acts+'</div>':'')
       + (c.stage==='completed'? creatorCampaignFeedback(c.campaign_id):'')
       + '</div>';
   }
