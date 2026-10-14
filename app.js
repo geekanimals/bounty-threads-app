@@ -2998,6 +2998,7 @@ function mkComposer(){
       </select></label>
       <div id="mkCampWrap" style="display:none">
         <label>Is this for a campaign?<select id="mkCamp"><option value="">No — personal post</option></select></label>
+        <div id="mkCampCard"></div>
         <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="mkAd" checked style="width:auto"> Add #ad disclosure (required by ASCI for brand posts)</label>
       </div>
       <label><span id="mkFileLbl">Photos</span><input type="file" id="mkFile"></label>
@@ -3025,9 +3026,7 @@ function mkComposer(){
         <label>Name your original audio (optional)<input id="mkAudio" maxlength="50" placeholder="e.g. Diwali vibes"></label>
         <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="mkShareFeed" checked style="width:auto"> Also show on my profile grid</label>
       </div>
-      <div class="ai-suggest" style="margin-top:4px"><span class="spark">🎵</span><div class="s-body"><b>Want a song, stickers or a link?</b>
-        <p>Instagram keeps its music library, stickers and story links inside the Instagram app — no outside app can add them. On your phone, tap below: your media opens in Instagram, ready to add a song and post.</p>
-        <button type="button" class="btn ghost" id="mkOpenIg" style="margin-top:6px">Open in Instagram app →</button></div></div>
+      <div class="muted" style="font-size:12px">🎵 Add your music, text and effects while editing the video — it's posted exactly as you upload it.</div>
       <div class="auth-err" id="mkErr"></div>
       <div class="lead-msg" id="mkMsg"></div>
       <button class="btn" type="submit">Publish →</button>
@@ -3381,7 +3380,7 @@ const MK_KIND = {
   reel:  { lbl:"Video", accept:"video/mp4,video/quicktime", multiple:false, max:1,
            hint:"MP4/MOV, vertical 9:16, 3–90 seconds.", btn:"Publish reel →", ok:"Reel posted to Instagram ✅" },
   story: { lbl:"Photo or video", accept:"image/*,video/mp4,video/quicktime", multiple:false, max:1,
-           hint:"Vertical 9:16 works best. Videos up to 60 seconds. Instagram's API can't add story text, stickers or music — use “Open in Instagram app” for those.", btn:"Publish story →", ok:"Story is live on Instagram ✅" }
+           hint:"Vertical 9:16 works best. Videos up to 60 seconds. Any text you type below is printed on a photo story; add music and effects while editing.", btn:"Publish story →", ok:"Story is live on Instagram ✅" }
 };
 const mkUsers = s => String(s||"").split(/[\s,]+/).map(x=>x.replace(/^@/,"").trim()).filter(x=>/^[A-Za-z0-9._]{1,30}$/.test(x)).filter((x,i,a)=>a.indexOf(x)===i);
 let _mkRules = [];
@@ -3420,7 +3419,6 @@ function wireMkComposer(){
     $id("mkReelWrap").style.display = kindSel.value==="reel" ? "" : "none";
     btn.textContent=k.btn; $id("mkErr").textContent="";
   };
-  kindSel.onchange = applyKind;
   fileIn.onchange = ()=>{
     const k = MK_KIND[kindSel.value]||MK_KIND.feed, err=$id("mkErr"); err.textContent="";
     files = Array.from(fileIn.files||[]);
@@ -3429,7 +3427,7 @@ function wireMkComposer(){
     const vidStory = kindSel.value==="story" && files.some(f=>/^video\//.test(f.type||""));
     $id("mkStoryText").disabled = vidStory; $id("mkStoryShowMentions").disabled = vidStory;
     $id("mkStoryNote").textContent = vidStory
-      ? "Text can't be printed on a video story here — mentions still work and notify. For text on video, use “Open in Instagram app”."
+      ? "Text can't be printed on a video story here — mentions still work and notify. Put text on the video while editing it."
       : "Stories don't have captions on Instagram — your text is printed on the photo. Mentioned accounts get notified.";
   };
   cap.oninput = counter;
@@ -3442,54 +3440,74 @@ function wireMkComposer(){
     counter();
   };
   $id("mkAd").onchange = syncAd;
+  // ---- campaign post: everything comes from the campaign (format, caption, @mentions, #hashtags, collaborator, #ad) ----
+  const campRule = ()=> _mkRules.find(x=>x.participation_id===$id("mkCamp").value) || null;
+  const nextFormat = r => { const f=(r.formats||[]); return f.find(x=>x.done<x.need) || f[0] || { kind:"reel", label:"Reel", need:1, done:0 }; };
+  const campPieces = r => {
+    const tags=[], ments=[];
+    const addT = t=>{ t=String(t||"").trim(); if(!t) return; if(t[0]==="@"){ addM(t); return; } if(t[0]!=="#") t="#"+t;
+                      if(/^#[\p{L}\p{N}_]+$/u.test(t) && t.toLowerCase()!=="#ad" && !tags.some(x=>x.toLowerCase()===t.toLowerCase())) tags.push(t); };
+    const addM = m=>{ m=String(m||"").replace(/^@/,"").trim(); if(/^[A-Za-z0-9._]{1,30}$/.test(m) && !ments.some(x=>x.toLowerCase()===m.toLowerCase())) ments.push(m); };
+    String(r.brief_mentions||"").split(/[\s,]+/).forEach(addM); (r.mentions||[]).forEach(addM);
+    String(r.brief_hashtags||"").split(/[\s,]+/).forEach(addT); (r.hashtags||[]).forEach(addT);
+    const brandAt = ments[0] ? "@"+ments[0] : (r.brand||"the brand");
+    const line = String(r.caption||"").trim() || (r.product ? `Loving my ${r.product} from ${brandAt} ✨` : `Something new from ${brandAt} ✨`);
+    return { tags, ments, line };
+  };
+  const fillCampaign = (r, keepKind)=>{
+    if(!r){ $id("mkCampCard").innerHTML=""; return; }
+    if(!keepKind){ kindSel.value = nextFormat(r).kind; }
+    applyKind();
+    const { tags, ments, line } = campPieces(r);
+    const inLine = t => new RegExp("(^|\\s)"+t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"(?![\\w.])","i").test(line);
+    const extraM = ments.map(m=>"@"+m).filter(m=>!inLine(m)), extraT = tags.filter(t=>!inLine(t));
+    $id("mkAd").checked = true;
+    if(kindSel.value==="story"){
+      $id("mkTags").value = ments.map(m=>"@"+m).join(", ");
+      $id("mkStoryText").value = [line, extraT.join(" "), "#ad"].filter(Boolean).join(" ").slice(0,220);
+      cap.value = "";
+    } else {
+      cap.value = ["#ad " + line, [extraM.join(" "), extraT.join(" ")].filter(Boolean).join("\n")].filter(Boolean).join("\n\n");
+      $id("mkCollab").value = r.collab_rights!==false && ments[0] ? "@"+ments[0] : "";
+      $id("mkTags").value = ments.slice(1).map(m=>"@"+m).join(", ");
+    }
+    counter();
+    const now = kindSel.value;
+    $id("mkCampCard").innerHTML = `<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:2px 0 6px;font-size:13px;line-height:1.55">
+      <div><b>📣 ${esc(r.campaign||"Campaign")}</b>${r.brand?` · ${esc(r.brand)}`:""}${r.product?` · 🎁 ${esc(r.product)}`:""}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">${(r.formats||[]).map(f=>{
+        const done=f.done>=f.need, cur=f.kind===now;
+        return `<button type="button" data-mkfmt="${esc(f.kind)}" style="font:inherit;font-size:12px;border-radius:999px;padding:3px 10px;cursor:pointer;border:1px solid ${cur?"var(--brand,#6c5ce7)":"var(--line)"};background:${cur?"var(--brand,#6c5ce7)":"transparent"};color:${cur?"#fff":"inherit"}">${done?"✓ ":""}${esc(f.label)}${f.need>1?` ${Math.min(f.done,f.need)}/${f.need}`:""}${cur&&!done?" · now":""}</button>`; }).join("")}</div>
+      ${r.approved_video?`<div>🎬 Post your <b>approved</b> video: <a href="${esc(/^https?:\/\//i.test(r.approved_video)?r.approved_video:"#")}" target="_blank" rel="noopener">download it ↗</a>, then pick it below.</div>`:""}
+      ${r.posting_note?`<div class="muted">📝 ${esc(r.posting_note)}</div>`:""}
+      ${!r.can_record_post?`<div style="color:#b45309">⏳ The brand hasn't approved your video yet — post only after approval.</div>`:""}
+      <div class="muted" style="font-size:12px">Caption, @mentions, #hashtags, collaborator and #ad are filled in from the campaign — you can edit them.</div></div>`;
+    $id("mkCampCard").querySelectorAll("[data-mkfmt]").forEach(b=> b.onclick = ()=>{ kindSel.value = b.dataset.mkfmt; fillCampaign(r, true); });
+  };
+  kindSel.onchange = ()=>{ const r = campRule(); if(r) fillCampaign(r, true); else applyKind(); };
   $id("mkCamp").onchange = ()=>{
-    const r = _mkRules.find(x=>x.participation_id===$id("mkCamp").value);
-    if(r && kindSel.value==="story"){
-      const have = mkUsers($id("mkTags").value), add = (r.mentions||[]).map(m=>String(m).replace(/^@/,"")).filter(m=>!have.includes(m));
-      $id("mkTags").value = [...have, ...add].map(u=>"@"+u).join(", ");
-      const tags = (r.hashtags||[]).map(h=>h.startsWith("#")?h:"#"+h).filter(h=>!$id("mkStoryText").value.includes(h));
-      if(tags.length) $id("mkStoryText").value = ($id("mkStoryText").value.trim()+" "+tags.join(" ")+($id("mkAd").checked?" #ad":"")).trim();
-      return;
-    }
-    if(r){
-      const need = [...(r.hashtags||[]).map(h=>h.startsWith("#")?h:"#"+h), ...(r.mentions||[]).map(m=>"@"+String(m).replace(/^@/,""))];
-      const missing = need.filter(t=>!new RegExp("(^|\\s)"+t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"(\\b|$)","i").test(cap.value));
-      if(missing.length) cap.value = (cap.value.trim()+"\n\n"+missing.join(" ")).trim();
-      if(!$id("mkCollab").value.trim() && (r.mentions||[]).length) $id("mkCollab").value = "@"+String(r.mentions[0]).replace(/^@/,"");
-    }
+    const r = campRule();
+    if(r) fillCampaign(r, false);
+    else { $id("mkCampCard").innerHTML=""; cap.value=""; $id("mkTags").value=""; $id("mkCollab").value=""; $id("mkStoryText").value=""; counter(); }
     syncAd();
   };
-  if(window.__ciOpsEnabled && window.sb && sb.schema){
-    sb.schema("api").rpc("get_my_posting_rules").then(({data,error})=>{
-      if(error || !Array.isArray(data) || !data.length) return;
-      _mkRules = data;
-      $id("mkCamp").innerHTML = `<option value="">No — personal post</option>` + data.map(r=>`<option value="${esc(r.participation_id)}">${esc(r.campaign||"Campaign")} · ${esc(r.brand||"")}</option>`).join("");
-      $id("mkCampWrap").style.display = "";
-      // "Let's post" from My Campaigns → this campaign picked, caption + tags + collaborator filled in
-      const P = window.__mkPreset; window.__mkPreset = null;
-      if(P && data.some(r=>r.participation_id===P.participation_id)){
-        $id("mkCamp").value = P.participation_id;
-        if(P.caption && !cap.value.trim()) cap.value = P.caption;
-        if($id("mkAd")) $id("mkAd").checked = true;
-        $id("mkCamp").onchange();
-        $id("mkCampWrap").scrollIntoView({ behavior:"smooth", block:"center" });
-        const m = $id("mkMsg"); if(m){ m.textContent = "Campaign, caption and tags are filled in — pick your approved video and publish."; m.className = "lead-msg ok"; }
-      }
-    });
-  }
-
-  // music / stickers / links live only inside the Instagram app → hand the media to it (mobile share sheet)
-  $id("mkOpenIg").onclick = async ()=>{
-    const err=$id("mkErr"); err.textContent="";
-    if(!files.length){ err.textContent="Pick your photo or video first, then tap “Open in Instagram app”."; return; }
-    try{ if(cap.value) await navigator.clipboard.writeText(cap.value); }catch(e){}
-    if(navigator.canShare && navigator.canShare({ files: files.slice(0,1) })){
-      try{ await navigator.share({ files: files.slice(0,1) }); $id("mkMsg").textContent="Choose Instagram → Story/Reel, add your song, paste the caption (already copied) and post."; $id("mkMsg").className="lead-msg ok"; }
-      catch(e){ if(e && e.name!=="AbortError") err.textContent="Couldn't open the share sheet: "+(e.message||e); }
-    } else {
-      err.textContent="This works on your phone (Chrome on Android, Safari on iPhone). Open the Media Kit on your phone to add music or stickers in Instagram.";
+  const loadRules = async (pick, note)=>{
+    if(!(window.__ciOpsEnabled && window.sb && sb.schema)) return;
+    const { data, error } = await sb.schema("api").rpc("get_my_posting_rules");
+    if(error || !Array.isArray(data) || !data.length || !$id("mkCamp")) return;
+    _mkRules = data;
+    $id("mkCamp").innerHTML = `<option value="">No — personal post</option>` + data.map(r=>`<option value="${esc(r.participation_id)}">${esc(r.campaign||"Campaign")} · ${esc(r.brand||"")}</option>`).join("");
+    $id("mkCampWrap").style.display = "";
+    if(pick && data.some(r=>r.participation_id===pick)){
+      $id("mkCamp").value = pick; $id("mkCamp").onchange();
+      form.scrollIntoView({ behavior:"smooth", block:"start" });
+      const m = $id("mkMsg"); if(m && note){ m.innerHTML = note; m.className = "lead-msg ok"; }
     }
   };
+  // "Let's post" from My Campaigns → straight here with the campaign picked and everything filled in
+  { const P = window.__mkPreset; window.__mkPreset = null;
+    loadRules(P && P.participation_id, "Everything is filled in from the campaign — pick your approved video and tap <b>Publish</b>."); }
+  form._mkNext = loadRules;
 
   applyKind(); counter();
 
@@ -3555,8 +3573,14 @@ function wireMkComposer(){
       msg.innerHTML = esc(note) + (data && data.permalink ? ` · <a href="${esc(data.permalink)}" target="_blank" rel="noopener">View on Instagram ↗</a>` : "");
       msg.className="lead-msg ok";
       if(typeof refreshMediaKit==="function"){ setTimeout(()=>refreshMediaKit(true), 3000); setTimeout(()=>refreshMediaKit(true), 15000); }
-      cap.value=""; $id("mkTags").value=""; $id("mkStoryText").value=""; $id("mkCollab").value=""; $id("mkAudio").value=""; $id("mkThumb").value=""; $id("mkCover").value=""; $id("mkCamp").value="";
+      const postedFor = rule && rule.can_record_post ? rule.participation_id : null;
+      cap.value=""; $id("mkTags").value=""; $id("mkStoryText").value=""; $id("mkCollab").value=""; $id("mkAudio").value=""; $id("mkThumb").value=""; $id("mkCover").value=""; $id("mkCamp").value=""; $id("mkCampCard").innerHTML="";
       applyKind(); counter();
+      if(postedFor && form._mkNext){
+        const { data:fresh } = await sb.schema("api").rpc("get_my_posting_rules");
+        const r2 = (fresh||[]).find(x=>x.participation_id===postedFor), nx = r2 && (r2.formats||[]).find(f=>f.done<f.need);
+        if(nx) await form._mkNext(postedFor, esc(note) + ` · <b>Next for this campaign: ${esc(nx.label)}</b> — it's filled in, pick your file.`);
+      }
     }catch(ex){
       err.textContent = (ex.message||ex);
     }finally{

@@ -667,10 +667,13 @@
           (rv&&rv.reason?'<div class="mc-note" style="border-color:rgba(247,144,9,.6)">“'+esc(rv.reason)+'”</div>':'')+(due?'<div style="margin-top:4px">Due <b>'+fmtDate(due)+'</b></div>':''),
           '<button class="btn sm" data-video="'+P+'">🎬 Submit again</button>'+readBrief,'act');
       case 'content_submitted': return box('👀','Your video is with the brand',(sb2?'<a href="'+esc(safeLink(sb2.url))+'" target="_blank" rel="noopener">Your link ↗</a> · sent '+fmtDT(sb2.submitted_at)+'. ':'')+'We\'ll tell you the moment it\'s approved. Don\'t post yet.');
-      case 'content_approved': return box('✅','Approved — let\'s post!','Your caption, hashtags and tags are ready. Post the approved video — we find the post on your Instagram automatically.',
+      case 'content_approved': return box('✅','Approved — let\'s post!','Tap <b>Let\'s post</b> — your post opens right here in the app with the format, caption, @mentions, #hashtags and collaborator filled in from the campaign. Pick your approved video and publish.',
           '<button class="btn sm" data-letspost="'+P+'">🚀 Let\'s post</button>','act');
       case 'published':
         if(c.feedback_requested_at) return box('⭐','One last step — your feedback','Rate this campaign to complete it. Your post\'s numbers open right after.', feedbackForm(c),'act');
+        var left=pendingFormats(c);
+        if(left.length) return box('📲','Next: post your '+esc(left.join(' + ')),'Your first post is live ✓. The rest is filled in the same way — tap below.',
+          '<button class="btn sm" data-letspost="'+P+'">🚀 Post my '+esc(left[0])+'</button>','act');
         return box('📈','You\'re live!','Your post is recorded on the campaign. The brand wraps up once the numbers are in.');
       case 'completed': return box('🏁','Campaign complete','Thank you! Your numbers are below.');
     }
@@ -788,42 +791,22 @@
     document.querySelectorAll("#opsMine [data-post]").forEach(function(b){ b.onclick=function(){ openPostModal(b.getAttribute("data-post")); }; });
   }
 
-  // ---- creator: approved → Let's post. Caption + hashtags + tags ready; post from the app or Instagram; we find the post ----
-  function readyCaption(c){
-    var b=c.video_brief||{}, tags=[];
-    var add=function(t){ t=String(t||"").trim(); if(!t) return; if(!/^[#@]/.test(t)) t='#'+t; if(tags.map(function(x){return x.toLowerCase();}).indexOf(t.toLowerCase())<0) tags.push(t); };
-    String(b.hashtags||"").split(/[\s,]+/).forEach(add); String(b.mentions||"").split(/[\s,]+/).forEach(function(m){ if(m) add(m.charAt(0)==='@'?m:'@'+m); });
-    (c.hashtags||[]).forEach(add); (c.mentions||[]).forEach(function(m){ add(String(m).charAt(0)==='@'?m:'@'+m); });
-    return ['#ad', (b.caption||'').trim(), tags.filter(function(t){ return t.toLowerCase()!=='#ad'; }).join(' ')].filter(Boolean).join('\n\n');
-  }
+  // ---- creator: approved → Let's post = straight to the in-app composer (Instagram → Post) with the campaign picked
+  //      and format, caption, @mentions, #hashtags, collaborator and #ad filled in from the campaign ----
   function openLetsPost(part){
-    var c=(_mineCache||[]).filter(function(x){ return x.participation_id===part; })[0]||{};
-    var cap=readyCaption(c), collab=((c.mentions||[])[0]||String((c.video_brief||{}).mentions||'').split(/[\s,]+/)[0]||'').replace(/^@/,'');
-    opsModal('<div class="ci-mh"><h3>🚀 Let\'s post</h3><button class="wa-x" id="opsMx">×</button></div>'
-      + '<div class="ci-hint">Post the <b>approved</b> video as a Reel'+(collab?' and add <b>@'+esc(collab)+'</b> as collaborator':'')+'. Your caption is ready:</div>'
-      + '<textarea id="lpCap" rows="6" class="lp-cap">'+esc(cap)+'</textarea>'
-      + '<div class="cp-ob-actions" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn sm ghost" id="lpCopy">📋 Copy caption</button>'
-      + '<button class="btn sm" id="lpKit">📲 Post from the app (all filled in)</button>'
-      + '<a class="btn sm ghost" href="https://www.instagram.com/" target="_blank" rel="noopener" id="lpIg">Open Instagram ↗</a></div>'
-      + '<div class="lp-or">Posted it already?</div>'
-      + '<div class="cp-ob-actions" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn sm" id="lpFind">🔎 Find my post</button><button class="btn sm ghost" id="lpManual">Add the link myself</button></div>'
-      + '<div class="ci-hint" id="lpMsg">We also check your Instagram on our own every few minutes — the campaign moves to <b>Posted</b> by itself.</div>');
-    document.getElementById("opsMx").onclick=closeModal;
-    document.getElementById("lpCopy").onclick=async function(){ try{ await navigator.clipboard.writeText(document.getElementById("lpCap").value); this.textContent="Copied ✓"; }catch(e){ document.getElementById("lpCap").select(); } };
-    document.getElementById("lpIg").addEventListener("click", function(){ try{ navigator.clipboard.writeText(document.getElementById("lpCap").value); }catch(e){} });
-    document.getElementById("lpKit").onclick=function(){
-      window.__mkPreset={ participation_id: part, caption: document.getElementById("lpCap").value };
-      closeModal(); if(typeof currentPage!=="undefined") currentPage="mediakit"; if(typeof renderShell==="function") renderShell(); };
-    document.getElementById("lpManual").onclick=function(){ closeModal(); openPostModal(part); };
-    document.getElementById("lpFind").onclick=async function(){
-      var btn=this, msg=document.getElementById("lpMsg"); btn.disabled=true; btn.textContent="Checking your Instagram…";
-      try{ await window.sb.functions.invoke("instagram-media-sync",{ body:{ force:true } }); }catch(e){}
-      var r=await api("check_my_posts");
-      if(r.error){ msg.textContent=r.error.message||r.error; btn.disabled=false; btn.textContent="🔎 Find my post"; return; }
-      if(r.data && r.data.found){ closeModal(); loadMyCampaigns(); updateAlertsBadge(); return; }
-      msg.innerHTML="Not found yet — make sure the caption has the campaign hashtag/tag, wait a minute and try again, or <b>Add the link myself</b>.";
-      btn.disabled=false; btn.textContent="🔎 Find my post";
-    };
+    window.__mkPreset={ participation_id: part };
+    try{ if(typeof _igTab!=="undefined") _igTab="post"; }catch(e){}
+    if(typeof currentPage!=="undefined") currentPage="instagram";
+    if(typeof renderShell==="function") renderShell();
+    window.scrollTo(0,0);
+  }
+  // formats still to post (from the deliverables vs what's already up)
+  function pendingFormats(c){
+    var kindOf=function(f){ f=String(f||"").toLowerCase(); return f==="reel"?"reel":f==="story"?"story":(f==="static_post"||f==="carousel"||f==="post")?"feed":null; };
+    var need={}, done={}, label={reel:"Reel",story:"Story",feed:"Post"};
+    (c.deliverables||[]).forEach(function(d){ var k=kindOf(d.format); if(k) need[k]=(need[k]||0)+Math.max(1,d.quantity||1); });
+    (c.posts||[]).forEach(function(p){ var k=kindOf(p.media_type); if(k) done[k]=(done[k]||0)+1; });
+    return Object.keys(need).filter(function(k){ return (done[k]||0)<need[k]; }).map(function(k){ return label[k]; });
   }
 
   // ---- creator: record the reel/story posted (runs the caption/tag check + marks published) ----
