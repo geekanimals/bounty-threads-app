@@ -73,6 +73,17 @@ Deno.serve(async (req) => {
   const { data: rows, error } = await api.rpc("wa_templates_claim", { p_limit: 20 });
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
 
+  // tell the Super Admin how templates are being made right now (and whether Meta accepts our keys)
+  let mode = WABA_ID && META_TOKEN ? "meta" : SNAPTO_URL && SNAPTO_KEY ? "snapto" : "manual", modeErr: string | null = null;
+  if (mode === "meta") {
+    try {
+      const r = await fetch(`https://graph.facebook.com/${META_VER}/${WABA_ID}/message_templates?limit=1&fields=name&access_token=${encodeURIComponent(META_TOKEN)}`);
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { modeErr = (j as any)?.error?.message || `Meta said ${r.status}`; mode = "meta_error"; }
+    } catch (e) { modeErr = (e as Error).message; mode = "meta_error"; }
+  }
+  try { await api.rpc("ops_wa_template_mode", { p_mode: mode, p_error: modeErr }); } catch (_e) { /* status only */ }
+
   const done: Record<string, number> = {};
   const set = async (t: Row, status: string, provider: string | null, ref: string | null, err: string | null) => {
     await api.rpc("wa_templates_set", { p_campaign: t.campaign_id, p_status: status, p_provider: provider, p_ref: ref, p_error: err });
@@ -80,14 +91,16 @@ Deno.serve(async (req) => {
   };
   for (const t of (rows ?? []) as Row[]) {
     try {
-      if (WABA_ID && META_TOKEN) {
+      if (mode === "meta") {
         if (t.status === "submitted") { const s = await metaStatus(t); await set(t, s.status, "meta", null, s.error); }
         else { const c = await metaCreate(t); await set(t, c.status, "meta", c.ref, null); }
       } else if (SNAPTO_URL && SNAPTO_KEY) {
         if (t.status === "submitted") { await set(t, "submitted", "snapto", null, "waiting for Meta review — press Mark approved once snapto shows it approved"); }
         else { const c = await snaptoCreate(t); await set(t, c.status, "snapto", c.ref, null); }
       } else {
-        await set(t, "manual", null, null, "Create this template in snapto (category Utility), or add WHATSAPP_WABA_ID + WHATSAPP_TOKEN so it is created automatically.");
+        await set(t, "manual", null, null, mode === "meta_error"
+          ? `Meta didn't accept the keys: ${modeErr} — fix WHATSAPP_WABA_ID / WHATSAPP_TEMPLATE_TOKEN, or create this template in snapto.`
+          : "Create this template in snapto (category Utility) — or connect Meta once (Super Admin → WhatsApp & email) and every campaign gets its template automatically.");
       }
     } catch (e) {
       await set(t, "failed", null, null, ((e as Error).message || "template create failed").slice(0, 300));

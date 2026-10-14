@@ -1206,3 +1206,10 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .bk-guide .bk-sample{min-width:680px}
 .bk-mini{font-size:12px;margin:10px 0 6px;line-height:1.5}
 .bk-dl{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.bk-gtable td:first-child,.bk-gtable .tag{white-space:nowrap}
+.wa-auto{font-size:13px;line-height:1.55;padding:10px 12px;border-radius:12px;margin:0 0 12px}
+.wa-auto.ok{background:rgba(18,183,106,.08);border:1px solid rgba(18,183,106,.3)}
+.wa-auto.warn{background:rgba(247,144,9,.08);border:1px solid rgba(247,144,9,.4)}
+.wa-auto-steps{margin:8px 0 4px;padding-left:20px}
+.wa-auto-steps li{margin-bottom:6px}
+.wa-auto .wa-pre{white-space:pre-wrap;word-break:break-all;font-size:12px}

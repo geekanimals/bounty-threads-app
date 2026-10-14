@@ -4921,11 +4921,26 @@ async function adminWaTemplates(){
   const { data, error } = await sb.rpc("admin_wa_templates").then(r=>r, e=>({error:e}));
   if(error){ box.innerHTML = `<h3 style="margin-top:0">WhatsApp templates</h3><div class="muted">${esc(error.message||error)}</div>`; return; }
   const L = data||[];
+  const ms = await sb.rpc("admin_wa_template_status").then(r=>r.data||{}, ()=>({}));
+  const auto = ms.mode==="meta";
+  const modeBox = `<div class="wa-auto ${auto?"ok":"warn"}">
+    ${auto ? `<b>✅ Automatic</b> — every new campaign gets its own WhatsApp template, sent to Meta for approval on its own. Messages for a campaign go on that campaign's template once approved (until then on <code>${WA_UPD_NAME}</code>).`
+      : ms.mode==="meta_error" ? `<b>⚠️ Meta connection not working:</b> ${esc(ms.error||"")}`
+      : `<b>⚙️ Templates are not being created automatically yet.</b> snapto has no API for creating templates, so we create them straight in your Meta WhatsApp account (the same one snapto uses). Connect it once:`}
+    ${auto ? "" : `<ol class="wa-auto-steps">
+      <li><b>WhatsApp Business Account ID</b>: business.facebook.com → <b>WhatsApp Manager</b> → account overview → copy the <i>WhatsApp Business Account ID</i>.</li>
+      <li><b>Permanent token</b>: Business Settings → Users → <b>System users</b> → Add (Admin) → <b>Assign assets</b> → your WhatsApp account (full control) → <b>Generate token</b> → never expires → tick <code>whatsapp_business_management</code> + <code>whatsapp_business_messaging</code> → copy.</li>
+      <li>Run in Terminal (put your two values in):<pre class="wa-pre" id="waAutoCmd">cd "/Users/bhargavsinha/Documents/new site/app" && supabase secrets set WHATSAPP_WABA_ID=PASTE_ACCOUNT_ID WHATSAPP_TEMPLATE_TOKEN=PASTE_TOKEN && supabase functions deploy wa-template-sync</pre>
+        <button class="mini-btn ghost" id="waAutoCopy">Copy command</button></li>
+      <li>Press <b>Check now</b> — the status turns ✅ and every campaign's template is sent to Meta.</li></ol>`}
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><button class="mini-btn" id="waAutoCheck">Check now</button>
+      <span class="muted" style="font-size:12px">${ms.at?`Last checked ${esc(new Date(ms.at).toLocaleString())}`:"Not checked yet"} · ${Object.entries(ms.counts||{}).map(([k,v])=>`${esc(v)} ${esc(k)}`).join(" · ")||"no templates yet"}</span></div></div>`;
   const tag = st=> ({approved:'<span class="tag good">approved</span>', submitted:'<span class="tag warn">with Meta</span>', queued:'<span class="tag warn">queued</span>',
     manual:'<span class="tag warn">create in snapto</span>', failed:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">failed</span>',
     rejected:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">rejected</span>'})[st]||esc(st);
   box.innerHTML = `<h3 style="margin-top:0">WhatsApp templates · one per campaign <span class="muted" style="font-size:12px;font-weight:400">· category Utility · footer “Reply STOP…”</span></h3>
-    <p class="muted" style="font-size:12.5px;margin:0 0 10px">Made automatically when a campaign is created. Updates outside WhatsApp's 24-hour window use the campaign's template once it's approved — held messages then go out on their own.</p>
+    <p class="muted" style="font-size:12.5px;margin:0 0 10px">One per campaign, written from the campaign's name and brand, made the moment a campaign is created. Each creator gets their campaign's updates on that campaign's template once approved — held messages then go out on their own.</p>
+    ${modeBox}
     ${L.length?`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Campaign</th><th>Template name</th><th>Text</th><th>Status</th><th></th></tr></thead><tbody>
     ${L.map(t=>`<tr><td><b>${esc(t.campaign||"")}</b><div class="muted" style="font-size:12px">${esc(t.brand||"")}</div></td>
       <td style="font-size:12px"><code>${esc(t.template_name)}</code> <button class="mini-btn ghost" data-tplcopy="${esc(t.template_name)}" title="Copy name">⧉</button></td>
@@ -4934,6 +4949,10 @@ async function adminWaTemplates(){
       <td>${tag(t.status)}${t.error?`<div class="muted" style="font-size:11.5px;max-width:220px">${esc(t.error)}</div>`:""}</td>
       <td style="white-space:nowrap">${t.status!=="approved"?`<button class="mini-btn" data-tplok="${esc(t.campaign_id)}">Mark approved</button> `:""}<button class="mini-btn ghost" data-tplretry="${esc(t.campaign_id)}">Resubmit</button></td></tr>`).join("")}
     </tbody></table></div>`:`<div class="muted">No campaign templates yet — one is made with every new campaign.</div>`}`;
+  const ac = document.getElementById("waAutoCheck"); if(ac) ac.onclick = async ()=>{ ac.disabled = true; ac.textContent = "Checking…";
+    const { error:e } = await sb.rpc("admin_wa_templates_check"); if(e){ alert(e.message); ac.disabled=false; ac.textContent="Check now"; return; }
+    setTimeout(adminWaTemplates, 6000); };
+  const acp = document.getElementById("waAutoCopy"); if(acp) acp.onclick = async ()=>{ try{ await navigator.clipboard.writeText(document.getElementById("waAutoCmd").textContent); acp.textContent="✓ copied"; }catch(e){} };
   box.querySelectorAll("[data-tplcopy]").forEach(b=> b.onclick = async ()=>{ try{ await navigator.clipboard.writeText(b.dataset.tplcopy); b.textContent="✓"; }catch(e){ prompt("Copy:", b.dataset.tplcopy); } });
   const set = async (id, st)=>{ const { error:e } = await sb.rpc("admin_wa_template_set", { p_campaign:id, p_status:st }); if(e) alert(e.message); adminWaTemplates(); };
   box.querySelectorAll("[data-tplok]").forEach(b=> b.onclick = ()=>{ if(confirm("Only mark it approved once snapto / Meta shows this exact template as Approved. Held WhatsApp updates will go out on it.")) set(b.dataset.tplok, "approved"); });
