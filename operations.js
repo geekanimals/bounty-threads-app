@@ -757,6 +757,7 @@
       + (vb?fold('vb-'+P,'🎬 Video brief'+(c.deadline&&['content_created','changes_requested'].indexOf(c.stage)>=0?' <span class="ci-pill ci-warn" style="margin-left:6px">Due '+fmtDate(c.deadline)+'</span>':''), vbHint, briefHtml(c), false):'')
       + fold('cd-'+P,'📄 Campaign details &amp; brief', c.brief?preview(c.brief):'', details, c.stage==='invited')
       + (!approved&&!declined&&c.reason?'<div class="ci-hint">Note: '+esc(c.reason)+'</div>':'')
+      + (!declined?'<div class="mc-ai"><button class="btn sm ghost" data-askai="'+P+'">🤖 Ask AI about this campaign</button><span class="muted">Contract, brief, video, courier, posting — ask anything, in Hindi or English</span></div>':'')
       + '</div>';
   }
   function wireMine(){
@@ -764,6 +765,7 @@
     document.querySelectorAll("#opsMine [data-reject]").forEach(function(b){ b.onclick=function(){ var reason=prompt("No problem — tell the brand why you're passing (they see this):")||""; if(!reason) return; api("respond_to_campaign",{p_participation:b.getAttribute("data-reject"),p_accept:false,p_reason:reason}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-upload]").forEach(function(b){ b.onclick=function(){ var url=prompt("Paste your content link (e.g. Instagram post URL):")||""; if(!url) return; var note=prompt("Note / question for the Geek team (optional):")||""; api("submit_content",{p_deliverable:b.getAttribute("data-upload"),p_content_url:url,p_note:note}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-contract]").forEach(function(b){ b.onclick=function(){ openContractModal(b.getAttribute("data-contract")); }; });
+    document.querySelectorAll("#opsMine [data-askai]").forEach(function(b){ b.onclick=function(){ openCampaignChat(b.getAttribute("data-askai")); }; });
     document.querySelectorAll("#opsMine .jr").forEach(function(j){ var n=j.querySelector(".jr-step.now"); if(n) j.scrollLeft=Math.max(0,n.offsetLeft-j.clientWidth/2+n.offsetWidth/2); });
     document.querySelectorAll("#opsMine [data-video]").forEach(function(b){ b.onclick=function(){ openVideoModal(b.getAttribute("data-video")); }; });
     document.querySelectorAll("#opsMine [data-readbrief]").forEach(function(b){ b.onclick=function(){
@@ -833,6 +835,44 @@
         loadMyCampaigns(); updateAlertsBadge();
       });
     };
+  }
+
+  // ---- creator: AI helper for one campaign — answers from that campaign's own data (read on the server) ----
+  var AI_CHATS = {};
+  var GEEK_WA = "916398566704";
+  function aiFmt(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/(^|\n)[-•]\s+/g,"$1• ").replace(/\n/g,"<br>"); }
+  function openCampaignChat(part){
+    var c=(_mineCache||[]).filter(function(x){ return x.participation_id===part; })[0]||{};
+    var hist = AI_CHATS[part] = AI_CHATS[part] || [{ role:"assistant", content:"Hi! I know everything about **"+(c.campaign||"this campaign")+"** — your contract, brief, deadline and courier. Ask me anything, in Hindi or English. 🙂" }];
+    var SUG = ["Ab mujhe kya karna hai?","Contract simple words mein samjhao","Video mein kya dikhana hai?","Mera product kab aayega?","Post kaise karna hai?","Deadline kab hai?"];
+    opsModal('<div class="ci-mh"><h3>🤖 Campaign helper</h3><button class="wa-x" id="opsMx">×</button></div>'
+      + '<div class="ci-hint" style="margin-top:-4px">'+esc(c.campaign||"")+(c.brand?' · '+esc(c.brand):'')+'</div>'
+      + '<div class="cc-thread" id="ccThread"></div>'
+      + '<div class="cc-sug" id="ccSug">'+SUG.map(function(q){ return '<button type="button" class="cs-chip" data-ccq="'+esc(q)+'">'+esc(q)+'</button>'; }).join("")+'</div>'
+      + '<form class="cc-form" id="ccForm"><input id="ccIn" placeholder="Type your question…" autocomplete="off" maxlength="800"><button class="btn sm" id="ccSend">Send</button></form>'
+      + '<div class="ci-hint" style="font-size:11.5px">AI can make mistakes — for anything important, <a href="https://wa.me/'+GEEK_WA+'?text='+encodeURIComponent("Hi Geek team, I have a question about "+(c.campaign||"my campaign")+": ")+'" target="_blank" rel="noopener">talk to the Geek team on WhatsApp ↗</a></div>');
+    document.getElementById("opsMx").onclick=closeModal;
+    var paint=function(){ var th=document.getElementById("ccThread"); if(!th) return;
+      th.innerHTML=hist.map(function(m){ return '<div class="cc-msg '+(m.role==="user"?"me":"bot")+(m._p?" pend":"")+'">'+aiFmt(m.content)+'</div>'; }).join("");
+      th.scrollTop=th.scrollHeight; };
+    var busy=false;
+    var ask=async function(q){
+      q=String(q||"").trim(); if(!q||busy) return; busy=true;
+      hist.push({role:"user",content:q}); hist.push({role:"assistant",content:"…",_p:true}); paint();
+      var inp=document.getElementById("ccIn"); if(inp) inp.value="";
+      try{
+        var r=await window.sb.functions.invoke("ai-chat",{ body:{ participation_id:part, messages:hist.filter(function(m){ return !m._p; }).map(function(m){ return {role:m.role,content:m.content}; }), context:{ role:"creator" } } });
+        var msg=null;
+        if(r.error){ try{ var j=await r.error.context.json(); msg=j&&j.error; }catch(e){} msg=msg||r.error.message||"Couldn't reach the AI."; }
+        else if(r.data&&r.data.error) msg=r.data.error;
+        hist=AI_CHATS[part]=hist.filter(function(m){ return !m._p; });
+        hist.push({role:"assistant",content: msg ? "Sorry — "+msg : ((r.data&&r.data.reply)||"(no answer)")});
+      }catch(e){ hist=AI_CHATS[part]=hist.filter(function(m){ return !m._p; }); hist.push({role:"assistant",content:"Sorry — "+(e.message||e)}); }
+      busy=false; paint(); var i2=document.getElementById("ccIn"); if(i2) i2.focus();
+    };
+    document.getElementById("ccForm").onsubmit=function(e){ e.preventDefault(); ask(document.getElementById("ccIn").value); };
+    document.querySelectorAll("#ccSug [data-ccq]").forEach(function(b){ b.onclick=function(){ ask(b.getAttribute("data-ccq")); }; });
+    paint(); setTimeout(function(){ var i=document.getElementById("ccIn"); if(i) i.focus(); }, 50);
   }
 
   // ---- creator: read the whole contract, accept ASCI + the non-delivery terms, sign ----

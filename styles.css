@@ -1215,3 +1215,15 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .wa-auto .wa-pre{white-space:pre-wrap;word-break:break-all;font-size:12px}
 .cs-lookup{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px;font-size:13.5px}
 .dd-why{font-size:11.5px;margin-top:3px;max-width:320px;line-height:1.4}
+/* ---------- Campaign helper (AI chat for one campaign) ---------- */
+.mc-ai{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;font-size:12px}
+.cc-thread{display:flex;flex-direction:column;gap:8px;max-height:min(52vh,420px);overflow-y:auto;padding:10px 2px;margin:8px 0}
+.cc-msg{max-width:85%;width:fit-content;min-width:48px;flex:none;word-break:normal;overflow-wrap:break-word;padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.5;word-break:break-word}
+.cc-msg.bot{align-self:flex-start;background:var(--panel,#f3f4f8);border:1px solid var(--line)}
+.cc-msg.me{align-self:flex-end;background:var(--brand,#6c5ce7);color:#fff}
+.cc-msg.pend{opacity:.6}
+.cc-sug{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;margin-bottom:8px;padding-bottom:4px}
+.cc-sug .cs-chip{flex:none;white-space:nowrap}
+.cc-sug .cs-chip{font-size:12px}
+.cc-form{display:flex;gap:8px}
+.cc-form input{flex:1;min-width:0;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:inherit;font:inherit;font-size:14px}
