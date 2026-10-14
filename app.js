@@ -2148,6 +2148,41 @@ async function igConnectStrip(){
        <button class="btn sm" id="dxConnect">Connect Instagram</button></div>`;
   const c = document.getElementById("dxConnect");
   if(c) c.onclick = ()=>{ try{ localStorage.setItem("geekos_after_ig","discover"); }catch(e){} connectInstagram(); };
+  // live Instagram numbers for any creator: one Facebook connection by the Super Admin powers it for everyone
+  const { data:dc } = await sb.rpc("my_discovery_connection").then(r=>r, ()=>({data:null}));
+  if(!box.isConnected || !dc) return;
+  const fb = dc.facebook, live = (fb && fb.discovery_ok) || dc.shared;
+  const isAdm = window.__isAdmin || await sb.rpc("is_platform_admin").then(r=> r.data===true, ()=>false);
+  if(!box.isConnected) return;
+  if(isAdm){
+    box.insertAdjacentHTML("beforeend", fb
+      ? `<div class="dx-ig ${fb.discovery_ok?"ok":""}" style="margin-top:8px">🔎 <b>Instagram search ${fb.discovery_ok?"is on":"isn't working yet"}</b> <span class="muted">— via @${esc(fb.ig_username||"")} (Page: ${esc(fb.page_name||"")})${fb.discovery_ok?" · every brand & agency can look up any public creator":` · ${esc(fb.discovery_error||"")}`}</span>
+         <button class="btn sm ghost" id="dxFb">Reconnect</button></div>`
+      : `<div class="dx-ig" style="margin-top:8px"><div>🔎 <b>Turn on Instagram search for everyone</b> <span class="muted">— Meta gives other creators' followers, posts &amp; engagement only through Facebook Login. Connect the Facebook Page linked to Geek's Instagram <b>once</b>; brands &amp; agencies keep connecting only Instagram.</span></div>
+         <button class="btn sm" id="dxFb">Connect Facebook (one time)</button></div>`);
+    const f = document.getElementById("dxFb"); if(f) f.onclick = connectFacebookSearch;
+  } else if(!live){
+    box.insertAdjacentHTML("beforeend", `<div class="muted" style="font-size:12.5px;margin-top:6px">Live Instagram numbers for creators who aren't on Geek OS switch on once the Geek team turns on Instagram search.</div>`);
+  }
+}
+// Super Admin: Facebook Login → the Page + Instagram account used for business discovery (token stays on the server)
+async function connectFacebookSearch(){
+  const state = "facebook:" + Math.random().toString(36).slice(2);
+  try{ localStorage.setItem("geekos_oauth_state", state); }catch(e){}
+  const { data, error } = await sb.functions.invoke("fb-connect", { body:{ action:"url", redirect_uri: IG_REDIRECT, state } });
+  if(error || !data || !data.url){ alert((data && data.error) || (error && await fnError(error)) || "Couldn't start Facebook connect."); return; }
+  location.href = data.url;
+}
+async function finishFacebookSearch(code){
+  const { data, error } = await sb.functions.invoke("fb-connect", { body:{ action:"exchange", code, redirect_uri: IG_REDIRECT } });
+  const d = data || {};
+  const msg = error ? await fnError(error) : d.error;
+  currentPage = "discover";
+  if(window.__osBooted && typeof renderShell==="function") renderShell();
+  setTimeout(()=>{
+    if(msg) alert("Instagram search: " + msg);
+    else gateToast(d.discovery_ok ? `✅ Instagram search is on — via @${d.ig_username}. Any public creator can be looked up now.` : `Connected @${d.ig_username}, but Meta refused the lookup: ${d.discovery_error||""}`);
+  }, 600);
 }
 
 async function loadDiscover(){
@@ -2214,6 +2249,17 @@ function mountCreatorSearch(root, opts){
     $i("Count").innerHTML = `<b>${fmtNum(d.total||0)}</b> creator${d.total===1?"":"s"}${S.categories.length?` · ${esc(S.categories.join(", "))}`:""}${S.location?` · ${esc(S.location)}`:""}`;
     $i("Res").innerHTML = rows.length ? `<div class="cs-grid">${rows.map(c=>csCard(c, opts)).join("")}</div>`
       : `<div class="card"><div class="muted">No creators match these filters. Try fewer filters${opts.campaign?"":", or <b>+ Add creators</b> to bring in more handles"}.</div></div>`;
+    // a handle typed in the search box → look it up live on Instagram (and add it to the pool)
+    const h = (S.q||"").replace(/^https?:\/\/(www\.)?instagram\.com\//i,"").replace(/^@/,"").replace(/[/?].*$/,"").toLowerCase();
+    if(/^[a-z0-9._]{2,30}$/.test(h) && !rows.some(r=> String(r.handle).toLowerCase()===h)){
+      $i("Res").insertAdjacentHTML("afterbegin", `<div class="card cs-lookup"><span>Not in the list yet — <b>@${esc(h)}</b></span><button class="btn sm" id="${id("Look")}">🔎 Look up @${esc(h)} on Instagram</button><span class="muted" id="${id("LookMsg")}"></span></div>`);
+      $i("Look").onclick = async ()=>{ const b = $i("Look"); b.disabled = true; b.textContent = "Looking up…";
+        const { data:lk, error:le } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h } });
+        const lm = $i("LookMsg");
+        if(le || !lk || lk.error){ if(lm) lm.textContent = (lk && lk.error) || (le && await fnError(le)) || "Couldn't look it up."; b.disabled = false; b.textContent = `🔎 Look up @${h} on Instagram`;
+          if(lk && (lk.added || lk.needs_facebook)) setTimeout(()=> run(true), 1500); return; }
+        gateToast(`@${h} — ${kfmtN((lk.profile||{}).followers||0)} followers · added to search`); run(true); pool(); };
+    }
     const pages = d.pages||1;
     if(pages>1){
       const nums = []; for(let p=Math.max(1,S.page-2); p<=Math.min(pages,S.page+2); p++) nums.push(p);
@@ -5587,6 +5633,7 @@ async function handleOAuthCallback(){
 
   // Instagram Login uses its own Edge Function flow.
   if(platform === "instagram"){ window.__igLoggingIn = true; await finishInstagram(code); return; }
+  if(platform === "facebook"){ await finishFacebookSearch(code); return; }
 
   try{
     if(!(window.sb && window.sb.functions)){

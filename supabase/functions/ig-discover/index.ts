@@ -39,27 +39,41 @@ Deno.serve(async (req) => {
 
     const { data: tok } = await admin.from("social_tokens").select("access_token, ig_user_id, expires_at")
       .eq("member_id", user.id).eq("platform", "instagram").maybeSingle();
-    if (!tok?.access_token) return json({ error: "Connect your Instagram first — then we can read it for you.", needs_connect: true }, 400);
-    if (tok.expires_at && new Date(tok.expires_at) < new Date()) return json({ error: "Instagram token expired — reconnect Instagram." }, 400);
-    const T = encodeURIComponent(tok.access_token as string);
-
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action || "");
+    if (action === "tagged") {
+      if (!tok?.access_token) return json({ error: "Connect your Instagram first — then we can read it for you.", needs_connect: true }, 400);
+      if (tok.expires_at && new Date(tok.expires_at) < new Date()) return json({ error: "Instagram token expired — reconnect Instagram." }, 400);
+    }
+    const T = encodeURIComponent(String(tok?.access_token || ""));
 
     if (action === "lookup") {
       const username = String(body?.username || "").trim().replace(/^@/, "").toLowerCase();
       if (!/^[a-z0-9._]{2,30}$/.test(username)) return json({ error: "Enter a valid Instagram username." }, 400);
-      const igId = String(tok.ig_user_id || "");
-      if (!igId) return json({ error: "Your Instagram connection is missing its account id — reconnect Instagram." }, 400);
+      // business discovery needs a Facebook-Login Page token: this account's own ("Connect with Facebook"),
+      // else the platform's shared one (Super Admin / any connected workspace)
+      const { data: fbt } = await admin.from("social_tokens").select("access_token, ig_user_id")
+        .eq("member_id", user.id).eq("platform", "facebook").maybeSingle();
+      let src = fbt?.access_token ? fbt : null;
+      if (!src) { const { data: shared } = await admin.schema("api").rpc("ops_discovery_token"); if (shared?.platform === "facebook") src = shared; }
+      if (!src?.access_token || !src?.ig_user_id) {
+        await admin.schema("api").rpc("save_external_candidates", { p_items: [{ handle: username, source: "manual" }] }).then(() => {}, () => {});
+        return json({ error: `@${username} is added. Live Instagram numbers switch on once the Geek Super Admin turns on Instagram search (one-time).`, needs_facebook: true, added: true }, 200);
+      }
+      const igId = String(src.ig_user_id);
+      const FT = encodeURIComponent(String(src.access_token));
 
       const fields = `business_discovery.username(${encodeURIComponent(username)}){username,name,biography,followers_count,media_count,profile_picture_url,media.limit(12){caption,permalink,like_count,comments_count,media_type}}`;
-      const r = await fetch(`${FB_GRAPH}/${encodeURIComponent(igId)}?fields=${fields}&access_token=${T}`);
+      const r = await fetch(`${FB_GRAPH}/${encodeURIComponent(igId)}?fields=${fields}&access_token=${FT}`);
       const j = await r.json().catch(() => ({}));
       const bd = j?.business_discovery;
       if (!r.ok || !bd) {
-        const msg = needsPermission(j)
-          ? "Instagram only returns another account's public numbers once Meta approves business discovery for this app (and the account must be a Business/Creator account)."
-          : (j?.error?.message || "Instagram couldn't return that profile.");
+        const m = String(j?.error?.message || "");
+        const msg = /does not exist|cannot be found|invalid user|username/i.test(m) || Number(j?.error?.code) === 110
+          ? `@${username} isn't a public Business or Creator account (or doesn't exist) — Instagram only shares numbers for those. It's still added; invite them anyway.`
+          : needsPermission(j) ? `Instagram refused the lookup: ${m || "permission"} — reconnect with Facebook and select the Page + Instagram account.`
+          : (m || "Instagram couldn't return that profile.");
+        await admin.schema("api").rpc("save_external_candidates", { p_items: [{ handle: username, source: "manual" }] }).then(() => {}, () => {});
         return json({ error: msg, needs_permission: needsPermission(j) }, 200);
       }
       const media: any[] = bd?.media?.data ?? [];
@@ -79,7 +93,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "tagged") {
-      const igId = String(tok.ig_user_id || "me");
+      const igId = String(tok?.ig_user_id || "me");
       const r = await fetch(`${IG_GRAPH}/${encodeURIComponent(igId)}/tags?fields=id,username,caption,permalink,media_type,timestamp&limit=50&access_token=${T}`);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return json({ error: j?.error?.message || "Instagram couldn't return the accounts that tagged you.", needs_permission: needsPermission(j) }, 200);
