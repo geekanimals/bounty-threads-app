@@ -30,6 +30,46 @@ const ROLES = {
   }
 };
 
+// Sidebar, grouped. Keys missing a feature flag (campaignops / brandsetup / cintel) are dropped at render time.
+// ROLES[x].nav is kept in step (it feeds the ⌘K palette and the default landing page).
+const NAV_SECTIONS = {
+  owner: [
+    ["Today",     ["dashboard","approvals","messages"]],
+    ["Campaigns", ["campaigns","barter","celebrity","logistics","campaignops"]],
+    ["Creators",  ["discover","creators","cintel","irm"]],
+    ["Brands",    ["brands","brandsetup"]],
+    ["Insights",  ["reports","finance","listening"]],
+    ["Workspace", ["settings"]]
+  ],
+  corporate: [
+    ["Today",     ["dashboard","approvals","messages"]],
+    ["Campaigns", ["campaigns","barter","celebrity","logistics","campaignops"]],
+    ["Creators",  ["discover","creators","cintel","irm"]],
+    ["Brands",    ["portfolio","brandsetup"]],
+    ["Insights",  ["reports","finance","listening"]],
+    ["Workspace", ["settings"]]
+  ],
+  manager: [
+    ["Today",     ["dashboard","approvals","messages"]],
+    ["Talent",    ["roster","discover","cintel"]],
+    ["Campaigns", ["campaigns","barter","celebrity","logistics","campaignops"]],
+    ["Insights",  ["reports"]],
+    ["Workspace", ["settings"]]
+  ],
+  brand: [
+    ["Today",     ["dashboard","approvals","messages"]],
+    ["Campaigns", ["campaigns","barter","logistics","campaignops"]],
+    ["Creators",  ["discover","creators","cintel","irm"]],
+    ["Insights",  ["reports","listening"]],
+    ["Brand",     ["brandsetup","settings"]]
+  ]
+};
+// Super Admin: the platform first (straight into each admin tab), then their own workspace
+const ADMIN_NAV = [["admin:overview","🛡","Command centre"],["admin:approvals","🏢","Account approvals"],["admin:campaigns","📣","All campaigns"],
+  ["admin:applications","📝","All applications"],["admin:creators","🎨","All creators"],["admin:users","👥","All users"],
+  ["admin:delivery","📨","WhatsApp & email"],["admin:activity","📈","Activity"],["admin:check","🩺","System check"]];
+Object.keys(NAV_SECTIONS).forEach(r=>{ ROLES[r].nav = NAV_SECTIONS[r].reduce((a,s)=>a.concat(s[1]),[]); });
+
 const NAV_META = {
   messages:{ic:"💬",label:"Messages"},
   alerts:{ic:"🔔",label:"Alerts"},
@@ -48,7 +88,7 @@ const NAV_META = {
   profile:{ic:"🧬",label:"Creator Profile"},
   intelligence:{ic:"📈",label:"My Intelligence"},
   cintel:{ic:"🔎",label:"Creator Intelligence"},
-  campaignops:{ic:"🗂",label:"Campaign Ops"},
+  campaignops:{ic:"🗂",label:"Pipeline board"},
   brandsetup:{ic:"🏷",label:"Brand Setup"},
   mycampaigns:{ic:"🎯",label:"My Campaigns"},
   onboarding:{ic:"🚦",label:"Get Campaign-Ready"}

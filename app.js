@@ -73,27 +73,72 @@ function creatorNavKeys(){
   if(window.__ciIntelEnabled) keys.push("intelligence");
   return keys;
 }
+function navKeyAllowed(k){
+  if((k==="campaignops"||k==="brandsetup") && !window.__ciOpsEnabled) return false;
+  if(k==="campaignops" && !window.__ciOpsOperator) return false;   // the pipeline board is the Geek operators' tool
+  if(k==="cintel" && !window.__ciIntelEnabled) return false;
+  return true;
+}
 function renderNav(){
   const nav = $("#nav"); nav.innerHTML="";
   if(currentRole==="creator") return renderNavKeys(nav, creatorNavKeys());
-  const keys = ROLES[currentRole].nav.slice();
-  // Creator Profile nav is DARK: shown only when the api.creator_profile_api feature is enabled
-  // (in production the api schema is unexposed, so this stays hidden and legacy nav is unchanged).
-  if(currentRole==="creator" && window.__ciProfileEnabled && !keys.includes("profile")) keys.splice(1,0,"profile");
-  // Phase 1D — Creator Intelligence serving/matching nav is DARK (same api flag; hidden in production).
-  if(currentRole==="creator" && window.__ciIntelEnabled && !keys.includes("intelligence")) keys.splice(2,0,"intelligence");
-  if(currentRole!=="creator" && window.__ciIntelEnabled && !keys.includes("cintel")) keys.splice(2,0,"cintel");
-  // Phase 1E — Campaign Operations nav is DARK (operational_pilot flag + pilot cohort; hidden in production).
-  if(currentRole==="creator" && window.__ciOpsEnabled){ if(!keys.includes("mycampaigns")) keys.splice(2,0,"mycampaigns"); if(!keys.includes("onboarding")) keys.splice(3,0,"onboarding"); }
-  // pilot creators apply through My Campaigns (admin-panel campaigns are bridged there) — hide the legacy
-  // Marketplace so the same campaign never shows two different Apply buttons.
-  if(currentRole==="creator" && window.__ciOpsEnabled){ const mi=keys.indexOf("marketplace"); if(mi>=0) keys.splice(mi,1); }
-  if(currentRole!=="creator" && window.__ciOpsEnabled){ if(!keys.includes("campaignops")) keys.splice(2,0,"campaignops"); if(!keys.includes("brandsetup")) keys.splice(3,0,"brandsetup"); }
-  if(!keys.includes("messages")) keys.splice(1,0,"messages");   // WhatsApp 1:1 messaging (all roles)
-  // Alerts live only in the top-right bell (no sidebar entry for any role).
-  { const ai = keys.indexOf("alerts"); if(ai>=0) keys.splice(ai,1); }
-  if(window.__isAdmin){ const ai = keys.indexOf("admin"); if(ai>=0) keys.splice(ai,1); keys.unshift("admin"); }   // Super Admin first
-  renderNavKeys(nav, keys);
+  const sections = (typeof NAV_SECTIONS!=="undefined" && NAV_SECTIONS[currentRole]) || [["", ROLES[currentRole].nav]];
+  if(window.__isAdmin){
+    navHeading(nav, "Super Admin");
+    ADMIN_NAV.forEach(([key, ic, label])=>{
+      const tab = key.split(":")[1];
+      const a = el("a","", `<span class="ic">${ic}</span><span>${esc(label)}</span><b class="nav-badge" data-navcount="${key}"></b>`);
+      a.setAttribute("data-page", key);
+      if(currentPage==="admin" && _adminTab===tab) a.classList.add("active");
+      a.onclick = ()=>{ _adminTab = tab; currentPage = "admin"; renderShell(); if(window.innerWidth<=760) $("#sidebar").classList.remove("open"); };
+      nav.appendChild(a);
+    });
+  }
+  sections.forEach(([title, keys])=>{
+    keys = keys.filter(navKeyAllowed);
+    if(!keys.length) return;
+    if(title) navHeading(nav, window.__isAdmin && title==="Today" ? "My workspace" : title);
+    renderNavKeys(nav, keys);
+  });
+  paintNavCounts();
+}
+function navHeading(nav, title){ const h = el("div","nav-sec"); h.textContent = title; nav.appendChild(h); }
+// live numbers beside the sidebar items (what's waiting on you), refreshed every 30 s
+let _navCounts = null, _navCountTimer = null;
+const NAV_COUNT_KEYS = { approvals:"approvals", campaigns:"process", logistics:"logistics",
+  "admin:approvals":"signups", "admin:overview":"approvals", "admin:applications":"applicants", "admin:campaigns":"campaigns_waiting" };
+function paintNavCounts(){
+  const c = _navCounts || {};
+  const dn = document.getElementById("dashNeeds");
+  if(dn){ const n = Number(c.approvals)||0, parts = [];
+    if(c.signups) parts.push(`${c.signups} signup${c.signups>1?"s":""}`);
+    if(c.campaigns_waiting) parts.push(`${c.campaigns_waiting} campaign${c.campaigns_waiting>1?"s":""} to approve`);
+    if(c.applicants) parts.push(`${c.applicants} creator${c.applicants>1?"s":""} to decide`);
+    if(c.reviews) parts.push(`${c.reviews} video${c.reviews>1?"s":""} to review`);
+    if((c.process||0)-(c.reviews||0)>0) parts.push(`${c.process-c.reviews} barter step${c.process-c.reviews>1?"s":""} (ship / deliver / chase)`);
+    dn.innerHTML = n ? `<button class="dash-needs" id="dashNeedsGo">⚡ <b>${n} thing${n>1?"s":""} waiting on you</b><span>${esc(parts.join(" · "))}</span><em>Open Approvals →</em></button>` : "";
+    const g = document.getElementById("dashNeedsGo"); if(g) g.onclick = ()=>{ currentPage = "approvals"; renderShell(); };
+  }
+  document.querySelectorAll("#nav a[data-page]").forEach(a=>{
+    const key = a.getAttribute("data-page"), field = NAV_COUNT_KEYS[key];
+    let b = a.querySelector(".nav-badge");
+    if(!field){ if(b) b.remove(); return; }
+    if(!b){ b = el("b","nav-badge"); a.appendChild(b); }
+    const n = Number(c[field])||0;
+    b.textContent = n>99 ? "99+" : n; b.style.display = n ? "" : "none";
+    b.title = key==="campaigns" ? "Creators in the barter process waiting on you" : key==="logistics" ? "Products to send / in transit" : "Waiting on your decision";
+  });
+}
+async function pollNavCounts(){
+  if(!window.sb || !window.__osBooted || currentRole==="creator" || document.visibilityState!=="visible") return;
+  const { data, error } = await sb.schema("api").rpc("nav_counts").then(r=>r, e=>({error:e}));
+  if(error || !data) return;
+  _navCounts = data; paintNavCounts();
+}
+function startNavCounts(){
+  if(_navCountTimer) return;
+  _navCountTimer = setInterval(pollNavCounts, 30000); setTimeout(pollNavCounts, 1200);
+  document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") pollNavCounts(); });
 }
 function renderNavKeys(nav, keys){
   keys.forEach(key=>{
@@ -502,7 +547,7 @@ function renderDashboard(){
   let html = pageHead("Dashboard", `Welcome back, ${esc(first)} — here's your live cockpit.`);
   html += `<div id="onboardCard"></div>`;
   html += kpiRow(role);
-  if(role!=="creator") html += `<div id="wsLive"></div><div id="inboundAppsCard"></div>`;
+  if(role!=="creator") html += `<div id="dashNeeds"></div><div id="wsLive"></div><div id="inboundAppsCard"></div>`;
   html += `<div class="grid two"><div class="grid" style="gap:16px">
       <div class="card"><h3>Today's Tasks</h3><div class="list" id="tasksList"><div class="muted" style="padding:8px">Loading…</div></div></div>
       <div class="card"><h3>Recent Activity</h3><div class="list" id="activityList"><div class="muted" style="padding:8px">Loading…</div></div></div>
@@ -1812,21 +1857,40 @@ function renderApprovals(){
   return pageHead("Approvals","Everything waiting on your decision — signups, campaigns and creators, live.")
     + `<div id="apvBody">${skel("list",4)}</div>`;
 }
+function apvProcessHtml(list){
+  const K = { review:["🎬","Video to review"], ship:["🚚","Ship the product — add courier"], deliver:["📦","In transit — mark delivered"],
+              overdue:["⏰","Video overdue"], contract:["📜","Contract didn't go out"], unsigned:["✍️","Contract unsigned 3+ days"] };
+  return `<div class="card"><h3 style="margin-top:0">🔁 Barter process — waiting on you</h3><div class="list">${list.map(x=>{
+    const c = x.creator||{}, k = K[x.kind]||["•",x.kind], camp = x.legacy_campaign_id||x.campaign_id;
+    return `<div class="row">${c.profile_picture_url?`<img class="ap-pic" src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((c.username||"?").slice(0,2).toUpperCase())}</span>`}
+      <div class="r-main"><div class="r-title">${k[0]} ${esc(k[1])} · ${c.username?"@"+esc(c.username):esc(c.name||"Creator")}</div>
+        <div class="r-sub">${esc(x.campaign_name||"")}${x.brand?` · ${esc(x.brand)}`:""}${x.org_name&&window.__isAdmin?` · ${esc(x.org_name)}`:""}${x.due_on?` · due ${esc(fmtDate(x.due_on))}`:""}</div></div>
+      <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+        ${x.kind==="review"&&x.video_url?`<a class="mini-btn ghost" href="${esc(safeUrl(x.video_url))}" target="_blank" rel="noopener">▶ Watch</a><button class="mini-btn" data-apvok="${esc(x.participation_id)}">✅ Approve video</button>`:""}
+        ${x.kind==="deliver"?`<button class="mini-btn" data-apvdel="${esc(x.participation_id)}">📦 Mark delivered</button>`:""}
+        <button class="mini-btn ghost" data-apvopen="${esc(camp)}" data-apvname="${esc(x.campaign_name||"")}" data-apvpart="${esc(x.participation_id)}">Open</button></span></div>`; }).join("")}</div></div>`;
+}
 async function loadApprovals(silent){
   const body = document.getElementById("apvBody"); if(!body || !window.sb) return;
-  const { data, error } = await sb.schema("api").rpc("approvals_inbox").then(r=>r, e=>({error:e}));
+  const [ar, pr] = await Promise.all([
+    sb.schema("api").rpc("approvals_inbox").then(r=>r, e=>({error:e})),
+    sb.schema("api").rpc("process_inbox").then(r=>r, ()=>({data:[]}))]);
+  const { data, error } = ar;
   if(error){ if(!silent) body.innerHTML = `<div class="card"><div class="muted">${esc(error.message||error)}</div></div>`; return; }
-  const d = data||{}, sig = JSON.stringify(d); if(silent && sig===_apvSig) return; _apvSig = sig;
+  const d = data||{}, proc = pr.data||[], sig = JSON.stringify([d, proc]); if(silent && sig===_apvSig) return; _apvSig = sig;
   const signups = d.signups||[], camps = d.campaigns||[], apps = d.applicants||[], mk = d.marketplace||[];
-  const total = signups.length + camps.length + apps.length + mk.length;
+  const total = signups.length + camps.length + apps.length + mk.length + proc.length;
+  pollNavCounts();
   const ago = t=>{ if(!t) return ""; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
   const roleName = r=>({owner:"Agency Owner",brand:"Brand",manager:"Manager",corporate:"Corporate"}[r]||r);
   body.innerHTML = `<div class="rp-kpis">
       ${d.is_admin?`<div><b>${signups.length}</b>Account signups</div>`:""}
       <div><b>${camps.length}</b>Campaigns to approve</div>
       <div><b>${apps.length+mk.length}</b>Creators to decide</div>
+      <div><b>${proc.length}</b>Barter steps on you</div>
       <div><b>${total}</b>Total waiting</div></div>
     ${total? "" : `<div class="card"><div class="muted" style="padding:8px">All clear — nothing waiting on you right now ✅</div></div>`}
+    ${proc.length ? apvProcessHtml(proc) : ""}
     ${d.is_admin && signups.length ? `<div class="card"><h3 style="margin-top:0">🏢 Agency & brand signups</h3><div class="list">
       ${signups.map(x=>`<div class="row"><div class="r-main">
         <div class="r-title">${esc(x.name||x.email||"—")} <span class="tag">${esc(roleName(x.role))}</span>${x.org_name?` · ${esc(x.org_name)}`:""}</div>
@@ -1875,6 +1939,17 @@ async function loadApprovals(silent){
     if(error){ alert(error.message); return; } again();
   });
   body.querySelectorAll("[data-apvinv]").forEach(b=> b.onclick = ()=> openInvitePanel(b.dataset.apvinv, b.dataset.apvname));
+  // barter process steps waiting on the team
+  body.querySelectorAll("[data-apvopen]").forEach(b=> b.onclick = ()=> openBarterProcess(b.dataset.apvopen, b.dataset.apvname, b.dataset.apvpart));
+  body.querySelectorAll("[data-apvok]").forEach(b=> b.onclick = async ()=>{
+    b.disabled = true; b.textContent = "…";
+    const { error } = await sb.schema("api").rpc("bp_review_video", { p_participation:b.dataset.apvok, p_approve:true, p_reason:null });
+    if(error){ alert(error.message); b.disabled=false; b.textContent="✅ Approve video"; return; } again(); });
+  body.querySelectorAll("[data-apvdel]").forEach(b=> b.onclick = async ()=>{
+    if(!confirm("Mark the parcel as delivered? The video brief goes to the creator right away.")) return;
+    b.disabled = true; b.textContent = "…";
+    const { error } = await sb.schema("api").rpc("bp_mark_delivered", { p_participation:b.dataset.apvdel });
+    if(error){ alert(error.message); b.disabled=false; b.textContent="📦 Mark delivered"; return; } again(); });
   // creators
   wireApplicantButtons(body, again);
   body.querySelectorAll("[data-apvmk]").forEach(b=> b.onclick = async ()=>{
@@ -3403,8 +3478,8 @@ const BP_NEXT = {
   completed:"Done ✓"
 };
 let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null, _bpAnalytics = null;
-function openBarterProcess(campaignId, campaignName){
-  _bpCamp = { id: campaignId, name: campaignName || "this campaign" }; _bpTab = "tracker"; _bpOpen = null; _bpAnalytics = null;
+function openBarterProcess(campaignId, campaignName, focusParticipation){
+  _bpCamp = { id: campaignId, name: campaignName || "this campaign" }; _bpTab = "tracker"; _bpOpen = focusParticipation || null; _bpAnalytics = null;
   document.getElementById("bpPanel")?.remove();
   const ov = el("div","ac360"); ov.id = "bpPanel";
   ov.innerHTML = `<div class="ac360-box"><div class="ac360-body" id="bpBody">${skel("list",5)}</div></div>`;
@@ -3430,7 +3505,7 @@ async function loadBarterProcess(silent){
     sb.schema("api").rpc("get_outreach", { p_campaign:_bpCamp.id }).then(r=>r, ()=>({data:{}}))
   ]);
   if(t.error){ if(!silent) body.innerHTML = `<div class="card"><div class="muted">${esc(t.error.message||t.error)}</div></div>`; return; }
-  _bpData = t.data||{}; _bpData.outreach = o.data||{};
+  _bpData = t.data||{}; _bpData.outreach = o.data||{}; pollNavCounts();
   if(_bpTab==="analytics") await loadBpAnalytics(true);
   paintBarterProcess();
 }
@@ -5164,7 +5239,7 @@ function renderContent(){
     rep(); livePage("reports", rep, 60000);
   }
   if(currentPage==="dashboard"){
-    loadDashboard(); livePage("dashboard", ()=>{ loadDashboard(); loadKPIs(); }, 30000);
+    loadDashboard(); pollNavCounts(); livePage("dashboard", ()=>{ loadDashboard(); loadKPIs(); }, 30000);
   }
   if(currentPage==="barter" && currentRole==="creator" && window.__ciOpsEnabled && window.ciOps){ window.ciOps.loadOpenCampaigns(); }
   else if(currentPage==="barter"){
@@ -5504,6 +5579,7 @@ function showAlertToast(n){
 
 function init(){
   window.__osBooted = true;
+  if(currentRole!=="creator") startNavCounts();
   if(!_alertTimer){ _alertTimer = setInterval(pollAlerts, 20000); setTimeout(pollAlerts, 1500); document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") pollAlerts(); }); }
   initRoles();
   // deep link from a WhatsApp / email push: app.html?go=<page> opens that page (then the param is dropped)
