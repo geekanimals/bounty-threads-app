@@ -64,7 +64,14 @@ Deno.serve(async (req) => {
       else if (code === 230 || /connected tools|allow access to messages|access to messages/i.test(msg)) reason = "messages_access_off";
       else if (code === 3 || /capability|advanced access|app review|not approved/i.test(msg)) reason = "app_access";
       else if ([10, 200, 299].includes(code) || /permission|not authorized|scope/i.test(msg)) reason = scopes ? "app_access" : "reconnect";
-      return json({ error: reason ? `Instagram didn't allow us to ${what}.` : `Instagram couldn't ${what}${msg ? ": " + msg : "."}`, reason, meta, scopes });
+      const said = msg ? ` — Instagram said: ${code ? "(#" + code + (sub ? "/" + sub : "") + ") " : ""}${msg}` : "";
+      const how: Record<string, string> = {
+        reconnect: "This Instagram connection was made without the messages permission. Tap Reconnect Instagram and keep every permission on, including Manage messages.",
+        token_expired: "Your Instagram connection expired — reconnect Instagram.",
+        messages_access_off: "On your phone: Instagram → Settings → Messages and story replies → Message controls → Connected tools → turn on “Allow access to messages”, then try again.",
+        app_access: "Meta still blocks messages for this app: in developers.facebook.com → App Review → Permissions, instagram_business_manage_messages must be on Advanced access and the app must be Live — then reconnect Instagram.",
+      };
+      return json({ error: (reason ? how[reason] : `Instagram couldn't ${what}.`) + said, reason, meta, scopes });
     };
 
     const body = await req.json().catch(() => ({}));
