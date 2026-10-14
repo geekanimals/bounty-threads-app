@@ -1050,3 +1050,18 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .mc-dchips{display:flex;flex-wrap:wrap;gap:8px}
 .mc-dchip{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-size:12.5px}
 .mc-dchip i{font-style:normal;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px}
+
+/* ===== Profile card: update channels ===== */
+.me-prefs{margin:10px 0 2px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;gap:8px}
+.me-prefs:empty{display:none}
+.me-pref-h{font-size:12px;font-weight:700;color:var(--muted)}
+.me-pref{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;font-size:13px}
+.me-pref span{display:flex;flex-direction:column}
+.me-pref em{font-style:normal;font-size:11.5px;color:var(--muted)}
+.me-pref input{position:absolute;opacity:0;pointer-events:none}
+.me-pref i{width:36px;height:20px;border-radius:999px;background:rgba(120,130,150,.35);position:relative;flex:0 0 36px;transition:background .15s}
+.me-pref i::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.me-pref input:checked + i{background:#12b76a}
+.me-pref input:checked + i::after{left:18px}
+.me-pref input:focus-visible + i{outline:2px solid var(--brand,#6c5ce7);outline-offset:2px}
+.me-pref.off{opacity:.6;cursor:default}

@@ -267,8 +267,10 @@ async function paintMeCard(){
     <div class="me-links">${isCreator
       ? go("mediakit","Media Kit","🪪")+go("profile","Creator Profile","👤")+go("instagram","Instagram","📸")+go("mycampaigns","My Campaigns","🎯")
       : go("dashboard","Dashboard","🏠")+(window.__isAdmin?go("admin","Super Admin","🛡"):"")}</div>
+    <div class="me-prefs" id="mePrefs"></div>
     <button class="me-out" id="meOut">↪ Sign out</button></div>`;
   c.querySelector("#meX").onclick = closeMeCard;
+  paintMePrefs();
   c.querySelectorAll("[data-mego]").forEach(b=> b.onclick = ()=>{ const pg = b.dataset.mego; closeMeCard();
     if(window.__profileGate && typeof GATE_OPEN_PAGES!=="undefined" && !GATE_OPEN_PAGES.includes(pg)){ gateToast("Complete your profile first"); currentPage = "profile"; } else currentPage = pg; renderShell(); });
   c.querySelector("#meOut").onclick = ()=>{ if(window.Tracker) Tracker.security("sign_out"); setTimeout(()=> window.Auth && Auth.signOut(), 150); };
@@ -280,6 +282,20 @@ async function paintMeCard(){
 }
 
 
+// Profile card → which channels send me updates. Turning one off never stops login / recovery codes.
+async function paintMePrefs(){
+  const box = document.getElementById("mePrefs"); if(!box || !window.sb) return;
+  const { data, error } = await sb.rpc("my_notify_prefs").then(r=>r, e=>({error:e}));
+  if(error || !data){ box.innerHTML = ""; return; }
+  const sw = (id, on, label, sub, disabled)=>`<label class="me-pref${disabled?" off":""}"><span><b>${label}</b><em>${sub}</em></span>
+      <input type="checkbox" id="${id}"${on?" checked":""}${disabled?" disabled":""}><i></i></label>`;
+  box.innerHTML = `<div class="me-pref-h">🔔 Campaign updates</div>`
+    + sw("mePrefWa", data.whatsapp_linked && !data.whatsapp_off, "WhatsApp", data.whatsapp_linked ? (data.whatsapp_off ? "Off — only login codes" : "On") : "Link WhatsApp to get updates", !data.whatsapp_linked)
+    + sw("mePrefEm", !data.email_off, "Email", data.email_off ? "Off — only recovery codes" : "On", false);
+  const wa = document.getElementById("mePrefWa"), em = document.getElementById("mePrefEm");
+  if(wa) wa.onchange = async ()=>{ wa.disabled = true; const { error:e } = await sb.rpc("wa_set_opt_out", { p_opt_out: !wa.checked }); if(e) alert(e.message); paintMePrefs(); };
+  if(em) em.onchange = async ()=>{ em.disabled = true; const { error:e } = await sb.rpc("set_email_updates", { p_on: em.checked }); if(e) alert(e.message); paintMePrefs(); };
+}
 /* ---------- Live pages: every workspace page re-reads the database on its own ----------
  * One timer at a time, paused when the tab is hidden, a modal is open or the operator is typing. */
 let _liveTimer = null, _livePage = null;
@@ -545,9 +561,10 @@ function renderDashboard(){
   const role = currentRole;
   const first = ((window.Auth && Auth.profile && Auth.profile.name) || ROLES[role].name).split(" ")[0];
   let html = pageHead("Dashboard", `Welcome back, ${esc(first)} — here's your live cockpit.`);
+  if(role!=="creator") html += `<div id="dashNeeds"></div>`;
   html += `<div id="onboardCard"></div>`;
   html += kpiRow(role);
-  if(role!=="creator") html += `<div id="dashNeeds"></div><div id="wsLive"></div><div id="inboundAppsCard"></div>`;
+  if(role!=="creator") html += `<div id="wsLive"></div><div id="inboundAppsCard"></div>`;
   html += `<div class="grid two"><div class="grid" style="gap:16px">
       <div class="card"><h3>Today's Tasks</h3><div class="list" id="tasksList"><div class="muted" style="padding:8px">Loading…</div></div></div>
       <div class="card"><h3>Recent Activity</h3><div class="list" id="activityList"><div class="muted" style="padding:8px">Loading…</div></div></div>
@@ -1462,6 +1479,18 @@ function legacyTypeFor(t, st){
 }
 const MAX_CAMP_FILE = 10*1024*1024;
 
+// Campaign status is just Draft → Live → Completed. "Completed" is offered only for a campaign whose end date has
+// passed (to add an old campaign); live ones complete themselves after the end date. Older words map onto these.
+function campStatusPick(st){ return ({Sourcing:"Live","In Production":"Live",Approval:"Approval"})[st] || st || "Live"; }
+function campStatusOptions(cur, endDate){
+  const today = new Date().toISOString().slice(0,10), ended = !!endDate && endDate < today;
+  const pick = (!cur && ended) ? "Completed" : campStatusPick(cur);
+  const list = [["Draft","Draft — not visible to creators"],["Live","Live — creators can apply"]];
+  if(pick==="Approval") list.splice(1,0,["Approval","Waiting for approval"]);
+  if(ended || pick==="Completed") list.push(["Completed","Completed"+(ended?" — already ended":"")]);
+  const sel = list.some(x=>x[0]===pick) ? pick : (ended ? "Completed" : "Live");
+  return list.map(([v,l])=>`<option value="${v}"${v===sel?" selected":""}>${esc(l)}</option>`).join("");
+}
 function openCampaignModal(existing, preset){
   preset = preset || {};
   const ed = existing || {};
@@ -1499,7 +1528,8 @@ function openCampaignModal(existing, preset){
       <div id="cmFileList" class="cm-files"></div>
       <div class="mf-row"><label>Start date<input name="start_date" type="date" value="${esc(ed.start_date||'')}"></label>
       <label>End date<input name="end_date" type="date" value="${esc(ed.end_date||'')}"></label></div>
-      <div class="mf-row"><label>Status<select name="status">${opt(["Draft","Sourcing","Approval","In Production","Live","Completed"], ed.status||"Sourcing")}</select></label>
+      <div class="mf-row"><label>Status<select name="status" id="cmStatus">${campStatusOptions(ed.status, ed.end_date)}</select>
+        <span class="muted" style="font-weight:400;font-size:12px;text-transform:none;letter-spacing:0">Live = open for creators. It turns <b>Completed</b> on its own after the end date.</span></label>
       ${existing?`<label>Progress %<input name="progress" type="number" min="0" max="100" value="${ed.progress!=null?esc(ed.progress):''}" placeholder="0"></label>`:'<span></span>'}</div>
       <div class="cm-sec">📜 Contract terms <span class="muted" style="font-weight:400;font-size:12px">— sent to each creator automatically the moment you approve them</span></div>
       <div class="mf-row"><label>Product the creator gets<input name="ct_product" maxlength="140" value="${esc(ct.product||'')}" placeholder="Momo box (12 pcs)"></label>
@@ -1539,6 +1569,9 @@ function openCampaignModal(existing, preset){
     form.querySelectorAll("#cmType label").forEach(l=> l.classList.toggle("act", l.querySelector("input").checked));
   };
   form.querySelectorAll("input[name=campaign_type]").forEach(r=> r.onchange = syncType); syncType();
+  const endIn = form.querySelector("input[name=end_date]"), stSel = document.getElementById("cmStatus");
+  if(endIn && stSel) endIn.addEventListener("change", ()=>{ const cur = stSel.value, ended = endIn.value && endIn.value < new Date().toISOString().slice(0,10);
+    stSel.innerHTML = campStatusOptions(ended && cur==="Live" ? "Completed" : (!ended && cur==="Completed" ? "Live" : cur), endIn.value); });
   const pending = [];
   const paintFiles = ()=>{
     const box = document.getElementById("cmFileList");
@@ -2351,13 +2384,14 @@ async function adminApplications(body, silent){
 
 /* ---------- Super Admin → All campaigns (live): status override + decide applications for anyone ---------- */
 let _acTimer = null, _acOpen = null, _acSig = "";
-const CAMP_STATUSES = ["Draft","Approval","Sourcing","In Production","Live","Completed"];
+const CAMP_STATUSES = ["Draft","Approval","Live","Completed"];
 async function adminCampaigns(body, silent){
   if(!silent) body.innerHTML = skel("table",6);
   const filter = (document.getElementById("acFilter")||{}).value || "";
   const tfilter = (document.getElementById("acType")||{}).value || "";
   const [cr, pr, ar] = await Promise.all([
-    sb.rpc("admin_campaigns", { p_status: filter||null }),
+    sb.rpc("admin_campaigns", { p_status: (filter && filter!=="Live") ? filter : null }).then(r=>{
+      if(!r.error && filter==="Live") r.data = (r.data||[]).filter(c=> campStatusPick(c.status)==="Live"); return r; }),
     sb.schema("api").rpc("org_applicants", { p_campaign:null, p_stage:null }).then(r=>r, ()=>({data:[]})),
     sb.rpc("admin_applications", { p_campaign:null, p_status:null }).then(r=>r, ()=>({data:[]}))
   ]);
@@ -2377,7 +2411,7 @@ async function adminCampaigns(body, silent){
         const appr = Number(c.approved)+pc.filter(p=>REPORT_APPROVED(p.stage)).length, decl = Number(c.declined)+pc.filter(p=>["ineligible","brand_declined","dropped","rejected"].includes(p.stage)).length;
         return `<tr><td><b>${esc(c.name)}</b><div class="muted" style="font-size:12px">${esc(c.brand||"")}</div></td><td>${esc(c.org_name||"—")}</td>
         <td>${esc(campTypeLabel(c.campaign_type,c.barter_subtype)||"—")}</td>
-        <td><select data-acstatus="${esc(c.id)}">${CAMP_STATUSES.map(s=>`<option${s===c.status?" selected":""}>${s}</option>`).join("")}</select></td>
+        <td><select data-acstatus="${esc(c.id)}">${CAMP_STATUSES.map(s=>`<option${s===campStatusPick(c.status)?" selected":""}>${s}</option>`).join("")}</select></td>
         <td>${Number(c.applied)+pc.length}</td><td>${pendFor(c.id)?`<span class="tag warn">${pendFor(c.id)}</span>`:"0"}</td><td>${appr}</td><td>${decl}</td>
         <td style="white-space:nowrap">${c.status==="Approval"?`<button class="mini-btn" data-acgo="${esc(c.id)}">Approve campaign</button> `:""}<button class="mini-btn" data-acbp="${esc(c.id)}" data-acbpname="${esc(c.name)}">🔁 Process</button> <button class="mini-btn" data-acinv="${esc(c.id)}" data-acname="${esc(c.name)}">🎯 Invite</button> <button class="mini-btn ghost" data-acopen="${esc(c.id)}">${_acOpen===c.id?"Hide":"Applications"}</button></td></tr>
         ${_acOpen===c.id?`<tr><td colspan="9"><div class="list">${pc.map(p=>applicantRowHtml(p)).join("")}
@@ -2391,7 +2425,7 @@ async function adminCampaigns(body, silent){
   document.getElementById("acFilter").onchange = ()=> adminCampaigns(body);
   document.getElementById("acType").onchange = ()=> adminCampaigns(body);
   body.querySelectorAll("[data-acgo]").forEach(b=> b.onclick = async ()=>{
-    const { error } = await sb.rpc("admin_set_campaign_status", { p_id:b.dataset.acgo, p_status:"Sourcing" });
+    const { error } = await sb.rpc("admin_set_campaign_status", { p_id:b.dataset.acgo, p_status:"Live" });
     if(error) alert(error.message); _acSig=""; reload(); });
   body.querySelectorAll("[data-acopen]").forEach(b=> b.onclick = ()=>{ _acOpen = _acOpen===b.dataset.acopen ? null : b.dataset.acopen; _acSig=""; reload(); });
   body.querySelectorAll("[data-acstatus]").forEach(s=> s.onchange = async ()=>{
@@ -4355,6 +4389,31 @@ async function adminCreatorProfile(member, row){
 
 // Super Admin → WhatsApp & email: is every alert actually reaching people? (outbox health, reasons, retry, test)
 let _dlvTimer = null;
+// One WhatsApp UTILITY template per campaign (created by wa-template-sync). Updates for a campaign go out on
+// its template once approved; held messages are re-sent automatically then.
+async function adminWaTemplates(){
+  const box = document.getElementById("dlvTpl"); if(!box) return;
+  const { data, error } = await sb.rpc("admin_wa_templates").then(r=>r, e=>({error:e}));
+  if(error){ box.innerHTML = `<h3 style="margin-top:0">WhatsApp templates</h3><div class="muted">${esc(error.message||error)}</div>`; return; }
+  const L = data||[];
+  const tag = st=> ({approved:'<span class="tag good">approved</span>', submitted:'<span class="tag warn">with Meta</span>', queued:'<span class="tag warn">queued</span>',
+    manual:'<span class="tag warn">create in snapto</span>', failed:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">failed</span>',
+    rejected:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">rejected</span>'})[st]||esc(st);
+  box.innerHTML = `<h3 style="margin-top:0">WhatsApp templates · one per campaign <span class="muted" style="font-size:12px;font-weight:400">· category Utility · footer “Reply STOP…”</span></h3>
+    <p class="muted" style="font-size:12.5px;margin:0 0 10px">Made automatically when a campaign is created. Updates outside WhatsApp's 24-hour window use the campaign's template once it's approved — held messages then go out on their own.</p>
+    ${L.length?`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Campaign</th><th>Template name</th><th>Text</th><th>Status</th><th></th></tr></thead><tbody>
+    ${L.map(t=>`<tr><td><b>${esc(t.campaign||"")}</b><div class="muted" style="font-size:12px">${esc(t.brand||"")}</div></td>
+      <td style="font-size:12px"><code>${esc(t.template_name)}</code> <button class="mini-btn ghost" data-tplcopy="${esc(t.template_name)}" title="Copy name">⧉</button></td>
+      <td style="font-size:12px;max-width:340px;white-space:pre-wrap">${esc(t.body)}<div class="muted">Footer: ${esc(t.footer)}</div>
+        <button class="mini-btn ghost" data-tplcopy="${esc(t.body)}" style="margin-top:4px">Copy text</button></td>
+      <td>${tag(t.status)}${t.error?`<div class="muted" style="font-size:11.5px;max-width:220px">${esc(t.error)}</div>`:""}</td>
+      <td style="white-space:nowrap">${t.status!=="approved"?`<button class="mini-btn" data-tplok="${esc(t.campaign_id)}">Mark approved</button> `:""}<button class="mini-btn ghost" data-tplretry="${esc(t.campaign_id)}">Resubmit</button></td></tr>`).join("")}
+    </tbody></table></div>`:`<div class="muted">No campaign templates yet — one is made with every new campaign.</div>`}`;
+  box.querySelectorAll("[data-tplcopy]").forEach(b=> b.onclick = async ()=>{ try{ await navigator.clipboard.writeText(b.dataset.tplcopy); b.textContent="✓"; }catch(e){ prompt("Copy:", b.dataset.tplcopy); } });
+  const set = async (id, st)=>{ const { error:e } = await sb.rpc("admin_wa_template_set", { p_campaign:id, p_status:st }); if(e) alert(e.message); adminWaTemplates(); };
+  box.querySelectorAll("[data-tplok]").forEach(b=> b.onclick = ()=>{ if(confirm("Only mark it approved once snapto / Meta shows this exact template as Approved. Held WhatsApp updates will go out on it.")) set(b.dataset.tplok, "approved"); });
+  box.querySelectorAll("[data-tplretry]").forEach(b=> b.onclick = ()=> set(b.dataset.tplretry, "queued"));
+}
 async function adminDelivery(body, silent){
   if(!silent) body.innerHTML = skel("table",6);
   const { data, error } = await sb.rpc("admin_delivery");
@@ -4362,7 +4421,7 @@ async function adminDelivery(body, silent){
   const d = data||{}, st = d.stats||{}, n = k=> Number(st[k]||0);
   const ago = t=>{ if(!t) return "never"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
   const jobs = d.jobs||[], runs = d.runs||[], recent = d.recent||[];
-  const waWaiting = recent.filter(r=>r.channel==="whatsapp" && r.status==="skipped" && /^Waiting for WhatsApp template approval/i.test(r.error||"")).length;
+  const waWaiting = recent.filter(r=>r.channel==="whatsapp" && r.status==="skipped" && /^(Waiting for WhatsApp template approval|WhatsApp 24h window closed)/i.test(r.error||"")).length;
   const waSkippedNoTpl = recent.filter(r=>r.channel==="whatsapp" && r.status==="skipped" && /WA_UPDATE_TEMPLATE/i.test(r.error||"")).length;
   const stuck = d.oldest_queued && (Date.now()-new Date(d.oldest_queued).getTime()) > 5*60000;
   const checks = [
@@ -4392,9 +4451,11 @@ async function adminDelivery(body, silent){
       <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>When</th><th>Channel</th><th>To</th><th>Alert</th><th>Status</th><th>Why / note</th></tr></thead><tbody>
       ${recent.map(r=>`<tr><td style="white-space:nowrap;font-size:12px">${esc(fmtDateTime(r.created_at))}</td><td>${r.channel==="whatsapp"?"💬 WhatsApp":"✉️ Email"}</td>
         <td style="font-size:12px"><b>${esc(r.who||"—")}</b>${r.role?` <span class="muted">${esc(r.role)}</span>`:""}<div class="muted">${esc(r.to)}</div></td>
-        <td style="font-size:12px;max-width:280px">${esc(r.title||r.template||"")}</td><td>${tag(r.status==="skipped" && /^Waiting for WhatsApp template approval/i.test(r.error||"") ? "waiting" : r.status)}${r.attempts>1?` <span class="muted" style="font-size:11px">×${r.attempts}</span>`:""}</td>
+        <td style="font-size:12px;max-width:280px">${esc(r.title||r.template||"")}</td><td>${tag(r.status==="skipped" && /^(Waiting for WhatsApp template approval|WhatsApp 24h window closed)/i.test(r.error||"") ? "waiting" : r.status)}${r.attempts>1?` <span class="muted" style="font-size:11px">×${r.attempts}</span>`:""}</td>
         <td style="font-size:12px;max-width:260px" class="muted">${esc(r.error||(r.sent_at?"Sent "+ago(r.sent_at):""))}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">No messages yet.</td></tr>`}
-      </tbody></table></div></div>`;
+      </tbody></table></div></div>
+    <div class="card" style="margin-top:14px" id="dlvTpl"></div>`;
+  adminWaTemplates();
   document.getElementById("dlvRetry").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_retry", { p_channel: null });
     document.getElementById("dlvMsg").textContent = e ? e.message : `${k||0} message(s) re-queued`; setTimeout(()=>adminDelivery(body,true), 3000); };
   document.getElementById("dlvTest").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_test", { p_phone: document.getElementById("dlvPhone").value.trim()||null, p_email: document.getElementById("dlvEmail").value.trim()||null });

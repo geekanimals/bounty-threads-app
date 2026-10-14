@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Update preferences — Geek Influencer OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#f6f7fb;--card:#fff;--ink:#1a1a2e;--muted:#6b7090;--line:rgba(120,130,150,.22);--brand:#6c5ce7;--good:#12b76a}
+  @media (prefers-color-scheme: dark){:root{--bg:#0f1020;--card:#181a30;--ink:#eef0ff;--muted:#9aa0c6;--line:rgba(160,170,210,.18)}}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg);color:var(--ink);font-family:Inter,-apple-system,Segoe UI,Roboto,sans-serif}
+  .box{width:100%;max-width:440px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:28px 24px;box-shadow:0 10px 40px rgba(20,20,60,.08)}
+  .mark{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,#6c5ce7,#8b7bff);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+  h1{font-size:20px;margin:0 0 8px}
+  p{font-size:14.5px;line-height:1.6;color:var(--muted);margin:0 0 18px}
+  button{font:inherit;font-weight:700;font-size:14.5px;border:0;border-radius:11px;padding:12px 18px;cursor:pointer;width:100%}
+  .go{background:var(--brand);color:#fff}
+  .ghost{background:transparent;color:var(--brand);border:1px solid var(--line);margin-top:10px}
+  button:disabled{opacity:.6;cursor:default}
+  .ok{color:var(--good);font-weight:700}
+  .err{color:#dc2626;font-size:13.5px;margin-top:12px}
+  a{color:var(--brand)}
+</style>
+</head>
+<body>
+<main class="box" id="box">
+  <div class="mark">G</div>
+  <h1 id="h">Stop campaign updates?</h1>
+  <p id="p">Loading…</p>
+  <div id="acts"></div>
+  <div class="err" id="err"></div>
+</main>
+<script>
+(function(){
+  var FN = "https://edibibytqfrrxfztukpm.supabase.co/functions/v1/notify-unsubscribe";
+  var KEY = "sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf";
+  var q = new URLSearchParams(location.search), t = q.get("t") || "", c = q.get("c") === "whatsapp" ? "whatsapp" : "email";
+  var label = c === "whatsapp" ? "WhatsApp" : "email";
+  var keep = c === "whatsapp" ? "WhatsApp login codes" : "login and account-recovery codes";
+  var $ = function(id){ return document.getElementById(id); };
+  function ask(){
+    $("h").textContent = "Stop campaign updates on " + label + "?";
+    $("p").textContent = "You won't get campaign updates on " + label + " any more. You'll still see every update in the app, and " + keep + " will keep coming.";
+    $("acts").innerHTML = '<button class="go" id="b">Yes, stop ' + label + ' updates</button>';
+    $("b").onclick = function(){ send(true); };
+  }
+  function done(off){
+    $("h").innerHTML = off ? '<span class="ok">✓ Done</span> — no more ' + label + ' updates' : '<span class="ok">✓ Updates are back on</span>';
+    $("p").textContent = off
+      ? "You can switch them back on any time from the app (tap your photo → Campaign updates), or right here."
+      : "You'll get campaign updates on " + label + " again.";
+    $("acts").innerHTML = off ? '<button class="ghost" id="u">Undo — keep sending me updates</button>' : '<a href="app.html">Open the app →</a>';
+    var u = $("u"); if(u) u.onclick = function(){ send(false); };
+  }
+  function send(off){
+    var b = $("b") || $("u"); if(b){ b.disabled = true; b.textContent = "…"; }
+    $("err").textContent = "";
+    fetch(FN, { method:"POST", headers:{ "Content-Type":"application/json", "apikey":KEY }, body: JSON.stringify({ t:t, c:c, off:off }) })
+      .then(function(r){ return r.json().then(function(j){ return { ok:r.ok, j:j }; }); })
+      .then(function(x){ if(!x.ok) throw new Error((x.j && x.j.error) || "Couldn't update — try again."); done(off); })
+      .catch(function(e){ $("err").textContent = e.message || "Couldn't update — try again."; if(b){ b.disabled = false; b.textContent = off ? "Yes, stop " + label + " updates" : "Undo — keep sending me updates"; } });
+  }
+  if(!/^[0-9a-f-]{36}$/i.test(t)){ $("h").textContent = "This link isn't valid"; $("p").innerHTML = 'Open the app and change your update settings there: <a href="app.html">Open the app</a>.'; return; }
+  ask();
+})();
+</script>
+</body>
+</html>

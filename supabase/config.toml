@@ -92,3 +92,10 @@ verify_jwt = false
 # Instagram discovery for agencies / brands / Super Admin (their own connected Instagram).
 [functions.ig-discover]
 verify_jwt = true
+
+# Unsubscribe link in update emails / WhatsApp (public; the member's notify token is the key)
+[functions.notify-unsubscribe]
+verify_jwt = false
+# One WhatsApp UTILITY template per campaign — CI_WORKER_SECRET-gated worker (pg_cron every 5 min + on new campaign)
+[functions.wa-template-sync]
+verify_jwt = false

@@ -3,21 +3,24 @@
 // the channel works the moment RESEND_API_KEY + EMAIL_FROM are set in Supabase secrets, and swapping to
 // another provider later is a one-env change. No key in the browser; sends only happen from the edge.
 
-export type EmailOut = { to: string; subject: string; html?: string; text?: string };
+export type EmailOut = { to: string; subject: string; html?: string; text?: string; headers?: Record<string, string> };
 export type EmailResult = { id: string | null; raw: unknown };
 
 export interface EmailProvider { send(msg: EmailOut): Promise<EmailResult>; }
 
-// Minimal, safe HTML for a transactional message with a single CTA button.
-export function renderEmailHtml(title: string, body: string, actionUrl?: string, actionLabel?: string): string {
+// Minimal, safe HTML for a transactional message with a single CTA button and an unsubscribe line.
+export function renderEmailHtml(title: string, body: string, actionUrl?: string, actionLabel?: string, unsubscribeUrl?: string): string {
   const esc = (s: string) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
   const cta = actionUrl
     ? `<p style="margin:24px 0"><a href="${esc(actionUrl)}" style="background:#6c5ce7;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;display:inline-block;font-weight:600">${esc(actionLabel || "Open the app")}</a></p>`
     : "";
+  const unsub = unsubscribeUrl
+    ? `<br>Don't want these updates by email? <a href="${esc(unsubscribeUrl)}" style="color:#8b90b8">Unsubscribe</a> — you'll still get login / account-recovery codes.`
+    : "";
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">
     <h2 style="margin:0 0 12px">${esc(title)}</h2>
     <p style="font-size:15px;line-height:1.6;color:#333">${esc(body)}</p>${cta}
-    <p style="font-size:12px;color:#8b90b8;margin-top:28px">Bounty &amp; Threads · you're receiving this about a campaign you're part of.</p>
+    <p style="font-size:12px;color:#8b90b8;margin-top:28px;line-height:1.6">Bounty &amp; Threads · you're receiving this about a campaign you're part of.${unsub}</p>
   </div>`;
 }
 
@@ -29,7 +32,8 @@ class ResendProvider implements EmailProvider {
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: this.from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text }),
+      body: JSON.stringify({ from: this.from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text,
+                             ...(msg.headers ? { headers: msg.headers } : {}) }),
     });
     const raw = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error((raw as any)?.message || (raw as any)?.error?.message || "Resend send failed");
@@ -46,7 +50,7 @@ class SmtpProvider implements EmailProvider {
     if (!host || !user || !pass) throw new Error("email not configured (SMTP_HOST / SMTP_USER / SMTP_PASS).");
     const nodemailer = (await import("npm:nodemailer@6.9.16")).default;
     const t = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
-    const info = await t.sendMail({ from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text });
+    const info = await t.sendMail({ from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text, headers: msg.headers });
     return { id: info?.messageId ?? null, raw: { accepted: info?.accepted ?? [] } };
   }
 }
@@ -54,9 +58,7 @@ class SmtpProvider implements EmailProvider {
 export function getEmailProvider(): EmailProvider {
   const which = (Deno.env.get("EMAIL_PROVIDER") || "").toLowerCase();
   const from = Deno.env.get("EMAIL_FROM") || "";
-  // SMTP when chosen explicitly, or automatically when SMTP is set up and Resend isn't
   if (which === "smtp" || (!Deno.env.get("RESEND_API_KEY") && Deno.env.get("SMTP_HOST"))) return new SmtpProvider();
   if (which === "resend" || !which) return new ResendProvider(Deno.env.get("RESEND_API_KEY") || "", from);
-  // room for ses / sendgrid adapters later — same interface
   return new ResendProvider(Deno.env.get("RESEND_API_KEY") || "", from);
 }
