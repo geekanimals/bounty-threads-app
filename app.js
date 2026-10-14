@@ -1421,6 +1421,8 @@ function openCampaignModal(existing, preset){
   preset = preset || {};
   const ed = existing || {};
   const ip = (ed.ideal_profile && typeof ed.ideal_profile==="object") ? ed.ideal_profile : {};
+  const ct = (ed.contract_terms && typeof ed.contract_terms==="object") ? ed.contract_terms : {};
+  const vb = (ed.video_brief && typeof ed.video_brief==="object") ? ed.video_brief : {};
   let files = Array.isArray(ed.attachments) ? ed.attachments.slice() : [];
   const ctype = ed.campaign_type || preset.campaign_type || (/paid/i.test(ed.type||"") && !/hybrid/i.test(ed.type||"") ? "paid" : /hybrid/i.test(ed.type||"") ? "barter_paid" : "barter");
   const opt = (arr,val)=>arr.map(o=>`<option${o===val?' selected':''}>${o}</option>`).join("");
@@ -1454,6 +1456,23 @@ function openCampaignModal(existing, preset){
       <label>End date<input name="end_date" type="date" value="${esc(ed.end_date||'')}"></label></div>
       <div class="mf-row"><label>Status<select name="status">${opt(["Draft","Sourcing","Approval","In Production","Live","Completed"], ed.status||"Sourcing")}</select></label>
       ${existing?`<label>Progress %<input name="progress" type="number" min="0" max="100" value="${ed.progress!=null?esc(ed.progress):''}" placeholder="0"></label>`:'<span></span>'}</div>
+      <div class="cm-sec">📜 Contract terms <span class="muted" style="font-weight:400;font-size:12px">— sent to each creator automatically the moment you approve them</span></div>
+      <div class="mf-row"><label>Product the creator gets<input name="ct_product" maxlength="140" value="${esc(ct.product||'')}" placeholder="Momo box (12 pcs)"></label>
+      <label>Deliverables in the contract<input name="ct_deliv" maxlength="200" value="${esc(ct.deliverables||'')}" placeholder="1 Reel + 2 Stories"></label></div>
+      <div class="mf-row"><label>Ad rights (months)<input name="ct_months" type="number" min="0" max="24" value="${esc(ct.ad_rights_months??1)}"></label>
+      <label>Content due (days after delivery)<input name="ct_days" type="number" min="1" max="60" value="${esc(ct.content_days??7)}"></label></div>
+      <label class="cp-check"><input type="checkbox" name="ct_collab"${ct.collab_rights===false?'':' checked'}> Collab rights — the creator adds the brand as an Instagram collaborator</label>
+      <label class="cp-check"><input type="checkbox" name="ct_black"${ct.blacklist_clause===false?'':' checked'}> <span><b>Non-delivery = blacklist</b> — if they take the product and don't post on time, they're blacklisted from the platform</span></label>
+      <label class="cp-check"><input type="checkbox" name="ct_reship"${ct.reship_clause===false?'':' checked'}> <span><b>Re-ship at their own cost</b> — they must send the product to another creator we name</span></label>
+      <label>Other terms <span class="muted" style="font-weight:400">(optional)</span><textarea name="ct_extra" rows="2" maxlength="1500" placeholder="e.g. No competitor brands for 30 days after posting">${esc(ct.extra_terms||'')}</textarea></label>
+      <div class="cm-sec">🎬 Video brief <span class="muted" style="font-weight:400;font-size:12px">— sent to the creator automatically when the product is delivered</span></div>
+      <label>What to shoot<textarea name="vb_shoot" rows="2" maxlength="2000" placeholder="Unboxing + first bite, 20–30 sec, vertical 9:16">${esc(vb.what_to_shoot||'')}</textarea></label>
+      <label>Key messages<textarea name="vb_msg" rows="2" maxlength="1500" placeholder="Steamed fresh in 10 minutes, 400+ outlets">${esc(vb.key_messages||'')}</textarea></label>
+      <div class="mf-row"><label>Do's<textarea name="vb_dos" rows="2" maxlength="1000" placeholder="Natural light, show the box">${esc(vb.dos||'')}</textarea></label>
+      <label>Don'ts<textarea name="vb_donts" rows="2" maxlength="1000" placeholder="No other brands in frame">${esc(vb.donts||'')}</textarea></label></div>
+      <div class="mf-row"><label>Caption to use<input name="vb_caption" maxlength="600" value="${esc(vb.caption||'')}" placeholder="Best momos in town 🥟"></label>
+      <label>Reference links<input name="vb_refs" maxlength="600" value="${esc(vb.reference_links||'')}" placeholder="https://instagram.com/reel/…"></label></div>
+      <label>Posting note <span class="muted" style="font-weight:400">(optional)</span><input name="vb_note" maxlength="400" value="${esc(vb.posting_note||'')}" placeholder="Post between 6–9 pm, tag the brand in the story"></label>
       <div class="cm-sec">Ideal influencer profile <span class="muted" style="font-weight:400;font-size:12px">— used to screen & discover creators; never shown to creators</span></div>
       <div class="mf-row"><label>Min followers<input name="ip_min" type="number" min="0" value="${esc(ip.min_followers??'')}" placeholder="10000"></label>
       <label>Max followers<input name="ip_max" type="number" min="0" value="${esc(ip.max_followers??'')}" placeholder="500000"></label></div>
@@ -1540,10 +1559,21 @@ function openCampaignModal(existing, preset){
         platforms:f.getAll("platforms").join(", "), hashtags:f.get("hashtags"), deliverables:f.get("deliverables"), brief:f.get("brief"),
         start_date:f.get("start_date")||null, end_date:f.get("end_date")||null,
         creators: isFinite(creators) && creators>=0 ? creators : 0, attachments: files, ideal_profile: ideal };
+      const txt = k => String(f.get(k)||"").trim();
+      row.contract_terms = { product: txt("ct_product") || null, product_value: t==="paid" ? null : num(f.get("product_value")),
+        deliverables: txt("ct_deliv") || String(f.get("deliverables")||"").trim() || null,
+        ad_rights_months: Math.min(24, Math.max(0, parseInt(f.get("ct_months"))||0)), content_days: Math.min(60, Math.max(1, parseInt(f.get("ct_days"))||7)),
+        collab_rights: !!f.get("ct_collab"), blacklist_clause: !!f.get("ct_black"), reship_clause: !!f.get("ct_reship"), extra_terms: txt("ct_extra") || null };
+      row.video_brief = { what_to_shoot: txt("vb_shoot") || null, key_messages: txt("vb_msg") || null, dos: txt("vb_dos") || null, donts: txt("vb_donts") || null,
+        caption: txt("vb_caption") || null, reference_links: txt("vb_refs") || null, posting_note: txt("vb_note") || null };
       if(existing) row.progress = parseInt(f.get("progress"))||0;
       let error;
-      if(existing){ ({ error } = await sb.from("campaigns").update(row).eq("id", existing.id)); }
-      else { if(window.Auth&&Auth.profile){ row.org_name=Auth.profile.org; row.org_id=Auth.profile.org_id; } ({ error } = await sb.from("campaigns").insert(row)); }
+      const save = r => existing ? sb.from("campaigns").update(r).eq("id", existing.id) : sb.from("campaigns").insert(r);
+      if(!existing && window.Auth&&Auth.profile){ row.org_name=Auth.profile.org; row.org_id=Auth.profile.org_id; }
+      ({ error } = await save(row));
+      if(error && /contract_terms|video_brief/i.test(error.message||"")){   // database not upgraded yet — save the rest
+        delete row.contract_terms; delete row.video_brief; ({ error } = await save(row));
+      }
       if(error) throw error;
       if(window.Tracker) Tracker.security(existing?"campaign_edit":"campaign_create", { campaign: row.name, type: t });
       m.classList.remove("open");
@@ -3340,21 +3370,41 @@ const BARTER_STEPS = [
   ["eligible","2. Screened","Geek checked them against the brand's criteria"],
   ["sent_to_brand","3. Sent to brand","On the final list the brand signs off"],
   ["brand_confirmed","4. Brand confirmed","The brand picked them"],
-  ["contract_sent","5. Contract sent","ASCI, ad rights, collab rights, product, deliverables"],
-  ["contract_signed","6. Contract signed","Signed by the creator"],
+  ["contract_sent","5. Contract sent","Goes out automatically on approval — ASCI, ad rights, collab rights, product, deliverables, non-delivery terms"],
+  ["contract_signed","6. Contract signed","Signed by the creator in the app"],
   ["address_confirmed","7. Address confirmed","Where the product ships"],
-  ["product_sent","8. Courier sent","Product handed to the courier"],
+  ["product_sent","8. Courier sent","Courier + tracking added — the creator can track it"],
   ["product_delivered","9. Courier delivered","Product in their hands"],
-  ["content_created","10. Video brief sent","What to shoot, by when"],
+  ["content_created","10. Video brief sent","Sent automatically on delivery — what to shoot, by when"],
   ["content_submitted","11. Video submitted","Creator sent the cut for review"],
   ["changes_requested","12. Changes asked","Only if something needed fixing"],
   ["content_approved","13. Client approved","Brand signed off on the video"],
   ["published","14. Posted","Reel + story live with caption & tags"],
   ["completed","15. Done","Analytics collected"]
 ];
-let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null;
+// stages from the invite path map onto the same board
+const BP_ALIAS = { invited:"applied", shortlisted:"applied", accepted:"brand_confirmed" };
+// what happens next, in plain words, for whoever is looking at the board
+const BP_NEXT = {
+  applied:"Screen this creator against the brief.",
+  eligible:"Add them to the brand's list.",
+  sent_to_brand:"Waiting for the brand to confirm.",
+  brand_confirmed:"Contract is being sent automatically…",
+  accepted:"Contract is being sent automatically…",
+  contract_sent:"Waiting for the creator to sign the contract.",
+  contract_signed:"Waiting for the creator to confirm their delivery address.",
+  address_confirmed:"Ship the product and add the courier + tracking.",
+  product_sent:"In transit — mark delivered when it arrives (the creator can also confirm).",
+  content_created:"Video brief sent — waiting for the creator's video.",
+  content_submitted:"Video is in — approve it or ask for changes.",
+  changes_requested:"Waiting for the creator to resubmit.",
+  content_approved:"Approved — waiting for the creator to post and add the link.",
+  published:"Live — numbers are collected automatically; mark done any time.",
+  completed:"Done ✓"
+};
+let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null, _bpAnalytics = null;
 function openBarterProcess(campaignId, campaignName){
-  _bpCamp = { id: campaignId, name: campaignName || "this campaign" }; _bpTab = "tracker"; _bpOpen = null;
+  _bpCamp = { id: campaignId, name: campaignName || "this campaign" }; _bpTab = "tracker"; _bpOpen = null; _bpAnalytics = null;
   document.getElementById("bpPanel")?.remove();
   const ov = el("div","ac360"); ov.id = "bpPanel";
   ov.innerHTML = `<div class="ac360-box"><div class="ac360-body" id="bpBody">${skel("list",5)}</div></div>`;
@@ -3368,9 +3418,10 @@ function openBarterProcess(campaignId, campaignName){
   _bpTimer = setInterval(()=>{
     if(!document.getElementById("bpPanel")){ clearInterval(_bpTimer); return; }
     if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open")) return;
-    const a = document.activeElement; if(a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA")) return;
+    const a = document.activeElement; if(a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.tagName==="SELECT")) return;
+    if(_bpTab==="terms") return;      // never repaint a form someone is editing
     loadBarterProcess(true);
-  }, 30000);
+  }, 20000);
 }
 async function loadBarterProcess(silent){
   const body = document.getElementById("bpBody"); if(!body || !_bpCamp) return;
@@ -3380,66 +3431,175 @@ async function loadBarterProcess(silent){
   ]);
   if(t.error){ if(!silent) body.innerHTML = `<div class="card"><div class="muted">${esc(t.error.message||t.error)}</div></div>`; return; }
   _bpData = t.data||{}; _bpData.outreach = o.data||{};
+  if(_bpTab==="analytics") await loadBpAnalytics(true);
   paintBarterProcess();
 }
-function bpStageIndex(stage){ const i = BARTER_STEPS.findIndex(s=>s[0]===stage); return i<0 ? 0 : i; }
+async function loadBpAnalytics(quiet){
+  const { data, error } = await sb.schema("api").rpc("campaign_analytics", { p_campaign:_bpCamp.id }).then(r=>r, e=>({error:e}));
+  _bpAnalytics = error ? { error: error.message||String(error) } : (data||{});
+  if(!quiet) paintBarterProcess();
+}
+function bpStageIndex(stage){ stage = BP_ALIAS[stage] || stage; const i = BARTER_STEPS.findIndex(s=>s[0]===stage); return i<0 ? 0 : i; }
+// a creator whose parcel is delivered sits between "courier sent" and "video brief sent"
+function bpEffectiveIndex(x){ const i = bpStageIndex(x.stage); return (x.stage==="product_sent" && x.shipment && x.shipment.status==="delivered") ? bpStageIndex("product_delivered") : i; }
 function paintBarterProcess(){
   const body = document.getElementById("bpBody"); if(!body) return;
   const d = _bpData||{}, c = d.campaign||{}, list = d.creators||[];
-  const done = s => list.filter(x=> bpStageIndex(x.stage) >= bpStageIndex(s) && !["dropped","rejected","ineligible","brand_declined"].includes(x.stage)).length;
-  const tabs = [["tracker",`👥 Creators (${list.length})`],["outreach","✉️ Outreach message"],["shortlist","📋 List for the brand"]];
+  const failed = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
+  const done = s => list.filter(x=> !failed(x.stage) && bpEffectiveIndex(x) >= bpStageIndex(s)).length;
+  const needsYou = list.filter(x=> ["applied","eligible","sent_to_brand","address_confirmed","product_sent","content_submitted","published"].includes(x.stage)).length;
+  const tabs = [["tracker",`👥 Creators (${list.length})`],["terms","📜 Contract & video brief"],["analytics","📈 Analytics"],["outreach","✉️ Outreach message"],["shortlist","📋 List for the brand"]];
+  const pb = d.playbook||{};
   body.innerHTML = `<div class="ac360-head"><div style="flex:1;min-width:0"><h3>Barter process</h3>
-      <div class="muted">${esc(c.name||_bpCamp.name)}${c.brand?` · ${esc(c.brand)}`:""}${c.product?` · ${esc(c.product)}`:""} — every creator, every step, live.</div></div>
+      <div class="muted">${esc(c.name||_bpCamp.name)}${c.brand?` · ${esc(c.brand)}`:""}${c.product?` · ${esc(c.product)}`:""} — every creator, every step, live. Contract and video brief go out on their own.</div></div>
       <button class="ci-pop-x" id="bpX" aria-label="Close">✕</button></div>
+    ${pb.saved===false?`<div class="ac360-miss">📜 This campaign has no contract terms or video brief saved yet — creators get the defaults (1 month ad rights, collab, 7 days to post, blacklist + re-ship clauses). <a href="#" id="bpGoTerms">Set them now →</a></div>`:""}
+    ${needsYou?`<div class="bp-needs">⚡ <b>${needsYou}</b> creator${needsYou>1?"s need":" needs"} something from you — open them below.</div>`:""}
     <div class="bp-flow">${BARTER_STEPS.filter(s=>s[0]!=="changes_requested").map(s=>`<div class="bp-fstep"><b>${done(s[0])}</b><span>${esc(s[1].replace(/^\d+\.\s*/,""))}</span></div>`).join("")}</div>
     <div class="admin-tabs ac360-tabs">${tabs.map(t=>`<button class="${_bpTab===t[0]?"act":""}" data-bptab="${t[0]}">${t[1]}</button>`).join("")}</div>
-    <div class="ac360-sec">${_bpTab==="tracker"?bpTrackerHtml(list):_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(list)}</div>`;
+    <div class="ac360-sec">${_bpTab==="tracker"?bpTrackerHtml(list):_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(list)}</div>`;
   body.querySelector("#bpX").onclick = ()=> window.__bpClose && window.__bpClose();
-  body.querySelectorAll("[data-bptab]").forEach(b=> b.onclick = ()=>{ _bpTab = b.dataset.bptab; paintBarterProcess(); });
+  const goT = body.querySelector("#bpGoTerms"); if(goT) goT.onclick = e=>{ e.preventDefault(); _bpTab="terms"; paintBarterProcess(); };
+  body.querySelectorAll("[data-bptab]").forEach(b=> b.onclick = async ()=>{
+    _bpTab = b.dataset.bptab;
+    if(_bpTab==="analytics"){ _bpAnalytics = null; paintBarterProcess(); await loadBpAnalytics(); return; }
+    paintBarterProcess(); });
   wireBarterProcess();
+}
+function bpMetricLine(st){
+  st = st||{}; const K = [["views","views"],["reach","reach"],["likes","likes"],["comments","comments"],["shares","shares"],["saves","saves"]];
+  const parts = K.filter(k=> st[k[0]]!=null).map(k=>`${esc(k[1])} <b>${fmtNum(st[k[0]])}</b>`);
+  return parts.length ? parts.join(" · ") + (st.source==="public" ? ' <span class="muted">(public counts — full insights load once Instagram shares them)</span>' : "") : '<span class="muted">numbers load within a few hours of posting</span>';
 }
 function bpTrackerHtml(list){
   if(!list.length) return `<div class="card"><div class="muted">Nobody in this campaign yet. Send the outreach message, or invite creators from the campaign's 🎯 Invite panel.</div></div>`;
   const fail = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
+  const today = new Date().toISOString().slice(0,10);
   return list.map(x=>{
-    const cr = x.creator||{}, idx = bpStageIndex(x.stage), st = x.steps||{}, ship = x.shipment||{}, con = x.contract||{};
+    const cr = x.creator||{}, idx = bpEffectiveIndex(x), st = x.steps||{}, ship = x.shipment||{}, con = x.contract||{};
+    const sub = x.submission, rev = x.review, posts = x.posts||[], to = x.ship_to;
     const open = _bpOpen === x.participation_id;
     const pct = fail(x.stage) ? 0 : Math.round(100*(idx+1)/BARTER_STEPS.length);
-    const metrics = (x.deliverables||[]).map(dv=>dv.metrics||{}).reduce((a,m)=>{ Object.keys(m).forEach(k=>a[k]=(a[k]||0)+Number(m[k]||0)); return a; }, {});
+    const overdue = x.due_on && x.due_on < today && ["content_created","changes_requested"].includes(x.stage);
+    const label = fail(x.stage) ? `<b>${esc(String(x.stage).replace(/_/g," "))}</b>${x.reason?` — ${esc(x.reason)}`:""}`
+                : esc((BARTER_STEPS[idx]||["","—"])[1]) + (BP_NEXT[x.stage] ? ` · <span class="bp-next">${esc(BP_NEXT[x.stage])}</span>` : "");
+    const P = x.participation_id;
     return `<div class="card bp-card${open?" open":""}">
-      <div class="bp-head" data-bpopen="${esc(x.participation_id)}">
+      <div class="bp-head" data-bpopen="${esc(P)}">
         ${cr.profile_picture_url?`<img class="ap-pic" src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((cr.username||"?").slice(0,2).toUpperCase())}</span>`}
         <div style="flex:1;min-width:0">
           <div class="r-title">${cr.username?`@${esc(cr.username)}`:esc(cr.name||"Creator")}
             ${x.applied_profile && x.applied_profile!==cr.username?`<span class="tag">via @${esc(x.applied_profile)}</span>`:""}
-            ${x.blacklisted?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⛔ Blacklisted</span>':""}</div>
-          <div class="r-sub">${cr.followers!=null?fmtNum(cr.followers)+" followers · ":""}${fail(x.stage)?`<b>${esc(String(x.stage).replace(/_/g," "))}</b>${x.reason?` — ${esc(x.reason)}`:""}`:esc((BARTER_STEPS[idx]||["","—"])[1])}</div>
+            ${x.blacklisted?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⛔ Blacklisted</span>':""}
+            ${overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':""}</div>
+          <div class="r-sub">${cr.followers!=null?fmtNum(cr.followers)+" followers · ":""}${label}</div>
           <div class="bp-bar"><span style="width:${pct}%${fail(x.stage)?";background:#dc2626":""}"></span></div></div>
         <span class="bp-caret">${open?"▲":"▼"}</span></div>
       ${open?`<div class="bp-detail">
         <ol class="bp-steps">${BARTER_STEPS.map((s,i)=>{
           const at = st[s[0]] || (s[0]==="applied" ? x.applied_at : null)
                   || (s[0]==="product_sent" ? ship.shipped_at : null) || (s[0]==="product_delivered" ? ship.delivered_at : null)
-                  || (s[0]==="contract_sent" ? con.issued_at : null) || (s[0]==="contract_signed" ? con.signed_at : null);
+                  || (s[0]==="contract_sent" ? con.issued_at : null) || (s[0]==="contract_signed" ? con.signed_at : null)
+                  || (s[0]==="brand_confirmed" ? st.accepted : null);
           const reached = !!at || (!fail(x.stage) && i <= idx);
+          const here = !fail(x.stage) && i === idx && x.stage!=="completed";
           if(s[0]==="changes_requested" && !at) return "";
-          return `<li class="${reached?"on":""}"><div><b>${esc(s[1])}</b><span>${esc(s[2])}</span></div>
+          return `<li class="${reached?"on":""}${here?" here":""}"><div><b>${esc(s[1])}${here?' <em class="bp-here">← now</em>':""}</b><span>${esc(s[2])}</span></div>
             <span class="bp-at">${at?esc(fmtDateTime(at)):reached?"✓":"—"}</span></li>`; }).join("")}</ol>
         <div class="bp-facts">
-          ${con.signed_at?`<div>📜 Contract signed ${esc(fmtDate(con.signed_at))} · ASCI ${con.asci_ack?"✓":"✕"} · ad rights ${esc(con.ad_rights_months||1)} month${(con.ad_rights_months||1)>1?"s":""} · collab rights ${con.collab_rights?"✓":"✕"}</div>`:""}
-          ${ship.status?`<div>🚚 ${esc(String(ship.status))}${ship.courier?` · ${esc(ship.courier)}`:""}${ship.tracking_ref?` · <b>${esc(ship.tracking_ref)}</b>`:""}${ship.delivered_at?` · delivered ${esc(fmtDate(ship.delivered_at))}`:""}</div>`:""}
-          ${(x.deliverables||[]).map(dv=>`<div>🎬 ${esc(dv.format||"content")}${dv.quantity>1?` ×${dv.quantity}`:""} — <b>${esc(dv.status||"expected")}</b>${dv.expected_by?` · due ${esc(fmtDate(dv.expected_by))}`:""}${dv.permalink?` · <a href="${esc(safeUrl(dv.permalink))}" target="_blank" rel="noopener">open post ↗</a>`:""}</div>`).join("")}
-          ${Object.keys(metrics).length?`<div>📈 ${Object.keys(metrics).map(k=>`${esc(k)}: <b>${fmtNum(metrics[k])}</b>`).join(" · ")}</div>`:""}
+          ${con.issued_at?`<div>📜 Contract ${con.signed_at?`<b>signed</b> by ${esc(con.signature_name||"the creator")} on ${esc(fmtDate(con.signed_at))}`:`sent ${esc(fmtDate(con.issued_at))} — <b>not signed yet</b>`}
+             · ${esc(con.product||"product")} · ${(con.deliverables||[]).map(d=>`${esc(d.quantity||1)}× ${esc(d.format||"content")}`).join(" + ")||"—"}
+             · ${esc(con.content_days||7)} days to post · ad rights ${esc(con.ad_rights_months??1)} mo · collab ${con.collab_rights?"✓":"✕"}
+             ${(con.clauses||[]).some(c=>c.key==="non_delivery")?" · ⛔ blacklist clause":""}${(con.clauses||[]).some(c=>c.key==="reship")?" · ↪ re-ship clause":""}
+             <a href="#" data-bpclauses="${esc(P)}">read the contract</a></div>`:""}
+          ${to?`<div>📍 Ship to: <b>${esc(to.name||"")}</b>, ${[to.line1,to.line2,to.landmark,to.city,to.state,to.postal_code].filter(Boolean).map(esc).join(", ")}${to.phone?` · 📞 ${esc(to.phone)}`:""}</div>`:""}
+          ${ship.status?`<div>🚚 ${esc({pending:"Waiting for courier",shipped:"In transit",delivered:"Delivered",failed:"Delivery failed"}[ship.status]||ship.status)}${ship.courier?` · ${esc(ship.courier)}`:""}${ship.tracking_ref?` · <b>${esc(ship.tracking_ref)}</b>`:""}${ship.tracking_url?` · <a href="${esc(safeUrl(ship.tracking_url))}" target="_blank" rel="noopener">track ↗</a>`:""}${ship.delivered_at?` · delivered ${esc(fmtDate(ship.delivered_at))}`:ship.shipped_at?` · sent ${esc(fmtDate(ship.shipped_at))}`:""}</div>`:""}
+          ${x.due_on && !["published","completed"].includes(x.stage)?`<div>⏳ Video due <b>${esc(fmtDate(x.due_on))}</b>${overdue?' — <b style="color:#dc2626">overdue</b> (contract: blacklist + re-ship at their cost)':""}</div>`:""}
+          ${sub?`<div>🎬 Video${sub.rounds>1?` (round ${esc(sub.rounds)})`:""}: <a href="${esc(safeUrl(sub.url))}" target="_blank" rel="noopener">open the cut ↗</a> · ${esc(fmtDateTime(sub.submitted_at))}${sub.note?` · “${esc(sub.note)}”`:""}</div>`:""}
+          ${rev?`<div>${rev.decision==="approved"?"✅ Approved":"✏️ Changes asked"} ${esc(fmtDateTime(rev.at))}${rev.reason?` — “${esc(rev.reason)}”`:""}</div>`:""}
+          ${posts.map(p=>`<div>📲 ${esc(p.media_type)} posted ${esc(fmtDate(p.posted_at))}${p.permalink?` · <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener">open ↗</a>`:""}<div class="bp-metrics">${bpMetricLine(p.stats)}</div></div>`).join("")}
         </div>
         <div class="bp-acts">
-          ${x.stage==="applied"?`<button class="btn sm" data-bpscreen="${esc(x.participation_id)}">✓ Meets the brief</button><button class="btn sm ghost" data-bpreject="${esc(x.participation_id)}">Not a fit</button>`:""}
-          ${x.stage==="eligible"?`<button class="btn sm" data-bpsend="${esc(x.participation_id)}">📋 Add to the brand's list</button>`:""}
-          ${x.stage==="sent_to_brand"?`<button class="btn sm" data-bpbrand="${esc(x.participation_id)}">✅ Brand confirmed</button><button class="btn sm ghost" data-bpbrandno="${esc(x.participation_id)}">Brand passed</button>`:""}
-          ${x.stage==="brand_confirmed"?`<button class="btn sm" data-bpcontract="${esc(x.participation_id)}">📜 Send contract</button>`:""}
-          ${["address_confirmed","contract_signed"].includes(x.stage)?`<button class="btn sm" data-bpship="${esc(x.participation_id)}">🚚 Record courier</button>`:""}
-          ${!["dropped","rejected","completed"].includes(x.stage)?`<button class="btn sm ghost" data-bpreassign="${esc(x.participation_id)}">↪ Send product to someone else</button>
-            <button class="btn sm ghost" data-bpblack="${esc(x.participation_id)}">⛔ Blacklist</button>`:""}
+          ${x.stage==="applied"?`<button class="btn sm" data-bpscreen="${esc(P)}">✓ Meets the brief</button><button class="btn sm ghost" data-bpreject="${esc(P)}">Not a fit</button>`:""}
+          ${x.stage==="eligible"?`<button class="btn sm" data-bpsend="${esc(P)}">📋 Add to the brand's list</button>`:""}
+          ${x.stage==="sent_to_brand"?`<button class="btn sm" data-bpbrand="${esc(P)}">✅ Brand confirmed</button><button class="btn sm ghost" data-bpbrandno="${esc(P)}">Brand passed</button>`:""}
+          ${["brand_confirmed","accepted"].includes(x.stage)?`<button class="btn sm" data-bpcontract="${esc(P)}">📜 Send contract now</button>`:""}
+          ${x.stage==="contract_sent"?`<button class="btn sm ghost" data-bpcontract="${esc(P)}">🔁 Resend contract (latest terms)</button>`:""}
+          ${["address_confirmed","accepted"].includes(x.stage)?`<button class="btn sm" data-bpship="${esc(P)}">🚚 Add courier &amp; tracking</button>`:""}
+          ${["product_sent","content_created"].includes(x.stage)&&ship.status!=="delivered"?`<button class="btn sm ghost" data-bpship="${esc(P)}">✎ Edit courier</button>`:""}
+          ${x.stage==="product_sent"&&ship.status==="shipped"?`<button class="btn sm" data-bpdeliv="${esc(P)}">📦 Mark delivered → send video brief</button>`:""}
+          ${x.stage==="content_submitted"?`<button class="btn sm" data-bpapprove="${esc(P)}">✅ Approve video</button><button class="btn sm ghost" data-bpchanges="${esc(P)}">✏️ Ask for changes</button>`:""}
+          ${["published","completed"].includes(x.stage)&&posts.length?`<button class="btn sm ghost" data-bpmetrics="${esc(P)}">📈 Add numbers</button>`:""}
+          ${x.stage==="published"?`<button class="btn sm" data-bpdone="${esc(P)}">🏁 Mark done</button>`:""}
+          ${!["dropped","rejected","completed","published","ineligible","brand_declined"].includes(x.stage)?`<button class="btn sm ghost" data-bpreassign="${esc(P)}">↪ Send product to someone else</button>`:""}
+          ${!x.blacklisted&&!["completed"].includes(x.stage)?`<button class="btn sm ghost" data-bpblack="${esc(P)}">⛔ Blacklist</button>`:""}
         </div></div>`:""}</div>`; }).join("");
+}
+// the contract terms + video brief this campaign sends out (editable here too)
+function bpTermsHtml(){
+  const pb = (_bpData&&_bpData.playbook)||{}, k = pb.contract||{}, b = pb.brief||{};
+  const ta = (id,label,val,ph,rows)=>`<label class="cp-f"><span>${label}</span><textarea id="${id}" rows="${rows||2}" placeholder="${esc(ph||"")}">${esc(val||"")}</textarea></label>`;
+  const inp = (id,label,val,ph,type)=>`<label class="cp-f"><span>${label}</span><input id="${id}" ${type?`type="${type}"`:""} placeholder="${esc(ph||"")}" value="${esc(val??"")}"></label>`;
+  return `<div class="card"><h4 style="margin-top:0">📜 Contract — goes out automatically when a creator is approved</h4>
+    <p class="muted" style="font-size:13px;margin:0 0 12px">Changes apply to contracts sent from now on. Use “Resend contract” on a creator who hasn't signed yet to give them the latest terms.</p>
+    <div class="cp-grid">
+      ${inp("bpkProd","Product the creator gets",k.product,"Momo box (12 pcs)")}
+      ${inp("bpkVal","Product value (₹)",k.product_value,"1500","number")}
+      ${inp("bpkDel","Deliverables",k.deliverables,"1 Reel + 2 Stories")}
+      ${inp("bpkDays","Content due (days after delivery)",k.content_days??7,"7","number")}
+      ${inp("bpkMonths","Ad rights (months)",k.ad_rights_months??1,"1","number")}
+    </div>
+    <label class="cp-check"><input type="checkbox" id="bpkCollab"${k.collab_rights===false?"":" checked"}> Collab rights — the creator adds the brand as an Instagram collaborator</label>
+    <label class="cp-check"><input type="checkbox" id="bpkBlack"${k.blacklist_clause===false?"":" checked"}> <span><b>Non-delivery = blacklist</b> from the platform</span></label>
+    <label class="cp-check"><input type="checkbox" id="bpkReship"${k.reship_clause===false?"":" checked"}> <span><b>Re-ship the product at their own cost</b> to another creator we name</span></label>
+    ${ta("bpkExtra","Other terms (optional)",k.extra_terms,"No competitor brands for 30 days after posting")}
+  </div>
+  <div class="card"><h4 style="margin-top:0">🎬 Video brief — goes out automatically when the product is delivered</h4>
+    ${ta("bpbShoot","What to shoot",b.what_to_shoot,"Unboxing + first bite, 20–30 sec, vertical 9:16",3)}
+    ${ta("bpbMsg","Key messages",b.key_messages,"Steamed fresh in 10 minutes, 400+ outlets")}
+    <div class="cp-grid">${ta("bpbDos","Do's",b.dos,"Natural light, show the box")}${ta("bpbDonts","Don'ts",b.donts,"No other brands in frame")}</div>
+    <div class="cp-grid">${inp("bpbCap","Caption to use",b.caption,"Best momos in town 🥟")}${inp("bpbRefs","Reference links",b.reference_links,"https://instagram.com/reel/…")}</div>
+    <div class="cp-grid">${inp("bpbTags","Hashtags",b.hashtags,"#momofest #ad")}${inp("bpbMent","Tag / mention",b.mentions,"@momoco")}</div>
+    ${inp("bpbNote","Posting note (optional)",b.posting_note,"Post between 6–9 pm, tag the brand in the story")}
+    <div class="cp-addrow"><button class="btn sm" id="bpSaveTerms">Save contract &amp; brief</button><span class="cp-hint" id="bpTermsOut"></span></div>
+  </div>`;
+}
+function bpAnalyticsHtml(){
+  const a = _bpAnalytics;
+  if(!a) return skel("list",3);
+  if(a.error) return `<div class="card"><div class="muted">${esc(a.error)}</div></div>`;
+  const t = a.totals||{}, rows = a.creators||[];
+  const er = (t.followers && (t.likes!=null||t.comments!=null)) ? (100*((t.likes||0)+(t.comments||0)+(t.shares||0)+(t.saves||0))/t.followers).toFixed(2)+"%" : "—";
+  const tile = (v,l)=>`<div class="ws-stat"><b>${v==null?"—":fmtNum(v)}</b><span>${l}</span></div>`;
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div><h4 style="margin:0">Campaign report</h4><div class="muted" style="font-size:13px">Every creator who posted, with their numbers. Updates on its own as Instagram shares insights.</div></div>
+      <button class="btn sm" id="bpRepCsv" ${rows.length?"":"disabled"}>⬇ Download report</button></div>
+    <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr));margin-top:12px">
+      ${tile(t.creators_live,"Creators live")}${tile(t.posts,"Posts")}${tile(t.views,"Views")}${tile(t.reach,"Reach")}
+      ${tile(t.likes,"Likes")}${tile(t.comments,"Comments")}${tile(t.shares,"Shares")}${tile(t.saves,"Saves")}
+      <div class="ws-stat"><b>${er}</b><span>Engagement on followers</span></div>${tile(t.followers,"Combined followers")}</div></div>
+    ${rows.length?`<div class="card"><h4 style="margin-top:0">Per creator</h4><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Creator</th><th>Followers</th><th>Posts</th><th>Views</th><th>Reach</th><th>Likes</th><th>Comments</th><th>Shares</th><th>Saves</th><th>Status</th></tr></thead><tbody>
+      ${rows.map(r=>{ const c=r.creator||{}, s=r.totals||{}, n=v=>v==null?"—":fmtNum(v);
+        return `<tr><td><b>@${esc(c.username||"")}</b>${(r.posts||[]).map(p=>p.permalink?` <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener" title="${esc(p.media_type)}">↗</a>`:"").join("")}</td>
+          <td>${n(c.followers)}</td><td>${(r.posts||[]).length}</td><td>${n(s.views)}</td><td>${n(s.reach)}</td><td>${n(s.likes)}</td><td>${n(s.comments)}</td><td>${n(s.shares)}</td><td>${n(s.saves)}</td>
+          <td>${r.stage==="completed"?'<span class="tag good">Done</span>':r.stage==="published"?'<span class="tag warn">Live</span>':'<span class="tag">Approved — not posted</span>'}</td></tr>`; }).join("")}
+    </tbody></table></div></div>`:`<div class="card"><div class="muted">No posts yet — creators show up here as soon as their reel goes live.</div></div>`}`;
+}
+function bpDownloadReport(){
+  const a = _bpAnalytics||{}, rows = a.creators||[], c = a.campaign||{};
+  const cell = v=>{ v = v==null?"":String(v); return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; };
+  const head = ["Creator","Followers","Post type","Post link","Posted on","Views","Reach","Likes","Comments","Shares","Saves","Status"];
+  const lines = [];
+  rows.forEach(r=>{ const cr=r.creator||{}; (r.posts||[]).forEach(p=>{ const s=p.stats||{};
+    lines.push(["@"+(cr.username||""), cr.followers??"", p.media_type, p.permalink||"", p.posted_at?new Date(p.posted_at).toLocaleDateString("en-IN"):"",
+      s.views??"", s.reach??"", s.likes??"", s.comments??"", s.shares??"", s.saves??"", r.stage].map(cell).join(",")); }); });
+  const t = a.totals||{};
+  const csv = [`${c.name||"Campaign"} — report`, `${c.brand||""}`, "",
+    `Creators live,${t.creators_live??""}`, `Posts,${t.posts??""}`, `Views,${t.views??""}`, `Reach,${t.reach??""}`, `Likes,${t.likes??""}`,
+    `Comments,${t.comments??""}`, `Shares,${t.shares??""}`, `Saves,${t.saves??""}`, "", head.join(","), ...lines].join("\n");
+  const el2 = document.createElement("a");
+  el2.href = URL.createObjectURL(new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8" }));
+  el2.download = `${(c.name||"campaign").replace(/[^\w\-]+/g,"_")}_report.csv`; el2.click();
 }
 function bpOutreachHtml(){
   const o = _bpData.outreach||{};
@@ -3475,7 +3635,7 @@ function bpMessageText(){
   ].filter(Boolean).join("\n");
 }
 function bpShortlistHtml(list){
-  const ok = list.filter(x=>["eligible","sent_to_brand","brand_confirmed"].includes(x.stage));
+  const ok = list.filter(x=> x.stage==="eligible" || x.stage==="sent_to_brand" || bpStageIndex(x.stage) >= bpStageIndex("brand_confirmed") && !["dropped","rejected","ineligible","brand_declined"].includes(x.stage));
   return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
       <div><h4 style="margin:0">Final list for the brand</h4><div class="muted" style="font-size:13px">Everyone who cleared screening. Download it and send it to the brand to sign off.</div></div>
       <button class="btn sm" id="bpXls" ${ok.length?"":"disabled"}>⬇ Download Excel</button></div>
@@ -3485,7 +3645,7 @@ function bpShortlistHtml(list){
           <td>${cr.followers!=null?fmtNum(cr.followers):"—"}</td><td>${cr.engagement!=null?cr.engagement+"%":"—"}</td>
           <td>${esc(cr.city||"—")}</td><td>${esc((cr.categories||[]).join(", ")||"—")}</td>
           <td>${x.applied_profile?"@"+esc(x.applied_profile):"—"}</td>
-          <td>${x.stage==="brand_confirmed"?'<span class="tag good">Brand confirmed</span>':x.stage==="sent_to_brand"?'<span class="tag warn">With the brand</span>':'<span class="tag">Screened</span>'}</td></tr>`; }).join("")}
+          <td>${bpStageIndex(x.stage)>=bpStageIndex("brand_confirmed")?'<span class="tag good">Brand confirmed</span>':x.stage==="sent_to_brand"?'<span class="tag warn">With the brand</span>':'<span class="tag">Screened</span>'}</td></tr>`; }).join("")}
     </tbody></table></div>`:`<div class="muted" style="padding:10px">Nobody has cleared screening yet — screen the creators in the Creators tab first.</div>`}</div>`;
 }
 function wireBarterProcess(){
@@ -3494,7 +3654,7 @@ function wireBarterProcess(){
   const call = async (fn, args, btn, label)=>{
     if(btn){ btn.disabled = true; btn.textContent = "…"; }
     const { error } = await sb.schema("api").rpc(fn, args);
-    if(error){ alert(error.message); if(btn){ btn.disabled=false; btn.textContent=label; } return false; }
+    if(error){ alert(error.message); if(btn){ btn.disabled=false; btn.innerHTML=label; } return false; }
     again(); return true;
   };
   body.querySelectorAll("[data-bpopen]").forEach(h=> h.onclick = ()=>{ _bpOpen = _bpOpen===h.dataset.bpopen ? null : h.dataset.bpopen; paintBarterProcess(); });
@@ -3507,12 +3667,37 @@ function wireBarterProcess(){
   body.querySelectorAll("[data-bpbrandno]").forEach(b=> b.onclick = async ()=>{
     const r = (prompt("What did the brand say?")||"").trim(); if(!r) return;
     call("brand_decide_participation", { p_participation:b.dataset.bpbrandno, p_confirm:false, p_reason:r }, b, "Brand passed"); });
-  body.querySelectorAll("[data-bpcontract]").forEach(b=> b.onclick = ()=> openBpContract(b.dataset.bpcontract));
+  body.querySelectorAll("[data-bpcontract]").forEach(b=> b.onclick = ()=> call("bp_send_contract", { p_participation:b.dataset.bpcontract }, b, b.innerHTML));
+  body.querySelectorAll("[data-bpclauses]").forEach(a=> a.onclick = e=>{ e.preventDefault(); openBpClauses(a.dataset.bpclauses); });
   body.querySelectorAll("[data-bpship]").forEach(b=> b.onclick = ()=> openBpShipment(b.dataset.bpship));
+  body.querySelectorAll("[data-bpdeliv]").forEach(b=> b.onclick = ()=>{
+    if(!confirm("Mark the parcel as delivered? The video brief goes to the creator right away.")) return;
+    call("bp_mark_delivered", { p_participation:b.dataset.bpdeliv }, b, b.innerHTML); });
+  body.querySelectorAll("[data-bpapprove]").forEach(b=> b.onclick = ()=> call("bp_review_video", { p_participation:b.dataset.bpapprove, p_approve:true, p_reason:null }, b, b.innerHTML));
+  body.querySelectorAll("[data-bpchanges]").forEach(b=> b.onclick = ()=> openBpChanges(b.dataset.bpchanges));
+  body.querySelectorAll("[data-bpmetrics]").forEach(b=> b.onclick = ()=> openBpMetrics(b.dataset.bpmetrics));
+  body.querySelectorAll("[data-bpdone]").forEach(b=> b.onclick = ()=> call("bp_mark_done", { p_participation:b.dataset.bpdone }, b, b.innerHTML));
   body.querySelectorAll("[data-bpblack]").forEach(b=> b.onclick = async ()=>{
-    const r = (prompt("Blacklist this creator — why?\nThey stay on the list until you lift it.")||"").trim(); if(!r) return;
+    const r = (prompt("Blacklist this creator — why?\nThey stay on the list until you lift it. Per the contract they must re-ship the product at their own cost — use “Send product to someone else” to pick who.")||"").trim(); if(!r) return;
     call("blacklist_creator", { p_participation:b.dataset.bpblack, p_reason:r }, b, "⛔ Blacklist"); });
   body.querySelectorAll("[data-bpreassign]").forEach(b=> b.onclick = ()=> openBpReassign(b.dataset.bpreassign));
+  const rep = body.querySelector("#bpRepCsv"); if(rep) rep.onclick = ()=> bpDownloadReport();
+  const terms = body.querySelector("#bpSaveTerms");
+  if(terms) terms.onclick = async ()=>{
+    const v = id => ((document.getElementById(id)||{}).value || "").trim(), ck = id => !!(document.getElementById(id)||{}).checked;
+    const out = document.getElementById("bpTermsOut");
+    if(!v("bpkDel")){ out.textContent = "Add the deliverables (e.g. 1 Reel + 2 Stories) — a contract without them can't be signed."; return; }
+    const contract = { product: v("bpkProd")||null, product_value: v("bpkVal")?Number(v("bpkVal")):null, deliverables: v("bpkDel"),
+      content_days: Math.min(60, Math.max(1, parseInt(v("bpkDays"))||7)), ad_rights_months: Math.min(24, Math.max(0, parseInt(v("bpkMonths"))||0)),
+      collab_rights: ck("bpkCollab"), blacklist_clause: ck("bpkBlack"), reship_clause: ck("bpkReship"), extra_terms: v("bpkExtra")||null };
+    const brief = { what_to_shoot: v("bpbShoot")||null, key_messages: v("bpbMsg")||null, dos: v("bpbDos")||null, donts: v("bpbDonts")||null,
+      caption: v("bpbCap")||null, reference_links: v("bpbRefs")||null, hashtags: v("bpbTags")||null, mentions: v("bpbMent")||null, posting_note: v("bpbNote")||null };
+    terms.disabled = true; terms.textContent = "Saving…";
+    const { data, error } = await sb.schema("api").rpc("save_playbook", { p_campaign:_bpCamp.id, p_contract:contract, p_brief:brief });
+    terms.disabled = false; terms.innerHTML = "Save contract &amp; brief";
+    if(error){ out.textContent = error.message; return; }
+    _bpData.playbook = data; out.textContent = "Saved ✓ — every new contract and brief uses this.";
+  };
   const save = body.querySelector("#bpSaveMsg");
   if(save) save.onclick = async ()=>{
     const v = id => (document.getElementById(id)||{}).value || "";
@@ -3536,67 +3721,91 @@ function wireBarterProcess(){
   if(xls) xls.onclick = ()=> bpDownloadShortlist();
 }
 function bpDownloadShortlist(){
-  const list = (_bpData.creators||[]).filter(x=>["eligible","sent_to_brand","brand_confirmed"].includes(x.stage));
+  const list = (_bpData.creators||[]).filter(x=> x.stage==="eligible" || x.stage==="sent_to_brand" || bpStageIndex(x.stage) >= bpStageIndex("brand_confirmed") && !["dropped","rejected","ineligible","brand_declined"].includes(x.stage));
   const c = _bpData.campaign||{};
   const cols = ["#","Creator","Instagram","Followers","Engagement %","City","Categories","Applied with","Status","Applied on"];
   const cell = v=>{ v = Array.isArray(v) ? v.join("; ") : (v==null?"":String(v)); return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; };
   const rows = list.map((x,i)=>{ const cr=x.creator||{};
     return [i+1, cr.name||"", cr.username?"@"+cr.username:"", cr.followers??"", cr.engagement??"", cr.city||"",
             (cr.categories||[]).join("; "), x.applied_profile?"@"+x.applied_profile:"",
-            x.stage==="brand_confirmed"?"Brand confirmed":x.stage==="sent_to_brand"?"With the brand":"Screened",
+            bpStageIndex(x.stage)>=bpStageIndex("brand_confirmed")?"Brand confirmed":x.stage==="sent_to_brand"?"With the brand":"Screened",
             x.applied_at?new Date(x.applied_at).toLocaleDateString("en-IN"):""].map(cell).join(","); });
   const csv = [`${c.name||"Campaign"} — final creator list`, `${c.brand||""}`, "", cols.join(","), ...rows].join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8" }));
   a.download = `${(c.name||"campaign").replace(/[^\w\-]+/g,"_")}_final_list.csv`; a.click();
 }
-function openBpContract(part){
+function bpModal(title, inner){
   let m = document.getElementById("bpModal"); if(m) m.remove();
   m = el("div","modal-overlay"); m.id = "bpModal";
-  m.innerHTML = `<div class="modal"><div class="modal-head"><strong>Send the contract</strong><button class="icon-btn" id="bpMx">✕</button></div>
-    <form class="modal-form" id="bpCForm">
-      <p class="muted" style="font-size:13px;margin:0">The creator signs this in the app. ASCI disclosure is always required.</p>
-      <div class="mf-row"><label>Ad rights (months)<input name="months" type="number" min="0" max="24" value="1"></label>
-      <label>Product<input name="product" placeholder="Momo box (₹1,500)"></label></div>
-      <label class="cp-check"><input type="checkbox" name="collab" checked> Collab rights — the brand can post this as a collab</label>
-      <label>Deliverables<input name="deliv" placeholder="1 Reel + 2 Stories" required></label>
-      <div class="auth-err" id="bpCErr"></div><button class="btn" type="submit">Send contract</button></form></div>`;
+  m.innerHTML = `<div class="modal"><div class="modal-head"><strong>${title}</strong><button class="icon-btn" id="bpMx">✕</button></div>${inner}</div>`;
   document.body.appendChild(m); m.classList.add("open");
   document.getElementById("bpMx").onclick = ()=> m.remove();
   m.onclick = e=>{ if(e.target.id==="bpModal") m.remove(); };
-  document.getElementById("bpCForm").onsubmit = async e=>{
-    e.preventDefault();
-    const f = new FormData(e.target), err = document.getElementById("bpCErr"), btn = e.target.querySelector("button");
-    const deliv = String(f.get("deliv")||"").trim();
-    if(!deliv){ err.textContent = "Deliverables are required — a contract with none can't be signed."; return; }
-    btn.disabled = true; btn.textContent = "Sending…";
-    const payload = { ad_rights_months: Number(f.get("months"))||1, collab_rights: !!f.get("collab"),
-                      product: String(f.get("product")||"").trim() || null,
-                      deliverables: deliv.split(/\s*\+\s*|,/).map(s=>s.trim()).filter(Boolean).map(s=>({ format:s, quantity:1 })) };
-    const { error } = await sb.schema("api").rpc("send_contract", { p_participation:part, p_payload:payload });
-    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Send contract"; return; }
-    m.remove(); loadBarterProcess(true);
-  };
+  return m;
+}
+function openBpClauses(part){
+  const x = ((_bpData&&_bpData.creators)||[]).find(c=>c.participation_id===part)||{}, k = x.contract||{};
+  bpModal("The contract", `<div class="modal-form">
+    ${(k.clauses||[]).length?(k.clauses||[]).map((c,i)=>`<div class="bp-clause"><b>${i+1}. ${esc(c.title)}</b><div>${esc(c.text)}</div></div>`).join("")
+      :`<div class="muted">This contract was sent before written clauses existed — product ${esc(k.product||"—")}, ad rights ${esc(k.ad_rights_months??1)} month(s). Use “Resend contract” to send the full version.</div>`}
+    <div class="muted" style="font-size:12.5px">${k.signed_at?`Signed by <b>${esc(k.signature_name||"")}</b> on ${esc(fmtDateTime(k.signed_at))} · ASCI ${k.asci_ack?"✓":"✕"} · non-delivery terms ${k.terms_ack?"✓":"—"}`:`Sent ${esc(fmtDateTime(k.issued_at))} — not signed yet`}</div></div>`);
 }
 function openBpShipment(part){
-  let m = document.getElementById("bpModal"); if(m) m.remove();
-  m = el("div","modal-overlay"); m.id = "bpModal";
-  m.innerHTML = `<div class="modal"><div class="modal-head"><strong>Record the courier</strong><button class="icon-btn" id="bpMx">✕</button></div>
-    <form class="modal-form" id="bpSForm">
-      <label>Product<input name="product" placeholder="Momo box" required></label>
-      <div class="mf-row"><label>Courier<input name="courier" placeholder="DTDC"></label>
-      <label>Tracking number<input name="tracking" placeholder="DT123456789"></label></div>
-      <div class="auth-err" id="bpSErr"></div><button class="btn" type="submit">Save — creator gets the tracking</button></form></div>`;
-  document.body.appendChild(m); m.classList.add("open");
-  document.getElementById("bpMx").onclick = ()=> m.remove();
-  m.onclick = e=>{ if(e.target.id==="bpModal") m.remove(); };
+  const x = ((_bpData&&_bpData.creators)||[]).find(c=>c.participation_id===part)||{}, s = x.shipment||{}, k = x.contract||{};
+  const m = bpModal("Courier &amp; tracking", `<form class="modal-form" id="bpSForm">
+      <p class="muted" style="font-size:13px;margin:0">The creator sees this straight away and can track the parcel from the app. Until a courier is connected, mark it delivered when it arrives — or the creator taps “I received it”.</p>
+      <label>Product<input name="product" value="${esc(s.product||k.product||"")}" placeholder="Momo box"></label>
+      <div class="mf-row"><label>Courier<input name="courier" value="${esc(s.courier||"")}" placeholder="DTDC / Delhivery / Blue Dart" required></label>
+      <label>Tracking number<input name="tracking" value="${esc(s.tracking_ref||"")}" placeholder="DT123456789"></label></div>
+      <label>Tracking link <span class="muted" style="font-weight:400">(optional)</span><input name="url" type="url" value="${esc(s.tracking_url||"")}" placeholder="https://www.dtdc.in/tracking…"></label>
+      <div class="auth-err" id="bpSErr"></div><button class="btn" type="submit">Save — creator gets the tracking</button></form>`);
   document.getElementById("bpSForm").onsubmit = async e=>{
     e.preventDefault();
     const f = new FormData(e.target), err = document.getElementById("bpSErr"), btn = e.target.querySelector("button");
     btn.disabled = true; btn.textContent = "Saving…";
-    const { error } = await sb.schema("api").rpc("record_shipment", { p_participation:part, p_product:String(f.get("product")||"").trim(),
-      p_courier:String(f.get("courier")||"").trim()||null, p_tracking:String(f.get("tracking")||"").trim()||null });
+    const { error } = await sb.schema("api").rpc("bp_record_courier", { p_participation:part, p_payload:{
+      product:String(f.get("product")||"").trim()||null, courier:String(f.get("courier")||"").trim(),
+      tracking_ref:String(f.get("tracking")||"").trim()||null, tracking_url:String(f.get("url")||"").trim()||null } });
     if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Save — creator gets the tracking"; return; }
+    m.remove(); loadBarterProcess(true);
+  };
+}
+function openBpChanges(part){
+  const m = bpModal("Ask for changes", `<form class="modal-form" id="bpVForm">
+      <p class="muted" style="font-size:13px;margin:0">The creator gets this on the app, WhatsApp and email, and resubmits.</p>
+      <label>What should they change?<textarea name="reason" rows="4" required placeholder="Show the box logo in the first 3 seconds; add #ad at the start of the caption"></textarea></label>
+      <div class="auth-err" id="bpVErr"></div><button class="btn" type="submit">Send to the creator</button></form>`);
+  document.getElementById("bpVForm").onsubmit = async e=>{
+    e.preventDefault();
+    const reason = String(new FormData(e.target).get("reason")||"").trim(), err = document.getElementById("bpVErr"), btn = e.target.querySelector("button");
+    if(!reason){ err.textContent = "Tell the creator what to change."; return; }
+    btn.disabled = true; btn.textContent = "Sending…";
+    const { error } = await sb.schema("api").rpc("bp_review_video", { p_participation:part, p_approve:false, p_reason:reason });
+    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Send to the creator"; return; }
+    m.remove(); loadBarterProcess(true);
+  };
+}
+function openBpMetrics(part){
+  const x = ((_bpData&&_bpData.creators)||[]).find(c=>c.participation_id===part)||{}, posts = x.posts||[];
+  const last = (posts[posts.length-1]||{}).stats||{};
+  const n = (k,l)=>`<label>${l}<input name="${k}" type="number" min="0" value="${last[k]!=null&&last.source!=="public"?esc(last[k]):""}"></label>`;
+  const m = bpModal("Add the numbers", `<form class="modal-form" id="bpMForm">
+      <p class="muted" style="font-size:13px;margin:0">Instagram insights load on their own when the creator's account allows it. If not, type them in from the creator's insights screenshot.</p>
+      ${posts.length>1?`<label>Post<select name="post">${posts.map(p=>`<option value="${esc(p.post_id)}">${esc(p.media_type)} · ${esc(fmtDate(p.posted_at))}</option>`).join("")}</select></label>`:""}
+      <div class="mf-row">${n("views","Views / plays")}${n("reach","Reach")}</div>
+      <div class="mf-row">${n("likes","Likes")}${n("comments","Comments")}</div>
+      <div class="mf-row">${n("shares","Shares")}${n("saves","Saves")}</div>
+      <div class="auth-err" id="bpMErr"></div><button class="btn" type="submit">Save numbers</button></form>`);
+  document.getElementById("bpMForm").onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(e.target), err = document.getElementById("bpMErr"), btn = e.target.querySelector("button"), p = {};
+    ["views","reach","likes","comments","shares","saves"].forEach(k=>{ const v = String(f.get(k)||"").trim(); if(v!=="") p[k] = Math.max(0, Math.round(Number(v))||0); });
+    if(!Object.keys(p).length){ err.textContent = "Add at least one number."; return; }
+    if(f.get("post")) p.post_id = f.get("post");
+    btn.disabled = true; btn.textContent = "Saving…";
+    const { error } = await sb.schema("api").rpc("bp_record_metrics", { p_participation:part, p_payload:p });
+    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Save numbers"; return; }
     m.remove(); loadBarterProcess(true);
   };
 }

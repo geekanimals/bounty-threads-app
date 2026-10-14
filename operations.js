@@ -580,21 +580,89 @@
     box.innerHTML=html;
     wireMine();
   }
+  /* ---- creator: where am I, and what do I do now (one card per campaign) ---- */
+  var JOURNEY = [
+    ["applied","Applied"],["brand_confirmed","Selected"],["contract_sent","Contract"],["contract_signed","Signed"],
+    ["address_confirmed","Address"],["product_sent","Shipped"],["product_delivered","Delivered"],["content_created","Brief"],
+    ["content_submitted","Video sent"],["content_approved","Approved"],["published","Posted"],["completed","Done"]];
+  var J_ALIAS = { invited:"applied", shortlisted:"applied", eligible:"applied", sent_to_brand:"applied", accepted:"brand_confirmed", changes_requested:"content_created" };
+  function jIndex(c){
+    if(c.stage==='product_sent' && c.shipment && c.shipment.status==='delivered') return 6;
+    var s=J_ALIAS[c.stage]||c.stage; for(var i=0;i<JOURNEY.length;i++) if(JOURNEY[i][0]===s) return i; return 0;
+  }
+  function journeyHtml(c){
+    var idx=jIndex(c), st=c.steps||{}, sh=c.shipment||{};
+    var when=function(k){ return st[k] || (k==='product_delivered'?sh.delivered_at:null) || (k==='product_sent'?sh.shipped_at:null) || (k==='applied'?c.applied_at:null) || (k==='brand_confirmed'?st.accepted:null); };
+    return '<div class="jr"><div class="jr-track">'+JOURNEY.map(function(s,i){
+        var cls=i<idx||c.stage==='completed'?'done':i===idx?'now':'';
+        var at=when(s[0]);
+        return '<div class="jr-step '+cls+'" title="'+esc(s[1])+(at?' · '+fmtDT(at):'')+'"><i>'+(cls==='done'?'✓':(i+1))+'</i><span>'+esc(s[1])+'</span></div>';
+      }).join("")+'</div></div>';
+  }
+  // the one thing the creator should do (or wait for) right now
+  function nextStepHtml(c){
+    var P=esc(c.participation_id), sh=c.shipment||{}, k=c.contract||{}, rv=c.review, sb2=c.submission, due=c.deadline;
+    var days=k.content_days||7;
+    var box=function(icon,title,text,btns,tone){ return '<div class="jr-now '+(tone||'')+'"><div class="jr-now-h">'+icon+' <b>'+title+'</b></div>'+(text?'<div class="jr-now-t">'+text+'</div>':'')+(btns?'<div class="ci-evrow">'+btns+'</div>':'')+'</div>'; };
+    switch(c.stage){
+      case 'invited': return box('🎯','You\'re invited','Read the brief below, then accept or pass.','<button class="btn sm" data-accept="'+P+'">✅ Accept invite</button><button class="btn sm ghost" data-reject="'+P+'">Pass</button>');
+      case 'applied': case 'eligible': case 'shortlisted': return box('⏳','Application received','Geek is checking your profile against the brand\'s brief. You\'ll get a WhatsApp the moment there\'s news.');
+      case 'sent_to_brand': return box('📋','With the brand','You\'re on the final list the brand is reviewing.');
+      case 'brand_confirmed': case 'accepted': return box('🎉','You\'re selected!','Your contract is being prepared — it will appear here in a moment.');
+      case 'contract_sent': return box('📜','Sign your contract','Product, deliverables, ASCI disclosure, ad rights and the non-delivery terms. Read it and sign to get your product.','<button class="btn sm" data-contract="'+P+'">Review &amp; sign contract</button>','act');
+      case 'contract_signed': return box('📍','Confirm your delivery address','Tell us where to ship the product.','<button class="btn sm" data-address="'+P+'">Confirm delivery address</button>','act');
+      case 'address_confirmed': return box('📦','Your product is being packed','The courier and tracking number will show here as soon as it ships.');
+      case 'product_sent':
+        if(sh.status==='delivered') return box('✅','Delivered','Your video brief is on its way to you.');
+        return box('🚚','Your product is on the way',
+          (sh.courier?'Courier: <b>'+esc(sh.courier)+'</b>':'')+(sh.tracking_ref?' · Tracking no. <b>'+esc(sh.tracking_ref)+'</b>':'')+(sh.shipped_at?' · sent '+fmtDate(sh.shipped_at):'')
+          +'<div class="muted" style="font-size:12px;margin-top:4px">Got it? Tap below — your video brief unlocks straight away and your '+days+'-day timer starts.</div>',
+          (sh.tracking_url?'<a class="btn sm ghost" href="'+esc(safeLink(sh.tracking_url))+'" target="_blank" rel="noopener">Track parcel ↗</a>':'')+'<button class="btn sm" data-received="'+P+'">📦 I received it</button>','act');
+      case 'content_created': return box('🎬','Shoot your video','Follow the brief below'+(due?' and submit by <b>'+fmtDate(due)+'</b>':'')+'. Upload the video to Google Drive / Dropbox / WeTransfer and paste the link.',
+          '<button class="btn sm" data-video="'+P+'">🎬 Submit my video</button>','act');
+      case 'changes_requested': return box('✏️','The brand asked for a few changes',(rv&&rv.reason?'<div class="mc-note" style="border-color:rgba(247,144,9,.6)">“'+esc(rv.reason)+'”</div>':'')+(due?'<div style="margin-top:4px">Due <b>'+fmtDate(due)+'</b></div>':''),
+          '<button class="btn sm" data-video="'+P+'">🎬 Submit the new version</button>','act');
+      case 'content_submitted': return box('👀','Your video is with the brand',(sb2?'<a href="'+esc(safeLink(sb2.url))+'" target="_blank" rel="noopener">Your cut ↗</a> · sent '+fmtDT(sb2.submitted_at)+'. ':'')+'We\'ll tell you the moment it\'s approved.');
+      case 'content_approved': return box('✅','Approved — post it now!','Post your reel with the caption, hashtags and tags from the brief (add the brand as collaborator), then add the post link here.',
+          '<button class="btn sm" data-post="'+P+'">📲 I posted — add the link</button>','act');
+      case 'published': return box('📈','You\'re live!','We\'re collecting your post\'s numbers — they show below.');
+      case 'completed': return box('🏁','Campaign complete','Thank you! Your numbers are below.');
+    }
+    return '';
+  }
+  function briefHtml(c){
+    var b=c.video_brief; if(!b) return '';
+    var line=function(k,v){ return v?'<div class="mc-sec">'+k+'</div><div class="mc-text">'+esc(v)+'</div>':''; };
+    var tags=[b.hashtags,b.mentions].filter(Boolean).join(' ');
+    return '<div class="jr-brief"><div class="jr-now-h">🎬 <b>Your video brief</b>'+(c.deadline?' <span class="ci-pill ci-warn">Due '+fmtDate(c.deadline)+'</span>':'')+'</div>'
+      + line('What to shoot', b.what_to_shoot) + line('Key messages', b.key_messages) + line("Do's", b.dos) + line("Don'ts", b.donts)
+      + line('Make', b.deliverables_text) + line('Caption', b.caption)
+      + (tags?'<div class="mc-sec">Hashtags &amp; tags</div><div class="mc-tags">'+tags.split(/\s+/).filter(Boolean).map(function(t){ return '<span>'+esc(t)+'</span>'; }).join("")+'</div>':'')
+      + (b.reference_links?'<div class="mc-sec">References</div><div class="mc-text">'+String(b.reference_links).split(/[\s,]+/).filter(Boolean).map(function(u){ return /^https?:\/\//i.test(u)?'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>':esc(u); }).join('<br>')+'</div>':'')
+      + line('Posting note', b.posting_note)
+      + '<div class="muted" style="font-size:12px;margin-top:6px">Always disclose the collaboration (Paid partnership label / #ad) as per ASCI.</div></div>';
+  }
+  function postsHtml(c){
+    var ps=c.posts||[]; if(!ps.length) return '';
+    return '<div class="mc-dl">'+ps.map(function(p){
+      var s=p.stats||{}, rows=[["👁","Views",s.views],["📈","Reach",s.reach],["❤️","Likes",s.likes],["💬","Comments",s.comments],["↗️","Shares",s.shares],["🔖","Saves",s.saves]].filter(function(x){ return x[2]!=null; });
+      return '<div class="mc-dlrow"><div class="mc-dlh"><b>'+esc(p.media_type)+'</b><span class="muted" style="font-size:12px">posted '+fmtDate(p.posted_at)
+        +(p.permalink?' · <a href="'+esc(safeLink(p.permalink))+'" target="_blank" rel="noopener">Open ↗</a>':'')+'</span></div>'
+        +(rows.length?'<div class="mc-metrics">'+rows.map(function(x){ return '<div><b>'+kfmt(x[2])+'</b><span>'+x[0]+' '+x[1]+'</span></div>'; }).join("")+'</div>':'<div class="muted" style="font-size:12px">Numbers appear within a few hours.</div>')+'</div>';
+    }).join("")+'</div>';
+  }
   var APPROVED_STAGES = ['brand_confirmed','contract_sent','contract_signed','address_confirmed','product_sent','product_delivered','content_created','content_submitted','changes_requested','content_approved','published','completed'];
   function cardMine(c){
     var dl=(c.deliverables||[]), approved=APPROVED_STAGES.indexOf(c.stage)>=0,
         declined=['ineligible','brand_declined','rejected','dropped'].indexOf(c.stage)>=0;
-    var acts='';
-    if(c.stage==='invited') acts='<button class="btn sm" data-accept="'+c.participation_id+'">✅ Accept invite</button><button class="btn sm ghost" data-reject="'+c.participation_id+'">Pass</button>';
-    else if(c.stage==='contract_sent') acts='<button class="btn sm" data-contract="'+c.participation_id+'">Review &amp; sign contract</button>';
-    else if(c.stage==='contract_signed') acts='<button class="btn sm" data-address="'+c.participation_id+'">Confirm delivery address</button>';
-    else if(c.stage==='content_approved') acts='<button class="btn sm" data-post="'+c.participation_id+'">Post from the app</button>';
-    else if(['product_sent','product_delivered','content_created','changes_requested'].indexOf(c.stage)>=0 && dl.length) acts='<button class="btn sm" data-upload="'+(dl[0].deliverable_id)+'">Upload content link</button>';
+    var acts='';   // every action now lives in nextStepHtml()
     var row=function(k,v){ return v?'<div class="mc-row"><span>'+k+'</span><span>'+v+'</span></div>':''; };
     var tags=[].concat(c.hashtags||[],(c.mentions||[]).map(function(m){ return String(m).charAt(0)==='@'?m:'@'+m; }));
     var sh=c.shipment, shTxt = sh ? ({pending:'📦 Product not shipped yet',shipped:'🚚 On the way',delivered:'✅ Delivered',failed:'⚠️ Delivery failed'}[sh.status]||sh.status)
       + (sh.courier?' · '+esc(sh.courier):'') + (sh.tracking_ref?' · <b>'+esc(sh.tracking_ref)+'</b>':'')
-      + (sh.delivered_at?' · '+fmtDate(sh.delivered_at):sh.shipped_at?' · sent '+fmtDate(sh.shipped_at):'') : '';
+      + (sh.delivered_at?' · '+fmtDate(sh.delivered_at):sh.shipped_at?' · sent '+fmtDate(sh.shipped_at):'')
+      + (sh.tracking_url&&sh.status==='shipped'?' · <a href="'+esc(safeLink(sh.tracking_url))+'" target="_blank" rel="noopener">Track ↗</a>':'') : '';
+    if(c.stage==='product_sent' && sh && sh.status==='shipped') shTxt='';
     var detail = declined
       ? '<div class="mc-detail"><div class="mc-grid">'
         + row('Brand', esc(c.brand||'—') + (c.org_name?' <span class="muted">· '+esc(c.org_name)+'</span>':''))
@@ -638,8 +706,11 @@
           +'<div class="muted" style="font-size:12px;margin-top:4px">Keep your profile and rates updated — new campaigns open every week.</div></div>':'')
       + (declined?'' : '<div class="ci-meta">'+(c.campaign_type||c.comp_type?'<span>'+typeBadge(c)+'</span>':'')+(c.product?'<span>Product: <b>'+esc(c.product)+'</b></span>':'')
       +   (c.deadline?'<span>Deadline: <b>'+fmtDate(c.deadline)+'</b></span>':'')+(c.applied_profile?'<span>As <b>@'+esc(c.applied_profile)+'</b></span>':'')+'</div>')
+      + (declined?'':journeyHtml(c))
+      + (declined?'':nextStepHtml(c))
       + (shTxt?'<div class="mc-ship">'+shTxt+'</div>':'')
-      + delivHtml
+      + briefHtml(c)
+      + ((c.posts||[]).length?postsHtml(c):delivHtml)
       + (!approved&&!declined&&c.reason?'<div class="ci-hint">Note: '+esc(c.reason)+'</div>':'')
       + detail
       + (acts?'<div class="ci-evrow">'+acts+'</div>':'')
@@ -651,6 +722,12 @@
     document.querySelectorAll("#opsMine [data-reject]").forEach(function(b){ b.onclick=function(){ var reason=prompt("No problem — tell the brand why you're passing (they see this):")||""; if(!reason) return; api("respond_to_campaign",{p_participation:b.getAttribute("data-reject"),p_accept:false,p_reason:reason}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-upload]").forEach(function(b){ b.onclick=function(){ var url=prompt("Paste your content link (e.g. Instagram post URL):")||""; if(!url) return; var note=prompt("Note / question for the Geek team (optional):")||""; api("submit_content",{p_deliverable:b.getAttribute("data-upload"),p_content_url:url,p_note:note}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-contract]").forEach(function(b){ b.onclick=function(){ openContractModal(b.getAttribute("data-contract")); }; });
+    document.querySelectorAll("#opsMine .jr").forEach(function(j){ var n=j.querySelector(".jr-step.now"); if(n) j.scrollLeft=Math.max(0,n.offsetLeft-j.clientWidth/2+n.offsetWidth/2); });
+    document.querySelectorAll("#opsMine [data-video]").forEach(function(b){ b.onclick=function(){ openVideoModal(b.getAttribute("data-video")); }; });
+    document.querySelectorAll("#opsMine [data-received]").forEach(function(b){ b.onclick=function(){
+      if(!confirm("Confirm you've received the product? Your video brief unlocks now and your deadline starts.")) return;
+      b.disabled=true; b.textContent="…";
+      api("creator_mark_received",{p_participation:b.getAttribute("data-received")}).then(function(r){ if(r.error){ alert(r.error.message||r.error); b.disabled=false; b.textContent="📦 I received it"; return; } loadMyCampaigns(); updateAlertsBadge(); }); }; });
     document.querySelectorAll("#opsMine [data-address]").forEach(function(b){ b.onclick=function(){ openAddressModal(b.getAttribute("data-address")); }; });
     document.querySelectorAll("#opsMine [data-post]").forEach(function(b){ b.onclick=function(){ openPostModal(b.getAttribute("data-post")); }; });
   }
@@ -679,36 +756,69 @@
     };
   }
 
-  // ---- creator: review + sign contract ----
+  // ---- creator: read the whole contract, accept ASCI + the non-delivery terms, sign ----
   async function openContractModal(part){
-    var ov=opsModal('<div class="ci-mh"><h3>Your contract</h3><button class="wa-x" id="opsMx">×</button></div><div id="opsCtBody"><div class="muted">Loading…</div></div>');
+    opsModal('<div class="ci-mh"><h3>Your contract</h3><button class="wa-x" id="opsMx">×</button></div><div id="opsCtBody"><div class="muted">Loading…</div></div>');
     document.getElementById("opsMx").onclick=closeModal;
     try{
       var r=await api("get_my_contract",{p_participation:part}); if(r.error) throw r.error; var k=r.data;
-      if(!k){ document.getElementById("opsCtBody").innerHTML='<div class="ci-err-inline">No contract has been issued yet.</div>'; return; }
-      var dl=(k.deliverables||[]);
+      if(!k){ document.getElementById("opsCtBody").innerHTML='<div class="ci-err-inline">Your contract is being prepared — check back in a minute.</div>'; return; }
+      var dl=(k.deliverables||[]), cl=(k.clauses||[]);
+      var risky=cl.some(function(c){ return c.key==='non_delivery'||c.key==='reship'; });
       document.getElementById("opsCtBody").innerHTML=''
-        + '<div class="ci-meta"><span>Product: <b>'+esc(k.product||"—")+'</b></span><span>Ad rights: <b>'+esc(k.ad_rights_months||1)+' month(s)</b></span>'
-        + '<span>Until: <b>'+fmtDate(k.ad_rights_until)+'</b></span><span>Collab rights: <b>'+(k.collab_rights?"Yes":"No")+'</b></span></div>'
-        + '<div class="ci-hint" style="margin-top:8px">Deliverables: '+(dl.length?dl.map(function(x){return esc((x.format||x.content_format||"content"))+' ×'+esc(x.quantity||1);}).join(", "):'—')+'</div>'
-        + '<label class="cp-check" style="margin-top:12px"><input type="checkbox" id="opsAsci"> I have read and will follow the <b>ASCI</b> influencer-advertising guidelines, and I agree to the ad rights ('+esc(k.ad_rights_months||1)+' month) and deliverables above.</label>'
+        + '<div class="ci-meta"><span>'+esc(k.brand||'')+' × <b>'+esc(k.campaign||'')+'</b></span><span>Product: <b>'+esc(k.product||"—")+'</b>'+(k.product_value?' (₹'+esc(Number(k.product_value).toLocaleString("en-IN"))+')':'')+'</span>'
+        + '<span>Make: <b>'+(dl.length?dl.map(function(x){ return esc(x.quantity||1)+'× '+esc(x.format||x.content_format||"content"); }).join(" + "):'—')+'</b></span>'
+        + '<span>Post within <b>'+esc(k.content_days||7)+' days</b> of delivery</span></div>'
+        + (cl.length?'<div class="ct-clauses">'+cl.map(function(c,i){ return '<div class="ct-clause'+(c.key==='non_delivery'||c.key==='reship'?' warn':'')+'"><b>'+(i+1)+'. '+esc(c.title)+'</b><div>'+esc(c.text)+'</div></div>'; }).join("")+'</div>'
+              :'<div class="ci-hint" style="margin-top:8px">Ad rights: '+esc(k.ad_rights_months||1)+' month(s) · Collab rights: '+(k.collab_rights?"Yes":"No")+'</div>')
+        + '<label class="cp-check" style="margin-top:12px"><input type="checkbox" id="opsAsci"> <span>I have read and will follow the <b>ASCI</b> influencer-advertising guidelines, and I agree to the product, deliverables and ad rights above.</span></label>'
+        + (risky?'<label class="cp-check"><input type="checkbox" id="opsTerms"> <span>I understand that if I receive the product and don\'t post on time, <b>I will be blacklisted</b> from the platform and <b>must send the product to another creator at my own cost</b>.</span></label>':'')
         + '<label class="wa-f"><span>Type your full name to sign</span><input id="opsSig" placeholder="e.g. Asha Kumar"></label>'
         + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsCtCancel">Cancel</button><button class="btn sm" id="opsCtSign">Sign contract</button></div>'
         + '<div class="ci-hint cp-err-inline" id="opsCtErr"></div>';
       document.getElementById("opsCtCancel").onclick=closeModal;
+      if(k.signed_at){ var sbn=document.getElementById("opsCtSign"); sbn.disabled=true; sbn.textContent="Signed "+fmtDate(k.signed_at); }
       document.getElementById("opsCtSign").onclick=function(){
         var err=document.getElementById("opsCtErr"); err.textContent="";
-        var asci=document.getElementById("opsAsci").checked; var sig=(document.getElementById("opsSig").value||"").trim();
-        if(!asci){ err.textContent="Please acknowledge the ASCI guidelines to sign."; return; }
+        var asci=document.getElementById("opsAsci").checked; var terms=risky?document.getElementById("opsTerms").checked:true;
+        var sig=(document.getElementById("opsSig").value||"").trim();
+        if(!asci){ err.textContent="Please accept the ASCI guidelines to sign."; return; }
+        if(!terms){ err.textContent="Please accept the non-delivery terms to sign."; return; }
         if(!sig){ err.textContent="Please type your name to sign."; return; }
         var btn=this; btn.disabled=true; btn.textContent="Signing…";
         if(window.Tracker) Tracker.security("contract_sign", { participation_id: part });
-        api("sign_contract",{p_participation:part,p_signature_name:sig,p_asci_ack:true}).then(function(r2){
+        api("sign_contract_v2",{p_participation:part,p_signature_name:sig,p_asci_ack:true,p_terms_ack:terms}).then(function(r2){
+          if(r2.error && /sign_contract_v2/.test(r2.error.message||"")) return api("sign_contract",{p_participation:part,p_signature_name:sig,p_asci_ack:true});
+          return r2;
+        }).then(function(r2){
           if(r2.error){ err.textContent=r2.error.message||r2.error; btn.disabled=false; btn.textContent="Sign contract"; return; }
           closeModal(); loadMyCampaigns(); updateAlertsBadge();
         });
       };
     }catch(e){ var bd=document.getElementById("opsCtBody"); if(bd) bd.innerHTML='<div class="ci-err-inline">Couldn\'t load the contract: '+esc(e.message||e)+'</div>'; }
+  }
+
+  // ---- creator: submit the video (a link to the file) for the brand to review ----
+  function openVideoModal(part){
+    var c=(_mineCache||[]).filter(function(x){ return x.participation_id===part; })[0]||{};
+    opsModal('<div class="ci-mh"><h3>Submit your video</h3><button class="wa-x" id="opsMx">×</button></div>'
+      + (c.review&&c.review.decision==='changes_requested'&&c.review.reason?'<div class="mc-note" style="border-color:rgba(247,144,9,.6);margin-bottom:8px">Brand asked: “'+esc(c.review.reason)+'”</div>':'')
+      + '<div class="ci-hint">Upload the video to Google Drive, Dropbox or WeTransfer (set it to “anyone with the link can view”) and paste the link. Don\'t post it on Instagram yet — the brand approves it first.</div>'
+      + '<label class="wa-f"><span>Link to your video</span><input id="opsVidUrl" placeholder="https://drive.google.com/…"></label>'
+      + '<label class="wa-f"><span>Note for the brand (optional)</span><textarea id="opsVidNote" rows="2" placeholder="Two versions — v2 has the voice-over"></textarea></label>'
+      + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsVidCancel">Cancel</button><button class="btn sm" id="opsVidSave">Submit for review</button></div>'
+      + '<div class="ci-hint cp-err-inline" id="opsVidErr"></div>');
+    document.getElementById("opsMx").onclick=closeModal; document.getElementById("opsVidCancel").onclick=closeModal;
+    document.getElementById("opsVidSave").onclick=function(){
+      var err=document.getElementById("opsVidErr"); err.textContent="";
+      var url=(document.getElementById("opsVidUrl").value||"").trim(), note=(document.getElementById("opsVidNote").value||"").trim();
+      if(!/^https?:\/\//i.test(url)){ err.textContent="Paste a link that starts with https://"; return; }
+      var btn=this; btn.disabled=true; btn.textContent="Submitting…";
+      api("submit_campaign_video",{p_participation:part,p_url:url,p_note:note||null}).then(function(r){
+        if(r.error){ err.textContent=r.error.message||r.error; btn.disabled=false; btn.textContent="Submit for review"; return; }
+        closeModal(); loadMyCampaigns(); updateAlertsBadge();
+      });
+    };
   }
 
   // ---- creator: confirm delivery address (choose from saved addresses) ----
@@ -718,10 +828,29 @@
     try{
       var r=await api("get_my_profile"); var prof=(r && !r.error)?r.data:null; var addrs=(prof&&prof.addresses)||[];
       var body=document.getElementById("opsAdBody");
-      if(!addrs.length){ body.innerHTML='<div class="ci-hint">You have no saved addresses yet. Add one in your profile, then come back.</div>'
-        + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsAdCancel">Close</button><button class="btn sm" id="opsAdProfile">Go to profile</button></div>';
+      var addForm='<div class="cp-grid" style="margin-top:6px"><label class="wa-f"><span>House / street</span><input id="opsNA1" placeholder="12, MG Road"></label>'
+        + '<label class="wa-f"><span>Area / landmark</span><input id="opsNA2" placeholder="Near City Mall"></label>'
+        + '<label class="wa-f"><span>City</span><input id="opsNACity" placeholder="Delhi"></label>'
+        + '<label class="wa-f"><span>State</span><input id="opsNAState" placeholder="Delhi"></label>'
+        + '<label class="wa-f"><span>PIN code</span><input id="opsNAPin" inputmode="numeric" maxlength="6" placeholder="110001"></label></div>';
+      if(!addrs.length){
+        body.innerHTML='<div class="ci-hint">Where should we ship your product?</div>'+addForm
+          + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsAdCancel">Cancel</button><button class="btn sm" id="opsAdNew">Save &amp; confirm address</button></div>'
+          + '<div class="ci-hint cp-err-inline" id="opsAdErr"></div>';
         document.getElementById("opsAdCancel").onclick=closeModal;
-        document.getElementById("opsAdProfile").onclick=function(){ closeModal(); if(typeof currentPage!=="undefined"){ currentPage="profile"; } if(typeof renderShell==="function") renderShell(); };
+        document.getElementById("opsAdNew").onclick=async function(){
+          var err=document.getElementById("opsAdErr"); err.textContent="";
+          var v=function(id){ return (document.getElementById(id).value||"").trim(); };
+          if(!v("opsNA1")||!v("opsNACity")||!/^\d{6}$/.test(v("opsNAPin"))){ err.textContent="Add the street, city and a 6-digit PIN code."; return; }
+          var btn=this; btn.disabled=true; btn.textContent="Saving…";
+          try{
+            var r1=await api("upsert_address",{p_payload:{line1:v("opsNA1"),landmark:v("opsNA2")||null,city:v("opsNACity"),state:v("opsNAState")||null,postal_code:v("opsNAPin"),country:"India",label:"Home",is_default:true},p_correlation:"ui-campaign"});
+            if(r1.error) throw r1.error;
+            var aid=(r1.data&&r1.data.address_id)||r1.data;
+            var r2=await api("confirm_campaign_address",{p_participation:part,p_address_id:aid}); if(r2.error) throw r2.error;
+            closeModal(); loadMyCampaigns(); updateAlertsBadge();
+          }catch(e){ err.textContent=(e&&e.message)||String(e); btn.disabled=false; btn.textContent="Save & confirm address"; }
+        };
         return;
       }
       body.innerHTML='<div class="wa-f"><span>Ship my product to</span><select id="opsAddrSel">'+addrs.map(function(a){
