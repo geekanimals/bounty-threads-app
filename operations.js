@@ -643,7 +643,9 @@
         'You received the product but no video came in within 7 days, so campaigns are paused for you. Our team will call you — or submit your video now and reply on WhatsApp.',
         '<button class="btn sm" data-video="'+P+'">🎬 Submit my video</button>'+readBrief,'bad');
     switch(c.stage){
-      case 'invited': return box('🎯','You\'re invited','Read the campaign details below, then accept or pass.','<button class="btn sm" data-accept="'+P+'">✅ Accept invite</button><button class="btn sm ghost" data-reject="'+P+'">Pass</button>');
+      case 'invited':
+        if(c.needs_approval) return box('🎯',esc(c.brand||'A brand')+' wants you on this campaign','Read the campaign details below and tap <b>Apply</b> — the brand confirms and your contract follows automatically.','<button class="btn sm" data-accept="'+P+'">✅ Apply</button><button class="btn sm ghost" data-reject="'+P+'">Not for me</button>','act');
+        return box('🎯','You\'re invited','Read the campaign details below, then accept or pass.','<button class="btn sm" data-accept="'+P+'">✅ Accept invite</button><button class="btn sm ghost" data-reject="'+P+'">Pass</button>');
       case 'applied': case 'eligible': case 'shortlisted': return box('⏳','Application received','Geek is checking your profile against the brand\'s brief. You\'ll get a WhatsApp the moment there\'s news.');
       case 'sent_to_brand': return box('📋','With the brand','You\'re on the final list the brand is reviewing.');
       case 'brand_confirmed': case 'accepted': return box('🎉','You\'re selected!','Your contract is being prepared — it will appear here in a moment.');

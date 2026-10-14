@@ -14,6 +14,24 @@ const LOGIN_ROLES = [
 // If the user arrived via a team-invite link, capture the token — signup passes it so the
 // server-side trigger lets them join the inviting org (email match alone is not enough).
 const INVITE_TOKEN = new URLSearchParams(location.search).get("invite");
+// A campaign invite link (bulk upload → WhatsApp / email): ?cinv=<token>. Kept until the creator is signed in,
+// then the app claims it — the campaign opens for them as soon as their profile is ready.
+const CAMPAIGN_INVITE = (function(){
+  const t = new URLSearchParams(location.search).get("cinv");
+  if(t && /^[0-9a-f-]{36}$/i.test(t)){ try{ localStorage.setItem("geek_cinv", t); }catch(e){} return t; }
+  try{ return localStorage.getItem("geek_cinv"); }catch(e){ return null; }
+})();
+async function paintCampaignInvite(){
+  const box = document.getElementById("cinvBanner"); if(!box || !CAMPAIGN_INVITE || !window.sb) return;
+  try{
+    const { data } = await sb.rpc("invite_preview", { p_token: CAMPAIGN_INVITE });
+    if(!data || !box.isConnected) return;
+    const e = s => String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    box.innerHTML = `<div class="auth-note" style="border:1px solid rgba(108,92,231,.35);background:rgba(108,92,231,.08);margin:4px 0 10px">
+      🎯 ${data.first_name?`Hi <b>${e(data.first_name)}</b> — `:""}<b>${e(data.brand||"A brand")}</b> invited you to <b>${e(data.campaign||"a campaign")}</b>${data.product?` (you get: ${e(data.product)})`:""}${data.approved?` · <b>you're already approved ✓</b>`:""}.
+      <br>Continue with WhatsApp${data.phone_hint?` using your number ending <b>${e(data.phone_hint.replace(/•/g,""))}</b>`:""} — the campaign opens for you right after sign-up.</div>`;
+  }catch(e){}
+}
 
 function loginView(role, mode){
   role = role || "creator";
@@ -33,7 +51,7 @@ function loginView(role, mode){
       </form>
       <div class="muted" style="text-align:center;font-size:12px;margin-top:10px"><a href="#" id="backToWa">Already have an account? Sign in</a></div>`;
   } else if(role === "creator"){
-    body = `
+    body = `<div id="cinvBanner"></div>
       <div class="auth-note" style="margin-top:4px">Creators sign in with <b>WhatsApp</b> — no password. Next you'll connect Instagram and we build your media kit automatically.</div>
       <button type="button" class="ig-btn wa-btn" id="waLoginBtn" style="margin-top:12px"><span class="ig-ic">💬</span> Continue with WhatsApp</button>
       <div class="muted" style="text-align:center;font-size:12px;margin-top:10px">Signed in with Instagram before? Use WhatsApp — when you connect the same Instagram, your old account is moved over automatically.</div>`;
@@ -102,6 +120,7 @@ function mountLogin(mode="login", role){
   root.querySelectorAll("[data-role]").forEach(b=>{ b.onclick = ()=> mountLogin("login", b.dataset.role); });
   root.querySelectorAll("[data-mode]").forEach(b=>{ b.onclick = ()=> mountLogin(b.dataset.mode); });
 
+  paintCampaignInvite();
   const wa = document.getElementById("waLoginBtn");
   if(wa) wa.onclick = ()=>{ if(window.waLogin) window.waLogin.open(); else alert("WhatsApp login is loading — try again in a moment."); };
 

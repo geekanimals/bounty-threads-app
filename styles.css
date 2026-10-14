@@ -1161,3 +1161,37 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .mk-cw-b span{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mk-cw-b em{font-style:normal;color:var(--brand,#6c5ce7);font-weight:600}
 .bp-block{padding:8px 10px;border-radius:9px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.35)}
+
+/* ---------- Bulk creator upload (campaign → Barter process → 📥 Bulk upload) ---------- */
+.bk-src{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.bk-src #bkLink{flex:1 1 220px;min-width:0;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;font:inherit;font-size:13px}
+.bk-file{cursor:pointer}
+.bk-paste{margin-top:10px;font-size:13px}
+.bk-paste summary{cursor:pointer;color:var(--muted)}
+.bk-paste textarea{width:100%;margin:8px 0;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;font:inherit;font-size:13px}
+.bk-meta{margin:14px 0 6px;font-size:13px}
+.bk-map{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:10px}
+.bk-map label{display:flex;flex-direction:column;gap:3px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.bk-map select{padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text,inherit);font:inherit;font-size:13px;text-transform:none;letter-spacing:0;min-width:0;width:100%}
+.bk-tablewrap{overflow:auto;max-height:420px;border:1px solid var(--line);border-radius:12px}
+.bk-table{width:100%;min-width:760px;border-collapse:collapse;font-size:13px}
+.bk-table th{position:sticky;top:0;background:var(--panel);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.bk-table td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
+.bk-table th label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.bk-table input[type=checkbox]{width:17px;height:17px;accent-color:var(--brand,#6c5ce7)}
+.bk-table tr.bk-bad td{opacity:.55}
+.bk-table .tag{white-space:normal}
+.bk-note{display:flex;flex-direction:column;gap:4px;margin:12px 0 4px;font-size:12px;color:var(--muted)}
+.bk-note input{padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--text,inherit);font:inherit;font-size:13px}
+.bk-go{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px;font-size:12.5px}
+.bk-sum{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:13px;margin-bottom:8px}
+.bk-row{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.6fr) auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.bk-who{min-width:0;word-break:break-word}
+.bk-st{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0}
+.bk-st > div{flex-basis:100%}
+.bk-ch{font-size:12px}
+.bk-act{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:640px){
+  .bk-row{grid-template-columns:minmax(0,1fr)}
+  .bk-act{justify-content:flex-start}
+}

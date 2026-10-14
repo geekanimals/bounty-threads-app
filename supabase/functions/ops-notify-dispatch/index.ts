@@ -19,7 +19,7 @@ import { getEmailProvider, renderEmailHtml } from "../_shared/email_provider.ts"
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const APP_URL = (Deno.env.get("APP_URL") || "").replace(/\/+$/, "");   // e.g. https://bountythreads.app
+const APP_URL = (Deno.env.get("APP_URL") || "https://bountythreads.app").replace(/\/+$/, "");   // e.g. https://bountythreads.app
 const WA_UPDATE_TEMPLATE = (Deno.env.get("WA_UPDATE_TEMPLATE") || "").trim();
 const WA_UPDATE_TEMPLATE_LANG = (Deno.env.get("WA_UPDATE_TEMPLATE_LANG") || "en").trim();
 // WhatsApp template parameters may not contain new lines / tabs / 4+ spaces
@@ -28,6 +28,7 @@ const waParam = (s: string, max = 900) => String(s || "").replace(/\s*[\r\n\t]+\
 function deepLink(route?: string | null): string | null {
   if (!route) return null;
   if (/^https?:\/\//.test(route)) return route;
+  if (route.startsWith("/")) return APP_URL ? `${APP_URL}${route}` : null;   // e.g. /app.html?cinv=<invite token>
   return APP_URL ? `${APP_URL}/app.html?go=${encodeURIComponent(route)}` : null;
 }
 function unsubLink(token: string | undefined, channel: "email" | "whatsapp"): string | null {
@@ -77,7 +78,7 @@ Deno.serve(async (req) => {
         const stop = unsubLink(prefs.token, "whatsapp");
         const text = [p.title, p.text].filter(Boolean).join("\n\n") + (link ? `\n\n${p.action_label || "Open"}: ${link}` : "")
           + `\n\n— Reply STOP to stop WhatsApp updates${stop ? ` (or tap ${stop})` : ""}. Login codes still come.`;
-        const name = waParam(prefs.name || "there", 60);
+        const name = waParam(prefs.name || p.to_name || "there", 60);
         const update = waParam([p.title, p.text].filter(Boolean).join(" — "));
         const target = waParam(link || APP_URL || "the app", 300);
 

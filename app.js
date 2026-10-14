@@ -1271,7 +1271,7 @@ function campaignCardsHtml(list){
       ${(c.start_date||c.end_date)?`<div class="muted" style="font-size:13px">🗓 ${esc(c.start_date)||"—"} → ${esc(c.end_date)||"—"}</div>`:""}
       <div class="bar" style="margin-top:8px"><span style="width:${prog}%"></span></div>
       <div class="camp-foot"><span class="muted">${prog}% · ${creators} creators</span>
-      <span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini-btn" data-opencamp="${esc(c.id)}">Open</button><button class="mini-btn" data-bpcamp="${esc(c.id)}">🔁 Process</button><button class="mini-btn" data-invcamp="${esc(c.id)}">🎯 Invite</button><button class="mini-btn ghost" data-editcamp="${esc(c.id)}">Edit</button></span></div></div>`;
+      <span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini-btn" data-opencamp="${esc(c.id)}">Open</button><button class="mini-btn" data-bpcamp="${esc(c.id)}">🔁 Process</button><button class="mini-btn" data-bkcamp="${esc(c.id)}">📥 Bulk upload</button><button class="mini-btn" data-invcamp="${esc(c.id)}">🎯 Invite</button><button class="mini-btn ghost" data-editcamp="${esc(c.id)}">Edit</button></span></div></div>`;
   }).join("");
 }
 
@@ -1298,6 +1298,7 @@ function wireCampaignGrid(grid, all){
   grid.querySelectorAll("[data-opencamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.opencamp); if(c) openCampaignWorkspace(c.id); });
   grid.querySelectorAll("[data-invcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.invcamp); if(c) openInvitePanel(c.id, c.name); });
   grid.querySelectorAll("[data-bpcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.bpcamp); if(c) openBarterProcess(c.id, c.name); });
+  grid.querySelectorAll("[data-bkcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.bkcamp); if(c) openBarterProcess(c.id, c.name, null, "bulk"); });
 }
 // Mass Barter / Celebrity Stories pages: their campaigns on top, with a pre-set "New campaign" button
 function campaignSectionHtml(bucket){
@@ -1404,6 +1405,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
     <div class="page-head"><div><h1>${esc(c.name)} <span class="tag ${st}">${esc(c.status)||"Draft"}</span></h1>
       <p>${[c.brand,c.type,c.objective].filter(Boolean).map(esc).join(" · ")||"Campaign workspace"}</p></div>
       <button class="btn" id="wsProcess">🔁 Barter process</button>
+      <button class="btn ghost" id="wsBulk">📥 Bulk upload creators</button>
       <button class="btn ghost" id="wsInvite">🎯 Invite creators</button>
       <button class="btn ghost" id="wsEdit">Edit campaign</button></div>
 
@@ -1438,6 +1440,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
   document.getElementById("wsEdit").onclick = ()=> openCampaignModal(c);
   document.getElementById("wsInvite").onclick = ()=> openInvitePanel(c.id, c.name);
   document.getElementById("wsProcess").onclick = ()=> openBarterProcess(c.id, c.name);
+  document.getElementById("wsBulk").onclick = ()=> openBarterProcess(c.id, c.name, null, "bulk");
   const reload = ()=> openCampaignWorkspace(c.id);
   content.querySelectorAll("[data-wsapprove]").forEach(b=>b.onclick=()=>updateStatus("applications", b.dataset.wsapprove, {status:"Approved"}, reload));
   content.querySelectorAll("[data-wsdecline]").forEach(b=>b.onclick=()=>declineLegacyApplication(b.dataset.wsdecline, reload));
@@ -1659,7 +1662,8 @@ function openCampaignModal(existing, preset){
       if(!existing){                      // brand new campaign → show who matches it, ready to invite
         const { data:fresh } = await sb.from("campaigns").select("id,name").eq("name", row.name).order("created_at",{ascending:false}).limit(1);
         const made = fresh && fresh[0];
-        if(made) setTimeout(()=> openInvitePanel(made.id, made.name), 350);
+        // brand new campaign → straight to adding creators: bulk upload (sheet / Word), or pick from Geek OS
+        if(made) setTimeout(()=> openBarterProcess(made.id, made.name, null, "bulk"), 350);
       }
     }catch(ex){ paintFiles(); err.textContent = ex.message||"Couldn't save."; btn.disabled=false; btn.textContent=existing?'Save changes':'Launch Campaign'; }
   };
@@ -3589,6 +3593,253 @@ function wireMkComposer(){
   };
 }
 
+/* ================= BULK CREATOR UPLOAD (inside a campaign's Barter process → 📥 Bulk upload) =================
+ * Google Sheet link / Excel / CSV / Word (table or list) / paste → columns matched automatically → preview with a
+ * tick for everyone already approved → Upload & invite. On Geek OS already → added to the campaign now (ticked →
+ * contract goes out on its own). Not on Geek OS → WhatsApp (sheet's number) + email invite with a link; the
+ * campaign opens for them the moment they register. The list below follows every row live.            */
+let _bk = { rows:null, head:null, map:null, preview:null, list:null, src:"", busy:false, note:"" };
+const BK_FIELDS = [
+  ["name","Name", /^(full ?name|name|creator( name)?|influencer( name)?)$/i],
+  ["handle","Instagram", /(insta|^ig\b|handle|username|profile|account|link|url)/i],
+  ["phone","WhatsApp", /(whats ?app|phone|mobile|contact( no| number)?|number|cell|wa\b)/i],
+  ["email","Email", /(e-?mail|mail id)/i],
+  ["city","City", /(city|location|place|town)/i],
+  ["followers","Followers", /(follower|followers|reach|fans)/i],
+  ["approved","Approved", /(approv|status|selected|confirm|final|shortlist|tick|✓)/i]
+];
+const bkYes = v => /^(y|yes|approved?|selected|confirmed?|final|done|ok|true|1|✓|✔|☑|x)$/i.test(String(v||"").trim());
+const bkEsc = s => esc(s==null ? "" : String(s));
+
+function bkSplitCsv(text){
+  const rows = []; let row = [], cur = "", q = false;
+  const t = String(text||"").replace(/\r\n?/g, "\n");
+  const sep = (t.split("\n")[0].match(/\t/g)||[]).length > (t.split("\n")[0].match(/,/g)||[]).length ? "\t" : ",";
+  for(let i=0;i<t.length;i++){
+    const ch = t[i];
+    if(q){ if(ch==='"'){ if(t[i+1]==='"'){ cur+='"'; i++; } else q=false; } else cur+=ch; continue; }
+    if(ch==='"'){ q=true; continue; }
+    if(ch===sep){ row.push(cur.trim()); cur=""; continue; }
+    if(ch==="\n"){ row.push(cur.trim()); rows.push(row); row=[]; cur=""; continue; }
+    cur+=ch;
+  }
+  if(cur!=="" || row.length){ row.push(cur.trim()); rows.push(row); }
+  return rows.filter(r=> r.some(c=>c!==""));
+}
+// a list without columns (Word / pasted notes): pull phone, email, Instagram and name out of each line
+function bkFromLines(lines){
+  const out = [["Name","Instagram","WhatsApp","Email"]];
+  lines.forEach(l=>{
+    l = String(l||"").trim(); if(!l) return;
+    const email = (l.match(/[^\s@,;]+@[^\s@,;]+\.[a-z]{2,}/i)||[""])[0];
+    const ig = (l.match(/instagram\.com\/([A-Za-z0-9._]+)/i)||[])[1] || (l.replace(email,"").match(/(^|\s)@([A-Za-z0-9._]{2,30})/)||[])[2] || "";
+    const phone = (l.replace(email,"").match(/(\+?\d[\d\s-]{8,}\d)/)||[""])[0];
+    if(!email && !ig && !phone) return;
+    const name = l.replace(email,"").replace(/(https?:\/\/)?\S*instagram\.com\/\S*/gi,"").replace(/https?:\/\/\S+/g,"").replace(/@[A-Za-z0-9._]+/g,"").replace(phone,"")
+      .replace(/^\s*(\d+[.)]|[-*•▪●])\s*/,"").replace(/[|,;:–—-]+/g," ").replace(/\s+/g," ").trim();
+    out.push([name, ig, phone, email]);
+  });
+  return out;
+}
+function bkLoadScript(src){
+  return new Promise((ok, bad)=>{ if(document.querySelector(`script[src="${src}"]`)) return ok();
+    const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = ()=> bad(new Error("Couldn't load the file reader — check your connection.")); document.head.appendChild(s); });
+}
+async function bkReadFile(file){
+  const name = (file.name||"").toLowerCase();
+  if(/\.(xlsx|xls|xlsm|ods)$/.test(name)){
+    await bkLoadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
+    const wb = XLSX.read(await file.arrayBuffer(), { type:"array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws, { header:1, raw:false, defval:"" }).map(r=> r.map(c=> String(c==null?"":c).trim())).filter(r=> r.some(Boolean));
+  }
+  if(/\.docx$/.test(name)){
+    await bkLoadScript("https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js");
+    const res = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
+    const doc = new DOMParser().parseFromString(res.value, "text/html");
+    const table = [...doc.querySelectorAll("table")].sort((a,b)=> b.rows.length - a.rows.length)[0];
+    if(table && table.rows.length > 1) return [...table.rows].map(tr=> [...tr.cells].map(td=> td.textContent.trim())).filter(r=> r.some(Boolean));
+    return bkFromLines([...doc.querySelectorAll("p,li")].map(p=> p.textContent));
+  }
+  if(/\.doc$/.test(name)) throw new Error("Old .doc files can't be read — in Word choose File → Save As → .docx (or copy the table and paste it below).");
+  const text = await file.text();
+  const rows = bkSplitCsv(text);
+  return rows.length && rows[0].length > 1 ? rows : bkFromLines(text.split("\n"));
+}
+async function bkReadSheetLink(url){
+  const id = (url.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/)||[])[1];
+  if(!id){
+    if(/docs\.google\.com\/document/.test(url)) throw new Error("That's a Google Doc — open it, choose File → Download → Microsoft Word (.docx) and upload the file here.");
+    throw new Error("Paste the link of a Google Sheet (docs.google.com/spreadsheets/…).");
+  }
+  const gid = (url.match(/[#&?]gid=(\d+)/)||[])[1] || "0";
+  const r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`).catch(()=>null);
+  const text = r && r.ok ? await r.text() : "";
+  if(!text || /^\s*</.test(text)) throw new Error("Couldn't open the sheet. In Google Sheets tap Share → General access → “Anyone with the link” (Viewer), then try again — or download it as .xlsx / .csv and upload.");
+  return bkSplitCsv(text);
+}
+function bkAutoMap(head){
+  const map = {}; const used = new Set();
+  BK_FIELDS.forEach(([k,,re])=>{ const i = head.findIndex((h,ix)=> !used.has(ix) && re.test(String(h||""))); if(i>=0){ map[k]=i; used.add(i); } });
+  return map;
+}
+function bkLooksLikeHeader(row){ return row.some(c=> BK_FIELDS.some(([,,re])=> re.test(String(c||"")))) && !row.some(c=> /@.+\./.test(c) || /\d{8,}/.test(String(c).replace(/\D/g,""))); }
+function bkSetRows(rows, src){
+  if(!rows || !rows.length) throw new Error("No rows found in that file.");
+  let head = rows[0], body = rows.slice(1);
+  if(!bkLooksLikeHeader(head)){ head = head.map((_,i)=>`Column ${i+1}`); body = rows; }
+  const width = Math.max(...rows.map(r=>r.length));
+  head = Array.from({length:width}, (_,i)=> head[i] || `Column ${i+1}`);
+  _bk.head = head; _bk.map = bkAutoMap(head);
+  // no named columns → guess from the values
+  if(_bk.map.phone==null || _bk.map.email==null || _bk.map.handle==null){
+    for(let i=0;i<width;i++){
+      if(Object.values(_bk.map).includes(i)) continue;
+      const vals = body.slice(0,20).map(r=>String(r[i]||""));
+      if(_bk.map.email==null && vals.filter(v=>/@.+\./.test(v)).length >= Math.max(1, vals.length/3)) _bk.map.email = i;
+      else if(_bk.map.phone==null && vals.filter(v=>v.replace(/\D/g,"").length>=10 && !/[a-z]/i.test(v)).length >= Math.max(1, vals.length/3)) _bk.map.phone = i;
+      else if(_bk.map.handle==null && vals.filter(v=>/instagram\.com|^@/.test(v)).length >= Math.max(1, vals.length/3)) _bk.map.handle = i;
+    }
+  }
+  _bk.rows = body.map(r=> ({ cells: r, approved: _bk.map.approved!=null ? bkYes(r[_bk.map.approved]) : false }));
+  _bk.src = src; _bk.preview = null;
+}
+function bkRowData(r){
+  const g = k => _bk.map[k]!=null ? String(r.cells[_bk.map[k]]||"").trim() : "";
+  return { name:g("name"), handle:g("handle"), phone:g("phone"), email:g("email"), city:g("city"), followers:g("followers"), approved: !!r.approved };
+}
+async function bkCheck(){
+  if(!_bk.rows) return;
+  const { data, error } = await sb.schema("api").rpc("bulk_preview", { p_campaign:_bpCamp.id, p_rows: _bk.rows.map(bkRowData) }).then(r=>r, e=>({error:e}));
+  _bk.preview = error ? { error: error.message||String(error) } : (data||[]);
+  paintBulk();
+}
+async function loadBulkList(){
+  const { data, error } = await sb.schema("api").rpc("bulk_invites", { p_campaign:_bpCamp.id }).then(r=>r, e=>({error:e}));
+  _bk.list = error ? { error: error.message||String(error) } : (data||[]);
+  const box = document.getElementById("bkList"); if(box) box.innerHTML = bkListHtml(); wireBulkList();
+}
+function bkStatusChip(p){
+  if(!p) return '<span class="muted">…</span>';
+  if(p.no_contact) return '<span class="tag warn">⚠ no WhatsApp / email / Instagram</span>';
+  const bad = (p.phone_bad?" · number looks wrong":"") + (p.email_bad?" · email looks wrong":"");
+  if(p.on_platform) return p.stage ? `<span class="tag">already in · ${bkEsc(String(p.stage).replace(/_/g," "))}</span>`
+                                   : `<span class="tag good">On Geek OS${p.who?` · ${bkEsc(p.who)}`:""} — added now</span>`;
+  return `<span class="tag">New — invite on ${[p.phone?"WhatsApp":null, p.email?"email":null].filter(Boolean).join(" + ")||"Instagram only"}</span>${bad?`<span class="tag warn">${bkEsc(bad.slice(3))}</span>`:""}`;
+}
+function bulkHtml(){
+  const sample = "data:text/csv;charset=utf-8," + encodeURIComponent("Name,Instagram,WhatsApp,Email,City,Followers,Approved\nAsha Rao,@asha.creates,9876543210,asha@example.com,Mumbai,25000,Yes\nRohan Mehta,https://instagram.com/rohan.eats,+91 98111 22233,rohan@example.com,Delhi,12000,\n");
+  const rows = _bk.rows||[], pv = Array.isArray(_bk.preview) ? _bk.preview : null;
+  const valid = pv ? pv.filter(p=>!p.no_contact).length : rows.length;
+  const ticked = rows.filter((r,i)=> r.approved && !(pv && pv[i] && pv[i].no_contact)).length;
+  return `<div class="card bk-card">
+      <h3 style="margin:0 0 4px">📥 Upload creators in bulk</h3>
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Tick everyone who is <b>already approved</b> — they go straight to the contract. Everyone gets the campaign; people not on Geek OS yet get a WhatsApp + email invite to register.</div>
+      <div class="bk-src">
+        <label class="btn sm ghost bk-file">📄 Choose file<input type="file" id="bkFile" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.ods,.docx,.doc" hidden></label>
+        <input id="bkLink" placeholder="or paste a Google Sheet link" value="">
+        <button class="btn sm ghost" id="bkLinkGo">Load sheet</button>
+        <a class="btn sm ghost" href="${sample}" download="creators-template.csv">⬇ Template</a>
+        <button class="btn sm ghost" id="bkPick">🎯 Pick from Geek OS instead</button>
+      </div>
+      <details class="bk-paste"><summary>…or paste rows (copy cells from Sheets / Excel / Word)</summary>
+        <textarea id="bkPaste" rows="4" placeholder="Name, Instagram, WhatsApp, Email, City, Approved"></textarea>
+        <button class="btn sm ghost" id="bkPasteGo">Use pasted rows</button></details>
+      <div class="auth-err" id="bkErr"></div>
+      ${rows.length ? `
+      <div class="bk-meta"><b>${rows.length}</b> row${rows.length>1?"s":""} from ${bkEsc(_bk.src)} · match the columns:</div>
+      <div class="bk-map">${BK_FIELDS.map(([k,l])=>`<label><span>${l}</span><select data-bkmap="${k}"><option value="">—</option>${_bk.head.map((h,i)=>`<option value="${i}"${_bk.map[k]===i?" selected":""}>${bkEsc(h)}</option>`).join("")}</select></label>`).join("")}</div>
+      <div class="bk-tablewrap"><table class="bk-table"><thead><tr>
+        <th><label title="Tick all"><input type="checkbox" id="bkAll"${rows.length && rows.every(r=>r.approved)?" checked":""}> Approved</label></th>
+        <th>Name</th><th>Instagram</th><th>WhatsApp</th><th>Email</th><th>City</th><th>What happens</th></tr></thead><tbody>
+        ${rows.map((r,i)=>{ const d = bkRowData(r), p = pv && pv[i];
+          return `<tr class="${p&&p.no_contact?"bk-bad":""}"><td><input type="checkbox" data-bkapp="${i}"${r.approved?" checked":""}${p&&p.no_contact?" disabled":""}></td>
+            <td>${bkEsc(d.name)||'<span class="muted">—</span>'}</td><td>${p&&p.handle?"@"+bkEsc(p.handle):bkEsc(d.handle)}</td>
+            <td>${p&&p.phone?bkEsc(p.phone):bkEsc(d.phone)}</td><td>${bkEsc(p&&p.email||d.email)}</td><td>${bkEsc(d.city)}</td>
+            <td>${pv?bkStatusChip(p):'<span class="muted">checking…</span>'}</td></tr>`; }).join("")}
+      </tbody></table></div>
+      ${_bk.preview && _bk.preview.error ? `<div class="auth-err">${bkEsc(_bk.preview.error)}</div>` : ""}
+      <label class="bk-note"><span>Message to the creators (optional — goes with the invite)</span><input id="bkNote" maxlength="200" value="${bkEsc(_bk.note)}" placeholder="e.g. Diwali drop — we loved your recent reels!"></label>
+      <div class="bk-go"><button class="btn" id="bkUpload"${_bk.busy||!valid?" disabled":""}>${_bk.busy?"Uploading…":`Upload &amp; invite ${valid} creator${valid===1?"":"s"}`}</button>
+        <span class="muted">${ticked} ticked as approved → contract goes out automatically · ${Math.max(valid-ticked,0)} get the campaign to apply</span>
+        <button class="btn sm ghost" id="bkClear">Clear</button></div>
+      <div id="bkResult"></div>` : ""}
+    </div>
+    <div class="card" style="margin-top:12px"><h3 style="margin:0 0 8px">Uploaded creators <span class="muted" style="font-size:12px;font-weight:400">— live</span></h3><div id="bkList">${bkListHtml()}</div></div>`;
+}
+function bkListHtml(){
+  const L = _bk.list;
+  if(!L) return skel("list",3);
+  if(L.error) return `<div class="muted">${bkEsc(L.error)} — run <code>supabase db push</code> first.</div>`;
+  if(!L.length) return `<div class="muted">Nobody uploaded yet.</div>`;
+  const n = s => L.filter(x=>x.status===s).length;
+  const ch = o => !o ? "" : o.status==="sent" ? "✓" : o.status==="failed" ? "✗" : o.status==="skipped" ? "⏸" : "…";
+  return `<div class="bk-sum"><span><b>${n("joined")}</b> in the campaign</span><span><b>${n("registered")}</b> registered · profile pending</span><span><b>${n("invited")}</b> invited · not registered yet</span></div>
+    ${L.map(x=>{
+      const who = x.instagram || (x.handle?"@"+x.handle:"") || x.name || x.phone || x.email;
+      const miss = Array.isArray(x.missing) ? x.missing : [];
+      const st = x.status==="joined" ? `<span class="tag good">✓ ${bkEsc(String(x.stage||"").replace(/_/g," "))}</span>`
+               : x.status==="registered" ? `<span class="tag warn">Registered · finishing profile</span>`
+               : `<span class="tag">Invited · not registered</span>`;
+      const msgs = x.status==="invited" ? `<span class="muted bk-ch">${x.phone?`WhatsApp ${ch(x.wa)}`:""}${x.phone&&x.email?" · ":""}${x.email?`Email ${ch(x.mail)}`:""}${x.invites_sent>1?` · sent ${x.invites_sent}×`:""}</span>` : "";
+      const err = [x.wa&&x.wa.status!=="sent"&&x.wa.error, x.mail&&x.mail.status!=="sent"&&x.mail.error].filter(Boolean)[0];
+      return `<div class="bk-row">
+        <div class="bk-who"><b>${bkEsc(who)}</b>${x.name&&who!==x.name?` <span class="muted">${bkEsc(x.name)}</span>`:""}
+          <div class="muted" style="font-size:12px">${[x.phone,x.email,x.city].filter(Boolean).map(bkEsc).join(" · ")}</div></div>
+        <div class="bk-st">${st} ${x.approved?'<span class="tag good">approved</span>':""} ${msgs}
+          ${miss.length && x.status!=="invited" ? `<div class="muted" style="font-size:12px">Still to do: ${miss.slice(0,3).map(bkEsc).join(", ")}${miss.length>3?` +${miss.length-3} more`:""}</div>`:""}
+          ${err?`<div class="muted" style="font-size:12px;color:#b45309">${bkEsc(String(err).slice(0,140))}</div>`:""}</div>
+        <div class="bk-act">
+          ${x.participation_id?`<button class="mini-btn" data-bkopen="${bkEsc(x.participation_id)}">Open</button>`:""}
+          ${!x.approved?`<button class="mini-btn ghost" data-bkok="${bkEsc(x.invite_id)}">Mark approved</button>`:""}
+          ${x.status!=="joined"?`<button class="mini-btn ghost" data-bkre="${bkEsc(x.invite_id)}">Resend</button><button class="mini-btn ghost" data-bkdel="${bkEsc(x.invite_id)}">Remove</button>`:""}
+        </div></div>`; }).join("")}`;
+}
+function paintBulk(){
+  const sec = document.querySelector("#bpBody .ac360-sec"); if(!sec || _bpTab!=="bulk") return;
+  const y = sec.closest(".ac360-body") ? sec.closest(".ac360-body").scrollTop : 0;
+  sec.innerHTML = bulkHtml(); wireBulk();
+  const b = sec.closest(".ac360-body"); if(b) b.scrollTop = y;
+}
+function wireBulkList(){
+  const box = document.getElementById("bkList"); if(!box) return;
+  const act = (sel, fn)=> box.querySelectorAll(sel).forEach(b=> b.onclick = async ()=>{ b.disabled = true; try{ await fn(b); }catch(e){ gateToast(e.message||String(e)); } b.disabled = false; loadBulkList(); });
+  act("[data-bkre]", async b=>{ const { data, error } = await sb.schema("api").rpc("bulk_resend_invite", { p_invite:b.dataset.bkre }); if(error) throw error;
+    gateToast(data && data.status==="joined" ? "They're on Geek OS — added to the campaign ✓" : "Invite sent again ✓"); });
+  act("[data-bkok]", async b=>{ const { error } = await sb.schema("api").rpc("bulk_set_approved", { p_invite:b.dataset.bkok, p_approved:true }); if(error) throw error; gateToast("Approved ✓ — contract goes out as soon as they're in"); });
+  act("[data-bkdel]", async b=>{ if(!confirm("Remove this creator from the upload? (No message is sent.)")) return; const { error } = await sb.schema("api").rpc("bulk_delete_invite", { p_invite:b.dataset.bkdel }); if(error) throw error; });
+  box.querySelectorAll("[data-bkopen]").forEach(b=> b.onclick = ()=>{ _bpOpen = b.dataset.bkopen; _bpTab = "tracker"; paintBarterProcess(); });
+}
+function wireBulk(){
+  const $b = id => document.getElementById(id), err = $b("bkErr");
+  const take = async (fn, src)=>{ err.textContent = ""; try{ bkSetRows(await fn(), src); paintBulk(); bkCheck(); }catch(e){ err.textContent = e.message||String(e); } };
+  const f = $b("bkFile"); if(f) f.onchange = ()=>{ const file = f.files && f.files[0]; if(file) take(()=>bkReadFile(file), file.name); };
+  const lg = $b("bkLinkGo"); if(lg) lg.onclick = ()=>{ const u = $b("bkLink").value.trim(); if(u){ lg.textContent = "Loading…"; take(()=>bkReadSheetLink(u), "Google Sheet").finally(()=>{ if(lg.isConnected) lg.textContent = "Load sheet"; }); } };
+  const pg = $b("bkPasteGo"); if(pg) pg.onclick = ()=>{ const t = $b("bkPaste").value; take(async()=>{ const r = bkSplitCsv(t); return r.length && r[0].length>1 ? r : bkFromLines(t.split("\n")); }, "pasted rows"); };
+  document.querySelectorAll("[data-bkmap]").forEach(s=> s.onchange = ()=>{ const k = s.dataset.bkmap; if(s.value==="") delete _bk.map[k]; else _bk.map[k] = +s.value;
+    if(k==="approved") _bk.rows.forEach(r=> r.approved = _bk.map.approved!=null ? bkYes(r.cells[_bk.map.approved]) : false);
+    _bk.preview = null; paintBulk(); bkCheck(); });
+  document.querySelectorAll("[data-bkapp]").forEach(c=> c.onchange = ()=>{ _bk.rows[+c.dataset.bkapp].approved = c.checked; paintBulk(); });
+  const all = $b("bkAll"); if(all) all.onchange = ()=>{ _bk.rows.forEach(r=> r.approved = all.checked); paintBulk(); };
+  const note = $b("bkNote"); if(note) note.oninput = ()=>{ _bk.note = note.value; };
+  const pk = $b("bkPick"); if(pk) pk.onclick = ()=>{ const c = _bpCamp; if(window.__bpClose) window.__bpClose(); openInvitePanel(c.id, c.name); };
+  const cl = $b("bkClear"); if(cl) cl.onclick = ()=>{ _bk.rows = null; _bk.preview = null; paintBulk(); };
+  const up = $b("bkUpload"); if(up) up.onclick = async ()=>{
+    const pv = Array.isArray(_bk.preview) ? _bk.preview : [];
+    const rows = _bk.rows.map(bkRowData).filter((d,i)=> !(pv[i] && pv[i].no_contact));
+    if(!rows.length) return;
+    _bk.busy = true; paintBulk();
+    const { data, error } = await sb.schema("api").rpc("bulk_import_creators", { p_campaign:_bpCamp.id, p_rows: rows, p_note: _bk.note||null }).then(r=>r, e=>({error:e}));
+    _bk.busy = false;
+    if(error){ paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = error.message||String(error); return; }
+    const d = data||{};
+    _bk.rows = null; _bk.preview = null; paintBulk();
+    gateToast(`✓ ${d.added||0} added to the campaign · ${d.invited||0} invited on WhatsApp/email${d.waiting_profile?` · ${d.waiting_profile} finishing their profile`:""}${d.skipped?` · ${d.skipped} skipped (no contact)`:""}`);
+    loadBulkList(); loadBarterProcess(true);
+  };
+  wireBulkList();
+}
+
 /* ================= BARTER PROCESS — one creator at a time, start to finish =================
  * Outreach message → creator registers → screened against the brand's criteria → final list to the brand →
  * brand confirms → contract (ASCI, ad rights, collab rights, product, deliverables) → address → courier sent →
@@ -3632,8 +3883,9 @@ const BP_NEXT = {
   completed:"Done ✓"
 };
 let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null, _bpAnalytics = null;
-function openBarterProcess(campaignId, campaignName, focusParticipation){
-  _bpCamp = { id: campaignId, name: campaignName || "this campaign" }; _bpTab = "tracker"; _bpOpen = focusParticipation || null; _bpAnalytics = null;
+function openBarterProcess(campaignId, campaignName, focusParticipation, tab){
+  _bpCamp = { id: campaignId, name: campaignName || "this campaign" }; _bpTab = tab || "tracker"; _bpOpen = focusParticipation || null; _bpAnalytics = null;
+  _bk = { rows:null, head:null, map:null, preview:null, list:null, src:"", busy:false, note:"" };
   document.getElementById("bpPanel")?.remove();
   const ov = el("div","ac360"); ov.id = "bpPanel";
   ov.innerHTML = `<div class="ac360-box"><div class="ac360-body" id="bpBody">${skel("list",5)}</div></div>`;
@@ -3649,6 +3901,7 @@ function openBarterProcess(campaignId, campaignName, focusParticipation){
     if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open")) return;
     const a = document.activeElement; if(a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.tagName==="SELECT")) return;
     if(_bpTab==="terms") return;      // never repaint a form someone is editing
+    if(_bpTab==="bulk"){ loadBulkList(); loadBarterProcess(true); return; }   // keep a half-checked upload intact
     loadBarterProcess(true);
   }, 20000);
 }
@@ -3661,6 +3914,7 @@ async function loadBarterProcess(silent){
   if(t.error){ if(!silent) body.innerHTML = `<div class="card"><div class="muted">${esc(t.error.message||t.error)}</div></div>`; return; }
   _bpData = t.data||{}; _bpData.outreach = o.data||{}; pollNavCounts();
   if(_bpTab==="analytics") await loadBpAnalytics(true);
+  if(silent && _bpTab==="bulk") return;
   paintBarterProcess();
 }
 async function loadBpAnalytics(quiet){
@@ -3677,7 +3931,7 @@ function paintBarterProcess(){
   const failed = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
   const done = s => list.filter(x=> !failed(x.stage) && bpEffectiveIndex(x) >= bpStageIndex(s)).length;
   const needsYou = list.filter(x=> ["applied","eligible","sent_to_brand","address_confirmed","product_sent","content_submitted","published"].includes(x.stage)).length;
-  const tabs = [["tracker",`👥 Creators (${list.length})`],["terms","📜 Contract & video brief"],["analytics","📈 Analytics"],["outreach","✉️ Outreach message"],["shortlist","📋 List for the brand"]];
+  const tabs = [["tracker",`👥 Creators (${list.length})`],["bulk","📥 Bulk upload"],["terms","📜 Contract & video brief"],["analytics","📈 Analytics"],["outreach","✉️ Outreach message"],["shortlist","📋 List for the brand"]];
   const pb = d.playbook||{};
   body.innerHTML = `<div class="ac360-head"><div style="flex:1;min-width:0"><h3>Barter process</h3>
       <div class="muted">${esc(c.name||_bpCamp.name)}${c.brand?` · ${esc(c.brand)}`:""}${c.product?` · ${esc(c.product)}`:""} — every creator, every step, live. Contract and video brief go out on their own.</div></div>
@@ -3686,7 +3940,7 @@ function paintBarterProcess(){
     ${needsYou?`<div class="bp-needs">⚡ <b>${needsYou}</b> creator${needsYou>1?"s need":" needs"} something from you — open them below.</div>`:""}
     <div class="bp-flow">${BARTER_STEPS.filter(s=>s[0]!=="changes_requested").map(s=>`<div class="bp-fstep"><b>${done(s[0])}</b><span>${esc(s[1].replace(/^\d+\.\s*/,""))}</span></div>`).join("")}</div>
     <div class="admin-tabs ac360-tabs">${tabs.map(t=>`<button class="${_bpTab===t[0]?"act":""}" data-bptab="${t[0]}">${t[1]}</button>`).join("")}</div>
-    <div class="ac360-sec">${_bpTab==="tracker"?bpTrackerHtml(list):_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(list)}</div>`;
+    <div class="ac360-sec">${_bpTab==="tracker"?bpTrackerHtml(list):_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(list)}</div>`;
   body.querySelector("#bpX").onclick = ()=> window.__bpClose && window.__bpClose();
   const goT = body.querySelector("#bpGoTerms"); if(goT) goT.onclick = e=>{ e.preventDefault(); _bpTab="terms"; paintBarterProcess(); };
   body.querySelectorAll("[data-bptab]").forEach(b=> b.onclick = async ()=>{
@@ -3694,6 +3948,7 @@ function paintBarterProcess(){
     if(_bpTab==="analytics"){ _bpAnalytics = null; paintBarterProcess(); await loadBpAnalytics(); return; }
     paintBarterProcess(); });
   wireBarterProcess();
+  if(_bpTab==="bulk"){ wireBulk(); if(!_bk.list) loadBulkList(); }
 }
 function bpMetricLine(st){
   st = st||{}; const K = [["views","views"],["reach","reach"],["likes","likes"],["comments","comments"],["shares","shares"],["saves","saves"]];
@@ -5759,6 +6014,7 @@ window.onProfileRequirements = function(req){
   window.__profileGate = !req.complete;
   if(wasGated && req.complete){
     if(window.Tracker) Tracker.security("profile_completed");
+    if(window.__inviteGo){ claimCreatorInvites().then(()=>{ currentPage = "mycampaigns"; renderShell(); }); }
     gateToast("🎉 Profile complete — you're ready for campaigns! Everything is unlocked.");
     renderNav();
   } else if(wasGated !== !!window.__profileGate){ renderNav(); }
@@ -5772,6 +6028,17 @@ async function ensureConsent(){
     try{ const { data } = await sb.rpc("my_consent"); if(data==="all"||data==="essential"){ Consent.set(data, true); local = data; } }catch(e){}
   }
   if(!local) await Consent.require();
+}
+// campaign invites (bulk upload): claim the one from the link + any sent to this number / email / Instagram
+async function claimCreatorInvites(){
+  if(!window.sb || !sb.schema) return;
+  let tok = null; try{ tok = localStorage.getItem("geek_cinv"); }catch(e){}
+  try{
+    const { data, error } = await sb.schema("api").rpc("claim_my_invites", { p_token: tok || null });
+    if(error) return;
+    if(tok){ try{ localStorage.removeItem("geek_cinv"); }catch(e){} }
+    if(tok || (data && (data.joined || data.waiting))) window.__inviteGo = data || {};
+  }catch(e){}
 }
 async function creatorProfileGate(){
   try{
@@ -5790,6 +6057,7 @@ async function bootOS(){
   // Gate: agency-side accounts awaiting platform approval don't enter the OS.
   if(window.Auth && Auth.profile && Auth.profile.status === "pending"){ showPending(); return; }
   if(window.Auth && Auth.profile && Auth.profile.role === "creator"){
+    await claimCreatorInvites();
     if(!(await creatorHasInstagram())){ showInstagramGate(); return; }
     const root = document.getElementById("authRoot"); if(root){ root.classList.remove("open"); root.innerHTML = ""; }
     if(!window.__osBooted && !new URLSearchParams(location.search).get("go")) currentPage = "mediakit";
@@ -5812,6 +6080,12 @@ async function bootOS(){
     (window.Auth && Auth.profile && Auth.profile.role === "creator") ? within(creatorProfileGate(), 5000) : null
   ]);
   if(window.__profileGate && !GATE_OPEN_PAGES.includes(currentPage)) currentPage = "mediakit";
+  // came from a campaign invite → whatever is still pending first (profile), then the campaign itself
+  if(window.__inviteGo && !window.__osBooted && !new URLSearchParams(location.search).get("go")){
+    currentPage = window.__profileGate ? "profile" : "mycampaigns";
+    const nm = window.__inviteGo.campaign ? `“${window.__inviteGo.campaign}”` : "Your campaign";
+    setTimeout(()=> gateToast(window.__profileGate ? `🎯 ${nm} is waiting — finish your profile and it opens right away.` : `🎯 ${nm} is open in My Campaigns.`), 900);
+  }
   init();
   // Platform admins get an Admin queue in the nav.
   if(window.sb){ sb.rpc("is_platform_admin").then(({data})=>{ if(data===true){ markSuperAdmin(); } }).catch(()=>{}); }
