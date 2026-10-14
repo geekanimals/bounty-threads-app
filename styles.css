@@ -1195,3 +1195,14 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
   .bk-row{grid-template-columns:minmax(0,1fr)}
   .bk-act{justify-content:flex-start}
 }
+.bk-wa{font-size:13px;padding:8px 12px;border-radius:10px;margin:0 0 10px;line-height:1.5}
+.bk-wa.ok{background:rgba(18,183,106,.08);border:1px solid rgba(18,183,106,.3)}
+.bk-wa.warn{background:rgba(247,144,9,.08);border:1px solid rgba(247,144,9,.4)}
+.bk-guide{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 12px;font-size:13px}
+.bk-guide summary{cursor:pointer;font-weight:700}
+.bk-steps{margin:10px 0;padding-left:20px;line-height:1.6}
+.bk-steps li{margin-bottom:4px}
+.bk-guide .bk-table{min-width:560px}
+.bk-guide .bk-sample{min-width:680px}
+.bk-mini{font-size:12px;margin:10px 0 6px;line-height:1.5}
+.bk-dl{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}

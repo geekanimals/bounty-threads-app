@@ -3608,6 +3608,26 @@ const BK_FIELDS = [
   ["followers","Followers", /(follower|followers|reach|fans)/i],
   ["approved","Approved", /(approv|status|selected|confirm|final|shortlist|tick|✓)/i]
 ];
+const BK_SAMPLE = [
+  ["Name","Instagram","WhatsApp","Email","City","Followers","Approved"],
+  ["Asha Rao","@asha.creates","9876543210","asha@example.com","Mumbai","25000","Yes"],
+  ["Rohan Mehta","https://instagram.com/rohan.eats","+91 98111 22233","rohan@example.com","Delhi","12000",""],
+  ["Meera Shah","meera.styles","9000011111","","Pune","8000","Yes"]];
+const BK_GUIDE = [
+  ["Name","Creator's name","Asha Rao","optional"],
+  ["Instagram","@handle, handle or profile link","@asha.creates","one of these 3"],
+  ["WhatsApp","10-digit number (India) or +country code — the invite + all updates go here","9876543210","one of these 3"],
+  ["Email","Their email — the invite goes here too","asha@example.com","one of these 3"],
+  ["City","City","Mumbai","optional"],
+  ["Followers","Number only","25000","optional"],
+  ["Approved","Yes = brand already approved → contract goes straight away · blank = they get “Apply”","Yes","optional"]];
+async function bkDownloadXlsx(){
+  await bkLoadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
+  const ws = XLSX.utils.aoa_to_sheet(BK_SAMPLE);
+  ws["!cols"] = [{wch:18},{wch:32},{wch:18},{wch:24},{wch:12},{wch:10},{wch:10}];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Creators");
+  XLSX.writeFile(wb, "geek-creators-template.xlsx");
+}
 const bkYes = v => /^(y|yes|approved?|selected|confirmed?|final|done|ok|true|1|✓|✔|☑|x)$/i.test(String(v||"").trim());
 const bkEsc = s => esc(s==null ? "" : String(s));
 
@@ -3735,11 +3755,12 @@ function bulkHtml(){
   return `<div class="card bk-card">
       <h3 style="margin:0 0 4px">📥 Upload creators in bulk</h3>
       <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Tick everyone who is <b>already approved</b> — they go straight to the contract. Everyone gets the campaign; people not on Geek OS yet get a WhatsApp + email invite to register.</div>
+      ${bkWaLine()}
+      ${bkGuideHtml(!rows.length)}
       <div class="bk-src">
         <label class="btn sm ghost bk-file">📄 Choose file<input type="file" id="bkFile" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.ods,.docx,.doc" hidden></label>
         <input id="bkLink" placeholder="or paste a Google Sheet link" value="">
         <button class="btn sm ghost" id="bkLinkGo">Load sheet</button>
-        <a class="btn sm ghost" href="${sample}" download="creators-template.csv">⬇ Template</a>
         <button class="btn sm ghost" id="bkPick">🎯 Pick from Geek OS instead</button>
       </div>
       <details class="bk-paste"><summary>…or paste rows (copy cells from Sheets / Excel / Word)</summary>
@@ -3766,6 +3787,36 @@ function bulkHtml(){
       <div id="bkResult"></div>` : ""}
     </div>
     <div class="card" style="margin-top:12px"><h3 style="margin:0 0 8px">Uploaded creators <span class="muted" style="font-size:12px;font-weight:400">— live</span></h3><div id="bkList">${bkListHtml()}</div></div>`;
+}
+function bkWaLine(){
+  const w = _bk.wa; if(!w || w==="loading") return "";
+  if(w.whatsapp) return `<div class="bk-wa ok">✅ WhatsApp + email invites are on <span class="muted">(WhatsApp template <code>${bkEsc(w.template)}</code>)</span></div>`;
+  return `<div class="bk-wa warn">⚠️ <b>WhatsApp invites are waiting</b> — the WhatsApp template isn't set yet, so invites go by <b>email</b> now and on WhatsApp automatically the moment it's set.
+    ${w.is_admin ? `<a href="#" id="bkSetWa">Set the template now →</a>` : `Ask the Geek Super Admin to set it (Super Admin → WhatsApp &amp; email).`}</div>`;
+}
+function bkGuideHtml(open){
+  const tsv = BK_SAMPLE.map(r=>r.join("\t")).join("\n");
+  return `<details class="bk-guide"${open?" open":""}><summary>📘 How to set up your sheet — with a ready template</summary>
+    <ol class="bk-steps">
+      <li><b>Download a template</b> below (Excel or CSV) — or copy it straight into a new Google Sheet.</li>
+      <li><b>One creator per row.</b> Keep the first row as the column names.</li>
+      <li>Every row needs <b>at least one of WhatsApp, Email or Instagram</b> — best is WhatsApp + email: the invite goes to both and all later updates go there.</li>
+      <li><b>Approved</b> column: write <b>Yes</b> for creators the brand has already approved (their contract goes out the moment they join). Leave it blank for the rest — they get the campaign with an <b>Apply</b> button. You can also tick/untick here after uploading the file.</li>
+      <li>Upload the file — or paste a Google Sheet link (Share → <b>Anyone with the link</b> → Viewer). Column names don't have to match exactly; we match them and you can fix them in the dropdowns.</li>
+    </ol>
+    <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable"><thead><tr><th>Column</th><th>What to put</th><th>Example</th><th>Needed?</th></tr></thead><tbody>
+      ${BK_GUIDE.map(g=>`<tr><td><b>${bkEsc(g[0])}</b></td><td>${bkEsc(g[1])}</td><td><code>${bkEsc(g[2])}</code></td><td>${g[3]==="optional"?'<span class="muted">optional</span>':`<span class="tag">${bkEsc(g[3])}</span>`}</td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="bk-mini">Your sheet should look like this:</div>
+    <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-sample"><thead><tr>${BK_SAMPLE[0].map(h=>`<th>${bkEsc(h)}</th>`).join("")}</tr></thead>
+      <tbody>${BK_SAMPLE.slice(1).map(r=>`<tr>${r.map(c=>`<td>${bkEsc(c)||'<span class="muted">—</span>'}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    <div class="bk-dl">
+      <button class="btn sm" id="bkXlsx">⬇ Excel template (.xlsx)</button>
+      <a class="btn sm ghost" href="data:text/csv;charset=utf-8,${encodeURIComponent(BK_SAMPLE.map(r=>r.map(c=>/[",]/.test(c)?`"${c.replace(/"/g,'""')}"`:c).join(",")).join("\n"))}" download="geek-creators-template.csv">⬇ CSV template</a>
+      <button class="btn sm ghost" id="bkCopyTpl" data-tsv="${bkEsc(tsv)}">📋 Copy for Google Sheets</button>
+    </div>
+    <div class="muted bk-mini">Google Sheets: copy → open a new sheet → click cell A1 → paste. · Word: make a table with the same columns, or write one creator per line like <code>Asha Rao – @asha.creates – 9876543210 – asha@example.com</code>.</div>
+  </details>`;
 }
 function bkListHtml(){
   const L = _bk.list;
@@ -3822,6 +3873,11 @@ function wireBulk(){
   document.querySelectorAll("[data-bkapp]").forEach(c=> c.onchange = ()=>{ _bk.rows[+c.dataset.bkapp].approved = c.checked; paintBulk(); });
   const all = $b("bkAll"); if(all) all.onchange = ()=>{ _bk.rows.forEach(r=> r.approved = all.checked); paintBulk(); };
   const note = $b("bkNote"); if(note) note.oninput = ()=>{ _bk.note = note.value; };
+  if(_bk.wa===undefined){ _bk.wa = "loading";
+    sb.schema("api").rpc("wa_invite_ready").then(r=>{ _bk.wa = r && !r.error ? (r.data||{}) : null; paintBulk(); }, ()=>{ _bk.wa = null; }); }
+  const sw = $b("bkSetWa"); if(sw) sw.onclick = e=>{ e.preventDefault(); if(window.__bpClose) window.__bpClose(); _adminTab = "delivery"; currentPage = "admin"; renderShell(); };
+  const xl = $b("bkXlsx"); if(xl) xl.onclick = async ()=>{ xl.disabled = true; try{ await bkDownloadXlsx(); }catch(e){ err.textContent = e.message||String(e); } xl.disabled = false; };
+  const ct = $b("bkCopyTpl"); if(ct) ct.onclick = async ()=>{ try{ await navigator.clipboard.writeText(ct.dataset.tsv); ct.textContent = "✓ Copied — paste in cell A1"; }catch(e){ err.textContent = "Couldn't copy — use the Excel or CSV template instead."; } };
   const pk = $b("bkPick"); if(pk) pk.onclick = ()=>{ const c = _bpCamp; if(window.__bpClose) window.__bpClose(); openInvitePanel(c.id, c.name); };
   const cl = $b("bkClear"); if(cl) cl.onclick = ()=>{ _bk.rows = null; _bk.preview = null; paintBulk(); };
   const up = $b("bkUpload"); if(up) up.onclick = async ()=>{
