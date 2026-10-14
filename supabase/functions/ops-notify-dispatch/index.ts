@@ -45,6 +45,9 @@ Deno.serve(async (req) => {
   const { data: rows, error } = await api.rpc("ops_outbox_claim", { p_limit: 50 });
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
 
+  // the generic update template: set by the Super Admin in the app, else the WA_UPDATE_TEMPLATE secret
+  let genTpl = WA_UPDATE_TEMPLATE, genLang = WA_UPDATE_TEMPLATE_LANG;
+  try { const { data: ws } = await api.rpc("ops_wa_settings"); if (ws?.template) { genTpl = String(ws.template); genLang = String(ws.lang || "en"); } } catch (_e) { /* keep env */ }
   const prefsCache = new Map<string, any>();
   const prefsOf = async (member?: string | null) => {
     if (!member) return {};
@@ -85,10 +88,10 @@ Deno.serve(async (req) => {
           const { data: t } = await api.rpc("ops_wa_template_for", { p_campaign: row.campaign_id });
           if (t?.name) out = { to: row.to_address, template: String(t.name), lang: String(t.lang || "en"), variables: [name, update, target] };
         }
-        if (!out && WA_UPDATE_TEMPLATE) out = { to: row.to_address, template: WA_UPDATE_TEMPLATE, lang: WA_UPDATE_TEMPLATE_LANG, variables: [name, update, target] };
+        if (!out && genTpl) out = { to: row.to_address, template: genTpl, lang: genLang, variables: [name, update, target] };
         if (!out) {
           await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped",
-            p_error: "WhatsApp 24h window closed — waiting for this campaign's WhatsApp template to be approved (it goes out automatically then)" });
+            p_error: "WhatsApp 24h window closed — no approved update template yet. Super Admin → WhatsApp & email → set the template name (it goes out automatically then)" });
           skipped++; continue;
         }
         const res = await getProvider().send(out as any);

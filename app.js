@@ -4416,6 +4416,45 @@ async function adminCreatorProfile(member, row){
 
 // Super Admin → WhatsApp & email: is every alert actually reaching people? (outbox health, reasons, retry, test)
 let _dlvTimer = null;
+// The one WhatsApp template that carries every campaign update (any campaign, any step). Meta allows free text
+// only within 24 h of the creator's last message, so without an approved template WhatsApp updates are held.
+const WA_UPD_NAME = "geek_campaign_update";
+const WA_UPD_BODY = "Hi {{1}}, there's an update on your campaign: {{2}}\n\nOpen the app for details and your next step: {{3}} — thank you!";
+const WA_UPD_FOOT = "Reply STOP to stop WhatsApp updates";
+async function adminWaSettingsCard(){
+  const box = document.getElementById("dlvWaSet"); if(!box) return;
+  const { data, error } = await sb.rpc("admin_wa_settings").then(r=>r, e=>({error:e}));
+  if(error){ box.innerHTML = `<h3 style="margin-top:0">WhatsApp updates</h3><div class="muted">${esc(error.message||error)} — run <code>supabase db push</code> first.</div>`; return; }
+  const d = data||{}, on = !!d.template;
+  box.innerHTML = `<h3 style="margin-top:0">${on?"✅":"⚠️"} WhatsApp campaign updates ${on?`<span class="tag good">on · ${esc(d.template)}</span>`:`<span class="tag warn">not set — WhatsApp updates are held</span>`}</h3>
+    <p class="muted" style="font-size:13px;margin:0 0 10px">WhatsApp only allows free text within 24 hours of the creator's last message. Every other update needs <b>one approved Utility template</b> — the same one carries every campaign and every step (contract, courier, brief, video, approval…).
+      ${d.held?` <b style="color:#b45309">${esc(d.held)} update(s) are waiting</b> and go out the moment you save an approved template.`:""}</p>
+    <div class="wa-steps">
+      <div><b>1.</b> In <b>snapto</b> → Templates → New: category <b>Utility</b>, language <b>English</b>, name <code>${WA_UPD_NAME}</code> <button class="mini-btn ghost" data-wacopy="${WA_UPD_NAME}">⧉</button></div>
+      <div><b>2.</b> Body <button class="mini-btn ghost" data-wacopy="${esc(WA_UPD_BODY)}">Copy body</button> · Footer <button class="mini-btn ghost" data-wacopy="${esc(WA_UPD_FOOT)}">Copy footer</button>
+        <pre class="wa-pre">${esc(WA_UPD_BODY)}\n— ${esc(WA_UPD_FOOT)}</pre>
+        <span class="muted" style="font-size:12px">Sample values for Meta: {{1}} Asha · {{2}} Your contract is ready — please sign it in the app · {{3}} https://bountythreads.app/app.html</span></div>
+      <div><b>3.</b> Once snapto shows it <b>Approved</b>, put the name here and save:</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+      <input id="waTplName" value="${esc(d.template||"")}" placeholder="${WA_UPD_NAME}" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;min-width:240px">
+      <select id="waTplLang" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit">
+        ${[["en","English (en)"],["en_US","English US (en_US)"],["en_GB","English UK (en_GB)"],["hi","Hindi (hi)"]].map(([v,l])=>`<option value="${v}"${(d.lang||"en")===v?" selected":""}>${l}</option>`).join("")}</select>
+      <button class="mini-btn" id="waTplSave">Save &amp; send held updates</button>
+      ${on?`<button class="mini-btn ghost" id="waTplOff">Turn off</button>`:""}
+      <span class="muted" id="waTplMsg" style="font-size:12px"></span></div>
+    <div class="muted" style="font-size:12px;margin-top:10px">Then use <b>Send test</b> below with your own WhatsApp number to check it arrives.
+      ${d.no_number?` · ${esc(d.no_number)} recent alert(s) went to people with no verified WhatsApp number (they get app + email only).`:""}
+      ${d.opted_out?` · ${esc(d.opted_out)} people replied STOP.`:""}</div>`;
+  box.querySelectorAll("[data-wacopy]").forEach(b=> b.onclick = async ()=>{ try{ await navigator.clipboard.writeText(b.dataset.wacopy); const t=b.textContent; b.textContent="✓ copied"; setTimeout(()=>b.textContent=t,1200); }catch(e){ prompt("Copy:", b.dataset.wacopy); } });
+  const save = async (name)=>{ const msg = document.getElementById("waTplMsg");
+    const { data:r, error:e } = await sb.rpc("admin_set_wa_settings", { p_template: name, p_lang: document.getElementById("waTplLang").value });
+    if(e){ msg.textContent = e.message; return; }
+    msg.textContent = name ? `Saved ✓ — ${r&&r.requeued||0} held update(s) sending now` : "Turned off";
+    setTimeout(()=>{ adminWaSettingsCard(); const b=document.getElementById("adminBody"); if(b) adminDelivery(b,true); }, 2500); };
+  document.getElementById("waTplSave").onclick = ()=>{ const v = document.getElementById("waTplName").value.trim();
+    if(!v){ document.getElementById("waTplMsg").textContent = "Type the approved template name first."; return; } save(v); };
+  const off = document.getElementById("waTplOff"); if(off) off.onclick = ()=>{ if(confirm("Stop sending WhatsApp updates outside the 24-hour window?")) save(null); };
+}
 // One WhatsApp UTILITY template per campaign (created by wa-template-sync). Updates for a campaign go out on
 // its template once approved; held messages are re-sent automatically then.
 async function adminWaTemplates(){
@@ -4466,6 +4505,7 @@ async function adminDelivery(body, silent){
       <div><b>${n("whatsapp:sent")}</b>WhatsApp sent · 7d</div><div><b>${n("whatsapp:skipped")+n("whatsapp:failed")}</b>WhatsApp not sent</div>
       <div><b>${n("email:sent")}</b>Emails sent · 7d</div><div><b>${n("email:failed")+n("email:skipped")}</b>Emails not sent</div>
       <div><b>${n("whatsapp:queued")+n("email:queued")+n("whatsapp:sending")+n("email:sending")}</b>In queue</div></div>
+    <div class="card wa-set" id="dlvWaSet"></div>
     <div class="card"><h3 style="margin-top:0">Health</h3><div class="list">${checks.map(([ok,t,s])=>`<div class="row"><span class="dot ${ok?"good":"warn"}"></span>
         <div class="r-main"><div class="r-title">${ok?"✅":"⚠️"} ${esc(t)}</div><div class="r-sub">${esc(s)}</div></div></div>`).join("")}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
@@ -4482,7 +4522,7 @@ async function adminDelivery(body, silent){
         <td style="font-size:12px;max-width:260px" class="muted">${esc(r.error||(r.sent_at?"Sent "+ago(r.sent_at):""))}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">No messages yet.</td></tr>`}
       </tbody></table></div></div>
     <div class="card" style="margin-top:14px" id="dlvTpl"></div>`;
-  adminWaTemplates();
+  adminWaTemplates(); adminWaSettingsCard();
   document.getElementById("dlvRetry").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_retry", { p_channel: null });
     document.getElementById("dlvMsg").textContent = e ? e.message : `${k||0} message(s) re-queued`; setTimeout(()=>adminDelivery(body,true), 3000); };
   document.getElementById("dlvTest").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_test", { p_phone: document.getElementById("dlvPhone").value.trim()||null, p_email: document.getElementById("dlvEmail").value.trim()||null });

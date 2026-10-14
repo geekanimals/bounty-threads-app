@@ -1075,3 +1075,7 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .ac-pick-f .z{opacity:.5}
 .mc-pager{flex-wrap:wrap;margin:16px 0 4px}
 .mc-pager .muted{margin-left:6px;font-size:13px}
+/* Super Admin → WhatsApp & email: the update template */
+.wa-set{border:1px solid rgba(247,144,9,.35)}
+.wa-steps{display:flex;flex-direction:column;gap:8px;font-size:13px}
+.wa-pre{white-space:pre-wrap;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:rgba(120,130,150,.08);border-radius:9px;padding:10px 12px;margin:6px 0}
