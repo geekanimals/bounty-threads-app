@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
       const igId = String(tok.ig_user_id || "");
       if (!igId) return json({ error: "Your Instagram connection is missing its account id — reconnect Instagram." }, 400);
 
-      const fields = `business_discovery.username(${encodeURIComponent(username)}){username,name,biography,followers_count,media_count,profile_picture_url,media.limit(6){caption,permalink,like_count,comments_count,media_type}}`;
+      const fields = `business_discovery.username(${encodeURIComponent(username)}){username,name,biography,followers_count,media_count,profile_picture_url,media.limit(12){caption,permalink,like_count,comments_count,media_type}}`;
       const r = await fetch(`${FB_GRAPH}/${encodeURIComponent(igId)}?fields=${fields}&access_token=${T}`);
       const j = await r.json().catch(() => ({}));
       const bd = j?.business_discovery;
@@ -62,12 +62,17 @@ Deno.serve(async (req) => {
           : (j?.error?.message || "Instagram couldn't return that profile.");
         return json({ error: msg, needs_permission: needsPermission(j) }, 200);
       }
-      const caption = (bd?.media?.data ?? []).map((m: any) => m?.caption || "").join(" ").slice(0, 1500);
+      const media: any[] = bd?.media?.data ?? [];
+      const caption = media.map((m: any) => m?.caption || "").join(" ").slice(0, 1500);
+      const avg = (k: string) => media.length ? media.reduce((s2: number, m: any) => s2 + (Number(m?.[k]) || 0), 0) / media.length : null;
+      const me = String(bd.username || username).toLowerCase();
+      const mentions = [...new Set((caption.match(/@([A-Za-z0-9._]{2,30})/g) || []).map((x: string) => x.slice(1).toLowerCase().replace(/\.$/, "")))].filter((h) => h !== me).slice(0, 30);
       const profile = {
-        handle: bd.username || username, name: bd.name ?? null, bio: (bd.biography ?? "").slice(0, 300),
+        handle: me, name: bd.name ?? null, bio: (bd.biography ?? "").slice(0, 300),
         followers: bd.followers_count ?? null, media_count: bd.media_count ?? null,
         profile_picture_url: bd.profile_picture_url ?? null,
-        permalink: bd?.media?.data?.[0]?.permalink ?? null, caption, source: "manual",
+        permalink: media[0]?.permalink ?? null, caption, source: "manual",
+        avg_likes: avg("like_count"), avg_comments: avg("comments_count"), mentions,
       };
       await admin.schema("api").rpc("save_external_candidates", { p_items: [profile] }).then(() => {}, () => {});
       return json({ ok: true, profile });

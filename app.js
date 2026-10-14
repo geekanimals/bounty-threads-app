@@ -2126,116 +2126,8 @@ let _discoverPreset = null;
 /* ---------- Discovery: creators already on Geek OS, and creators found on Instagram ---------- */
 let _dcTab = "platform";
 function renderDiscover(){
-  let html = pageHead("Discovery","Find creators on Geek OS, or discover new ones straight from Instagram.");
-  html += `<div class="admin-tabs" id="dcTabs">
-      <button class="${_dcTab==="platform"?"act":""}" data-dctab="platform">👥 On Geek OS</button>
-      <button class="${_dcTab==="external"?"act":""}" data-dctab="external">📸 New on Instagram</button></div>`;
-  html += `<div id="dcPlatform" style="${_dcTab==="platform"?"":"display:none"}"><div class="card"><form id="dcForm" class="modal-form" style="padding:0">
-    <div class="mf-row"><label>Keyword<input name="q" placeholder="food, travel, @username, bio words…"></label>
-    <label>#Hashtag<input name="tag" placeholder="#delhifood"></label></div>
-    <div class="dc-filters">
-      <label>Min followers<input name="min_followers" type="number" min="0" placeholder="10000"></label>
-      <label>Max followers<input name="max_followers" type="number" min="0" placeholder="500000"></label>
-      <label>Location<input name="location" placeholder="Delhi"></label>
-      <label>Gender<select name="gender"><option value="">Any</option><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option></select></label>
-      <label>Category<input name="category" placeholder="Beauty"></label>
-      <label>Min engagement %<input name="min_engagement" type="number" min="0" step="0.1" placeholder="2"></label>
-      <label>Audience<input name="audience" placeholder="Mumbai, 18-24…"></label>
-    </div>
-    <div style="margin-top:12px;display:flex;gap:8px"><button class="btn" type="submit">🔎 Search</button><button class="btn ghost" type="reset" id="dcReset">Clear</button></div>
-  </form></div>
-  <div id="dcResults" style="margin-top:16px"></div></div>`;
-  html += `<div id="dcExternal" style="${_dcTab==="external"?"":"display:none"}">
-    <div class="card"><div id="dxIg"></div>
-      <form id="dxForm" class="modal-form" style="padding:0">
-        <div class="dc-filters">
-          <label>#Hashtag from their posts<input name="hashtag" placeholder="#delhifood"></label>
-          <label>Creator type / category<input name="category" placeholder="Food, Travel…"></label>
-          <label>Location<input name="location" placeholder="Delhi"></label>
-          <label>Handle contains<input name="q" placeholder="foodie"></label>
-          <label>Min followers<input name="min_followers" type="number" min="0" placeholder="5000"></label>
-          <label>Max followers<input name="max_followers" type="number" min="0" placeholder="200000"></label>
-        </div>
-        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" type="submit">🔎 Search Instagram</button>
-          <button class="btn ghost" type="button" id="dxRefresh">↻ Fetch latest from Instagram</button></div>
-      </form>
-      <div class="cp-hint" id="dxMsg" style="margin-top:10px"></div>
-      <div class="cp-addrow" style="margin-top:10px"><input id="dxHandle" placeholder="Know the handle? @username" maxlength="60">
-        <button class="btn sm ghost" id="dxAdd">+ Look up &amp; add</button></div>
-    </div>
-    <div id="dxResults" style="margin-top:16px"></div></div>`;
-  return html;
-}
-async function loadDiscoverExternal(){
-  const box = document.getElementById("dxResults"); if(!box) return;
-  const form = document.getElementById("dxForm");
-  // show which Instagram account this workspace discovers and DMs from
-  igConnectStrip();
-  const run = async ()=>{
-    const f = new FormData(form), filters = {};
-    ["hashtag","category","location","q","min_followers","max_followers"].forEach(k=>{ const v=String(f.get(k)||"").trim(); if(v) filters[k]=v; });
-    box.innerHTML = skel("cards",6);
-    const [r, st] = await Promise.all([
-      sb.schema("api").rpc("discover_external", { p_filters:filters, p_campaign:null, p_limit:60 }).then(x=>x, e=>({error:e})),
-      sb.schema("api").rpc("external_pool_stats").then(x=>x, ()=>({data:null}))
-    ]);
-    if(r.error){ box.innerHTML = `<div class="card"><div class="muted">${esc(r.error.message||r.error)}</div></div>`; return; }
-    const list = r.data||[], s = st.data||{};
-    box.innerHTML = `<div class="muted" style="margin-bottom:10px;font-size:13px">${list.length} creator${list.length===1?"":"s"} found on Instagram who aren't on Geek OS yet${s.total?` · ${s.total} in your discovery pool, ${s.tagged_brand||0} have tagged your brand`:""}</div>`
-      + (list.length ? `<div class="dc-grid">${list.map(c=>`<div class="card dc-card dx-card">
-          <div class="dc-top">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((c.handle||"?").slice(0,2).toUpperCase())}</span>`}
-            <div style="min-width:0"><b><a href="https://instagram.com/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">@${esc(c.handle)}</a></b>
-              <div class="muted" style="font-size:12px">${esc(c.name||"")}${c.city?` · ${esc(c.city)}`:""}</div></div>
-            <span class="inv-score" title="How well they match your filters">${c.score}</span></div>
-          <div class="dc-stats"><span><b>${c.followers!=null?fmtNum(c.followers):"—"}</b>followers</span><span><b>${c.media_count!=null?fmtNum(c.media_count):"—"}</b>posts</span><span><b>${c.mention_count}</b>mentions</span></div>
-          ${c.bio?`<div class="muted" style="font-size:12px">${esc(c.bio)}</div>`:""}
-          <div class="dc-tags">${(c.why||[]).map(w=>`<span>✓ ${esc(w)}</span>`).join("")}${(c.categories||[]).map(x=>`<span>${esc(x)}</span>`).join("")}${(c.hashtags||[]).slice(0,4).map(x=>`<span>#${esc(x)}</span>`).join("")}</div>
-          ${c.followers==null?`<div class="cp-hint">Follower count not fetched yet — “Look up &amp; add” with their handle to pull it from Instagram.</div>`:""}
-          <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
-            ${c.invited?`<span class="tag good">Invited ✓</span>`:`<button class="btn sm" data-dxinv="${esc(c.handle)}">🎯 Invite to a campaign</button>`}
-            <a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">💬 DM</a>
-            ${c.permalink?`<a class="btn sm ghost" href="${esc(safeUrl(c.permalink))}" target="_blank" rel="noopener">Post</a>`:""}</div></div>`).join("")}</div>`
-        : `<div class="card"><div class="muted">Nobody new yet with these filters. Tap <b>↻ Fetch latest from Instagram</b> — we read the accounts that tagged your Instagram and the @handles inside the posts of creators you already work with.</div></div>`);
-    box.querySelectorAll("[data-dxinv]").forEach(b=> b.onclick = ()=> inviteFromDiscovery(b.dataset.dxinv, null));
-  };
-  form.onsubmit = e=>{ e.preventDefault(); run(); };
-  document.getElementById("dxRefresh").onclick = async ()=>{
-    const btn = document.getElementById("dxRefresh"), msg = document.getElementById("dxMsg");
-    btn.disabled = true; btn.textContent = "Fetching…"; msg.textContent = "";
-    let added = 0;
-    let tagged = 0;
-    try{                                   // read the accounts that tagged this workspace's Instagram
-      const { data } = await sb.functions.invoke("ig-discover", { body:{ action:"tagged" } });
-      if(data && data.saved) tagged = data.saved;
-      else if(data && data.error) msg.textContent = data.error;
-    }catch(e){}
-    const { data, error } = await sb.schema("api").rpc("refresh_external_pool");
-    btn.disabled = false; btn.textContent = "↻ Fetch latest from Instagram";
-    if(error){ msg.textContent = error.message; return; }
-    added = data||0;
-    const total = added + tagged;
-    msg.textContent = total ? `Found ${total} Instagram creator${total===1?"":"s"}${tagged?` · ${tagged} tagged your account`:""}.`
-      : (msg.textContent || "No new handles this time — connect your Instagram, get tagged, or add a handle below.");
-    run();
-  };
-  document.getElementById("dxAdd").onclick = async ()=>{
-    const inp = document.getElementById("dxHandle"), msg = document.getElementById("dxMsg");
-    const handle = String(inp.value||"").trim().replace(/^@/,"");
-    if(!/^[A-Za-z0-9._]{2,30}$/.test(handle)){ msg.textContent = "Enter a valid Instagram username."; return; }
-    const btn = document.getElementById("dxAdd"); btn.disabled = true; btn.textContent = "Looking up…";
-    let item = { handle, source:"manual" };
-    try{                                    // ask Instagram for their public numbers (needs the business-discovery permission)
-      const { data } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:handle } });
-      if(data && data.profile) item = Object.assign(item, data.profile);
-      else if(data && data.error) msg.textContent = data.error + " — added without the numbers.";
-    }catch(e){ msg.textContent = "Added without Instagram numbers (lookup isn't available yet)."; }
-    const { error } = await sb.schema("api").rpc("save_external_candidates", { p_items:[item] });
-    btn.disabled = false; btn.textContent = "+ Look up & add";
-    if(error){ msg.textContent = error.message; return; }
-    inp.value = ""; if(!msg.textContent) msg.textContent = `@${handle} added to your discovery pool.`;
-    run();
-  };
-  run();
+  return pageHead("Creator search","Every creator we know — on Geek OS and on Instagram. Filter by category, location, size and engagement, then invite.")
+    + `<div id="dxIg" style="margin-bottom:12px"></div><div id="csRoot"></div>`;
 }
 // which Instagram this workspace discovers and DMs from
 async function igConnectStrip(){
@@ -2254,39 +2146,185 @@ async function igConnectStrip(){
 }
 
 async function loadDiscover(){
-  const form = document.getElementById("dcForm"); if(!form) return;
-  if(_discoverPreset){ Object.entries(_discoverPreset).forEach(([k,v])=>{ if(form.elements[k]!=null) form.elements[k].value = v; }); _discoverPreset = null; }
-  const run = async ()=>{
-    const f = new FormData(form), box = document.getElementById("dcResults");
-    const filters = {}; ["min_followers","max_followers","location","gender","category","min_engagement","audience"].forEach(k=>{ const v=String(f.get(k)||"").trim(); if(v) filters[k]=v; });
-    box.innerHTML = `<div class="card"><div class="muted">Searching…</div></div>`;
-    const { data, error } = await sb.schema("api").rpc("discover_creators", { p_query: String(f.get("q")||"").trim()||null, p_hashtag: String(f.get("tag")||"").trim()||null, p_filters: filters });
-    if(error){ box.innerHTML = `<div class="card"><div class="muted">Couldn't search: ${esc(error.message)}</div></div>`; return; }
-    const list = data||[];
-    if(window.Tracker) Tracker.event && Tracker.event("discover_search", { results: list.length });
-    box.innerHTML = list.length ? `<div class="muted" style="margin-bottom:8px">${list.length} creator${list.length>1?"s":""}${list.length>=60?" (top 60 — narrow your filters)":""}</div><div class="dc-grid">${list.map(c=>`
-      <div class="card dc-card"><div class="dc-top">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((c.username||"?").slice(0,2).toUpperCase())}</span>`}
-        <div><b><a href="https://instagram.com/${encodeURIComponent(c.username||"")}" target="_blank" rel="noopener">@${esc(c.username||"")}</a></b><div class="muted" style="font-size:12px">${esc(c.name||"")}${c.city?` · ${esc(c.city)}`:""}</div></div></div>
-        <div class="dc-stats"><span><b>${fmtNum(c.followers)}</b>followers</span><span><b>${c.engagement!=null?c.engagement+"%":"—"}</b>engagement</span><span><b>${c.avg_reach?fmtNum(Math.round(c.avg_reach)):"—"}</b>avg reach</span></div>
-        ${c.bio?`<div class="muted" style="font-size:12px">${esc(c.bio)}</div>`:""}
-        <div class="dc-tags">${(c.categories||[]).map(x=>`<span>${esc(x)}</span>`).join("")}${(c.top_hashtags||[]).slice(0,6).map(x=>`<span>#${esc(x)}</span>`).join("")}</div>
-        <div style="margin-top:10px"><button class="btn sm" data-dcinv="${esc(c.username||"")}" data-dcmid="${esc(c.member_id||"")}">🎯 Invite to a campaign</button></div></div>`).join("")}</div>`
-      : `<div class="card"><div class="muted">No creators match. Try fewer filters or a broader keyword.</div></div>`;
+  const root = document.getElementById("csRoot"); if(!root) return;
+  igConnectStrip();
+  let state = _csMain || csNew();
+  if(_discoverPreset){                   // "Find matching creators" from a campaign → its ideal profile as filters
+    const p = _discoverPreset; _discoverPreset = null; state = csNew();
+    const cats = [].concat(p.categories||[], p.category?[p.category]:[]).map(c=>String(c).toLowerCase());
+    state.categories = CS_CATS.filter(c=> cats.some(x=> c.toLowerCase()===x || x.includes(c.toLowerCase())));
+    state.location = p.location||""; state.gender = p.gender||"";
+    if(p.min_followers!=="" && p.min_followers!=null || p.max_followers!=="" && p.max_followers!=null){ state.tier = "custom"; state.min = p.min_followers??""; state.max = p.max_followers??""; }
+    const e = Number(p.min_engagement); if(e>0) state.min_engagement = String([1,2,3,5,8].filter(x=>x<=e).pop()||1);
+  }
+  _csMain = mountCreatorSearch(root, { state });
+}
+
+/* ================= CREATOR SEARCH (Qoruz-style) — every creator we know, one search =================
+ * On Geek OS + the discovery pool of Instagram creators who aren't on Geek OS yet. Category chips, location, follower
+ * tier, engagement, gender, source, sort and real pagination. Used on the Discovery page and inside a campaign's
+ * Invite panel (there, Invite goes straight to that campaign). */
+const CS_CATS = ["Lifestyle","Fashion","Beauty","Food","Travel","Fitness","Health","Tech","Comedy","Entertainment","Parenting","Gaming","Finance","Business","Education","Music","Dance","Art","Photography","Sports","Pets","Home decor","Auto","Spirituality"];
+const CS_TIERS = [["","Any size"],["nano","Nano · 1K–10K",1000,10000],["micro","Micro · 10K–50K",10000,50000],["mid","Mid · 50K–200K",50000,200000],
+  ["macro","Macro · 200K–1M",200000,1000000],["mega","Mega · 1M+",1000000,null],["custom","Custom range…"]];
+const CS_CITIES = ["Delhi NCR","Mumbai","Bengaluru","Hyderabad","Chennai","Kolkata","Pune","Ahmedabad","Jaipur","Lucknow","Chandigarh","Indore","Surat","Kochi","Goa","Bhopal","Nagpur","Patna","Dehradun","Guwahati"];
+function csNew(){ return { q:"", categories:[], location:"", tier:"", min:"", max:"", min_engagement:"", gender:"", source:"all", sort:"followers_desc", page:1 }; }
+let _csMain = null;
+function mountCreatorSearch(root, opts){
+  opts = opts || {};
+  const S = opts.state || csNew();
+  const key = opts.campaign ? "inv" : "dc";
+  const id = s => key + s;
+  root.innerHTML = `<div class="card cs-panel">
+      <div class="cs-searchrow"><input id="${id("Q")}" type="search" placeholder="🔎 Search name, @handle, bio or #hashtag" value="${esc(S.q)}">
+        <button class="btn" id="${id("Go")}">Search</button></div>
+      <div class="cs-cats" id="${id("Cats")}">${CS_CATS.map(c=>`<button type="button" class="cs-chip${S.categories.includes(c)?" on":""}" data-cscat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+      <div class="cs-filters">
+        <label>Location<input id="${id("Loc")}" list="${id("CityList")}" placeholder="Any city" value="${esc(S.location)}"><datalist id="${id("CityList")}">${CS_CITIES.map(c=>`<option value="${esc(c)}">`).join("")}</datalist></label>
+        <label>Followers<select id="${id("Tier")}">${CS_TIERS.map(t=>`<option value="${t[0]}"${S.tier===t[0]?" selected":""}>${esc(t[1])}</option>`).join("")}</select></label>
+        <label class="cs-custom" style="${S.tier==="custom"?"":"display:none"}">Min<input id="${id("Min")}" type="number" min="0" value="${esc(S.min)}" placeholder="5000"></label>
+        <label class="cs-custom" style="${S.tier==="custom"?"":"display:none"}">Max<input id="${id("Max")}" type="number" min="0" value="${esc(S.max)}" placeholder="200000"></label>
+        <label>Engagement<select id="${id("Eng")}">${[["","Any"],["1","1%+"],["2","2%+"],["3","3%+"],["5","5%+"],["8","8%+"]].map(([v,l])=>`<option value="${v}"${S.min_engagement===v?" selected":""}>${l}</option>`).join("")}</select></label>
+        <label>Gender<select id="${id("Gen")}">${[["","Any"],["female","Female"],["male","Male"],["other","Other"]].map(([v,l])=>`<option value="${v}"${S.gender===v?" selected":""}>${l}</option>`).join("")}</select></label>
+        <label>Creators<select id="${id("Src")}">${[["all","Everyone"],["platform","On Geek OS"],["external","Not on Geek OS yet"]].map(([v,l])=>`<option value="${v}"${S.source===v?" selected":""}>${l}</option>`).join("")}</select></label>
+        <label>Sort<select id="${id("Sort")}">${[["followers_desc","Followers: high → low"],["followers_asc","Followers: low → high"],["engagement_desc","Engagement: high → low"],["recent","Recently found"]].map(([v,l])=>`<option value="${v}"${S.sort===v?" selected":""}>${l}</option>`).join("")}</select></label>
+        <button class="btn sm ghost cs-clear" id="${id("Clear")}" type="button">Clear</button>
+      </div></div>
+    <div class="cs-bar"><div id="${id("Count")}" class="cs-count"></div>
+      <div class="cs-pool" id="${id("Pool")}"></div>
+      ${opts.campaign?"":`<span class="cs-acts"><button class="btn sm ghost" id="${id("Fetch")}">↻ Fetch from Instagram</button><button class="btn sm" id="${id("Add")}">+ Add creators</button></span>`}</div>
+    <div id="${id("Res")}"></div><div id="${id("Pager")}"></div>`;
+  const $i = s => document.getElementById(id(s));
+  const read = ()=>{ S.q = $i("Q").value.trim(); S.location = $i("Loc").value.trim(); S.tier = $i("Tier").value;
+    S.min = $i("Min").value; S.max = $i("Max").value; S.min_engagement = $i("Eng").value; S.gender = $i("Gen").value; S.source = $i("Src").value; S.sort = $i("Sort").value; };
+  const run = async (keepPage)=>{
+    read(); if(!keepPage) S.page = 1;
+    const t = CS_TIERS.find(x=>x[0]===S.tier), filters = { q:S.q, categories:S.categories, location:S.location, source:S.source, sort:S.sort, gender:S.gender, min_engagement:S.min_engagement };
+    if(S.tier==="custom"){ filters.min_followers = S.min; filters.max_followers = S.max; } else if(t && t[2]!=null){ filters.min_followers = t[2]; if(t[3]!=null) filters.max_followers = t[3]; }
+    Object.keys(filters).forEach(k=>{ if(filters[k]==="" || filters[k]==null) delete filters[k]; });
+    $i("Res").innerHTML = skel("cards", 6); $i("Pager").innerHTML = "";
+    const { data, error } = await sb.schema("api").rpc("creator_search", { p_filters:filters, p_page:S.page, p_size:24, p_campaign: opts.campaign ? opts.campaign.id : null }).then(r=>r, e=>({error:e}));
+    if(error){ $i("Res").innerHTML = `<div class="card"><div class="muted">${esc(error.message||error)}${/creator_search/.test(error.message||"")?" — run <code>supabase db push</code> first.":""}</div></div>`; return; }
+    const d = data||{}, rows = d.rows||[];
+    $i("Count").innerHTML = `<b>${fmtNum(d.total||0)}</b> creator${d.total===1?"":"s"}${S.categories.length?` · ${esc(S.categories.join(", "))}`:""}${S.location?` · ${esc(S.location)}`:""}`;
+    $i("Res").innerHTML = rows.length ? `<div class="cs-grid">${rows.map(c=>csCard(c, opts)).join("")}</div>`
+      : `<div class="card"><div class="muted">No creators match these filters. Try fewer filters${opts.campaign?"":", or <b>+ Add creators</b> to bring in more handles"}.</div></div>`;
+    const pages = d.pages||1;
+    if(pages>1){
+      const nums = []; for(let p=Math.max(1,S.page-2); p<=Math.min(pages,S.page+2); p++) nums.push(p);
+      $i("Pager").innerHTML = `<div class="ci-pager mc-pager"><button class="btn sm ghost" data-cspg="${S.page-1}"${S.page<=1?" disabled":""}>‹ Prev</button>
+        ${nums[0]>1?`<button class="btn sm ghost" data-cspg="1">1</button>${nums[0]>2?'<span class="muted">…</span>':""}`:""}
+        ${nums.map(p=>`<button class="btn sm ${p===S.page?"":"ghost"}" data-cspg="${p}">${p}</button>`).join("")}
+        ${nums[nums.length-1]<pages?`${nums[nums.length-1]<pages-1?'<span class="muted">…</span>':""}<button class="btn sm ghost" data-cspg="${pages}">${pages}</button>`:""}
+        <button class="btn sm ghost" data-cspg="${S.page+1}"${S.page>=pages?" disabled":""}>Next ›</button>
+        <span class="muted">${(S.page-1)*24+1}–${Math.min(S.page*24,d.total)} of ${fmtNum(d.total)}</span></div>`;
+      $i("Pager").querySelectorAll("[data-cspg]").forEach(b=> b.onclick = ()=>{ S.page = +b.dataset.cspg; run(true); root.scrollIntoView({behavior:"smooth", block:"start"}); });
+    }
+    root.querySelectorAll("[data-csinv]").forEach(b=> b.onclick = ()=> csInvite(b, opts));
   };
-  document.querySelectorAll("[data-dctab]").forEach(b=> b.onclick = ()=>{
-    _dcTab = b.dataset.dctab;
-    document.querySelectorAll("#dcTabs button").forEach(x=> x.classList.toggle("act", x.dataset.dctab===_dcTab));
-    document.getElementById("dcPlatform").style.display = _dcTab==="platform" ? "" : "none";
-    document.getElementById("dcExternal").style.display = _dcTab==="external" ? "" : "none";
-    if(_dcTab==="external" && !document.getElementById("dxResults").dataset.loaded){
-      document.getElementById("dxResults").dataset.loaded = "1"; loadDiscoverExternal(); }
-  });
-  if(_dcTab==="external"){ document.getElementById("dxResults").dataset.loaded = "1"; loadDiscoverExternal(); }
-  const wireInv = ()=> document.querySelectorAll("[data-dcinv]").forEach(b=> b.onclick = ()=> inviteFromDiscovery(b.dataset.dcinv, b.dataset.dcmid||null));
-  const run2 = async ()=>{ await run(); wireInv(); };
-  form.onsubmit = e=>{ e.preventDefault(); run2(); };
-  document.getElementById("dcReset").onclick = ()=> setTimeout(run2, 0);
-  run2();
+  const pool = async ()=>{
+    const { data:p } = await sb.schema("api").rpc("discovery_pool_status").then(r=>r, ()=>({data:null}));
+    const box = $i("Pool"); if(!box || !p) return;
+    box.innerHTML = `<span title="Creators on Geek OS">👥 ${fmtNum(p.on_platform||0)} on Geek OS</span><span title="Instagram creators in your discovery pool">📸 ${fmtNum(p.pool||0)} found on Instagram (${fmtNum(p.with_stats||0)} with numbers)</span>`
+      + (p.needs_permission ? `<span class="cs-warn" title="${esc(p.last_error||"")}">⚠️ Instagram stats lookup needs Meta approval (business discovery)</span>`
+        : p.last_run_at ? `<span title="Fills follower counts and finds new handles every hour">🔄 Auto-filling numbers · last run ${esc(fmtDateTime(p.last_run_at))}</span>` : "");
+  };
+  root.querySelectorAll("[data-cscat]").forEach(b=> b.onclick = ()=>{ const c = b.dataset.cscat, i = S.categories.indexOf(c);
+    if(i>=0) S.categories.splice(i,1); else S.categories.push(c); b.classList.toggle("on", i<0); run(); });
+  $i("Go").onclick = ()=> run();
+  $i("Q").onkeydown = e=>{ if(e.key==="Enter") run(); };
+  $i("Loc").onchange = ()=> run();
+  $i("Tier").onchange = ()=>{ root.querySelectorAll(".cs-custom").forEach(x=> x.style.display = $i("Tier").value==="custom" ? "" : "none"); if($i("Tier").value!=="custom") run(); };
+  [$i("Min"),$i("Max")].forEach(x=> x.onchange = ()=> run());
+  ["Eng","Gen","Src","Sort"].forEach(s=> $i(s).onchange = ()=> run());
+  $i("Clear").onclick = ()=>{ Object.assign(S, csNew()); mountCreatorSearch(root, Object.assign({}, opts, { state:S })); };
+  const add = $i("Add"); if(add) add.onclick = ()=> openCreatorImport(()=>{ run(); pool(); });
+  const fetchBtn = $i("Fetch");
+  if(fetchBtn) fetchBtn.onclick = async ()=>{
+    fetchBtn.disabled = true; fetchBtn.textContent = "Fetching…";
+    let tagged = 0;
+    try{ const { data } = await sb.functions.invoke("ig-discover", { body:{ action:"tagged" } }); tagged = (data && data.saved) || 0; }catch(e){}
+    const { data } = await sb.schema("api").rpc("refresh_external_pool").then(r=>r, ()=>({data:0}));
+    fetchBtn.disabled = false; fetchBtn.textContent = "↻ Fetch from Instagram";
+    gateToast(`Found ${(data||0)+tagged} creator(s) from tags and mentions on Instagram.`); run(); pool();
+  };
+  run(); pool();
+  return S;
+}
+function csCard(c, opts){
+  const st = c.state_in_campaign, onCamp = st && !["invited","dropped","rejected","ineligible","brand_declined"].includes(st);
+  const btn = opts.campaign
+    ? (st==="invited" ? `<span class="tag warn">Invited</span>` : onCamp ? `<span class="tag good">On the campaign</span>`
+       : `<button class="btn sm" data-csinv="${esc(c.handle)}" data-csmid="${esc(c.member_id||"")}">🎯 Invite</button>`)
+    : `<button class="btn sm" data-csinv="${esc(c.handle)}" data-csmid="${esc(c.member_id||"")}">🎯 Invite</button>`;
+  return `<div class="card cs-card">
+    <div class="cs-top">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${esc((c.handle||"?").slice(0,2).toUpperCase())}'}))">`:`<span class="avatar">${esc((c.handle||"?").slice(0,2).toUpperCase())}</span>`}
+      <div class="cs-id"><a href="https://instagram.com/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener"><b>@${esc(c.handle)}</b></a>
+        <div class="muted"><span class="cs-src ${c.kind==="platform"?"on":""}">${c.kind==="platform"?"On Geek OS":"Not on Geek OS"}</span>${c.city?` 📍 ${esc(c.city)}`:""}</div>
+        ${c.name?`<div class="muted">${esc(c.name)}</div>`:""}</div></div>
+    <div class="cs-stats"><div><b>${c.followers!=null?kfmtN(c.followers):"—"}</b><span>Followers</span></div>
+      <div><b>${c.engagement!=null?(Math.round(c.engagement*10)/10)+"%":"—"}</b><span>Engagement</span></div>
+      <div><b>${c.avg_likes!=null?kfmtN(c.avg_likes):"—"}</b><span>Avg likes</span></div></div>
+    ${c.bio?`<div class="cs-bio">${esc(c.bio)}</div>`:""}
+    <div class="cs-tags">${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(x.replace(/\b\w/g,m=>m.toUpperCase()))}</span>`).join("")}</div>
+    <div class="cs-act">${btn}${c.kind!=="platform"?`<a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">💬 DM</a>`:""}</div></div>`;
+}
+function kfmtN(n){ n = Number(n)||0; return n>=1e7 ? (n/1e6).toFixed(0)+"M" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e4 ? Math.round(n/1e3)+"K" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(Math.round(n)); }
+async function csInvite(b, opts){
+  const handle = b.dataset.csinv, mid = b.dataset.csmid || null;
+  if(!opts.campaign) return inviteFromDiscovery(handle, mid);
+  b.disabled = true; b.textContent = "Inviting…";
+  const args = { p_campaign: opts.campaign.id, p_note: null };
+  const { error } = mid ? await sb.schema("api").rpc("invite_creator", { ...args, p_member: mid })
+                        : await sb.schema("api").rpc("invite_external", { ...args, p_handle: handle });
+  if(error){ alert(error.message); b.disabled = false; b.textContent = "🎯 Invite"; return; }
+  b.outerHTML = `<span class="tag warn">Invited ✓</span>`;
+  if(window.Tracker) Tracker.security("creator_invited", { campaign: opts.campaign.name, from: "search" });
+}
+// + Add creators: paste handles / a list, or upload a CSV (handle, name, followers, engagement, category, city, bio)
+function openCreatorImport(done){
+  let m = document.getElementById("csImp"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id = "csImp";
+  m.innerHTML = `<div class="modal"><div class="modal-head"><strong>Add creators to your search</strong><button class="icon-btn" id="csImpX">✕</button></div>
+    <div class="modal-form">
+      <p class="muted" style="font-size:13px;margin:0">Paste Instagram handles or profile links — one per line — or upload a CSV/Excel-saved-as-CSV with a <b>handle</b> column (optional: name, followers, engagement, category, city, bio). Numbers you add show straight away; the rest fill in automatically when Instagram allows.</p>
+      <label>Handles or rows<textarea id="csImpTxt" rows="8" placeholder="@delhi.foodie&#10;https://instagram.com/mumbai_style_diaries&#10;travel.with.ria, 45000, Travel, Bengaluru"></textarea></label>
+      <label>…or a CSV file<input type="file" id="csImpFile" accept=".csv,text/csv"></label>
+      <div class="auth-err" id="csImpErr"></div><button class="btn" id="csImpGo">Add to search</button></div></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  const close = ()=> m.remove();
+  document.getElementById("csImpX").onclick = close; m.onclick = e=>{ if(e.target.id==="csImp") close(); };
+  document.getElementById("csImpFile").onchange = e=>{ const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader(); r.onload = ()=>{ document.getElementById("csImpTxt").value = String(r.result||""); }; r.readAsText(f); };
+  document.getElementById("csImpGo").onclick = async ()=>{
+    const err = document.getElementById("csImpErr"), btn = document.getElementById("csImpGo"); err.textContent = "";
+    const rows = csParseImport(document.getElementById("csImpTxt").value);
+    if(!rows.length){ err.textContent = "Nothing to add — paste at least one handle."; return; }
+    btn.disabled = true; let added = 0, skipped = 0;
+    for(let i=0; i<rows.length; i+=500){
+      btn.textContent = `Adding ${Math.min(i+500, rows.length)} / ${rows.length}…`;
+      const { data, error } = await sb.schema("api").rpc("import_creators", { p_rows: rows.slice(i, i+500) });
+      if(error){ err.textContent = error.message; btn.disabled = false; btn.textContent = "Add to search"; return; }
+      added += (data&&data.added)||0; skipped += (data&&data.skipped)||0;
+    }
+    close(); gateToast(`Added ${added} creator${added===1?"":"s"}${skipped?` · ${skipped} skipped (already on Geek OS or not a valid handle)`:""}.`); done && done();
+  };
+}
+function csParseImport(text){
+  const lines = String(text||"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length) return [];
+  const split = l => { const out=[]; let cur="", q=false; for(const ch of l){ if(ch==='"'){ q=!q; continue; } if((ch===","||ch==="\t"||ch===";") && !q){ out.push(cur.trim()); cur=""; } else cur+=ch; } out.push(cur.trim()); return out; };
+  const head = split(lines[0]).map(h=>h.toLowerCase());
+  const has = head.some(h=>/^(handle|username|instagram|ig|profile|account)/.test(h));
+  if(has){
+    const col = re => head.findIndex(h=>re.test(h));
+    const c = { handle:col(/^(handle|username|instagram|ig|profile|account)/), name:col(/^(name|full ?name)/), followers:col(/follower/),
+      engagement:col(/(engagement|^er\b|er ?%)/), category:col(/(categor|niche|genre)/), city:col(/(city|location)/), bio:col(/^(bio|about)/), avg_likes:col(/avg.*like|likes/) };
+    return lines.slice(1).map(l=>{ const v = split(l), o = {}; Object.entries(c).forEach(([k,i])=>{ if(i>=0 && v[i]) o[k] = v[i]; }); return o; }).filter(o=>o.handle);
+  }
+  // plain list: handle[, followers[, category[, city]]]
+  return lines.map(l=>{ const v = split(l); const o = { handle: v[0] };
+    if(v[1] && /[\d]/.test(v[1])) o.followers = v[1]; if(v[2]) o.category = v[2]; if(v[3]) o.city = v[3]; return o; });
 }
 
 /* ---------- Reports (agency / brand: own campaigns; Super Admin: all) ---------- */
@@ -4002,7 +4040,7 @@ async function loadInvitePanel(){
 function paintInvitePanel(){
   const body = document.getElementById("invBody"); if(!body) return;
   const L = _invMatches, invited = L.filter(c=>c.state==="invited").length, applied = L.filter(c=>["applied","approved"].includes(c.state)).length;
-  const tabs = [["matches",`✨ Matching creators (${L.length})`],["external",`📸 New on Instagram (${_invDiscovered.length})`]];
+  const tabs = [["matches",`✨ Matching creators (${L.length})`],["external",`🔎 Search all creators`]];
   body.innerHTML = `<div class="ac360-head"><div style="flex:1;min-width:0"><h3>Invite creators</h3>
       <div class="muted">${esc(_invCamp.name)} — matched on your ideal influencer profile. Invites go in-app, on WhatsApp and by email.</div></div>
       <button class="ci-pop-x" id="invX" aria-label="Close">✕</button></div>
@@ -4017,6 +4055,8 @@ function paintInvitePanel(){
   body.querySelector("#invX").onclick = ()=> window.__invClose && window.__invClose();
   body.querySelectorAll("[data-invtab]").forEach(b=> b.onclick = ()=>{ _invTab = b.dataset.invtab; paintInvitePanel(); });
   wireInvitePanel();
+  const sr = document.getElementById("invSearch");
+  if(sr) _invSearchState = mountCreatorSearch(sr, { campaign:_invCamp, state:_invSearchState && _invSearchState.__camp===_invCamp.id ? _invSearchState : Object.assign(csNew(), { __camp:_invCamp.id }) });
 }
 function matchesHtml(L){
   if(!L.length) return `<div class="card"><div class="muted">No creator on the platform matches this brief yet. Widen the follower range or the ideal profile on the campaign, or invite people by their Instagram handle in the next tab.</div></div>`;
@@ -4037,11 +4077,11 @@ function matchesHtml(L){
         ? `<button class="btn sm" data-inv="${esc(c.member_id)}">🎯 Invite</button>`
         : badge(c.state)}</div></div>`).join("")}</div>`;
 }
-let _invOnlyNew = false;
+let _invOnlyNew = false, _invSearchState = null;
 function externalHtml(){
   const st = { pending:['⏳ Not sent yet','warn'], manual:['✉️ Send the DM yourself','warn'], sent:['✅ DM sent','good'],
                needs_permission:['Instagram DM needs Meta approval — send it yourself','warn'], failed:['⚠️ Couldn\'t send','warn'] };
-  return discoveredHtml() + `<div class="card"><h4 style="margin-top:0">Invite someone who isn't on Geek OS yet</h4>
+  return `<div id="invSearch"></div>` + `<div class="card"><h4 style="margin-top:0">Invite someone who isn't on Geek OS yet</h4>
       <p class="muted" style="font-size:13px;margin:0 0 10px">Add their Instagram username. We keep the invite ready — when they sign up and connect Instagram, this campaign opens for them automatically and they get the invite in the app, on WhatsApp and by email.</p>
       <div class="cp-addrow"><input id="invHandle" placeholder="@username" maxlength="60"><input id="invNote" placeholder="Short note (optional)" maxlength="140"><button class="btn sm" id="invAddEx">+ Add invite</button></div>
       <div class="cp-hint" id="invExMsg"></div></div>

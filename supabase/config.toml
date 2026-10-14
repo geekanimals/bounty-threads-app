@@ -99,3 +99,6 @@ verify_jwt = false
 # One WhatsApp UTILITY template per campaign — CI_WORKER_SECRET-gated worker (pg_cron every 5 min + on new campaign)
 [functions.wa-template-sync]
 verify_jwt = false
+# Creator search: hourly enrichment of the discovery pool (business discovery) + snowball — CI_WORKER_SECRET-gated
+[functions.ig-discover-worker]
+verify_jwt = false
