@@ -23,6 +23,7 @@ const APP_URL = (Deno.env.get("APP_URL") || "https://bounty-threads-app.vercel.a
 // the one approved Utility template that carries every update + invite. Default name, so creating it in snapto
 // with this exact name is all it takes — nothing to save anywhere; held messages go out the moment Meta approves it.
 const WA_UPDATE_TEMPLATE = (Deno.env.get("WA_UPDATE_TEMPLATE") || "geek_campaign_update").trim();
+const WA_BACKUP_TEMPLATES = (Deno.env.get("WA_BACKUP_TEMPLATES") || "campaign_update").split(",").map((x) => x.trim()).filter(Boolean);
 const WA_UPDATE_TEMPLATE_LANG = (Deno.env.get("WA_UPDATE_TEMPLATE_LANG") || "en").trim();
 // WhatsApp template parameters may not contain new lines / tabs / 4+ spaces
 const waParam = (s: string, max = 900) => String(s || "").replace(/\s*[\r\n\t]+\s*/g, " · ").replace(/ {4,}/g, "   ").trim().slice(0, max) || "-";
@@ -66,6 +67,7 @@ Deno.serve(async (req) => {
     const p = row.payload || {};
     const link = deepLink(p.action_route ?? p.action_url);
     const prefs = await prefsOf(row.recipient_member_id);
+    let waUsed: string | null = null;
     try {
       let ref: string | null = null;
       if (row.channel === "whatsapp") {
@@ -96,6 +98,11 @@ Deno.serve(async (req) => {
           if (t?.name) tries.push({ to: row.to_address, template: String(t.name), lang: String(t.lang || "en"), variables: [name, update, target] });
         }
         if (genTpl) tries.push({ to: row.to_address, template: genTpl, lang: genLang, variables: [name, update, target] });
+        // already-approved backup with the same 3 variables (name · update · link), used while a newer template is in review
+        for (const b of WA_BACKUP_TEMPLATES) if (b !== genTpl) tries.push({ to: row.to_address, template: b, lang: "en", variables: [name, update, target] });
+        // templates Meta already refused for this message are skipped
+        const avoid: string[] = Array.isArray(p.avoid_templates) ? p.avoid_templates.map(String) : [];
+        for (let k = tries.length - 1; k >= 0; k--) if ("template" in tries[k] && avoid.includes(String(tries[k].template))) tries.splice(k, 1);
         if (!tries.length) {
           await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped",
             p_error: "WhatsApp 24h window closed — no approved update template yet. Super Admin → WhatsApp & email → set the template name (it goes out automatically then)" });
@@ -103,11 +110,12 @@ Deno.serve(async (req) => {
         }
         const errs: string[] = [];
         let res: { wamid: string | null } | null = null;
+        let usedTpl: string | null = null;
         for (const out of tries) {
           // a language mismatch ("en" vs "en_US") is the commonest template error — try the other code too
           const langs = "template" in out ? [String(out.lang || "en"), String(out.lang || "en") === "en" ? "en_US" : "en"] : [""];
           for (const lang of langs) {
-            try { res = await getProvider().send(("template" in out ? { ...out, lang } : out) as any); break; }
+            try { res = await getProvider().send(("template" in out ? { ...out, lang } : out) as any); usedTpl = "template" in out ? String(out.template) : null; break; }
             catch (e) {
               const m = (e as Error).message || "send failed";
               errs.push(("template" in out ? `${out.template}/${lang}: ` : "text: ") + m);
@@ -117,7 +125,7 @@ Deno.serve(async (req) => {
           if (res) break;
         }
         if (!res) throw new Error(errs.join(" | ").slice(0, 600));
-        ref = res.wamid;
+        ref = res.wamid; waUsed = usedTpl;
 
         try {
           const { data: convId } = await admin.rpc("wa_system_conversation", { p_user: row.recipient_member_id, p_phone: row.to_address });
@@ -137,7 +145,8 @@ Deno.serve(async (req) => {
           headers: unsub ? { "List-Unsubscribe": `<${unsub}>` } : undefined });
         ref = res.id;
       }
-      await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "sent", p_provider_ref: ref });
+      await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "sent", p_provider_ref: ref,
+        p_meta: row.channel === "whatsapp" ? { sent_template: waUsed } : null });
       sent++;
     } catch (e) {
       const msg = (e as Error).message || "send failed";
