@@ -404,7 +404,7 @@
         if(document.visibilityState!=="visible" || document.getElementById("opsModal")) return;
         var a=document.activeElement; if(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
         loadMyCampaigns(true);
-      }, 30000);
+      }, 20000);
     }
     try{ var r=await apiCreator("get_my_campaigns"); if(r.error) throw r.error;
       var sig=JSON.stringify(r.data||[]); if(silent && sig===_mineSig) return; _mineSig=sig;
@@ -434,7 +434,6 @@
         : '<button class="btn sm" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Apply</button>';
       var meta=[];
       if(c.product_value) meta.push('🎁 Worth <b>₹'+esc(Number(c.product_value).toLocaleString("en-IN"))+'</b>');
-      if(c.creators_needed) meta.push('👥 <b>'+esc(c.creators_needed)+'</b> creators');
       if(c.ends_on) meta.push('🗓 Till <b>'+fmtDate(c.ends_on)+'</b>');
       if((c.cities||[]).length) meta.push('📍 '+esc((c.cities||[]).slice(0,2).join(", ")));
       if(c.platforms) meta.push('📱 '+esc(String(c.platforms).split(",")[0]));
@@ -463,7 +462,6 @@
       + row("Product", c.product?esc(c.product):'')
       + row("Product value", c.product_value?'₹'+esc(Number(c.product_value).toLocaleString("en-IN")):'')
       + row("Product link", c.product_link?'<a href="'+esc(safeLink(c.product_link))+'" target="_blank" rel="noopener">View product ↗</a>':'')
-      + row("Creators needed", c.creators_needed?esc(c.creators_needed):'')
       + row("Category", c.category?esc(c.category):'')
       + row("Dates", (c.starts_on||c.ends_on)?fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on):'')
       + row("Cities", (c.cities||[]).length?esc((c.cities||[]).join(", ")):'')
@@ -639,33 +637,51 @@
   // the one thing the creator should do (or wait for) right now
   function nextStepHtml(c){
     var P=esc(c.participation_id), sh=c.shipment||{}, k=c.contract||{}, rv=c.review, sb2=c.submission, due=c.deadline;
-    var days=k.content_days||7;
     var box=function(icon,title,text,btns,tone){ return '<div class="jr-now '+(tone||'')+'"><div class="jr-now-h">'+icon+' <b>'+title+'</b></div>'+(text?'<div class="jr-now-t">'+text+'</div>':'')+(btns?'<div class="ci-evrow">'+btns+'</div>':'')+'</div>'; };
+    var readBrief='<button class="btn sm ghost" data-readbrief="'+P+'">📖 Read brief</button>';
+    if(c.blocked_at) return box('⛔','Your account is blocked',
+        'You received the product but no video came in within 7 days, so campaigns are paused for you. Our team will call you — or submit your video now and reply on WhatsApp.',
+        '<button class="btn sm" data-video="'+P+'">🎬 Submit my video</button>'+readBrief,'bad');
     switch(c.stage){
       case 'invited': return box('🎯','You\'re invited','Read the campaign details below, then accept or pass.','<button class="btn sm" data-accept="'+P+'">✅ Accept invite</button><button class="btn sm ghost" data-reject="'+P+'">Pass</button>');
       case 'applied': case 'eligible': case 'shortlisted': return box('⏳','Application received','Geek is checking your profile against the brand\'s brief. You\'ll get a WhatsApp the moment there\'s news.');
       case 'sent_to_brand': return box('📋','With the brand','You\'re on the final list the brand is reviewing.');
       case 'brand_confirmed': case 'accepted': return box('🎉','You\'re selected!','Your contract is being prepared — it will appear here in a moment.');
-      case 'contract_sent': return box('📜','Sign your contract','Product, deliverables, ASCI disclosure, ad rights and the non-delivery terms. Read it and sign to get your product.','<button class="btn sm" data-contract="'+P+'">Review &amp; sign contract</button>','act');
-      case 'contract_signed': return box('📍','Confirm your delivery address','Tell us where to ship the product.','<button class="btn sm" data-address="'+P+'">Confirm delivery address</button>','act');
-      case 'address_confirmed': return box('📦','Your product is being packed','The courier and tracking number will show here as soon as it ships.');
+      case 'contract_sent': return box('📜','Sign your contract','Product, deliverables, ASCI, ad rights, posting only after approval, and the non-delivery terms. Read it to the end and sign.','<button class="btn sm" data-contract="'+P+'">Read &amp; sign contract</button>','act');
+      case 'contract_signed': return box('📍','Confirm your delivery address','Pick a saved address, edit it, add a new one or use your current location.','<button class="btn sm" data-address="'+P+'">Confirm delivery address</button>','act');
+      case 'address_confirmed': return box('📦','Your product is being packed','The courier and tracking number show here the moment it ships.');
       case 'product_sent':
         if(sh.status==='delivered') return box('✅','Delivered','Your video brief is on its way to you.');
         return box('🚚','Your product is on the way',
-          (sh.courier?'Courier: <b>'+esc(sh.courier)+'</b>':'')+(sh.tracking_ref?' · Tracking no. <b>'+esc(sh.tracking_ref)+'</b>':'')+(sh.shipped_at?' · sent '+fmtDate(sh.shipped_at):'')
-          +'<div class="muted" style="font-size:12px;margin-top:4px">Got it? Tap below — your video brief unlocks straight away and your '+days+'-day timer starts.</div>',
-          (sh.tracking_url?'<a class="btn sm ghost" href="'+esc(safeLink(sh.tracking_url))+'" target="_blank" rel="noopener">Track parcel ↗</a>':'')+'<button class="btn sm" data-received="'+P+'">📦 I received it</button>','act');
-      case 'content_created': return box('🎬','Shoot your video','Open the <b>Video brief</b> below'+(due?' and submit by <b>'+fmtDate(due)+'</b>':'')+'. Upload the video to Google Drive / Dropbox / WeTransfer and paste the link.',
-          '<button class="btn sm" data-video="'+P+'">🎬 Submit my video</button>','act');
-      case 'changes_requested': return box('✏️','The brand asked for a few changes',(rv&&rv.reason?'<div class="mc-note" style="border-color:rgba(247,144,9,.6)">“'+esc(rv.reason)+'”</div>':'')+(due?'<div style="margin-top:4px">Due <b>'+fmtDate(due)+'</b></div>':''),
-          '<button class="btn sm" data-video="'+P+'">🎬 Submit the new version</button>','act');
-      case 'content_submitted': return box('👀','Your video is with the brand',(sb2?'<a href="'+esc(safeLink(sb2.url))+'" target="_blank" rel="noopener">Your cut ↗</a> · sent '+fmtDT(sb2.submitted_at)+'. ':'')+'We\'ll tell you the moment it\'s approved.');
-      case 'content_approved': return box('✅','Approved — post it now!','Post your reel with the caption, hashtags and tags from the brief (add the brand as collaborator), then add the post link here.',
-          '<button class="btn sm" data-post="'+P+'">📲 I posted — add the link</button>','act');
-      case 'published': return box('📈','You\'re live!','We\'re collecting your post\'s numbers — they show below.');
+          '<div class="trk">'+(sh.courier?'<span>Courier <b>'+esc(sh.courier)+'</b></span>':'')
+          +(sh.tracking_ref?'<span>Tracking no. <b class="trk-no">'+esc(sh.tracking_ref)+'</b> <button class="btn sm ghost" data-copy="'+esc(sh.tracking_ref)+'">Copy</button></span>':'')
+          +(sh.shipped_at?'<span>Sent '+fmtDate(sh.shipped_at)+'</span>':'')+'</div>'
+          +'<div class="muted" style="font-size:12px;margin-top:6px">Tap <b>Track</b> — paste the tracking number on the courier page if it asks. Got the parcel? Tap <b>Received</b> and your video brief opens.</div>',
+          (sh.tracking_url?'<a class="btn sm ghost" href="'+esc(safeLink(sh.tracking_url))+'" target="_blank" rel="noopener" data-trk="'+esc(sh.tracking_ref||"")+'">🔎 Track parcel ↗</a>'
+                          :(sh.tracking_ref?'<a class="btn sm ghost" href="https://www.google.com/search?q='+encodeURIComponent((sh.courier||"courier")+" tracking "+sh.tracking_ref)+'" target="_blank" rel="noopener" data-trk="'+esc(sh.tracking_ref)+'">🔎 Track parcel ↗</a>':''))
+          +'<button class="btn sm" data-received="'+P+'">📦 Received</button>','act');
+      case 'content_created': return box('🎬','Shoot your video',
+          'Read the brief, shoot your video'+(due?' and submit by <b>'+fmtDate(due)+'</b>':'')+'. <b>Don\'t post it on Instagram yet</b> — the brand approves it first.',
+          '<button class="btn sm" data-video="'+P+'">🎬 Submit my video</button>'+readBrief,'act');
+      case 'changes_requested': return box('✏️', /^New video link needed/.test((rv&&rv.reason)||'') ? 'We need a new video link' : 'The brand asked for changes',
+          (rv&&rv.reason?'<div class="mc-note" style="border-color:rgba(247,144,9,.6)">“'+esc(rv.reason)+'”</div>':'')+(due?'<div style="margin-top:4px">Due <b>'+fmtDate(due)+'</b></div>':''),
+          '<button class="btn sm" data-video="'+P+'">🎬 Submit again</button>'+readBrief,'act');
+      case 'content_submitted': return box('👀','Your video is with the brand',(sb2?'<a href="'+esc(safeLink(sb2.url))+'" target="_blank" rel="noopener">Your link ↗</a> · sent '+fmtDT(sb2.submitted_at)+'. ':'')+'We\'ll tell you the moment it\'s approved. Don\'t post yet.');
+      case 'content_approved': return box('✅','Approved — let\'s post!','Your caption, hashtags and tags are ready. Post the approved video — we find the post on your Instagram automatically.',
+          '<button class="btn sm" data-letspost="'+P+'">🚀 Let\'s post</button>','act');
+      case 'published':
+        if(c.feedback_requested_at) return box('⭐','One last step — your feedback','Rate this campaign to complete it. Your post\'s numbers open right after.', feedbackForm(c),'act');
+        return box('📈','You\'re live!','Your post is recorded on the campaign. The brand wraps up once the numbers are in.');
       case 'completed': return box('🏁','Campaign complete','Thank you! Your numbers are below.');
     }
     return '';
+  }
+  function feedbackForm(c){
+    var P=esc(c.participation_id), yn=function(id,q){ return '<label class="fbq"><span>'+q+'</span><select id="'+id+P+'"><option value="">—</option><option value="yes">Yes</option><option value="no">No</option></select></label>'; };
+    return '<div class="fb-box"><div class="fb-stars" data-fbstars="'+P+'">'+[1,2,3,4,5].map(function(n){ return '<button type="button" data-star="'+n+'">★</button>'; }).join("")+'</div>'
+      + yn('fbClear','Was the brief clear?') + yn('fbSmooth','Was everything smooth?') + yn('fbAgain','Work with this brand again?')
+      + '<textarea id="fbText'+P+'" rows="2" placeholder="Anything to tell the brand or the Geek team? (optional)"></textarea>'
+      + '<button class="btn sm" data-fbsend="'+P+'">Submit feedback &amp; complete</button><span class="ci-hint" id="fbMsg'+P+'"></span></div>';
   }
   function briefHtml(c){
     var b=c.video_brief; if(!b) return '';
@@ -681,6 +697,10 @@
   }
   function postsHtml(c){
     var ps=c.posts||[]; if(!ps.length) return '';
+    if(c.stage!=='completed') return '<div class="mc-dl">'+ps.map(function(p){
+        return '<div class="mc-dlrow"><div class="mc-dlh"><b>'+esc(p.media_type)+' ✅ posted</b><span class="muted" style="font-size:12px">'+fmtDate(p.posted_at)
+          +(p.permalink?' · <a href="'+esc(safeLink(p.permalink))+'" target="_blank" rel="noopener">Open ↗</a>':'')+'</span></div>'
+          +'<div class="muted" style="font-size:12px">🔒 Your numbers open once you share your feedback.</div></div>'; }).join("")+'</div>';
     return '<div class="mc-dl">'+ps.map(function(p){
       var s=p.stats||{}, rows=[["👁","Views",s.views],["📈","Reach",s.reach],["❤️","Likes",s.likes],["💬","Comments",s.comments],["↗️","Shares",s.shares],["🔖","Saves",s.saves]].filter(function(x){ return x[2]!=null; });
       return '<div class="mc-dlrow"><div class="mc-dlh"><b>'+esc(p.media_type)+'</b><span class="muted" style="font-size:12px">posted '+fmtDate(p.posted_at)
@@ -732,7 +752,6 @@
       + (vb?fold('vb-'+P,'🎬 Video brief'+(c.deadline&&['content_created','changes_requested'].indexOf(c.stage)>=0?' <span class="ci-pill ci-warn" style="margin-left:6px">Due '+fmtDate(c.deadline)+'</span>':''), vbHint, briefHtml(c), false):'')
       + fold('cd-'+P,'📄 Campaign details &amp; brief', c.brief?preview(c.brief):'', details, c.stage==='invited')
       + (!approved&&!declined&&c.reason?'<div class="ci-hint">Note: '+esc(c.reason)+'</div>':'')
-      + (c.stage==='completed'? creatorCampaignFeedback(c.campaign_id):'')
       + '</div>';
   }
   function wireMine(){
@@ -742,12 +761,69 @@
     document.querySelectorAll("#opsMine [data-contract]").forEach(function(b){ b.onclick=function(){ openContractModal(b.getAttribute("data-contract")); }; });
     document.querySelectorAll("#opsMine .jr").forEach(function(j){ var n=j.querySelector(".jr-step.now"); if(n) j.scrollLeft=Math.max(0,n.offsetLeft-j.clientWidth/2+n.offsetWidth/2); });
     document.querySelectorAll("#opsMine [data-video]").forEach(function(b){ b.onclick=function(){ openVideoModal(b.getAttribute("data-video")); }; });
+    document.querySelectorAll("#opsMine [data-readbrief]").forEach(function(b){ b.onclick=function(){
+      var d=document.querySelector('#opsMine details[data-fold="vb-'+b.getAttribute("data-readbrief")+'"]');
+      if(d){ d.open=true; MINE_OPEN['vb-'+b.getAttribute("data-readbrief")]=true; d.scrollIntoView({behavior:"smooth",block:"start"}); } }; });
+    document.querySelectorAll("#opsMine [data-copy]").forEach(function(b){ b.onclick=async function(){ try{ await navigator.clipboard.writeText(b.getAttribute("data-copy")); b.textContent="Copied ✓"; setTimeout(function(){ b.textContent="Copy"; },1500); }catch(e){ prompt("Copy:", b.getAttribute("data-copy")); } }; });
+    document.querySelectorAll("#opsMine [data-trk]").forEach(function(a){ a.addEventListener("click", function(){ var t=a.getAttribute("data-trk"); if(t){ try{ navigator.clipboard.writeText(t); }catch(e){} } }); });
+    document.querySelectorAll("#opsMine [data-letspost]").forEach(function(b){ b.onclick=function(){ openLetsPost(b.getAttribute("data-letspost")); }; });
+    document.querySelectorAll("#opsMine [data-fbstars]").forEach(function(box){
+      box.querySelectorAll("[data-star]").forEach(function(st){ st.onclick=function(){ var n=+st.getAttribute("data-star"); box.setAttribute("data-val", n);
+        box.querySelectorAll("[data-star]").forEach(function(x){ x.classList.toggle("on", +x.getAttribute("data-star")<=n); }); }; }); });
+    document.querySelectorAll("#opsMine [data-fbsend]").forEach(function(b){ b.onclick=function(){
+      var P=b.getAttribute("data-fbsend"), msg=document.getElementById("fbMsg"+P), stars=document.querySelector('#opsMine [data-fbstars="'+P+'"]');
+      var val=function(id){ var e=document.getElementById(id+P); return e&&e.value ? e.value==="yes" : null; };
+      var rating=+(stars&&stars.getAttribute("data-val")||0);
+      if(!rating){ msg.textContent="Tap the stars to rate the campaign."; return; }
+      b.disabled=true; b.textContent="Sending…";
+      api("submit_campaign_feedback",{ p_participation:P, p_payload:{ rating:rating, brief_clear:val("fbClear"), smooth:val("fbSmooth"), again:val("fbAgain"),
+        comment:(document.getElementById("fbText"+P).value||"").trim() } }).then(function(r){
+        if(r.error){ msg.textContent=r.error.message||r.error; b.disabled=false; b.textContent="Submit feedback & complete"; return; }
+        loadMyCampaigns(); updateAlertsBadge(); }); }; });
     document.querySelectorAll("#opsMine [data-received]").forEach(function(b){ b.onclick=function(){
       if(!confirm("Confirm you've received the product? Your video brief unlocks now and your deadline starts.")) return;
       b.disabled=true; b.textContent="…";
       api("creator_mark_received",{p_participation:b.getAttribute("data-received")}).then(function(r){ if(r.error){ alert(r.error.message||r.error); b.disabled=false; b.textContent="📦 I received it"; return; } loadMyCampaigns(); updateAlertsBadge(); }); }; });
     document.querySelectorAll("#opsMine [data-address]").forEach(function(b){ b.onclick=function(){ openAddressModal(b.getAttribute("data-address")); }; });
     document.querySelectorAll("#opsMine [data-post]").forEach(function(b){ b.onclick=function(){ openPostModal(b.getAttribute("data-post")); }; });
+  }
+
+  // ---- creator: approved → Let's post. Caption + hashtags + tags ready; post from the app or Instagram; we find the post ----
+  function readyCaption(c){
+    var b=c.video_brief||{}, tags=[];
+    var add=function(t){ t=String(t||"").trim(); if(!t) return; if(!/^[#@]/.test(t)) t='#'+t; if(tags.map(function(x){return x.toLowerCase();}).indexOf(t.toLowerCase())<0) tags.push(t); };
+    String(b.hashtags||"").split(/[\s,]+/).forEach(add); String(b.mentions||"").split(/[\s,]+/).forEach(function(m){ if(m) add(m.charAt(0)==='@'?m:'@'+m); });
+    (c.hashtags||[]).forEach(add); (c.mentions||[]).forEach(function(m){ add(String(m).charAt(0)==='@'?m:'@'+m); });
+    return ['#ad', (b.caption||'').trim(), tags.filter(function(t){ return t.toLowerCase()!=='#ad'; }).join(' ')].filter(Boolean).join('\n\n');
+  }
+  function openLetsPost(part){
+    var c=(_mineCache||[]).filter(function(x){ return x.participation_id===part; })[0]||{};
+    var cap=readyCaption(c), collab=((c.mentions||[])[0]||String((c.video_brief||{}).mentions||'').split(/[\s,]+/)[0]||'').replace(/^@/,'');
+    opsModal('<div class="ci-mh"><h3>🚀 Let\'s post</h3><button class="wa-x" id="opsMx">×</button></div>'
+      + '<div class="ci-hint">Post the <b>approved</b> video as a Reel'+(collab?' and add <b>@'+esc(collab)+'</b> as collaborator':'')+'. Your caption is ready:</div>'
+      + '<textarea id="lpCap" rows="6" class="lp-cap">'+esc(cap)+'</textarea>'
+      + '<div class="cp-ob-actions" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn sm ghost" id="lpCopy">📋 Copy caption</button>'
+      + '<button class="btn sm" id="lpKit">📲 Post from the app (all filled in)</button>'
+      + '<a class="btn sm ghost" href="https://www.instagram.com/" target="_blank" rel="noopener" id="lpIg">Open Instagram ↗</a></div>'
+      + '<div class="lp-or">Posted it already?</div>'
+      + '<div class="cp-ob-actions" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn sm" id="lpFind">🔎 Find my post</button><button class="btn sm ghost" id="lpManual">Add the link myself</button></div>'
+      + '<div class="ci-hint" id="lpMsg">We also check your Instagram on our own every few minutes — the campaign moves to <b>Posted</b> by itself.</div>');
+    document.getElementById("opsMx").onclick=closeModal;
+    document.getElementById("lpCopy").onclick=async function(){ try{ await navigator.clipboard.writeText(document.getElementById("lpCap").value); this.textContent="Copied ✓"; }catch(e){ document.getElementById("lpCap").select(); } };
+    document.getElementById("lpIg").addEventListener("click", function(){ try{ navigator.clipboard.writeText(document.getElementById("lpCap").value); }catch(e){} });
+    document.getElementById("lpKit").onclick=function(){
+      window.__mkPreset={ participation_id: part, caption: document.getElementById("lpCap").value };
+      closeModal(); if(typeof currentPage!=="undefined") currentPage="mediakit"; if(typeof renderShell==="function") renderShell(); };
+    document.getElementById("lpManual").onclick=function(){ closeModal(); openPostModal(part); };
+    document.getElementById("lpFind").onclick=async function(){
+      var btn=this, msg=document.getElementById("lpMsg"); btn.disabled=true; btn.textContent="Checking your Instagram…";
+      try{ await window.sb.functions.invoke("instagram-media-sync",{ body:{ force:true } }); }catch(e){}
+      var r=await api("check_my_posts");
+      if(r.error){ msg.textContent=r.error.message||r.error; btn.disabled=false; btn.textContent="🔎 Find my post"; return; }
+      if(r.data && r.data.found){ closeModal(); loadMyCampaigns(); updateAlertsBadge(); return; }
+      msg.innerHTML="Not found yet — make sure the caption has the campaign hashtag/tag, wait a minute and try again, or <b>Add the link myself</b>.";
+      btn.disabled=false; btn.textContent="🔎 Find my post";
+    };
   }
 
   // ---- creator: record the reel/story posted (runs the caption/tag check + marks published) ----
@@ -787,14 +863,22 @@
         + '<div class="ci-meta"><span>'+esc(k.brand||'')+' × <b>'+esc(k.campaign||'')+'</b></span><span>Product: <b>'+esc(k.product||"—")+'</b>'+(k.product_value?' (₹'+esc(Number(k.product_value).toLocaleString("en-IN"))+')':'')+'</span>'
         + '<span>Make: <b>'+(dl.length?dl.map(function(x){ return esc(x.quantity||1)+'× '+esc(x.format||x.content_format||"content"); }).join(" + "):'—')+'</b></span>'
         + '<span>Post within <b>'+esc(k.content_days||7)+' days</b> of delivery</span></div>'
-        + (cl.length?'<div class="ct-clauses">'+cl.map(function(c,i){ return '<div class="ct-clause'+(c.key==='non_delivery'||c.key==='reship'?' warn':'')+'"><b>'+(i+1)+'. '+esc(c.title)+'</b><div>'+esc(c.text)+'</div></div>'; }).join("")+'</div>'
+        + (cl.length?'<div class="ct-clauses" id="opsCtScroll">'+cl.map(function(c,i){ return '<div class="ct-clause'+(c.key==='non_delivery'||c.key==='reship'||c.key==='approval'?' warn':'')+'"><b>'+(i+1)+'. '+esc(c.title)+'</b><div>'+esc(c.text)+'</div></div>'; }).join("")
+                +'<div class="ct-end">— End of contract —</div></div>'
               :'<div class="ci-hint" style="margin-top:8px">Ad rights: '+esc(k.ad_rights_months||1)+' month(s) · Collab rights: '+(k.collab_rights?"Yes":"No")+'</div>')
-        + '<label class="cp-check" style="margin-top:12px"><input type="checkbox" id="opsAsci"> <span>I have read and will follow the <b>ASCI</b> influencer-advertising guidelines, and I agree to the product, deliverables and ad rights above.</span></label>'
-        + (risky?'<label class="cp-check"><input type="checkbox" id="opsTerms"> <span>I understand that if I receive the product and don\'t post on time, <b>I will be blacklisted</b> from the platform and <b>must send the product to another creator at my own cost</b>.</span></label>':'')
-        + '<label class="wa-f"><span>Type your full name to sign</span><input id="opsSig" placeholder="e.g. Asha Kumar"></label>'
-        + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsCtCancel">Cancel</button><button class="btn sm" id="opsCtSign">Sign contract</button></div>'
+        + '<div class="ct-gate" id="opsCtGate">↓ Read the whole contract — scroll to the end to accept and sign</div>'
+        + '<div id="opsCtAccept" style="display:none">'
+        +   '<label class="cp-check" style="margin-top:12px"><input type="checkbox" id="opsAsci"> <span>I have read the whole contract, I will follow the <b>ASCI</b> guidelines, and I will <b>post only after the brand approves my video</b> in the app.</span></label>'
+        +   (risky?'<label class="cp-check"><input type="checkbox" id="opsTerms"> <span>I understand that if I receive the product and don\'t submit my video within 7 days, <b>my account is blocked</b> and I <b>must send the product to another creator at my own cost</b>.</span></label>':'')
+        +   '<label class="wa-f"><span>Type your full name to sign</span><input id="opsSig" placeholder="e.g. Asha Kumar"></label>'
+        +   '<div class="cp-ob-actions"><button class="btn sm" id="opsCtSign">Sign contract</button></div>'
+        + '</div>'
         + '<div class="ci-hint cp-err-inline" id="opsCtErr"></div>';
-      document.getElementById("opsCtCancel").onclick=closeModal;
+      (function(){ var sc=document.getElementById("opsCtScroll"), gate=document.getElementById("opsCtGate"), acc=document.getElementById("opsCtAccept");
+        var open=function(){ gate.style.display="none"; acc.style.display=""; };
+        if(!sc || sc.scrollHeight <= sc.clientHeight + 4){ open(); return; }
+        sc.addEventListener("scroll", function(){ if(sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 8) open(); });
+        gate.onclick=function(){ sc.scrollBy({top:sc.clientHeight*0.8, behavior:"smooth"}); }; })();
       if(k.signed_at){ var sbn=document.getElementById("opsCtSign"); sbn.disabled=true; sbn.textContent="Signed "+fmtDate(k.signed_at); }
       document.getElementById("opsCtSign").onclick=function(){
         var err=document.getElementById("opsCtErr"); err.textContent="";
@@ -821,7 +905,8 @@
     var c=(_mineCache||[]).filter(function(x){ return x.participation_id===part; })[0]||{};
     opsModal('<div class="ci-mh"><h3>Submit your video</h3><button class="wa-x" id="opsMx">×</button></div>'
       + (c.review&&c.review.decision==='changes_requested'&&c.review.reason?'<div class="mc-note" style="border-color:rgba(247,144,9,.6);margin-bottom:8px">Brand asked: “'+esc(c.review.reason)+'”</div>':'')
-      + '<div class="ci-hint">Upload the video to Google Drive, Dropbox or WeTransfer (set it to “anyone with the link can view”) and paste the link. Don\'t post it on Instagram yet — the brand approves it first.</div>'
+      + '<div class="vid-note"><b>⚠️ The link must open for everyone.</b> Upload your video to Google Drive and set <b>Share → General access → “Anyone with the link” → Viewer</b>. Open the link in a private / incognito window to check before you submit — if we can\'t open it, we\'ll ask you for a new link.</div>'
+      + '<div class="ci-hint">Don\'t post it on Instagram yet — the brand approves it first.</div>'
       + '<label class="wa-f"><span>Link to your video</span><input id="opsVidUrl" placeholder="https://drive.google.com/…"></label>'
       + '<label class="wa-f"><span>Note for the brand (optional)</span><textarea id="opsVidNote" rows="2" placeholder="Two versions — v2 has the voice-over"></textarea></label>'
       + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsVidCancel">Cancel</button><button class="btn sm" id="opsVidSave">Submit for review</button></div>'
@@ -839,56 +924,92 @@
     };
   }
 
-  // ---- creator: confirm delivery address (choose from saved addresses) ----
+  // ---- creator: confirm delivery address — pick a saved one, edit it, add a new one, or use current location ----
   async function openAddressModal(part){
-    var ov=opsModal('<div class="ci-mh"><h3>Confirm delivery address</h3><button class="wa-x" id="opsMx">×</button></div><div id="opsAdBody"><div class="muted">Loading your addresses…</div></div>');
+    opsModal('<div class="ci-mh"><h3>Where should we ship your product?</h3><button class="wa-x" id="opsMx">×</button></div><div id="opsAdBody"><div class="muted">Loading your addresses…</div></div>');
     document.getElementById("opsMx").onclick=closeModal;
-    try{
-      var r=await api("get_my_profile"); var prof=(r && !r.error)?r.data:null; var addrs=(prof&&prof.addresses)||[];
-      var body=document.getElementById("opsAdBody");
-      var addForm='<div class="cp-grid" style="margin-top:6px"><label class="wa-f"><span>House / street</span><input id="opsNA1" placeholder="12, MG Road"></label>'
-        + '<label class="wa-f"><span>Area / landmark</span><input id="opsNA2" placeholder="Near City Mall"></label>'
-        + '<label class="wa-f"><span>City</span><input id="opsNACity" placeholder="Delhi"></label>'
-        + '<label class="wa-f"><span>State</span><input id="opsNAState" placeholder="Delhi"></label>'
-        + '<label class="wa-f"><span>PIN code</span><input id="opsNAPin" inputmode="numeric" maxlength="6" placeholder="110001"></label></div>';
-      if(!addrs.length){
-        body.innerHTML='<div class="ci-hint">Where should we ship your product?</div>'+addForm
-          + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsAdCancel">Cancel</button><button class="btn sm" id="opsAdNew">Save &amp; confirm address</button></div>'
-          + '<div class="ci-hint cp-err-inline" id="opsAdErr"></div>';
-        document.getElementById("opsAdCancel").onclick=closeModal;
-        document.getElementById("opsAdNew").onclick=async function(){
-          var err=document.getElementById("opsAdErr"); err.textContent="";
-          var v=function(id){ return (document.getElementById(id).value||"").trim(); };
-          if(!v("opsNA1")||!v("opsNACity")||!/^\d{6}$/.test(v("opsNAPin"))){ err.textContent="Add the street, city and a 6-digit PIN code."; return; }
-          var btn=this; btn.disabled=true; btn.textContent="Saving…";
-          try{
-            var r1=await api("upsert_address",{p_payload:{line1:v("opsNA1"),landmark:v("opsNA2")||null,city:v("opsNACity"),state:v("opsNAState")||null,postal_code:v("opsNAPin"),country:"India",label:"Home",is_default:true},p_correlation:"ui-campaign"});
-            if(r1.error) throw r1.error;
-            var aid=(r1.data&&r1.data.address_id)||r1.data;
-            var r2=await api("confirm_campaign_address",{p_participation:part,p_address_id:aid}); if(r2.error) throw r2.error;
-            closeModal(); loadMyCampaigns(); updateAlertsBadge();
-          }catch(e){ err.textContent=(e&&e.message)||String(e); btn.disabled=false; btn.textContent="Save & confirm address"; }
-        };
-        return;
-      }
-      body.innerHTML='<div class="wa-f"><span>Ship my product to</span><select id="opsAddrSel">'+addrs.map(function(a){
-          var label=[a.line1,a.city,a.postal_code].filter(Boolean).join(", ")||"Address";
-          return '<option value="'+esc(a.address_id)+'">'+esc(label)+'</option>';
-        }).join("")+'</select></div>'
-        + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsAdCancel">Cancel</button><button class="btn sm" id="opsAdSave">Confirm address</button></div>'
-        + '<div class="ci-hint cp-err-inline" id="opsAdErr"></div>';
-      document.getElementById("opsAdCancel").onclick=closeModal;
-      document.getElementById("opsAdSave").onclick=function(){
-        var err=document.getElementById("opsAdErr"); err.textContent=""; var aid=document.getElementById("opsAddrSel").value;
+    var addrs=[], editing=null;
+    var line=function(a){ return [a.line1,a.line2,a.landmark,a.city,a.state,a.postal_code].filter(Boolean).join(", "); };
+    var paint=function(showForm){
+      var body=document.getElementById("opsAdBody"); if(!body) return;
+      var a=editing||{};
+      var form='<div class="ad-form" id="opsAdForm"'+(showForm?'':' style="display:none"')+'>'
+        + '<div class="ad-form-h"><b>'+(editing&&editing.address_id?'Edit address':'New address')+'</b>'
+        + '<button class="btn sm ghost" type="button" id="opsGeo">📍 Use my current location</button></div>'
+        + '<div class="ci-hint" id="opsGeoMsg"></div>'
+        + '<div class="cp-grid">'
+        +   '<label class="wa-f"><span>Flat / house no., building</span><input id="opsNA1" value="'+esc(a.line1||"")+'" placeholder="B-12, Green Apartments"></label>'
+        +   '<label class="wa-f"><span>Street / area</span><input id="opsNA2" value="'+esc(a.line2||"")+'" placeholder="MG Road, Sector 14"></label>'
+        +   '<label class="wa-f"><span>Landmark</span><input id="opsNALm" value="'+esc(a.landmark||"")+'" placeholder="Near City Mall"></label>'
+        +   '<label class="wa-f"><span>City</span><input id="opsNACity" value="'+esc(a.city||"")+'" placeholder="Delhi"></label>'
+        +   '<label class="wa-f"><span>State</span><input id="opsNAState" value="'+esc(a.state||"")+'" placeholder="Delhi"></label>'
+        +   '<label class="wa-f"><span>PIN code</span><input id="opsNAPin" value="'+esc(a.postal_code||"")+'" inputmode="numeric" maxlength="6" placeholder="110001"></label>'
+        + '</div>'
+        + '<div class="cp-ob-actions"><button class="btn sm" id="opsAdNew">Save &amp; ship here</button></div></div>';
+      body.innerHTML=(addrs.length
+          ? '<div class="ad-list">'+addrs.map(function(x,i){ return '<label class="ad-opt"><input type="radio" name="opsAddr" value="'+esc(x.address_id)+'"'+((x.is_default||i===0)?' checked':'')+'>'
+              + '<span><b>'+esc(x.label||"Address")+'</b>'+(x.is_default?' <em>Default</em>':'')+'<br>'+esc(line(x))+'</span>'
+              + '<button type="button" class="btn sm ghost" data-adedit="'+esc(x.address_id)+'">Edit</button></label>'; }).join("")+'</div>'
+            + '<div class="cp-ob-actions ad-acts"><button class="btn sm ghost" id="opsAdAdd">+ Add a new address</button><button class="btn sm" id="opsAdSave">Ship to this address</button></div>'
+          : '')
+        + form + '<div class="ci-hint cp-err-inline" id="opsAdErr"></div>';
+      var add=document.getElementById("opsAdAdd"); if(add) add.onclick=function(){ editing=null; paint(true); };
+      document.querySelectorAll("#opsAdBody [data-adedit]").forEach(function(b){ b.onclick=function(e){ e.preventDefault(); editing=addrs.filter(function(x){ return x.address_id===b.getAttribute("data-adedit"); })[0]; paint(true); }; });
+      var save=document.getElementById("opsAdSave");
+      if(save) save.onclick=function(){
+        var err=document.getElementById("opsAdErr"); err.textContent=""; var sel=document.querySelector('#opsAdBody input[name=opsAddr]:checked');
+        if(!sel){ err.textContent="Pick an address."; return; }
         var btn=this; btn.disabled=true; btn.textContent="Confirming…";
-        api("confirm_campaign_address",{p_participation:part,p_address_id:aid}).then(function(r2){
-          if(r2.error){ err.textContent=r2.error.message||r2.error; btn.disabled=false; btn.textContent="Confirm address"; return; }
+        api("confirm_campaign_address",{p_participation:part,p_address_id:sel.value}).then(function(r2){
+          if(r2.error){ err.textContent=r2.error.message||r2.error; btn.disabled=false; btn.textContent="Ship to this address"; return; }
           closeModal(); loadMyCampaigns(); updateAlertsBadge();
         });
       };
+      document.getElementById("opsGeo").onclick=function(){ useLocation(); };
+      document.getElementById("opsAdNew").onclick=async function(){
+        var err=document.getElementById("opsAdErr"); err.textContent="";
+        var v=function(id){ return (document.getElementById(id).value||"").trim(); };
+        if(!v("opsNA1")||!v("opsNACity")||!/^\d{6}$/.test(v("opsNAPin"))){ err.textContent="Add the flat / house, city and a 6-digit PIN code."; return; }
+        var btn=this; btn.disabled=true; btn.textContent="Saving…";
+        try{
+          var payload={line1:v("opsNA1"),line2:v("opsNA2")||null,landmark:v("opsNALm")||null,city:v("opsNACity"),state:v("opsNAState")||null,
+                       postal_code:v("opsNAPin"),country:"India",label:(editing&&editing.label)||"Home",is_default:true};
+          if(editing && editing.address_id) payload.address_id=editing.address_id;
+          var r1=await api("upsert_address",{p_payload:payload,p_correlation:"ui-campaign"}); if(r1.error) throw r1.error;
+          var aid=(r1.data&&r1.data.address_id)||r1.data||(editing&&editing.address_id);
+          var r2=await api("confirm_campaign_address",{p_participation:part,p_address_id:aid}); if(r2.error) throw r2.error;
+          closeModal(); loadMyCampaigns(); updateAlertsBadge();
+        }catch(e){ err.textContent=(e&&e.message)||String(e); btn.disabled=false; btn.textContent="Save & ship here"; }
+      };
+    };
+    // 📍 current location → address (OpenStreetMap) — always editable before saving
+    var useLocation=function(){
+      var msg=document.getElementById("opsGeoMsg"), btn=document.getElementById("opsGeo");
+      if(!navigator.geolocation){ msg.textContent="Location isn't available in this browser — type your address."; return; }
+      btn.disabled=true; btn.textContent="📍 Locating…"; msg.textContent="";
+      navigator.geolocation.getCurrentPosition(async function(pos){
+        var lat=pos.coords.latitude, lon=pos.coords.longitude;
+        try{
+          var res=await fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&lat="+lat+"&lon="+lon,{ headers:{ "Accept-Language":"en" } });
+          var j=await res.json(), a=(j&&j.address)||{};
+          var set=function(id,val){ var e=document.getElementById(id); if(e && val) e.value=val; };
+          set("opsNA1",[a.house_number,a.building||a.amenity].filter(Boolean).join(", "));
+          set("opsNA2",[a.road,a.neighbourhood||a.suburb].filter(Boolean).join(", "));
+          set("opsNALm",a.suburb||a.quarter||a.city_district||"");
+          set("opsNACity",a.city||a.town||a.village||a.county||a.state_district);
+          set("opsNAState",a.state); set("opsNAPin",a.postcode);
+          msg.innerHTML='✓ Filled from your location — add your flat / house number, then save. <a href="https://www.google.com/maps?q='+lat+','+lon+'" target="_blank" rel="noopener">Check on Google Maps ↗</a>';
+        }catch(e){ msg.textContent="Couldn't look up your address — please type it."; }
+        btn.disabled=false; btn.textContent="📍 Use my current location";
+      }, function(err){
+        msg.textContent = err && err.code===1 ? "Location permission is blocked — allow it in your browser, or type your address." : "Couldn't get your location — type your address.";
+        btn.disabled=false; btn.textContent="📍 Use my current location";
+      }, { enableHighAccuracy:true, timeout:15000, maximumAge:60000 });
+    };
+    try{
+      var r=await api("get_my_profile"); var prof=(r && !r.error)?r.data:null; addrs=(prof&&prof.addresses)||[];
+      paint(!addrs.length);
     }catch(e){ var bd=document.getElementById("opsAdBody"); if(bd) bd.innerHTML='<div class="ci-err-inline">Couldn\'t load addresses: '+esc(e.message||e)+'</div>'; }
-    document.querySelectorAll("#opsMine [data-fb]").forEach(function(b){ b.onclick=function(){ submitCampFeedback('creator', b.getAttribute("data-fb"), {
-      brief_clear: fv(b,"fbClear"), execution_smooth: fv(b,"fbSmooth"), participate_again: fv(b,"fbAgain") }, b); }; });
   }
   function creatorCampaignFeedback(campId){
     return '<div class="ops-fb"><div class="ci-sub">Quick feedback</div>'

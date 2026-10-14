@@ -1891,7 +1891,7 @@ function renderApprovals(){
     + `<div id="apvBody">${skel("list",4)}</div>`;
 }
 function apvProcessHtml(list){
-  const K = { review:["🎬","Video to review"], ship:["🚚","Ship the product — add courier"], deliver:["📦","In transit — mark delivered"],
+  const K = { blocked:["⛔","Blocked — call the creator"], review:["🎬","Video to review"], ship:["🚚","Ship the product — add courier"], deliver:["📦","In transit — mark delivered"],
               overdue:["⏰","Video overdue"], contract:["📜","Contract didn't go out"], unsigned:["✍️","Contract unsigned 3+ days"] };
   return `<div class="card"><h3 style="margin-top:0">🔁 Barter process — waiting on you</h3><div class="list">${list.map(x=>{
     const c = x.creator||{}, k = K[x.kind]||["•",x.kind], camp = x.legacy_campaign_id||x.campaign_id;
@@ -1901,6 +1901,7 @@ function apvProcessHtml(list){
       <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
         ${x.kind==="review"&&x.video_url?`<a class="mini-btn ghost" href="${esc(safeUrl(x.video_url))}" target="_blank" rel="noopener">▶ Watch</a><button class="mini-btn" data-apvok="${esc(x.participation_id)}">✅ Approve video</button>`:""}
         ${x.kind==="deliver"?`<button class="mini-btn" data-apvdel="${esc(x.participation_id)}">📦 Mark delivered</button>`:""}
+        ${x.phone?`<a class="mini-btn ghost" href="tel:${esc(x.phone)}">📞 ${esc(x.phone)}</a>`:""}
         <button class="mini-btn ghost" data-apvopen="${esc(camp)}" data-apvname="${esc(x.campaign_name||"")}" data-apvpart="${esc(x.participation_id)}">Open</button></span></div>`; }).join("")}</div></div>`;
 }
 async function loadApprovals(silent){
@@ -2929,7 +2930,7 @@ function mkHead(a){
 
     ${tops?`<div class="card mk-section"><h3>Top performing posts</h3><div class="mk-grid">${tops}</div></div>`:""}
 
-    <div class="card mk-section"><div class="mk-sec-head"><h3>Work portfolio</h3>${editBtn("portfolio")}</div>${portfolioHtml}</div>
+    <div class="card mk-section"><div class="mk-sec-head"><h3>Work portfolio</h3>${editBtn("portfolio")}</div><div id="mkCampWork"></div>${portfolioHtml}</div>
 
     <div class="card mk-section"><h3>Mentions</h3>
       ${mentionCards ? `<div class="mk-grid">${mentionCards}</div>` : `<div class="muted" style="padding:8px">Posts where brands &amp; others tag you will appear here once they're available from Instagram.</div>`}</div>
@@ -3145,7 +3146,27 @@ async function openMkThread(id, toId, name, me){
 }
 
 let _mkTimer = null, _mkSyncedAt = 0, _mkLastAcct = null, _mkHeadHtml = "", _mkStoriesHtml = "";
+// Work portfolio → campaign posts made on Geek OS, picked up automatically (thumbnail, brand, link)
+let _mkCampWork = null, _mkCampWorkAt = 0;
+async function mkCampaignWork(acct){
+  const box = document.getElementById("mkCampWork"); if(!box || !window.__ciOpsEnabled) return;
+  if(!_mkCampWork || Date.now() - _mkCampWorkAt > 60000){
+    const { data } = await sb.schema("api").rpc("get_my_campaigns").then(r=>r, ()=>({data:[]}));
+    _mkCampWork = []; _mkCampWorkAt = Date.now();
+    (data||[]).forEach(c=> (c.posts||[]).forEach(p=> _mkCampWork.push(Object.assign({ campaign:c.campaign, brand:c.brand }, p))));
+  }
+  const media = [].concat(acct && acct.recent_media || [], acct && acct.recent_stories || []);
+  const norm = u => String(u||"").toLowerCase().replace(/[?#].*$/,"").replace(/^(https?:\/\/)?(www\.)?/,"").replace(/\/$/,"");
+  const thumb = p => { const m = media.find(x=> norm(x.permalink) && norm(x.permalink)===norm(p.permalink)); return m ? (m.thumbnail_url || m.media_url) : null; };
+  const L = (_mkCampWork||[]).slice().sort((a,b)=> String(b.posted_at).localeCompare(String(a.posted_at)));
+  const el2 = document.getElementById("mkCampWork"); if(!el2) return;
+  el2.innerHTML = L.length ? `<div class="mk-cw-h">🎬 Campaigns on Geek OS</div><div class="mk-cw">${L.map(p=>{ const t = thumb(p);
+      return `<a class="mk-cw-item" href="${esc(safeUrl(p.permalink||"#"))}" target="_blank" rel="noopener">
+        <div class="mk-cw-img">${t?`<img src="${esc(safeUrl(t))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:""}<i>${p.media_type==="story"?"Story":"▶ Reel"}</i></div>
+        <div class="mk-cw-b"><b>${esc(p.brand||"Brand")}</b><span>${esc(p.campaign||"")}</span><em>${esc(fmtDate(p.posted_at))} ↗</em></div></a>`; }).join("")}</div>` : "";
+}
 function wireMkHead(acct){
+  mkCampaignWork(acct);
   const share = document.getElementById("mkShare");
   if(share) share.onclick = async ()=>{
     const url = location.origin + location.pathname.replace(/[^/]*$/,"") + "p.html?u=" + encodeURIComponent(acct.username||"");
@@ -3444,6 +3465,16 @@ function wireMkComposer(){
       _mkRules = data;
       $id("mkCamp").innerHTML = `<option value="">No — personal post</option>` + data.map(r=>`<option value="${esc(r.participation_id)}">${esc(r.campaign||"Campaign")} · ${esc(r.brand||"")}</option>`).join("");
       $id("mkCampWrap").style.display = "";
+      // "Let's post" from My Campaigns → this campaign picked, caption + tags + collaborator filled in
+      const P = window.__mkPreset; window.__mkPreset = null;
+      if(P && data.some(r=>r.participation_id===P.participation_id)){
+        $id("mkCamp").value = P.participation_id;
+        if(P.caption && !cap.value.trim()) cap.value = P.caption;
+        if($id("mkAd")) $id("mkAd").checked = true;
+        $id("mkCamp").onchange();
+        $id("mkCampWrap").scrollIntoView({ behavior:"smooth", block:"center" });
+        const m = $id("mkMsg"); if(m){ m.textContent = "Campaign, caption and tags are filled in — pick your approved video and publish."; m.className = "lead-msg ok"; }
+      }
     });
   }
 
@@ -3554,7 +3585,7 @@ const BARTER_STEPS = [
   ["changes_requested","12. Changes asked","Only if something needed fixing"],
   ["content_approved","13. Client approved","Brand signed off on the video"],
   ["published","14. Posted","Reel + story live with caption & tags"],
-  ["completed","15. Done","Analytics collected"]
+  ["completed","15. Done","Creator's feedback in · analytics collected"]
 ];
 // stages from the invite path map onto the same board
 const BP_ALIAS = { invited:"applied", shortlisted:"applied", accepted:"brand_confirmed" };
@@ -3569,11 +3600,11 @@ const BP_NEXT = {
   contract_signed:"Waiting for the creator to confirm their delivery address.",
   address_confirmed:"Ship the product and add the courier + tracking.",
   product_sent:"In transit — mark delivered when it arrives (the creator can also confirm).",
-  content_created:"Video brief sent — waiting for the creator's video.",
+  content_created:"Video brief sent — waiting for the video (reminders go out daily, twice a day from day 4, block on day 8).",
   content_submitted:"Video is in — approve it or ask for changes.",
   changes_requested:"Waiting for the creator to resubmit.",
   content_approved:"Approved — waiting for the creator to post and add the link.",
-  published:"Live — numbers are collected automatically; mark done any time.",
+  published:"Live — numbers are collected automatically; mark done to ask the creator for feedback.",
   completed:"Done ✓"
 };
 let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null, _bpAnalytics = null;
@@ -3665,7 +3696,9 @@ function bpTrackerHtml(list){
           <div class="r-title">${cr.username?`@${esc(cr.username)}`:esc(cr.name||"Creator")}
             ${x.applied_profile && x.applied_profile!==cr.username?`<span class="tag">via @${esc(x.applied_profile)}</span>`:""}
             ${x.blacklisted?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⛔ Blacklisted</span>':""}
-            ${overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':""}</div>
+            ${overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':""}
+            ${x.blocked_at?`<span class="tag" style="background:rgba(239,68,68,.15);color:#dc2626">⛔ Blocked — call ${esc(x.phone||"them")}</span>`:""}
+            ${x.stage==="published"&&x.feedback_requested_at?'<span class="tag warn">Waiting for creator feedback</span>':""}</div>
           <div class="r-sub">${cr.followers!=null?fmtNum(cr.followers)+" followers · ":""}${label}</div>
           <div class="bp-bar"><span style="width:${pct}%${fail(x.stage)?";background:#dc2626":""}"></span></div></div>
         <span class="bp-caret">${open?"▲":"▼"}</span></div>
@@ -3688,6 +3721,11 @@ function bpTrackerHtml(list){
              <a href="#" data-bpclauses="${esc(P)}">read the contract</a></div>`:""}
           ${to?`<div>📍 Ship to: <b>${esc(to.name||"")}</b>, ${[to.line1,to.line2,to.landmark,to.city,to.state,to.postal_code].filter(Boolean).map(esc).join(", ")}${to.phone?` · 📞 ${esc(to.phone)}`:""}</div>`:""}
           ${ship.status?`<div>🚚 ${esc({pending:"Waiting for courier",shipped:"In transit",delivered:"Delivered",failed:"Delivery failed"}[ship.status]||ship.status)}${ship.courier?` · ${esc(ship.courier)}`:""}${ship.tracking_ref?` · <b>${esc(ship.tracking_ref)}</b>`:""}${ship.tracking_url?` · <a href="${esc(safeUrl(ship.tracking_url))}" target="_blank" rel="noopener">track ↗</a>`:""}${ship.delivered_at?` · delivered ${esc(fmtDate(ship.delivered_at))}`:ship.shipped_at?` · sent ${esc(fmtDate(ship.shipped_at))}`:""}</div>`:""}
+          ${x.blocked_at?`<div class="bp-block">⛔ <b>Blocked ${esc(fmtDateTime(x.blocked_at))}</b> — ${esc(x.block_reason||"no video 7 days after delivery")}.
+              Call <a href="tel:${esc(x.phone||"")}"><b>${esc(x.phone||"— no number")}</b></a>, ask why, note it and unblock with a new due date.</div>`:""}
+          ${x.call_note?`<div>📞 Last call ${esc(fmtDateTime(x.call_at))}: “${esc(x.call_note)}”</div>`:""}
+          ${["content_created","changes_requested"].includes(x.stage)&&!x.blocked_at?`<div>🔔 Reminders sent: <b>${esc(x.reminders_sent||0)}</b>${x.next_reminder?` · next ${esc(fmtDateTime(x.next_reminder))}`:""}${x.phone?` · 📞 <a href="tel:${esc(x.phone)}">${esc(x.phone)}</a>`:""}</div>`:""}
+          ${x.feedback?`<div>⭐ Creator feedback: <b>${"★".repeat(+x.feedback.rating||0)}</b>${x.feedback.comment?` — “${esc(x.feedback.comment)}”`:""}</div>`:""}
           ${x.due_on && !["published","completed"].includes(x.stage)?`<div>⏳ Video due <b>${esc(fmtDate(x.due_on))}</b>${overdue?' — <b style="color:#dc2626">overdue</b> (contract: blacklist + re-ship at their cost)':""}</div>`:""}
           ${sub?`<div>🎬 Video${sub.rounds>1?` (round ${esc(sub.rounds)})`:""}: <a href="${esc(safeUrl(sub.url))}" target="_blank" rel="noopener">open the cut ↗</a> · ${esc(fmtDateTime(sub.submitted_at))}${sub.note?` · “${esc(sub.note)}”`:""}</div>`:""}
           ${rev?`<div>${rev.decision==="approved"?"✅ Approved":"✏️ Changes asked"} ${esc(fmtDateTime(rev.at))}${rev.reason?` — “${esc(rev.reason)}”`:""}</div>`:""}
@@ -3702,9 +3740,10 @@ function bpTrackerHtml(list){
           ${["address_confirmed","accepted"].includes(x.stage)?`<button class="btn sm" data-bpship="${esc(P)}">🚚 Add courier &amp; tracking</button>`:""}
           ${["product_sent","content_created"].includes(x.stage)&&ship.status!=="delivered"?`<button class="btn sm ghost" data-bpship="${esc(P)}">✎ Edit courier</button>`:""}
           ${x.stage==="product_sent"&&ship.status==="shipped"?`<button class="btn sm" data-bpdeliv="${esc(P)}">📦 Mark delivered → send video brief</button>`:""}
-          ${x.stage==="content_submitted"?`<button class="btn sm" data-bpapprove="${esc(P)}">✅ Approve video</button><button class="btn sm ghost" data-bpchanges="${esc(P)}">✏️ Ask for changes</button>`:""}
+          ${x.blocked_at?`${x.phone?`<a class="btn sm ghost" href="tel:${esc(x.phone)}">📞 Call</a>`:""}<button class="btn sm" data-bpunblock="${esc(P)}">✅ Called — unblock</button><button class="btn sm ghost" data-bpcall="${esc(P)}">📝 Note a call</button>`:""}
+          ${x.stage==="content_submitted"?`<button class="btn sm" data-bpapprove="${esc(P)}">✅ Approve video</button><button class="btn sm ghost" data-bpchanges="${esc(P)}">✏️ Ask for changes</button><button class="btn sm ghost" data-bprelink="${esc(P)}">🔗 Request a new link</button>`:""}
           ${["published","completed"].includes(x.stage)&&posts.length?`<button class="btn sm ghost" data-bpmetrics="${esc(P)}">📈 Add numbers</button>`:""}
-          ${x.stage==="published"?`<button class="btn sm" data-bpdone="${esc(P)}">🏁 Mark done</button>`:""}
+          ${x.stage==="published"&&!x.feedback_requested_at?`<button class="btn sm" data-bpdone="${esc(P)}">🏁 Mark done → ask for feedback</button>`:""}
           ${!["dropped","rejected","completed","published","ineligible","brand_declined"].includes(x.stage)?`<button class="btn sm ghost" data-bpreassign="${esc(P)}">↪ Send product to someone else</button>`:""}
           ${!x.blacklisted&&!["completed"].includes(x.stage)?`<button class="btn sm ghost" data-bpblack="${esc(P)}">⛔ Blacklist</button>`:""}
         </div></div>`:""}</div>`; }).join("");
@@ -3849,6 +3888,11 @@ function wireBarterProcess(){
     call("bp_mark_delivered", { p_participation:b.dataset.bpdeliv }, b, b.innerHTML); });
   body.querySelectorAll("[data-bpapprove]").forEach(b=> b.onclick = ()=> call("bp_review_video", { p_participation:b.dataset.bpapprove, p_approve:true, p_reason:null }, b, b.innerHTML));
   body.querySelectorAll("[data-bpchanges]").forEach(b=> b.onclick = ()=> openBpChanges(b.dataset.bpchanges));
+  body.querySelectorAll("[data-bprelink]").forEach(b=> b.onclick = ()=> openBpRelink(b.dataset.bprelink));
+  body.querySelectorAll("[data-bpunblock]").forEach(b=> b.onclick = ()=> openBpUnblock(b.dataset.bpunblock));
+  body.querySelectorAll("[data-bpcall]").forEach(b=> b.onclick = async ()=>{
+    const n = (prompt("What happened on the call? (e.g. no answer, will call back)")||"").trim(); if(!n) return;
+    call("bp_log_call", { p_participation:b.dataset.bpcall, p_note:n }, b, b.innerHTML); });
   body.querySelectorAll("[data-bpmetrics]").forEach(b=> b.onclick = ()=> openBpMetrics(b.dataset.bpmetrics));
   body.querySelectorAll("[data-bpdone]").forEach(b=> b.onclick = ()=> call("bp_mark_done", { p_participation:b.dataset.bpdone }, b, b.innerHTML));
   body.querySelectorAll("[data-bpblack]").forEach(b=> b.onclick = async ()=>{
@@ -3957,6 +4001,44 @@ function openBpChanges(part){
     btn.disabled = true; btn.textContent = "Sending…";
     const { error } = await sb.schema("api").rpc("bp_review_video", { p_participation:part, p_approve:false, p_reason:reason });
     if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Send to the creator"; return; }
+    m.remove(); loadBarterProcess(true);
+  };
+}
+function openBpRelink(part){
+  const m = bpModal("Request a new video link", `<form class="modal-form" id="bpLForm">
+      <p class="muted" style="font-size:13px;margin:0">The creator is asked for a fresh link on the app, WhatsApp and email. You can do this as many times as you need.</p>
+      <label>What's wrong with the link?<select name="why">
+        <option>The link doesn't open — it's private. Set Google Drive sharing to “Anyone with the link → Viewer”.</option>
+        <option>The link opens a different / wrong file.</option>
+        <option>The video won't play or is cut off — please re-upload.</option>
+        <option value="other">Something else…</option></select></label>
+      <label>Note (optional)<input name="note" placeholder="Add details for the creator"></label>
+      <div class="auth-err" id="bpLErr"></div><button class="btn" type="submit">Send request</button></form>`);
+  document.getElementById("bpLForm").onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(e.target), why = f.get("why"), note = String(f.get("note")||"").trim(), err = document.getElementById("bpLErr"), btn = e.target.querySelector("button");
+    const reason = [why==="other" ? "" : why, note].filter(Boolean).join(" ");
+    if(!reason){ err.textContent = "Tell the creator what's wrong."; return; }
+    btn.disabled = true; btn.textContent = "Sending…";
+    const { error } = await sb.schema("api").rpc("bp_request_relink", { p_participation:part, p_reason:reason });
+    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Send request"; return; }
+    m.remove(); loadBarterProcess(true);
+  };
+}
+function openBpUnblock(part){
+  const x = ((_bpData&&_bpData.creators)||[]).find(c=>c.participation_id===part)||{};
+  const m = bpModal("Called the creator — unblock", `<form class="modal-form" id="bpUForm">
+      <p class="muted" style="font-size:13px;margin:0">${x.phone?`📞 <a href="tel:${esc(x.phone)}"><b>${esc(x.phone)}</b></a> · `:""}Write why they didn't submit. They're unblocked, get a new due date, and reminders start again (blocked again after 7 days if nothing comes).</p>
+      <label>What did they say?<textarea name="reason" rows="3" required placeholder="Was travelling, shooting this weekend"></textarea></label>
+      <label>New due date<select name="days">${[2,3,5,7].map(d=>`<option value="${d}"${d===3?" selected":""}>In ${d} days</option>`).join("")}</select></label>
+      <div class="auth-err" id="bpUErr"></div><button class="btn" type="submit">Unblock</button></form>`);
+  document.getElementById("bpUForm").onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(e.target), reason = String(f.get("reason")||"").trim(), err = document.getElementById("bpUErr"), btn = e.target.querySelector("button");
+    if(!reason){ err.textContent = "Write what they said."; return; }
+    btn.disabled = true; btn.textContent = "Unblocking…";
+    const { error } = await sb.schema("api").rpc("bp_unblock_after_call", { p_participation:part, p_reason:reason, p_days:+f.get("days") });
+    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Unblock"; return; }
     m.remove(); loadBarterProcess(true);
   };
 }
