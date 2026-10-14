@@ -16,7 +16,7 @@ import { workerGuard } from "../_shared/worker_auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const APP_URL = (Deno.env.get("APP_URL") || "https://bountythreads.app").replace(/\/+$/, "");
+const APP_URL = (Deno.env.get("APP_URL") || "https://bounty-threads-app.vercel.app").replace(/\/+$/, "");
 const WABA_ID = (Deno.env.get("WHATSAPP_WABA_ID") || "").trim();
 const META_TOKEN = (Deno.env.get("WHATSAPP_TEMPLATE_TOKEN") || Deno.env.get("WHATSAPP_TOKEN") || "").trim();
 const META_VER = Deno.env.get("WHATSAPP_API_VER") || "v21.0";

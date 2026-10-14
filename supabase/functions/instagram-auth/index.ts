@@ -126,6 +126,13 @@ Deno.serve(async (req) => {
       expires_at: expiresAt,
       updated_at: new Date().toISOString(),
     }, { onConflict: "member_id,platform" });
+    // what the creator actually allowed on Instagram's consent screen (DMs need instagram_business_manage_messages)
+    const granted = Array.isArray(shortData.permissions) ? shortData.permissions
+      : String(shortData.permissions || "").split(",").map((x: string) => x.trim()).filter(Boolean);
+    try {
+      await admin.from("social_tokens").update({ scopes: granted.length ? granted : null, connected_at: new Date().toISOString() })
+        .eq("member_id", user.id).eq("platform", "instagram");
+    } catch (_e) { /* column arrives with the migration */ }
 
     // Never return the token to the browser.
     return json({ ok: true, merged, profile: accountRow });

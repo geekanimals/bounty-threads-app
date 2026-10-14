@@ -3104,19 +3104,34 @@ function mkInboxHtml(){
 }
 async function mkDmCall(body){
   const { data, error } = await sb.functions.invoke("instagram-dm", { body });
-  if(error){ let msg = await fnError(error), perm = false; try{ const j = await error.context.json(); perm = !!j.needs_permission; }catch(e){} return { error: msg, needs_permission: perm }; }
+  if(error) return { error: await fnError(error) };
   return data || {};
+}
+// why Instagram refused, and the one thing that fixes it
+function mkDmProblem(r){
+  const meta = r.meta && (r.meta.code || r.meta.message) ? `<div class="muted" style="font-size:12px;margin-top:6px">Instagram said: ${r.meta.code?`(#${esc(r.meta.code)}${r.meta.subcode?"/"+esc(r.meta.subcode):""}) `:""}${esc(r.meta.message||"")}</div>` : "";
+  const btns = (re)=> `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${re?`<button class="btn sm" id="mkDmReconnect">Reconnect Instagram</button>`:""}<button class="btn sm ${re?"ghost":""}" id="mkDmRetry">Try again</button></div>`;
+  const R = {
+    reconnect: [`🔁 Reconnect Instagram once to allow messages`,
+      `This Instagram connection was made before messages were allowed${r.scopes?` (it has: ${esc(r.scopes.map(x=>x.replace("instagram_business_","")).join(", "))})`:""}. Tap <b>Reconnect Instagram</b> and on Instagram's screen keep <b>every</b> permission switched on, including <b>Manage messages</b>.`, true],
+    token_expired: [`🔁 Your Instagram connection expired`, `Reconnect Instagram — takes 10 seconds.`, true],
+    messages_access_off: [`📱 Turn on “Allow access to messages” in Instagram`,
+      `On your phone open <b>Instagram → Settings → Messages and story replies → Message controls → Connected tools</b> and switch on <b>Allow access to messages</b>. Then tap <b>Try again</b>.`, false],
+    app_access: [`🛠 Meta hasn't opened messages for this app yet`,
+      `Your connection has the messages permission, but Meta still refuses. In <b>developers.facebook.com → your app → App Review → Permissions and features</b>, <b>instagram_business_manage_messages</b> must show <b>Advanced access</b>, and the app must be <b>Live</b> (not Development). If you just got approval, switch it to Advanced access, then reconnect Instagram here.`, true]
+  }[r.reason];
+  if(!R) return `<div style="padding:6px">${esc(r.error||"Couldn't load your inbox.")}</div>${meta}${btns(false)}`;
+  return `<div class="ai-suggest"><span class="spark">💬</span><div class="s-body"><b>${R[0]}</b><p>${R[1]}</p>${meta}${btns(R[2])}</div></div>`;
+}
+function wireMkDmProblem(){
+  const rc = document.getElementById("mkDmReconnect");
+  if(rc) rc.onclick = ()=>{ try{ localStorage.setItem("geekos_after_ig", currentPage||"messages"); if(currentPage==="messages") localStorage.setItem("geekos_msgtab","ig"); }catch(e){} connectInstagram(true); };
+  const rt = document.getElementById("mkDmRetry"); if(rt) rt.onclick = ()=>{ const b = document.getElementById("mkInbox"); if(b) b.innerHTML = "Loading…"; loadMkInbox(); };
 }
 async function loadMkInbox(){
   const box = document.getElementById("mkInbox"); if(!box) return;
   const r = await mkDmCall({ action:"conversations" });
-  if(r.error){
-    box.innerHTML = r.needs_permission
-      ? `<div class="ai-suggest"><span class="spark">💬</span><div class="s-body"><b>Turn on Instagram messages</b><p>Reconnect Instagram once and allow <b>messages</b> — your DMs then show here.</p><button class="btn sm" id="mkDmReconnect">Reconnect Instagram</button></div></div>`
-      : `<div style="padding:6px">${esc(r.error)}</div>`;
-    const rc = document.getElementById("mkDmReconnect"); if(rc) rc.onclick = connectInstagram;
-    return;
-  }
+  if(r.error){ box.innerHTML = mkDmProblem(r); wireMkDmProblem(); return; }
   const t = r.threads || [];
   const ago = x=>{ if(!x) return ""; const m=Math.round((Date.now()-new Date(x).getTime())/60000); return m<60?m+"m":m<1440?Math.round(m/60)+"h":Math.round(m/1440)+"d"; };
   box.innerHTML = t.length ? `<div style="display:grid;grid-template-columns:minmax(180px,1fr) 2fr;gap:12px" class="mk-inbox">
@@ -3130,7 +3145,7 @@ async function openMkThread(id, toId, name, me){
   const box = document.getElementById("mkDmThread"); if(!box) return;
   box.innerHTML = "Loading…";
   const r = await mkDmCall({ action:"thread", conversation_id:id });
-  if(r.error){ box.innerHTML = esc(r.error); return; }
+  if(r.error){ box.innerHTML = mkDmProblem(r); wireMkDmProblem(); return; }
   const msgs = (r.messages||[]).slice().reverse();
   box.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px;max-height:360px;overflow-y:auto" id="mkDmMsgs">${msgs.map(m=>{
       const mine = m.from && (String(m.from.id)===String(me.id) || m.from.username===me.username);
@@ -3221,7 +3236,7 @@ async function refreshMediaKit(force){
 }
 
 /* ---------- Messages: WhatsApp and the Instagram inbox side by side (every role) ---------- */
-let _msgTab = "wa";
+let _msgTab = (()=>{ try{ const t = localStorage.getItem("geekos_msgtab"); localStorage.removeItem("geekos_msgtab"); return t==="ig" ? "ig" : "wa"; }catch(e){ return "wa"; } })();
 async function mountMessagesTabs(){
   const host = document.getElementById("content"); if(!host || document.getElementById("msgTabs")) return;
   const wa = document.getElementById("waChat"); if(!wa) return;
@@ -5466,7 +5481,7 @@ const IG_SCOPES = "instagram_business_basic,instagram_business_content_publish,i
 // Must EXACTLY match the redirect registered in Meta → Instagram login settings.
 const IG_REDIRECT = location.origin + location.pathname.replace(/[^/]*$/,"") + "app.html";
 
-function connectInstagram(){
+function connectInstagram(fresh){
   const state = "instagram:" + Math.random().toString(36).slice(2);
   localStorage.setItem("geekos_oauth_state", state);
   const p = new URLSearchParams({
@@ -5476,6 +5491,7 @@ function connectInstagram(){
     scope: IG_SCOPES,
     state
   });
+  if(fresh === true) p.set("force_reauth", "true");   // show the permission screen again (to allow messages)
   location.href = "https://www.instagram.com/oauth/authorize?" + p.toString();
 }
 
