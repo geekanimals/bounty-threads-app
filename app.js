@@ -2385,6 +2385,17 @@ async function adminApplications(body, silent){
 /* ---------- Super Admin → All campaigns (live): status override + decide applications for anyone ---------- */
 let _acTimer = null, _acOpen = null, _acSig = "";
 const CAMP_STATUSES = ["Draft","Approval","Live","Completed"];
+let _acPick = "", _acQ = "", _acPickOpened = false;
+// one campaign picked in Super Admin → where every creator is, at a glance
+function acPickSummary(c, pc){
+  const B = [["Applied",["applied","eligible","sent_to_brand","invited","shortlisted"]],["Selected",["brand_confirmed","accepted"]],
+    ["Contract",["contract_sent","contract_signed"]],["Shipping",["address_confirmed","product_sent"]],["Video",["content_created","changes_requested","content_submitted"]],
+    ["Approved",["content_approved"]],["Posted",["published"]],["Done",["completed"]],["Dropped",["ineligible","brand_declined","dropped","rejected"]]];
+  return `<div class="ac-pick"><div class="ac-pick-h"><div><b>${esc(c.name)}</b> <span class="muted">${esc(c.brand||"")}${c.org_name?" · "+esc(c.org_name):""}${c.start_date||c.end_date?" · "+esc(c.start_date||"—")+" → "+esc(c.end_date||"—"):""}</span></div>
+      <span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini-btn" data-acbp="${esc(c.id)}" data-acbpname="${esc(c.name)}">🔁 Open process</button>
+      <button class="mini-btn ghost" data-acan="${esc(c.id)}" data-acanname="${esc(c.name)}">📈 Analytics</button><button class="mini-btn ghost" id="acPickClear">✕ Show all</button></span></div>
+    <div class="ac-pick-f">${B.map(([l,st])=>{ const n = pc.filter(p=>st.includes(p.stage)).length; return `<div class="${n?"":"z"}"><b>${n}</b><span>${l}</span></div>`; }).join("")}</div></div>`;
+}
 async function adminCampaigns(body, silent){
   if(!silent) body.innerHTML = skel("table",6);
   const filter = (document.getElementById("acFilter")||{}).value || "";
@@ -2400,21 +2411,28 @@ async function adminCampaigns(body, silent){
   if(silent && sig === _acSig) return;           // nothing changed → don't touch the DOM
   _acSig = sig;
   const kindL = c => c.campaign_type || "barter";
-  const camps = (cr.data||[]).filter(c=> !tfilter || campInBucket(c, tfilter)), pipe = pr.data||[], legacy = ar.data||[];
+  const allCamps = (cr.data||[]).filter(c=> !tfilter || campInBucket(c, tfilter)), pipe = pr.data||[], legacy = ar.data||[];
+  if(_acPick && !(cr.data||[]).some(c=>c.id===_acPick)) _acPick = "";
+  const camps = _acPick ? allCamps.filter(c=>c.id===_acPick) : allCamps;
+  if(_acPick && _acOpen!==_acPick && !_acPickOpened){ _acOpen = _acPick; _acPickOpened = true; }
   const pendFor = id => pipe.filter(p=>p.legacy_campaign_id===id && APPLICANT_PENDING.includes(p.stage)).length + legacy.filter(a=>a.campaign_id===id && a.status==="Applied").length;
   body.innerHTML = `<div class="card"><div class="ci-mh" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <h3 style="margin:0">All campaigns <span class="muted" style="font-size:12px;font-weight:400">· live, refreshes every 30s</span></h3>
-      <span style="display:flex;gap:6px"><select id="acType"><option value="">Paid + Barter</option><option value="paid"${tfilter==="paid"?" selected":""}>💰 Paid</option><option value="barter"${tfilter==="barter"?" selected":""}>🎁 Barter</option><option value="celebrity"${tfilter==="celebrity"?" selected":""}>👑 Celebrity stories</option></select>
+      <span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input id="acQ" type="search" placeholder="🔎 Search campaign, brand, workspace" value="${esc(_acQ)}" style="padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;min-width:220px">
+        <select id="acPick"><option value="">All campaigns (${allCamps.length})</option>${(cr.data||[]).slice().sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(c=>`<option value="${esc(c.id)}"${c.id===_acPick?" selected":""}>${esc(c.name)}${c.brand?" — "+esc(c.brand):""}</option>`).join("")}</select>
+        <select id="acType"><option value="">Paid + Barter</option><option value="paid"${tfilter==="paid"?" selected":""}>💰 Paid</option><option value="barter"${tfilter==="barter"?" selected":""}>🎁 Barter</option><option value="celebrity"${tfilter==="celebrity"?" selected":""}>👑 Celebrity stories</option></select>
       <select id="acFilter"><option value="">All statuses</option>${CAMP_STATUSES.map(s=>`<option${s===filter?" selected":""}>${s}</option>`).join("")}</select></span></div>
+    ${_acPick && camps[0] ? acPickSummary(camps[0], pipe.filter(p=>p.legacy_campaign_id===_acPick)) : ""}
     ${camps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="tbl"><thead><tr><th>Campaign</th><th>Workspace</th><th>Type</th><th>Status</th><th>Applied</th><th>Pending</th><th>Approved</th><th>Declined</th><th></th></tr></thead><tbody>
       ${camps.map(c=>{ const pc = pipe.filter(p=>p.legacy_campaign_id===c.id);
         const appr = Number(c.approved)+pc.filter(p=>REPORT_APPROVED(p.stage)).length, decl = Number(c.declined)+pc.filter(p=>["ineligible","brand_declined","dropped","rejected"].includes(p.stage)).length;
-        return `<tr><td><b>${esc(c.name)}</b><div class="muted" style="font-size:12px">${esc(c.brand||"")}</div></td><td>${esc(c.org_name||"—")}</td>
+        return `<tr data-acrow="${esc([c.name,c.brand,c.org_name].filter(Boolean).join(" ").toLowerCase())}"><td><b>${esc(c.name)}</b><div class="muted" style="font-size:12px">${esc(c.brand||"")}</div></td><td>${esc(c.org_name||"—")}</td>
         <td>${esc(campTypeLabel(c.campaign_type,c.barter_subtype)||"—")}</td>
         <td><select data-acstatus="${esc(c.id)}">${CAMP_STATUSES.map(s=>`<option${s===campStatusPick(c.status)?" selected":""}>${s}</option>`).join("")}</select></td>
         <td>${Number(c.applied)+pc.length}</td><td>${pendFor(c.id)?`<span class="tag warn">${pendFor(c.id)}</span>`:"0"}</td><td>${appr}</td><td>${decl}</td>
         <td style="white-space:nowrap">${c.status==="Approval"?`<button class="mini-btn" data-acgo="${esc(c.id)}">Approve campaign</button> `:""}<button class="mini-btn" data-acbp="${esc(c.id)}" data-acbpname="${esc(c.name)}">🔁 Process</button> <button class="mini-btn" data-acinv="${esc(c.id)}" data-acname="${esc(c.name)}">🎯 Invite</button> <button class="mini-btn ghost" data-acopen="${esc(c.id)}">${_acOpen===c.id?"Hide":"Applications"}</button></td></tr>
-        ${_acOpen===c.id?`<tr><td colspan="9"><div class="list">${pc.map(p=>applicantRowHtml(p)).join("")}
+        ${_acOpen===c.id?`<tr data-acdetail="1"><td colspan="9"><div class="list">${pc.map(p=>applicantRowHtml(p)).join("")}
           ${legacy.filter(a=>a.campaign_id===c.id).map(a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span><div class="r-main"><div class="r-title">${esc(a.creator_name||"Creator")}</div><div class="r-sub">${esc(a.creator_org||"")}${a.decline_reason_code?` · ${esc(a.decline_reason_code)}`:""}${a.decline_note?` — ${esc(a.decline_note)}`:""}</div></div>
             ${a.status==="Applied"?`<span style="display:flex;gap:6px"><button class="mini-btn" data-acappr="${esc(a.id)}">Approve</button><button class="mini-btn ghost" data-acdecl="${esc(a.id)}">Decline</button></span>`:`<span class="tag ${a.status==="Approved"?"good":""}">${esc(a.status)}</span>`}</div>`).join("")}
           ${(!pc.length && !legacy.some(a=>a.campaign_id===c.id))?`<div class="muted" style="padding:8px">No applications yet.</div>`:""}</div></td></tr>`:""}`; }).join("")}
@@ -2423,6 +2441,15 @@ async function adminCampaigns(body, silent){
   body.querySelectorAll("[data-acinv]").forEach(b2=> b2.onclick = ()=> openInvitePanel(b2.dataset.acinv, b2.dataset.acname));
   body.querySelectorAll("[data-acbp]").forEach(b2=> b2.onclick = ()=> openBarterProcess(b2.dataset.acbp, b2.dataset.acbpname));
   document.getElementById("acFilter").onchange = ()=> adminCampaigns(body);
+  document.getElementById("acPick").onchange = e=>{ _acPick = e.target.value; _acPickOpened = false; if(!_acPick) _acOpen = null; _acSig=""; adminCampaigns(body); };
+  const q = document.getElementById("acQ");
+  const applyQ = ()=>{ const t = (_acQ||"").trim().toLowerCase();
+    body.querySelectorAll("tr[data-acrow]").forEach(tr=>{ const hit = !t || tr.dataset.acrow.includes(t); tr.style.display = hit ? "" : "none";
+      const nx = tr.nextElementSibling; if(nx && nx.dataset.acdetail) nx.style.display = hit ? "" : "none"; }); };
+  q.oninput = ()=>{ _acQ = q.value; applyQ(); };
+  applyQ();
+  body.querySelectorAll("[data-acan]").forEach(b2=> b2.onclick = ()=>{ openBarterProcess(b2.dataset.acan, b2.dataset.acanname); _bpTab = "analytics"; loadBpAnalytics(); });
+  const clr = body.querySelector("#acPickClear"); if(clr) clr.onclick = ()=>{ _acPick = ""; _acOpen = null; _acSig=""; adminCampaigns(body); };
   document.getElementById("acType").onchange = ()=> adminCampaigns(body);
   body.querySelectorAll("[data-acgo]").forEach(b=> b.onclick = async ()=>{
     const { error } = await sb.rpc("admin_set_campaign_status", { p_id:b.dataset.acgo, p_status:"Live" });
@@ -2442,7 +2469,7 @@ async function adminCampaigns(body, silent){
   _acTimer = setInterval(()=>{
     const b = document.getElementById("adminBody");
     if(currentPage!=="admin" || _adminTab!=="campaigns" || !b){ clearInterval(_acTimer); return; }
-    if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open") || (document.activeElement && document.activeElement.tagName==="SELECT")) return;
+    if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open") || (document.activeElement && ["SELECT","INPUT"].includes(document.activeElement.tagName))) return;
     adminCampaigns(b, true);
   }, 30000);
 }

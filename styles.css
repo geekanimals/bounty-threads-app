@@ -1065,3 +1065,11 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .me-pref input:checked + i::after{left:18px}
 .me-pref input:focus-visible + i{outline:2px solid var(--brand,#6c5ce7);outline-offset:2px}
 .me-pref.off{opacity:.6;cursor:default}
+/* Super Admin → All campaigns: one campaign picked */
+.ac-pick{margin-top:12px;padding:12px 14px;border:1px solid rgba(108,92,231,.35);border-radius:12px;background:rgba(108,92,231,.05)}
+.ac-pick-h{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.ac-pick-f{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px;margin-top:10px}
+.ac-pick-f div{text-align:center;padding:7px 4px;border-radius:9px;background:var(--card,#fff);border:1px solid var(--line)}
+.ac-pick-f b{display:block;font-size:17px}
+.ac-pick-f span{font-size:11px;color:var(--muted)}
+.ac-pick-f .z{opacity:.5}
