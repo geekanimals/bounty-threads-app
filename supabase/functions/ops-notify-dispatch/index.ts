@@ -88,7 +88,9 @@ Deno.serve(async (req) => {
         // wrong variable count…) no longer blocks the update: the next option is tried.
         const tries: Record<string, unknown>[] = [];
         if (open && !p.force_template) tries.push({ to: row.to_address, text });
-        if (p.wa_template) tries.push({ to: row.to_address, template: String(p.wa_template), variables: (p.wa_vars as string[]) || [] });
+        // the alert's own template (e.g. geek_campaign_invite); "LINK" in its variables is the deep link
+        if (p.wa_template) tries.push({ to: row.to_address, template: String(p.wa_template), lang: String(p.wa_lang || "en"),
+          variables: ((p.wa_vars as string[]) || []).map((v) => v === "LINK" ? target : waParam(String(v), 300)) });
         if (row.campaign_id) {
           const { data: t } = await api.rpc("ops_wa_template_for", { p_campaign: row.campaign_id });
           if (t?.name) tries.push({ to: row.to_address, template: String(t.name), lang: String(t.lang || "en"), variables: [name, update, target] });

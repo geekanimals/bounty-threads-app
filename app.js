@@ -4937,7 +4937,7 @@ let _dlvTimer = null;
 // The one WhatsApp template that carries every campaign update (any campaign, any step). Meta allows free text
 // only within 24 h of the creator's last message, so without an approved template WhatsApp updates are held.
 const WA_UPD_NAME = "geek_campaign_update";
-const WA_UPD_BODY = "Hi {{1}} 👋\n\n📢 *Campaign update from Geek*\n{{2}}\n\n👉 See details and your next step here: {{3}}\n\nThank you,\nTeam Geek";
+const WA_UPD_BODY = "Hello {{1}},\n\nThere is a new update on your campaign with Geek:\n{{2}}\n\nPlease view the details and your next step here: {{3}}\n\nRegards,\nTeam Geek";
 const WA_UPD_FOOT = "Reply STOP to stop WhatsApp updates";
 async function adminWaSettingsCard(){
   const box = document.getElementById("dlvWaSet"); if(!box) return;
