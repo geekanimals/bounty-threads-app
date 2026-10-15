@@ -120,7 +120,7 @@ const DREAM_GOALS = [
   "Build a Loyal Community","Become a Brand Ambassador","Get Featured by Big Brands"
 ];
 
-// Contextual AI suggestions per role (fallback until OpenAI is wired).
+// Contextual AI suggestions per role (static tips).
 const AI_SUGGEST = {
   owner:[{t:"Add your first creators",p:"Build your roster so campaigns can be matched."},{t:"Launch a barter campaign",p:"The Barter Engine is your fastest path to ROI."}],
   corporate:[{t:"Pool all brand creators",p:"Add campaigns per brand to build one unified DB."},{t:"Review portfolio health",p:"Track every brand's campaigns in one view."}],

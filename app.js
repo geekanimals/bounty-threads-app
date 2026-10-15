@@ -6028,7 +6028,7 @@ async function sendAiMessage(text){
     AI_HISTORY.push({role:"assistant", content:(data&&data.reply)||"(no response)"});
   }catch(ex){
     AI_HISTORY=AI_HISTORY.filter(m=>!m._pending);
-    AI_HISTORY.push({role:"assistant", content:"Sorry — I couldn't reach the AI. "+(ex.message||ex)+"\n\n(Deploy the ai-chat function and set OPENAI_API_KEY.)"});
+    AI_HISTORY.push({role:"assistant", content:"Sorry — the helper couldn't answer right now. "+(ex.message||ex)});
   }
   renderAiChat();
 }

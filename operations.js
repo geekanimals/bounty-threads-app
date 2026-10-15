@@ -843,14 +843,14 @@
   function aiFmt(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/(^|\n)[-•]\s+/g,"$1• ").replace(/\n/g,"<br>"); }
   function openCampaignChat(part){
     var c=(_mineCache||[]).filter(function(x){ return x.participation_id===part; })[0]||{};
-    var hist = AI_CHATS[part] = AI_CHATS[part] || [{ role:"assistant", content:"Hi! I know everything about **"+(c.campaign||"this campaign")+"** — your contract, brief, deadline and courier. Ask me anything, in Hindi or English. 🙂" }];
-    var SUG = ["Ab mujhe kya karna hai?","Contract simple words mein samjhao","Video mein kya dikhana hai?","Mera product kab aayega?","Post kaise karna hai?","Deadline kab hai?"];
+    var hist = AI_CHATS[part] = AI_CHATS[part] || [{ role:"assistant", content:"Namaste! 🙏 Main **"+(c.campaign||"is campaign")+"** ka helper hoon — contract, brief, video, deadline aur courier sab is campaign ki details se batata hoon. Hindi ya English mein poochho. 🙂" }];
+    var SUG = ["Ab mujhe kya karna hai?","Contract simple mein samjhao","Video mein kya dikhana hai?","Product kab aayega?","Deadline kab hai?","Kaise post karun?","Payment milega?"];
     opsModal('<div class="ci-mh"><h3>🤖 Campaign helper</h3><button class="wa-x" id="opsMx">×</button></div>'
       + '<div class="ci-hint" style="margin-top:-4px">'+esc(c.campaign||"")+(c.brand?' · '+esc(c.brand):'')+'</div>'
       + '<div class="cc-thread" id="ccThread"></div>'
       + '<div class="cc-sug" id="ccSug">'+SUG.map(function(q){ return '<button type="button" class="cs-chip" data-ccq="'+esc(q)+'">'+esc(q)+'</button>'; }).join("")+'</div>'
       + '<form class="cc-form" id="ccForm"><input id="ccIn" placeholder="Type your question…" autocomplete="off" maxlength="800"><button class="btn sm" id="ccSend">Send</button></form>'
-      + '<div class="ci-hint" style="font-size:11.5px">AI can make mistakes — for anything important, <a href="https://wa.me/'+GEEK_WA+'?text='+encodeURIComponent("Hi Geek team, I have a question about "+(c.campaign||"my campaign")+": ")+'" target="_blank" rel="noopener">talk to the Geek team on WhatsApp ↗</a></div>');
+      + '<div class="ci-hint" style="font-size:11.5px">Answers come from this campaign\'s details. Kuch aur poochhna ho toh <a href="https://wa.me/'+GEEK_WA+'?text='+encodeURIComponent("Hi Geek team, I have a question about "+(c.campaign||"my campaign")+": ")+'" target="_blank" rel="noopener">talk to the Geek team on WhatsApp ↗</a></div>');
     document.getElementById("opsMx").onclick=closeModal;
     var paint=function(){ var th=document.getElementById("ccThread"); if(!th) return;
       th.innerHTML=hist.map(function(m){ return '<div class="cc-msg '+(m.role==="user"?"me":"bot")+(m._p?" pend":"")+'">'+aiFmt(m.content)+'</div>'; }).join("");
@@ -863,10 +863,11 @@
       try{
         var r=await window.sb.functions.invoke("ai-chat",{ body:{ participation_id:part, messages:hist.filter(function(m){ return !m._p; }).map(function(m){ return {role:m.role,content:m.content}; }), context:{ role:"creator" } } });
         var msg=null;
-        if(r.error){ try{ var j=await r.error.context.json(); msg=j&&j.error; }catch(e){} msg=msg||r.error.message||"Couldn't reach the AI."; }
+        if(r.error){ try{ var j=await r.error.context.json(); msg=j&&j.error; }catch(e){} msg=msg||r.error.message||"Couldn't reach the helper."; }
         else if(r.data&&r.data.error) msg=r.data.error;
         hist=AI_CHATS[part]=hist.filter(function(m){ return !m._p; });
         hist.push({role:"assistant",content: msg ? "Sorry — "+msg : ((r.data&&r.data.reply)||"(no answer)")});
+        if(!msg && r.data && Array.isArray(r.data.suggestions)){ var sg=document.getElementById("ccSug"); if(sg){ sg.innerHTML=r.data.suggestions.filter(function(x){ return x!==q; }).slice(0,6).map(function(x){ return '<button type="button" class="cs-chip" data-ccq="'+esc(x)+'">'+esc(x)+'</button>'; }).join(""); sg.querySelectorAll("[data-ccq]").forEach(function(b){ b.onclick=function(){ ask(b.getAttribute("data-ccq")); }; }); } }
       }catch(e){ hist=AI_CHATS[part]=hist.filter(function(m){ return !m._p; }); hist.push({role:"assistant",content:"Sorry — "+(e.message||e)}); }
       busy=false; paint(); var i2=document.getElementById("ccIn"); if(i2) i2.focus();
     };
