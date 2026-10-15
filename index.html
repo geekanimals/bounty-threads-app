@@ -336,12 +336,14 @@
 </div>
 
 <script src="consent.js"></script>
+<script src="/api/config"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
   // ---- Config ----
-  const SUPABASE_URL = 'https://edibibytqfrrxfztukpm.supabase.co';
-  const SUPABASE_ANON_KEY = 'sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf'; // publishable/anon key — safe in the browser
-  const WHATSAPP_NUMBER = '91XXXXXXXXXX'; // TODO: replace with your real WhatsApp number
+  const GC = window.GEEK_CONFIG || {};
+  const SUPABASE_URL = GC.supabaseUrl || 'https://edibibytqfrrxfztukpm.supabase.co';
+  const SUPABASE_ANON_KEY = GC.supabaseKey || 'sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf'; // publishable/anon key — safe in the browser
+  const WHATSAPP_NUMBER = GC.whatsapp || '916398566704'; // Geek's WhatsApp Business number
 
   const SB_READY = !/YOUR_SUPABASE/.test(SUPABASE_URL) && window.supabase;
   const sb = SB_READY ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;

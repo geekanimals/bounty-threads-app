@@ -14,6 +14,7 @@
 //   app_access          — Meta hasn't given this app Advanced Access to instagram_business_manage_messages / app not Live
 //   token_expired       — reconnect Instagram
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { openRow, openToken, sealToken, tokenEncryptionOn } from "../_shared/token_crypto.ts";
 import { corsHeaders, json as jsonRaw } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -47,6 +48,7 @@ Deno.serve(async (req) => {
         tok = r2.data;
       }
     }
+    tok = await openRow(tok);
     if (!tok?.access_token) return json({ error: "Instagram isn't connected yet.", reason: "reconnect" });
     if (tok.expires_at && new Date(tok.expires_at) < new Date()) return json({ error: "Your Instagram connection expired — reconnect Instagram.", reason: "token_expired" });
     const T = encodeURIComponent(tok.access_token as string);

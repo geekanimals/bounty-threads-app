@@ -33,10 +33,12 @@
   <div id="acts"></div>
   <div class="err" id="err"></div>
 </main>
+<script src="/api/config"></script>
 <script>
 (function(){
-  var FN = "https://edibibytqfrrxfztukpm.supabase.co/functions/v1/notify-unsubscribe";
-  var KEY = "sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf";
+  var GC = window.GEEK_CONFIG || {};
+  var FN = (GC.supabaseUrl || "https://edibibytqfrrxfztukpm.supabase.co") + "/functions/v1/notify-unsubscribe";
+  var KEY = GC.supabaseKey || "sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf";
   var q = new URLSearchParams(location.search), t = q.get("t") || "", c = q.get("c") === "whatsapp" ? "whatsapp" : "email";
   var label = c === "whatsapp" ? "WhatsApp" : "email";
   var keep = c === "whatsapp" ? "WhatsApp login codes" : "login and account-recovery codes";

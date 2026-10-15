@@ -30,10 +30,11 @@
   <div class="pub-foot">This media kit is powered by <a href="index.html">Geek Influencer OS</a> — the OS for creators, brands &amp; agencies.</div>
 </div>
 
+<script src="/api/config"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const SUPABASE_URL = 'https://edibibytqfrrxfztukpm.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf';
+const SUPABASE_URL = (window.GEEK_CONFIG && GEEK_CONFIG.supabaseUrl) || 'https://edibibytqfrrxfztukpm.supabase.co';
+const SUPABASE_KEY = (window.GEEK_CONFIG && GEEK_CONFIG.supabaseKey) || 'sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf';
 const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 function esc(v){ if(v==null) return ""; return String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }

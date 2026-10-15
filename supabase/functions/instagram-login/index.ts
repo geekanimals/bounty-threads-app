@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { openRow, openToken, sealToken, tokenEncryptionOn } from "../_shared/token_crypto.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { fetchProfileBundle } from "../_shared/ig.ts";
 const IG_APP_ID=Deno.env.get("INSTAGRAM_APP_ID")!, IG_APP_SECRET=Deno.env.get("INSTAGRAM_APP_SECRET")!;
@@ -51,7 +52,7 @@ Deno.serve(async(req)=>{
     const {data:member}=await admin.from("members").select("org_id").eq("id",userId).maybeSingle();
     const {error:aErr}=await admin.from("social_accounts").upsert({org_id:member?.org_id??null,member_id:userId,platform:"instagram",ig_user_id:igUserId,username:profile.username??null,name:profile.name??null,account_type:profile.account_type??null,followers_count:profile.followers_count??0,follows_count:profile.follows_count??0,media_count:profile.media_count??0,profile_picture_url:profile.profile_picture_url??null,biography:profile.biography??null,website:profile.website??null,recent_media:media??[],avg_reach:avgReach,audience,mentions,updated_at:new Date().toISOString()},{onConflict:"member_id,platform"});
     if(aErr) throw new Error("social_accounts save failed: "+aErr.message);
-    const {error:tErr}=await admin.from("social_tokens").upsert({member_id:userId,platform:"instagram",ig_user_id:igUserId,access_token:accessToken,expires_at:expiresAt,updated_at:new Date().toISOString()},{onConflict:"member_id,platform"});
+    const {error:tErr}=await admin.from("social_tokens").upsert({member_id:userId,platform:"instagram",ig_user_id:igUserId,access_token:await sealToken(accessToken),expires_at:expiresAt,updated_at:new Date().toISOString()},{onConflict:"member_id,platform"});
     if(tErr) throw new Error("social_tokens save failed: "+tErr.message);
     stage="session";
     const {data:link,error:lErr}=await admin.auth.admin.generateLink({type:"magiclink",email:userEmail});

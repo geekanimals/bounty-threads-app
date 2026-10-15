@@ -19,7 +19,10 @@ import { getEmailProvider, renderEmailHtml } from "../_shared/email_provider.ts"
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const APP_URL = (Deno.env.get("APP_URL") || "https://bounty-threads-app.vercel.app").replace(/\/+$/, "");   // e.g. https://bountythreads.app
+// the live domain for every link: the APP_URL secret, else the APP_URL set on Vercel (reported by the app).
+// Never hard-coded — with neither set, messages still go but without links, and Super Admin flags it.
+const ENV_APP_URL = (Deno.env.get("APP_URL") || "").trim().replace(/\/+$/, "");
+let APP_URL = ENV_APP_URL;
 // the one approved Utility template that carries every update + invite. Default name, so creating it in snapto
 // with this exact name is all it takes — nothing to save anywhere; held messages go out the moment Meta approves it.
 const WA_UPDATE_TEMPLATE = (Deno.env.get("WA_UPDATE_TEMPLATE") || "geek_campaign_update").trim();
@@ -51,7 +54,14 @@ Deno.serve(async (req) => {
 
   // the generic update template: set by the Super Admin in the app, else the WA_UPDATE_TEMPLATE secret
   let genTpl = WA_UPDATE_TEMPLATE, genLang = WA_UPDATE_TEMPLATE_LANG;
-  try { const { data: ws } = await api.rpc("ops_wa_settings"); if (ws?.template) { genTpl = String(ws.template); genLang = String(ws.lang || "en"); } } catch (_e) { /* keep env */ }
+  let linkSource = ENV_APP_URL ? "secret" : "none";
+  try {
+    const { data: ws } = await api.rpc("ops_wa_settings");
+    if (ws?.template) { genTpl = String(ws.template); genLang = String(ws.lang || "en"); }
+    APP_URL = ENV_APP_URL || String(ws?.app_url || "").replace(/\/+$/, "");
+    if (!ENV_APP_URL && ws?.app_url) linkSource = "vercel";
+  } catch (_e) { /* keep env */ }
+  try { await api.rpc("ops_report_links", { p_domain: APP_URL || "", p_source: linkSource }); } catch (_e) { /* status only */ }
   const prefsCache = new Map<string, any>();
   const prefsOf = async (member?: string | null) => {
     if (!member) return {};
@@ -84,7 +94,7 @@ Deno.serve(async (req) => {
           + `\n\n— Reply STOP to stop WhatsApp updates${stop ? ` (or tap ${stop})` : ""}. Login codes still come.`;
         const name = waParam(prefs.name || p.to_name || "there", 60);
         const update = waParam([p.title, p.text].filter(Boolean).join(" — "));
-        const target = waParam(link || APP_URL || "the app", 300);
+        const target = waParam(link || APP_URL || "the Geek OS app", 300);
 
         // every way this update can go out, best first. A template that fails (not approved yet, wrong language,
         // wrong variable count…) no longer blocks the update: the next option is tried.

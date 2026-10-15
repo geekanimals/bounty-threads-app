@@ -7,6 +7,7 @@
 // Uses a connected Instagram token (the Super Admin's first). Business discovery needs Meta's approval for this
 // app and only works for public Business/Creator accounts — when Meta refuses, the run stops and the app says so.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { openRow, openToken, sealToken, tokenEncryptionOn } from "../_shared/token_crypto.ts";
 import { workerGuard } from "../_shared/worker_auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -35,7 +36,8 @@ export function profileFrom(bd: any, handle: string) {
 Deno.serve(async (req) => {
   const deny = workerGuard(req); if (deny) return deny;
   const api = createClient(SUPABASE_URL, SERVICE_ROLE).schema("api");
-  const { data: tok } = await api.rpc("ops_discovery_token");
+  const { data: tokRaw } = await api.rpc("ops_discovery_token");
+  const tok = await openRow(tokRaw);
   if (!tok?.access_token || !tok?.ig_user_id) {
     await api.rpc("ops_discovery_save", { p_items: [], p_failed: [], p_needs_permission: false, p_error: "No connected Instagram to read with — connect Instagram as the Super Admin." });
     return new Response(JSON.stringify({ ok: false, reason: "no token" }), { headers: { "Content-Type": "application/json" } });

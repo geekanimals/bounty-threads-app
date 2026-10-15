@@ -3,8 +3,11 @@
 // The signed-in user's org_id/role live in the `members` table and are
 // enforced by Row Level Security in the database — never trusted from the browser.
 
-const SUPABASE_URL = "https://edibibytqfrrxfztukpm.supabase.co";
-const SUPABASE_KEY = "sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf"; // publishable/anon key — safe in the browser
+// project + public key come from the deployment's env (/api/config → window.GEEK_CONFIG); built-in values are the fallback
+const SUPABASE_URL = (window.GEEK_CONFIG && GEEK_CONFIG.supabaseUrl) || "https://edibibytqfrrxfztukpm.supabase.co";
+const SUPABASE_KEY = (window.GEEK_CONFIG && GEEK_CONFIG.supabaseKey) || "sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf"; // publishable/anon key — safe in the browser
+// the live public domain (APP_URL on Vercel), else wherever the app is open
+window.appOrigin = function(){ return (window.GEEK_CONFIG && GEEK_CONFIG.appUrl) || location.origin; };
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true }

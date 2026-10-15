@@ -11,6 +11,7 @@
 //   { action: "status" }                        → is this account connected, and as which Instagram
 // Secrets: FB_APP_ID, FB_APP_SECRET, optional FB_LOGIN_CONFIG_ID, optional FB_GRAPH_VER.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { openRow, openToken, sealToken, tokenEncryptionOn } from "../_shared/token_crypto.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -88,7 +89,7 @@ Deno.serve(async (req) => {
                      ig_followers: ig.followers_count ?? null, discovery_ok: discoveryOk, discovery_error: discoveryOk ? null : err(test),
                      pages: withIg.map((p: any) => ({ id: p.id, name: p.name, ig: p.instagram_business_account?.username })) };
       const { error: sErr } = await admin.from("social_tokens").upsert({
-        member_id: user.id, platform: "facebook", ig_user_id: ig.id, access_token: pg.access_token, expires_at: null,
+        member_id: user.id, platform: "facebook", ig_user_id: ig.id, access_token: await sealToken(pg.access_token), expires_at: null,
         meta, updated_at: new Date().toISOString(),
       }, { onConflict: "member_id,platform" });
       if (sErr) return json({ error: `Couldn't save the connection: ${sErr.message}` });

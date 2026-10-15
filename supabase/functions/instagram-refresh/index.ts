@@ -2,6 +2,7 @@
 // verify_jwt = false
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { openRow, openToken, sealToken, tokenEncryptionOn } from "../_shared/token_crypto.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { fetchProfileBundle } from "../_shared/ig.ts";
 
@@ -14,6 +15,7 @@ const GRAPH = "https://graph.instagram.com";
 // Lightweight sync — followers/profile only.
 // Token ko unnecessarily rotate nahi karta.
 async function syncProfileOnly(admin: any, tok: any) {
+  tok = await openRow(tok);
   const fields =
     "user_id,username,name,account_type,followers_count,follows_count,media_count,profile_picture_url,biography,website";
 
@@ -76,6 +78,7 @@ async function syncProfileOnly(admin: any, tok: any) {
 
 // Full long-lived token refresh.
 async function refreshOne(admin: any, tok: any) {
+  tok = await openRow(tok);
   const response = await fetch(
     `${GRAPH}/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(
       tok.access_token
@@ -99,7 +102,7 @@ async function refreshOne(admin: any, tok: any) {
   await admin
     .from("social_tokens")
     .update({
-      access_token: newToken,
+      access_token: await sealToken(newToken),
       expires_at: expiresAt,
       updated_at: new Date().toISOString(),
     })
@@ -227,10 +230,25 @@ Deno.serve(async (req) => {
         }
       }
 
+      // seal any token still stored in plain text (encryption at rest)
+      let sealed = 0;
+      if (await tokenEncryptionOn()) {
+        const { data: plain } = await admin.from("social_tokens").select("member_id, platform, access_token")
+          .not("access_token", "like", "enc1:%").not("access_token", "is", null).limit(500);
+        for (const r of plain || []) {
+          const enc = await sealToken(r.access_token);
+          if (enc && enc !== r.access_token) {
+            await admin.from("social_tokens").update({ access_token: enc }).eq("member_id", r.member_id).eq("platform", r.platform);
+            sealed++;
+          }
+        }
+      }
+
       return json({
         ok: true,
         mode: "cron",
         refreshed: count,
+        sealed,
       });
     }
 

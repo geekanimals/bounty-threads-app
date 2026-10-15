@@ -4231,7 +4231,7 @@ function bpOutreachHtml(){
 }
 function bpMessageText(){
   const o = _bpData.outreach||{}, c = _bpData.campaign||{};
-  const link = o.form_link || ((location && location.origin ? location.origin : "https://bountythreads.app") + "/app.html");
+  const link = o.form_link || (window.appOrigin() + "/app.html");
   return [
     `🎁 ${c.brand||"Brand"} × ${c.name||"Barter campaign"}`,
     o.brand_usp ? `\nAbout: ${o.brand_usp}` : "",
@@ -4595,7 +4595,7 @@ function discoveredHtml(){
           ${c.permalink?`<a class="btn sm ghost" href="${esc(safeUrl(c.permalink))}" target="_blank" rel="noopener">Post</a>`:""}</div></div>`).join("")}</div></div>`;
 }
 function inviteMessageFor(handle){
-  const u = (location && location.origin ? location.origin : "https://bountythreads.app") + "/app.html";
+  const u = window.appOrigin() + "/app.html";
   return `Hi @${handle} 👋 We'd love to have you on "${_invCamp.name}" with us on Geek OS (Bounty & Threads).\n\n`
     + `Sign up free here and the campaign will be waiting in your account: ${u}\n\n`
     + `You'll see the full brief, what you get, and you can accept or pass — no obligation.`;
@@ -4954,7 +4954,7 @@ async function adminWaSettingsCard(){
       <div><b>1.</b> In <b>snapto</b> → Templates → New: category <b>Utility</b>, language <b>English</b>, name <code>${WA_UPD_NAME}</code> <button class="mini-btn ghost" data-wacopy="${WA_UPD_NAME}">⧉</button></div>
       <div><b>2.</b> Body <button class="mini-btn ghost" data-wacopy="${esc(WA_UPD_BODY)}">Copy body</button> · Footer <button class="mini-btn ghost" data-wacopy="${esc(WA_UPD_FOOT)}">Copy footer</button>
         <pre class="wa-pre">${esc(WA_UPD_BODY)}\n— ${esc(WA_UPD_FOOT)}</pre>
-        <span class="muted" style="font-size:12px">Sample values for Meta: {{1}} Asha · {{2}} Your contract is ready — please sign it in the app · {{3}} https://bountythreads.app/app.html</span></div>
+        <span class="muted" style="font-size:12px">Sample values for Meta: {{1}} Asha · {{2}} Your contract is ready — please sign it in the app · {{3}} ${esc(window.appOrigin())}/app.html</span></div>
       <div><b>3.</b> Once snapto shows it <b>Approved</b>, put the name here and save:</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
       <input id="waTplName" value="${esc(d.template||"")}" placeholder="${WA_UPD_NAME}" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;min-width:240px">
@@ -4966,6 +4966,14 @@ async function adminWaSettingsCard(){
     <div class="muted" style="font-size:12px;margin-top:10px">Then use <b>Send test</b> below with your own WhatsApp number to check it arrives.
       ${d.no_number?` · ${esc(d.no_number)} recent people have no WhatsApp number on their account (they get app + email only).`:""}
       ${d.opted_out?` · ${esc(d.opted_out)} people replied STOP.`:""}</div>`;
+  // which domain the links in WhatsApp / email open (APP_URL — never hard-coded)
+  sb.rpc("admin_links_status").then(({data:ls})=>{
+    if(!box.isConnected || !ls) return;
+    const dom = ls.links_domain || ls.app_url, src = ls.links_source==="secret" ? "APP_URL secret on Supabase" : ls.links_source==="vercel" ? "APP_URL on Vercel" : "";
+    box.insertAdjacentHTML("afterbegin", dom
+      ? `<div class="muted" style="font-size:12.5px;margin-bottom:8px">🔗 Links in WhatsApp &amp; email open <b>${esc(dom)}</b>${src?` <span>(from ${esc(src)})</span>`:""}</div>`
+      : `<div style="font-size:12.5px;margin-bottom:8px;color:#b45309">⚠️ Links in WhatsApp &amp; email have no domain yet — set <b>APP_URL</b> in Vercel → Settings → Environment Variables (e.g. https://app.yourdomain.com), redeploy, and open this page once.</div>`);
+  }, ()=>{});
   box.querySelectorAll("[data-wacopy]").forEach(b=> b.onclick = async ()=>{ try{ await navigator.clipboard.writeText(b.dataset.wacopy); const t=b.textContent; b.textContent="✓ copied"; setTimeout(()=>b.textContent=t,1200); }catch(e){ prompt("Copy:", b.dataset.wacopy); } });
   const save = async (name)=>{ const msg = document.getElementById("waTplMsg");
     const { data:r, error:e } = await sb.rpc("admin_set_wa_settings", { p_template: name, p_lang: document.getElementById("waTplLang").value });
@@ -6163,6 +6171,8 @@ function showEmailGate(){
 // Super Admin: label, Admin panel first in the nav, and land on the command centre after sign-in
 function markSuperAdmin(){
   window.__isAdmin = true;
+  // links in WhatsApp / email use the live domain set as APP_URL on Vercel (unless the APP_URL secret overrides it)
+  try{ const gc = window.GEEK_CONFIG; if(gc && gc.appUrlFromEnv && gc.appUrl) sb.rpc("admin_sync_app_url", { p_url: gc.appUrl }).then(()=>{}, ()=>{}); }catch(e){}
   const wrap = document.querySelector(".role-switch");
   if(wrap) wrap.innerHTML = `<label>Signed in as</label><div class="role-static">🛡 Super Admin</div>`;
   if(window.__pendingAdminTab){ _adminTab = window.__pendingAdminTab; delete window.__pendingAdminTab; window.__adminLanded = true; currentPage = "admin"; renderShell(); return; }

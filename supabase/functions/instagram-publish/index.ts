@@ -22,6 +22,7 @@
 // Every media URL must be inside the caller's own folder of the public ig-media bucket.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { openRow, openToken, sealToken, tokenEncryptionOn } from "../_shared/token_crypto.ts";
 import { corsHeaders, json as jsonRaw } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -107,8 +108,9 @@ Deno.serve(async (req: Request) => {
 
     // ---------- 3. token ----------
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-    const { data: tok, error: tokErr } = await admin.from("social_tokens")
+    const { data: tokRaw, error: tokErr } = await admin.from("social_tokens")
       .select("access_token, ig_user_id, expires_at").eq("member_id", user.id).eq("platform", "instagram").maybeSingle();
+    const tok = await openRow(tokRaw);
     if (tokErr) return json({ error: "Could not read Instagram connection." }, 500);
     if (!tok?.access_token) return json({ error: "Instagram not connected" }, 400);
     if (tok.expires_at && new Date(tok.expires_at) < new Date()) {

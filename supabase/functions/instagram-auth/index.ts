@@ -9,6 +9,7 @@
 // Auto-provided by Supabase: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { openRow, openToken, sealToken, tokenEncryptionOn } from "../_shared/token_crypto.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { fetchProfileBundle } from "../_shared/ig.ts";
 
@@ -122,7 +123,7 @@ Deno.serve(async (req) => {
       member_id: user.id,
       platform: "instagram",
       ig_user_id: igUserId,
-      access_token: accessToken,
+      access_token: await sealToken(accessToken),
       expires_at: expiresAt,
       updated_at: new Date().toISOString(),
     }, { onConflict: "member_id,platform" });

@@ -6,6 +6,7 @@
 //
 // Body: { force?: boolean }  — force shortens the throttle to 10 s (used right after a publish).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { openRow, openToken, sealToken, tokenEncryptionOn } from "../_shared/token_crypto.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -45,8 +46,9 @@ Deno.serve(async (req) => {
     await admin.from("social_accounts").update({ last_media_sync_at: new Date().toISOString() })
       .eq("member_id", user.id).eq("platform", "instagram");
 
-    const { data: tok } = await admin.from("social_tokens").select("access_token, expires_at")
+    const { data: tokRaw } = await admin.from("social_tokens").select("access_token, expires_at")
       .eq("member_id", user.id).eq("platform", "instagram").maybeSingle();
+    const tok = await openRow(tokRaw);
     if (!tok?.access_token) return json({ error: "Instagram not connected" }, 400);
     if (tok.expires_at && new Date(tok.expires_at) < new Date()) {
       return json({ error: "Instagram token expired — please reconnect your Instagram account." }, 400);

@@ -16,7 +16,8 @@ import { workerGuard } from "../_shared/worker_auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const APP_URL = (Deno.env.get("APP_URL") || "https://bounty-threads-app.vercel.app").replace(/\/+$/, "");
+// sample link for Meta's review: the live domain (APP_URL secret, else the one reported from Vercel)
+let APP_URL = (Deno.env.get("APP_URL") || "").trim().replace(/\/+$/, "");
 const WABA_ID = (Deno.env.get("WHATSAPP_WABA_ID") || "").trim();
 const META_TOKEN = (Deno.env.get("WHATSAPP_TEMPLATE_TOKEN") || Deno.env.get("WHATSAPP_TOKEN") || "").trim();
 const META_VER = Deno.env.get("WHATSAPP_API_VER") || "v21.0";
@@ -70,6 +71,8 @@ async function snaptoCreate(t: Row) {
 Deno.serve(async (req) => {
   const deny = workerGuard(req); if (deny) return deny;
   const api = createClient(SUPABASE_URL, SERVICE_ROLE).schema("api");
+  if (!APP_URL) { try { const { data: ws } = await api.rpc("ops_wa_settings"); APP_URL = String(ws?.app_url || "").replace(/\/+$/, ""); } catch (_e) { /* sample only */ } }
+  if (!APP_URL) APP_URL = "https://example.com";
   const { data: rows, error } = await api.rpc("wa_templates_claim", { p_limit: 20 });
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
 

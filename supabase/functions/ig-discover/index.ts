@@ -11,6 +11,7 @@
 // so discovery and invites keep working. Hashtag → username is not offered by Meta at all, so we never pretend
 // to: hashtags are matched from the captions the handle was actually found in.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { openRow, openToken, sealToken, tokenEncryptionOn } from "../_shared/token_crypto.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -37,8 +38,9 @@ Deno.serve(async (req) => {
     const allowed = !!isAdmin || (member && ["owner", "brand", "manager", "corporate"].includes(member.role) && (member.status ?? "active") === "active");
     if (!allowed) return json({ error: "Discovery is for approved agencies, brands and the Super Admin." }, 403);
 
-    const { data: tok } = await admin.from("social_tokens").select("access_token, ig_user_id, expires_at")
+    const { data: tokRaw } = await admin.from("social_tokens").select("access_token, ig_user_id, expires_at")
       .eq("member_id", user.id).eq("platform", "instagram").maybeSingle();
+    const tok = await openRow(tokRaw);
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action || "");
     if (action === "tagged") {
@@ -52,10 +54,11 @@ Deno.serve(async (req) => {
       if (!/^[a-z0-9._]{2,30}$/.test(username)) return json({ error: "Enter a valid Instagram username." }, 400);
       // business discovery needs a Facebook-Login Page token: this account's own ("Connect with Facebook"),
       // else the platform's shared one (Super Admin / any connected workspace)
-      const { data: fbt } = await admin.from("social_tokens").select("access_token, ig_user_id")
+      const { data: fbtRaw } = await admin.from("social_tokens").select("access_token, ig_user_id")
         .eq("member_id", user.id).eq("platform", "facebook").maybeSingle();
+      const fbt = await openRow(fbtRaw);
       let src = fbt?.access_token ? fbt : null;
-      if (!src) { const { data: shared } = await admin.schema("api").rpc("ops_discovery_token"); if (shared?.platform === "facebook") src = shared; }
+      if (!src) { const { data: shared } = await admin.schema("api").rpc("ops_discovery_token"); if (shared?.platform === "facebook") src = await openRow(shared); }
       if (!src?.access_token || !src?.ig_user_id) {
         await admin.schema("api").rpc("save_external_candidates", { p_items: [{ handle: username, source: "manual" }] }).then(() => {}, () => {});
         return json({ error: `@${username} is added. Live Instagram numbers switch on once the Geek Super Admin turns on Instagram search (one-time).`, needs_facebook: true, added: true }, 200);

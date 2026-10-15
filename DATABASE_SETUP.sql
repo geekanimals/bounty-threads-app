@@ -1,3 +1,6 @@
+-- functions below may reference tables created further down: validate bodies at call time, not create time
+set check_function_bodies = off;
+
 -- ===================================================================
 -- GEEK INFLUENCER OS — DATABASE SETUP  (REAL SUPABASE AUTH + PER-ORG RLS)
 -- Run this whole file once in Supabase → SQL Editor → New query → Run.

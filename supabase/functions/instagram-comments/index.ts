@@ -10,6 +10,7 @@
 // Ownership: the post (for list) / the comment's post (for actions) must belong to the token's account —
 // checked against Instagram before acting, so this endpoint can't be used on anyone else's content.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { openRow, openToken, sealToken, tokenEncryptionOn } from "../_shared/token_crypto.ts";
 import { corsHeaders, json as jsonRaw } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -34,8 +35,9 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: "Not authenticated" }, 401);
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-    const { data: tok } = await admin.from("social_tokens").select("access_token, expires_at")
+    const { data: tokRaw } = await admin.from("social_tokens").select("access_token, expires_at")
       .eq("member_id", user.id).eq("platform", "instagram").maybeSingle();
+    const tok = await openRow(tokRaw);
     if (!tok?.access_token) return json({ error: "Instagram not connected" }, 400);
     if (tok.expires_at && new Date(tok.expires_at) < new Date()) return json({ error: "Instagram token expired — reconnect Instagram." }, 400);
     const T = tok.access_token as string;
