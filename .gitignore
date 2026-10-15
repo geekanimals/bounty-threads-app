@@ -9,3 +9,6 @@ npm-debug.log*
 .env
 .env.*
 *.secret
+
+# Supabase CLI local cache
+supabase/.temp/
