@@ -69,19 +69,6 @@ const ADMIN_NAV = [["admin:overview","🛡","Command centre"],["admin:approvals"
   ["admin:applications","📝","All applications"],["admin:creators","🎨","All creators"],["admin:users","👥","All users"],
   ["admin:delivery","📨","WhatsApp & email"],["admin:activity","📈","Activity"],["admin:check","🩺","System check"]];
 Object.keys(NAV_SECTIONS).forEach(r=>{ ROLES[r].nav = NAV_SECTIONS[r].reduce((a,s)=>a.concat(s[1]),[]); });
-// The Super Admin sidebar: ONE list, in working order, every page once. Platform-wide views replace the
-// workspace ones they would duplicate (Command centre = dashboard, Approvals = signups + campaigns + creators,
-// Campaigns shows every workspace's campaigns to the Super Admin). "admin:x" opens that Super Admin tab.
-const ADMIN_SIDEBAR = [
-  ["Today",     [["admin:overview","🛡","Command centre"], "approvals", "messages"]],
-  ["Campaigns", ["campaigns","barter","celebrity","logistics","campaignops"]],
-  ["Creators",  [["admin:creators","🎨","All creators"], "discover", ["cintel","🧠","Creator Intelligence"], ["creators","📇","Roster & import"], "irm"]],
-  ["Brands",    ["brands","brandsetup"]],
-  ["Insights",  ["reports", ["admin:activity","📈","Activity"], "finance", "listening"]],
-  ["Platform",  [["admin:users","👥","All users"], ["admin:delivery","📨","WhatsApp & email"], ["admin:check","🩺","System check"], "settings"]]
-];
-// tabs that have their own sidebar item — the Super Admin page shows them without the tab strip
-const ADMIN_DIRECT_TABS = { creators:"All creators", users:"All users", delivery:"WhatsApp & email", activity:"Activity", check:"System check" };
 
 const NAV_META = {
   messages:{ic:"💬",label:"Messages"},

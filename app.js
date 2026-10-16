@@ -83,24 +83,16 @@ function renderNav(){
   const nav = $("#nav"); nav.innerHTML="";
   if(currentRole==="creator") return renderNavKeys(nav, creatorNavKeys());
   const sections = (typeof NAV_SECTIONS!=="undefined" && NAV_SECTIONS[currentRole]) || [["", ROLES[currentRole].nav]];
-  if(window.__isAdmin && typeof ADMIN_SIDEBAR!=="undefined"){
-    ADMIN_SIDEBAR.forEach(([title, items])=>{
-      items = items.filter(it=> Array.isArray(it) ? true : navKeyAllowed(it));
-      if(!items.length) return;
-      navHeading(nav, title);
-      items.forEach(it=>{
-        const [key, ic, label] = Array.isArray(it) ? it : [it, (NAV_META[it]||{}).ic||"🛡", (NAV_META[it]||{}).label||it];
-        const a = el("a","", `<span class="ic">${ic}</span><span>${esc(label)}</span><b class="nav-badge" data-navcount="${key}"></b>`);
-        a.setAttribute("data-page", key);
-        const tab = key.startsWith("admin:") ? key.split(":")[1] : null;
-        if(tab ? (currentPage==="admin" && _adminTab===tab) : key===currentPage) a.classList.add("active");
-        a.onclick = ()=>{ if(tab){ _adminTab = tab; currentPage = "admin"; } else currentPage = key;
-          renderShell(); if(window.innerWidth<=760) $("#sidebar").classList.remove("open"); };
-        nav.appendChild(a);
-      });
+  if(window.__isAdmin){
+    navHeading(nav, "Super Admin");
+    ADMIN_NAV.forEach(([key, ic, label])=>{
+      const tab = key.split(":")[1];
+      const a = el("a","", `<span class="ic">${ic}</span><span>${esc(label)}</span><b class="nav-badge" data-navcount="${key}"></b>`);
+      a.setAttribute("data-page", key);
+      if(currentPage==="admin" && _adminTab===tab) a.classList.add("active");
+      a.onclick = ()=>{ _adminTab = tab; currentPage = "admin"; renderShell(); if(window.innerWidth<=760) $("#sidebar").classList.remove("open"); };
+      nav.appendChild(a);
     });
-    paintNavCounts();
-    return;
   }
   sections.forEach(([title, keys])=>{
     keys = keys.filter(navKeyAllowed);
@@ -114,7 +106,7 @@ function navHeading(nav, title){ const h = el("div","nav-sec"); h.textContent = 
 // live numbers beside the sidebar items (what's waiting on you), refreshed every 30 s
 let _navCounts = null, _navCountTimer = null;
 const NAV_COUNT_KEYS = { approvals:"approvals", campaigns:"process", logistics:"logistics",
-  "admin:approvals":"signups", "admin:applications":"applicants", "admin:campaigns":"campaigns_waiting" };
+  "admin:approvals":"signups", "admin:overview":"approvals", "admin:applications":"applicants", "admin:campaigns":"campaigns_waiting" };
 function paintNavCounts(){
   const c = _navCounts || {};
   const dn = document.getElementById("dashNeeds");
@@ -1262,7 +1254,6 @@ function openCreatorModal(existing){
 
 function renderCampaigns(){
   let html = pageHead("Campaigns","Every campaign type, one connected pipeline.",`<span id="addCampaignBtn">+ New Campaign</span>`);
-  if(window.__isAdmin) html += `<div class="muted" style="font-size:13px;margin:-4px 0 10px">🛡 You see the campaigns of every workspace. To delete a campaign or answer delete requests: <a href="#" id="campAdminCtl">Command centre › Campaign controls →</a></div>`;
   html += `<div class="ci-chips" id="campTypeChips"></div><div class="grid three" id="campaignGrid">${skel("cards",3)}</div>`;
   return html;
 }
@@ -4875,7 +4866,7 @@ async function inviteFromDiscovery(username, memberId){
 
 /* ================= ADMIN (platform team — approve agency signups) ================= */
 /* ================= SUPER ADMIN CONSOLE ================= */
-const ADMIN_TABS = [["overview","🏠 Overview"],["creators","🎨 Creators"],["users","👥 All users"],["campaigns","🛠 Campaign controls"],["applications","📝 All applications"],["delivery","📨 WhatsApp & email"],["activity","📈 Activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["admins","Super admins"]];
+const ADMIN_TABS = [["overview","🏠 Overview"],["creators","🎨 Creators"],["users","👥 All users"],["approvals","✅ Account approvals"],["campaigns","📣 All campaigns"],["applications","📝 Applications"],["delivery","📨 WhatsApp & email"],["activity","📈 Activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["admins","Super admins"]];
 const ADMIN_TABLES = [
   ["members","Members (all accounts)"],["creators","Agency creator rosters"],["campaigns","Campaigns"],["barter_items","Barter items"],
   ["applications","Applications"],["invites","Invites"],["irm_contacts","IRM contacts"],
@@ -5325,17 +5316,8 @@ async function adminActivityTimeline(member, row, target){
 }
 
 function renderAdmin(){
-  // a tab with its own sidebar item opens on its own; the rest sit together in the Command centre tab strip
-  // account approvals live on the one Approvals page (signups + campaigns + creators)
-  if(_adminTab==="approvals"){ _adminTab = "overview"; setTimeout(()=>{ currentPage = "approvals"; renderShell(); }, 0); }
-  const direct = (typeof ADMIN_DIRECT_TABS!=="undefined" && ADMIN_DIRECT_TABS[_adminTab]) || null;
-  if(direct){
-    let html = pageHead(direct, "Across every workspace · live.");
-    return html + `<div id="adminBody">${skel("table")}</div>`;
-  }
-  const tabs = ADMIN_TABS.filter(t=> !(typeof ADMIN_DIRECT_TABS!=="undefined" && ADMIN_DIRECT_TABS[t[0]]));
-  let html = pageHead("Command centre","Full cross-workspace control — every record, every change, with timestamps.");
-  html += `<div class="admin-tabs">${tabs.map(t=>`<button class="${_adminTab===t[0]?'act':''}" data-atab="${t[0]}">${esc(t[1])}</button>`).join("")}</div>`;
+  let html = pageHead("Super Admin","Full cross-workspace control — every record, every change, with timestamps.");
+  html += `<div class="admin-tabs">${ADMIN_TABS.map(t=>`<button class="${_adminTab===t[0]?'act':''}" data-atab="${t[0]}">${esc(t[1])}</button>`).join("")}</div>`;
   html += `<div id="adminBody">${skel("table")}</div>`;
   return html;
 }
@@ -6387,8 +6369,6 @@ function showEmailGate(){
   document.getElementById("emSignout").onclick = ()=> window.Auth && Auth.signOut();
 }
 
-document.addEventListener("click", e=>{ const t = e.target && e.target.closest && e.target.closest("#campAdminCtl");
-  if(t){ e.preventDefault(); _adminTab = "campaigns"; currentPage = "admin"; renderShell(); } });
 // Super Admin: label, Admin panel first in the nav, and land on the command centre after sign-in
 function markSuperAdmin(){
   window.__isAdmin = true;
