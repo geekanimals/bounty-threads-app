@@ -106,16 +106,19 @@ Deno.serve(async (req) => {
         // the alert's own template (e.g. geek_campaign_invite); "LINK" in its variables is the deep link
         if (p.wa_template) tries.push({ to: row.to_address, template: String(p.wa_template), lang: String(p.wa_lang || "en"),
           variables: ((p.wa_vars as string[]) || []).map((v) => v === "LINK" ? target : waParam(String(v), 300)) });
-        if (row.campaign_id) {
+        // invites + step updates have ONE approved format (geek_campaign_access / geek_campaign_step): never fall
+        // back to another template — if Meta hasn't approved it yet the message waits and goes out once it has
+        const only = !!(p.force_template && p.wa_template);
+        if (!only && row.campaign_id) {
           const { data: t } = await api.rpc("ops_wa_template_for", { p_campaign: row.campaign_id });
           if (t?.name) tries.push({ to: row.to_address, template: String(t.name), lang: String(t.lang || "en"), variables: [name, update, target] });
         }
-        if (genTpl) tries.push({ to: row.to_address, template: genTpl, lang: genLang, variables: [name, update, target] });
+        if (!only && genTpl) tries.push({ to: row.to_address, template: genTpl, lang: genLang, variables: [name, update, target] });
         // already-approved backup with the same 3 variables (name · update · link), used while a newer template is in review
-        for (const b of WA_BACKUP_TEMPLATES) if (b !== genTpl) tries.push({ to: row.to_address, template: b, lang: "en", variables: [name, update, target] });
+        if (!only) for (const b of WA_BACKUP_TEMPLATES) if (b !== genTpl) tries.push({ to: row.to_address, template: b, lang: "en", variables: [name, update, target] });
         // templates Meta already refused for this message are skipped
         const avoid: string[] = Array.isArray(p.avoid_templates) ? p.avoid_templates.map(String) : [];
-        for (let k = tries.length - 1; k >= 0; k--) if ("template" in tries[k] && avoid.includes(String(tries[k].template))) tries.splice(k, 1);
+        if (!only) for (let k = tries.length - 1; k >= 0; k--) if ("template" in tries[k] && avoid.includes(String(tries[k].template))) tries.splice(k, 1);
         if (!tries.length) {
           await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped",
             p_error: "WhatsApp 24h window closed — no approved update template yet. Super Admin → WhatsApp & email → set the template name (it goes out automatically then)" });
@@ -136,6 +139,13 @@ Deno.serve(async (req) => {
             }
           }
           if (res) break;
+        }
+        if (!res && only) {
+          // the one approved format isn't usable yet (in review / paused): hold it — it is retried every 10 minutes
+          // for 7 days and goes out the moment Meta approves the template
+          await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped",
+            p_error: `Waiting for WhatsApp template approval — ${p.wa_template}: ${errs.join(" | ")}`.slice(0, 300) });
+          skipped++; continue;
         }
         if (!res) throw new Error(errs.join(" | ").slice(0, 600));
         ref = res.wamid; waUsed = usedTpl;
