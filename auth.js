@@ -13,6 +13,41 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true }
 });
 
+// If a tab's login quietly lapsed (laptop slept, token couldn't refresh), the next call goes out WITHOUT a login
+// and the database answers "permission denied for schema api" / "JWT expired". Refresh the session once and retry;
+// if there's no session any more, say so plainly and offer "Sign in again" instead of a confusing error.
+(function guardSession(){
+  const lapsed = e => !!e && (/permission denied for schema api|jwt expired|invalid jwt|not authenticated/i.test(String(e.message||"")) || ["PGRST301","PGRST303"].includes(e.code));
+  let banner = false;
+  const signInAgain = ()=>{
+    if(banner || !document.body) return; banner = true;
+    const b = document.createElement("div");
+    b.style.cssText = "position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:100000;background:#0f1222;color:#fff;padding:10px 14px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);font:600 14px/1.4 Inter,system-ui,sans-serif;display:flex;gap:12px;align-items:center";
+    b.innerHTML = 'Your login expired. <button style="background:#6c5ce7;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer">Sign in again</button>';
+    b.querySelector("button").onclick = ()=> location.reload();
+    document.body.appendChild(b);
+  };
+  const retrying = call => async function(){
+    const args = arguments;
+    let r = await call.apply(null, args);
+    if(r && lapsed(r.error)){
+      const { data } = await sb.auth.refreshSession().catch(()=>({ data:{} }));
+      if(data && data.session){ r = await call.apply(null, args); }
+      else { signInAgain(); r = { data:null, error:{ message:"Your login expired — please sign in again.", code:"SESSION_EXPIRED" } }; }
+    }
+    return r;
+  };
+  const rawRpc = sb.rpc.bind(sb);
+  sb.rpc = retrying((fn, a, o)=> rawRpc(fn, a, o));
+  const rawSchema = sb.schema.bind(sb);
+  sb.schema = function(name){
+    const c = rawSchema(name);
+    const rawSchemaRpc = c.rpc.bind(c);
+    c.rpc = retrying((fn, a, o)=> rawSchemaRpc(fn, a, o));
+    return c;
+  };
+})();
+
 // supabase-js puts the Edge Function's HTTP response in error.context; return its `error` text.
 async function fnError(error){
   try{
