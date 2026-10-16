@@ -1274,3 +1274,6 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .aud-table summary{cursor:pointer}
 .aud-tip{position:fixed;z-index:9999;pointer-events:none;background:#0f1222;color:#fff;font-size:12px;padding:5px 9px;border-radius:7px;white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.18)}
 @media(max-width:760px){.aud{grid-template-columns:1fr}.aud-chart{gap:5px;height:170px}.aud-age{font-size:10.5px}}
+
+/* Geek logo in place of the old "G" mark */
+.brand-mark{background:url(/assets/geek-icon-192.png) center/contain no-repeat;color:transparent;font-size:0;box-shadow:none;border-radius:0}

@@ -221,3 +221,6 @@ a{text-decoration:none;color:inherit}
 .consent-btn{padding:10px 16px;border-radius:11px;border:none;background:var(--brand);color:#fff;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit}
 .consent-btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
 @media(max-width:600px){.consent-btns{width:100%}.consent-btn{flex:1}}
+
+/* Geek logo in place of the old "G" mark */
+.lp-mark{background:url(/assets/geek-icon-192.png) center/contain no-repeat;color:transparent;font-size:0;box-shadow:none;border-radius:0}
