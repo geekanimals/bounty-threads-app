@@ -1407,7 +1407,9 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
       <button class="btn" id="wsProcess">🔁 Barter process</button>
       <button class="btn ghost" id="wsBulk">📥 Bulk upload creators</button>
       <button class="btn ghost" id="wsInvite">🎯 Invite creators</button>
-      <button class="btn ghost" id="wsEdit">Edit campaign</button></div>
+      <button class="btn ghost" id="wsEdit">Edit campaign</button>
+      <button class="btn ghost cdel-btn" id="wsDel">${window.__isAdmin?"🗑 Delete campaign":"🗑 Request delete"}</button></div>
+    <div id="wsDelNote"></div>
 
     <div class="ws-stats">
       <div class="ws-stat"><b>${applied.length}</b><span>New applicants</span></div>
@@ -1438,6 +1440,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
 
   document.getElementById("wsBack").onclick = ()=>{ currentPage="campaigns"; renderShell(); };
   document.getElementById("wsEdit").onclick = ()=> openCampaignModal(c);
+  wireCampaignDelete(c);
   document.getElementById("wsInvite").onclick = ()=> openInvitePanel(c.id, c.name);
   document.getElementById("wsProcess").onclick = ()=> openBarterProcess(c.id, c.name);
   document.getElementById("wsBulk").onclick = ()=> openBarterProcess(c.id, c.name, null, "bulk");
@@ -2069,6 +2072,85 @@ function wireApplicantButtons(root, reload){
   });
 }
 
+/* ---------- Campaign delete: agency / brand request it, only the Super Admin deletes ---------- */
+async function wireCampaignDelete(c){
+  const btn = document.getElementById("wsDel"), note = document.getElementById("wsDelNote");
+  if(!btn) return;
+  const back = ()=>{ currentPage = window.__isAdmin ? "admin" : "campaigns"; if(window.__isAdmin) _adminTab = "campaigns"; renderShell(); };
+  if(window.__isAdmin){ btn.onclick = ()=> openCampaignDeleteModal({ mode:"admin", campaign:c, done:back }); return; }
+  const { data:r } = await sb.rpc("campaign_delete_status", { p_campaign:c.id }).then(x=>x, ()=>({data:null}));
+  if(!document.body.contains(btn)) return;
+  if(r && r.status==="pending"){
+    btn.textContent = "⏳ Delete requested"; btn.title = "Waiting for the Super Admin";
+    if(note) note.innerHTML = `<div class="cdel-note">🗑 You asked to delete this campaign on ${esc(new Date(r.created_at).toLocaleDateString("en-IN",{day:"numeric",month:"short"}))} — <i>${esc(r.reason||"")}</i>. It stays live until the Super Admin approves. <a href="#" id="wsDelCancel">Cancel request</a></div>`;
+    const cx = document.getElementById("wsDelCancel");
+    if(cx) cx.onclick = async e=>{ e.preventDefault(); await sb.rpc("cancel_campaign_delete_request", { p_campaign:c.id }); openCampaignWorkspace(c.id); };
+    btn.onclick = ()=> alert("Your delete request is waiting for the Super Admin.");
+    return;
+  }
+  if(r && r.status==="rejected" && note) note.innerHTML = `<div class="cdel-note warn">The Super Admin didn't approve deleting this campaign${r.decision_note?`: <i>${esc(r.decision_note)}</i>`:"."}</div>`;
+  btn.onclick = ()=> openCampaignDeleteModal({ mode:"request", campaign:c, done:()=> openCampaignWorkspace(c.id) });
+}
+
+// mode: "request" (agency/brand → reason) · "admin" (Super Admin deletes now) · "decide" (Super Admin approves / rejects a request)
+function openCampaignDeleteModal(o){
+  const c = o.campaign || {}, req = o.request || null, name = c.name || (req && req.campaign_name) || "this campaign";
+  let m = document.getElementById("cdelModal"); if(m) m.remove();
+  m = el("div","modal-overlay open"); m.id = "cdelModal";
+  const what = `<div class="cdel-what">This permanently removes <b>${esc(name)}</b> and everything in it — creators in the campaign, contracts, addresses, shipments, videos, posts, invites and unsent WhatsApp / email messages. Creator, brand and agency accounts are not touched. <b>It can't be undone.</b></div>`;
+  let bodyHtml;
+  if(o.mode==="request"){
+    bodyHtml = `<p class="muted" style="margin:0 0 10px">Only the Geek Super Admin can delete a campaign. Tell them why — they'll approve or reply.</p>
+      <label>Why should it be deleted?<textarea name="reason" rows="3" maxlength="500" required placeholder="e.g. Brand cancelled the campaign / created by mistake / duplicate"></textarea></label>
+      <div class="auth-err" id="cdErr"></div><button class="btn" type="submit">Send delete request</button>`;
+  } else if(o.mode==="admin"){
+    bodyHtml = `${what}<label>Type the campaign name to confirm<input name="confirm" autocomplete="off" placeholder="${esc(name)}"></label>
+      <label>Note <span class="muted" style="font-weight:400">(optional)</span><input name="note" maxlength="300"></label>
+      <div class="auth-err" id="cdErr"></div><button class="btn cdel-danger" type="submit">🗑 Delete campaign permanently</button>`;
+  } else {
+    bodyHtml = `<div class="cdel-req"><b>${esc(req.requester||"Someone")}</b>${req.org_name?` · ${esc(req.org_name)}`:""} asked to delete <b>${esc(name)}</b>${req.brand?` (${esc(req.brand)})`:""}:<div class="cdel-reason">“${esc(req.reason||"")}”</div><span class="muted">${Number(req.creators||0)} creator${Number(req.creators)===1?"":"s"} in this campaign</span></div>
+      ${what}<label>Note to them <span class="muted" style="font-weight:400">(optional — shown if you reject)</span><input name="note" maxlength="300"></label>
+      <label>To approve, type the campaign name<input name="confirm" autocomplete="off" placeholder="${esc(name)}"></label>
+      <div class="auth-err" id="cdErr"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn cdel-danger" type="submit">✓ Approve & delete</button><button class="btn ghost" type="button" id="cdReject">✕ Reject request</button></div>`;
+  }
+  m.innerHTML = `<div class="modal"><div class="modal-head"><strong>${o.mode==="request"?"Request campaign delete":"Delete campaign"}</strong><button class="icon-btn" id="cdClose">✕</button></div>
+    <form id="cdForm" class="modal-form">${bodyHtml}</form></div>`;
+  document.body.appendChild(m);
+  const close = ()=> m.remove();
+  m.querySelector("#cdClose").onclick = close;
+  m.onclick = e=>{ if(e.target===m) close(); };
+  const f = m.querySelector("#cdForm"), err = m.querySelector("#cdErr");
+  const same = v => String(v||"").trim().toLowerCase() === String(name).trim().toLowerCase();
+  const run = async (fn, args, okMsg)=>{
+    const b = f.querySelector("button[type=submit]"); b.disabled = true; err.textContent = "";
+    const { error } = await sb.rpc(fn, args);
+    if(error){ err.textContent = error.message; b.disabled = false; return; }
+    close(); if(okMsg) alert(okMsg); o.done && o.done();
+  };
+  const rj = m.querySelector("#cdReject");
+  if(rj) rj.onclick = async ()=>{ rj.disabled = true;
+    const { error } = await sb.rpc("admin_decide_campaign_delete", { p_request:req.id, p_approve:false, p_note:(f.note.value||"").trim()||null });
+    if(error){ err.textContent = error.message; rj.disabled = false; return; } close(); o.done && o.done(); };
+  f.onsubmit = e=>{ e.preventDefault();
+    if(o.mode==="request") return run("request_campaign_delete", { p_campaign:c.id, p_reason:(f.reason.value||"").trim() }, "Request sent — the Super Admin will review it.");
+    if(!same(f.confirm.value)){ err.textContent = `Type “${name}” exactly to confirm.`; return; }
+    if(o.mode==="admin") return run("admin_delete_campaign", { p_campaign:c.id, p_note:(f.note.value||"").trim()||null }, "Campaign deleted.");
+    return run("admin_decide_campaign_delete", { p_request:req.id, p_approve:true, p_note:(f.note.value||"").trim()||null }, "Approved — campaign deleted.");
+  };
+  setTimeout(()=>{ const i = f.querySelector("textarea,input"); if(i) i.focus(); }, 30);
+}
+
+// Super Admin: pending delete requests (shown on top of All campaigns)
+async function adminDeleteRequestsHtml(){
+  const { data, error } = await sb.rpc("admin_campaign_delete_requests", { p_status:"pending" }).then(r=>r, e=>({error:e}));
+  if(error || !Array.isArray(data) || !data.length) return { html:"", list:[] };
+  return { list:data, html:`<div class="card cdel-card"><h3 style="margin:0 0 8px">🗑 Delete requests <span class="tag warn">${data.length}</span></h3>
+    <div class="list">${data.map((r,i)=>`<div class="row"><div class="r-main"><div class="r-title">${esc(r.campaign_name||"Campaign")}${r.brand?` · ${esc(r.brand)}`:""}${r.still_exists?"":` <span class="tag">already gone</span>`}</div>
+      <div class="r-sub">${esc(r.requester||"")}${r.org_name?` · ${esc(r.org_name)}`:""} · ${esc(new Date(r.created_at).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}))} · ${Number(r.creators||0)} creators — “${esc(r.reason||"")}”</div></div>
+      <button class="mini-btn" data-cdreview="${i}">Review</button></div>`).join("")}</div></div>` };
+}
+
 async function declineLegacyApplication(id, reload){
   const pick = await openReasonModal("Why are you declining this application?"); if(!pick) return;
   const { error } = await sb.rpc("decide_application", { p_id:id, p_approve:false, p_reason_code:pick.code, p_note:pick.note||null });
@@ -2496,7 +2578,8 @@ async function adminCampaigns(body, silent){
     sb.rpc("admin_applications", { p_campaign:null, p_status:null }).then(r=>r, ()=>({data:[]}))
   ]);
   if(cr.error){ if(!silent) body.innerHTML = adminErr(cr.error); return; }
-  const sig = JSON.stringify([cr.data, pr.data, ar.data]);
+  const dr = await sb.rpc("admin_campaign_delete_requests", { p_status:"pending" }).then(r=>r, ()=>({data:null}));
+  const sig = JSON.stringify([cr.data, pr.data, ar.data, dr.data]);
   if(silent && sig === _acSig) return;           // nothing changed → don't touch the DOM
   _acSig = sig;
   const kindL = c => c.campaign_type || "barter";
@@ -2505,7 +2588,8 @@ async function adminCampaigns(body, silent){
   const camps = _acPick ? allCamps.filter(c=>c.id===_acPick) : allCamps;
   if(_acPick && _acOpen!==_acPick && !_acPickOpened){ _acOpen = _acPick; _acPickOpened = true; }
   const pendFor = id => pipe.filter(p=>p.legacy_campaign_id===id && APPLICANT_PENDING.includes(p.stage)).length + legacy.filter(a=>a.campaign_id===id && a.status==="Applied").length;
-  body.innerHTML = `<div class="card"><div class="ci-mh" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+  const delReq = await adminDeleteRequestsHtml();
+  body.innerHTML = delReq.html + `<div class="card"><div class="ci-mh" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <h3 style="margin:0">All campaigns <span class="muted" style="font-size:12px;font-weight:400">· live, refreshes every 30s</span></h3>
       <span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <input id="acQ" type="search" placeholder="🔎 Search campaign, brand, workspace" value="${esc(_acQ)}" style="padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;min-width:220px">
@@ -2520,13 +2604,15 @@ async function adminCampaigns(body, silent){
         <td>${esc(campTypeLabel(c.campaign_type,c.barter_subtype)||"—")}</td>
         <td><select data-acstatus="${esc(c.id)}">${CAMP_STATUSES.map(s=>`<option${s===campStatusPick(c.status)?" selected":""}>${s}</option>`).join("")}</select></td>
         <td>${Number(c.applied)+pc.length}</td><td>${pendFor(c.id)?`<span class="tag warn">${pendFor(c.id)}</span>`:"0"}</td><td>${appr}</td><td>${decl}</td>
-        <td style="white-space:nowrap">${c.status==="Approval"?`<button class="mini-btn" data-acgo="${esc(c.id)}">Approve campaign</button> `:""}<button class="mini-btn" data-acbp="${esc(c.id)}" data-acbpname="${esc(c.name)}">🔁 Process</button> <button class="mini-btn" data-acinv="${esc(c.id)}" data-acname="${esc(c.name)}">🎯 Invite</button> <button class="mini-btn ghost" data-acopen="${esc(c.id)}">${_acOpen===c.id?"Hide":"Applications"}</button></td></tr>
+        <td style="white-space:nowrap">${c.status==="Approval"?`<button class="mini-btn" data-acgo="${esc(c.id)}">Approve campaign</button> `:""}<button class="mini-btn" data-acbp="${esc(c.id)}" data-acbpname="${esc(c.name)}">🔁 Process</button> <button class="mini-btn" data-acinv="${esc(c.id)}" data-acname="${esc(c.name)}">🎯 Invite</button> <button class="mini-btn ghost" data-acopen="${esc(c.id)}">${_acOpen===c.id?"Hide":"Applications"}</button> <button class="mini-btn ghost cdel-mini" title="Delete campaign" data-acdel="${esc(c.id)}">🗑</button></td></tr>
         ${_acOpen===c.id?`<tr data-acdetail="1"><td colspan="9"><div class="list">${pc.map(p=>applicantRowHtml(p)).join("")}
           ${legacy.filter(a=>a.campaign_id===c.id).map(a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span><div class="r-main"><div class="r-title">${esc(a.creator_name||"Creator")}</div><div class="r-sub">${esc(a.creator_org||"")}${a.decline_reason_code?` · ${esc(a.decline_reason_code)}`:""}${a.decline_note?` — ${esc(a.decline_note)}`:""}</div></div>
             ${a.status==="Applied"?`<span style="display:flex;gap:6px"><button class="mini-btn" data-acappr="${esc(a.id)}">Approve</button><button class="mini-btn ghost" data-acdecl="${esc(a.id)}">Decline</button></span>`:`<span class="tag ${a.status==="Approved"?"good":""}">${esc(a.status)}</span>`}</div>`).join("")}
           ${(!pc.length && !legacy.some(a=>a.campaign_id===c.id))?`<div class="muted" style="padding:8px">No applications yet.</div>`:""}</div></td></tr>`:""}`; }).join("")}
     </tbody></table></div>`:`<div class="muted" style="padding:8px">No campaigns${filter?" with this status":""}.</div>`}</div>`;
   const reload = ()=> adminCampaigns(body, true);
+  body.querySelectorAll("[data-cdreview]").forEach(b2=> b2.onclick = ()=> openCampaignDeleteModal({ mode:"decide", request:delReq.list[+b2.dataset.cdreview], done:()=>{ _acSig=""; adminCampaigns(body); } }));
+  body.querySelectorAll("[data-acdel]").forEach(b2=> b2.onclick = ()=>{ const cc = (cr.data||[]).find(x=>x.id===b2.dataset.acdel); if(cc) openCampaignDeleteModal({ mode:"admin", campaign:cc, done:()=>{ _acSig=""; adminCampaigns(body); } }); });
   body.querySelectorAll("[data-acinv]").forEach(b2=> b2.onclick = ()=> openInvitePanel(b2.dataset.acinv, b2.dataset.acname));
   body.querySelectorAll("[data-acbp]").forEach(b2=> b2.onclick = ()=> openBarterProcess(b2.dataset.acbp, b2.dataset.acbpname));
   document.getElementById("acFilter").onchange = ()=> adminCampaigns(body);
@@ -2937,12 +3023,6 @@ function mkHead(a){
     ? `<div class="mk-portfolio">${portfolio.map(p=>`<div class="mk-brand"><div class="mk-brand-ic">${esc((p.brand||'?').slice(0,2).toUpperCase())}</div><div class="mk-brand-b"><div class="mk-brand-n">${esc(p.brand)}</div>${p.note?`<div class="muted" style="font-size:12px">${esc(p.note)}</div>`:''}</div>${p.url?`<a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener" class="mk-brand-link">↗</a>`:''}</div>`).join("")}</div>`
     : `<div class="muted" style="padding:8px">No collaborations yet — click <b>Edit</b> to showcase brands you've worked with.</div>`;
 
-  // Rate card (editable)
-  const rates = Array.isArray(E.rate_card)?E.rate_card:[];
-  const rateHtml = rates.length
-    ? `<table class="mk-rates"><tbody>${rates.map(r=>`<tr><td>${esc(r.item)}</td><td class="mk-rate-p">${/^\s*[\d,.]+\s*$/.test(String(r.price||"")) ? "₹"+fmtNum(String(r.price).replace(/[^\d.]/g,"")) : esc(r.price)}</td></tr>`).join("")}</tbody></table>`
-    : `<div class="muted" style="padding:8px">No rate card yet — click <b>Edit</b> to add your rates.</div>`;
-
   return `<div class="mk-kit">
     <div class="mk-cover">
       <div class="mk-cover-grad"></div>
@@ -2967,15 +3047,8 @@ function mkHead(a){
       ${tile(fmtNum(a.media_count),"Total posts")}
     </div>
 
-    <div class="mk-cols">
-      <div class="card mk-section"><div class="mk-sec-head"><h3>Audience</h3></div>
-        ${hasAudience ? `
-          ${audGA.length?`<div class="mk-sub">Age &amp; gender</div>${audGA.map(x=>barRow(x.k,x.pct)).join("")}`:''}
-          ${audCountries.length?`<div class="mk-sub" style="margin-top:12px">Top countries</div>${audCountries.map(x=>barRow(x.k,x.pct)).join("")}`:''}
-          ${audCities.length?`<div class="mk-sub" style="margin-top:12px">Top cities</div>${audCities.map(x=>barRow(x.k,x.pct)).join("")}`:''}
-        ` : `<div class="muted" style="padding:8px">Audience demographics appear automatically once your Instagram Insights sync (needs 100+ followers and approved insights access).</div>`}
-      </div>
-      <div class="card mk-section"><div class="mk-sec-head"><h3>Rate card</h3>${editBtn("ratecard")}</div>${rateHtml}</div>
+    <div class="card mk-section mk-aud-card"><div class="mk-sec-head"><h3>Audience</h3></div>
+      ${(window.mkAudienceHtml && window.mkAudienceHtml(a.audience)) || `<div class="muted" style="padding:8px">Audience demographics appear automatically once your Instagram Insights sync (needs 100+ followers and approved insights access).</div>`}
     </div>
 
     ${tops?`<div class="card mk-section"><h3>Top performing posts</h3><div class="mk-grid">${tops}</div></div>`:""}
@@ -3232,17 +3305,35 @@ async function mkCampaignWork(acct){
 function wireMkHead(acct){
   mkCampaignWork(acct);
   const share = document.getElementById("mkShare");
-  if(share) share.onclick = async ()=>{
-    const url = location.origin + location.pathname.replace(/[^/]*$/,"") + "p.html?u=" + encodeURIComponent(acct.username||"");
-    try{ await navigator.clipboard.writeText(url); share.textContent="Copied!"; setTimeout(()=>share.textContent="Share kit",1500); }
-    catch(e){ prompt("Your public media kit link:", url); }
-  };
+  if(share) share.onclick = ()=> openKitShare(acct);
   const cta = document.getElementById("mkComposeCta");
   if(cta) cta.onclick = ()=>{
     if(window.__profileGate){ gateToast("Complete your profile first to post from Geek OS."); return; }
     const c=document.getElementById("mkComposer"); if(c){ c.scrollIntoView({behavior:"smooth"}); return; }
     currentPage = "instagram"; renderShell(); };
   document.querySelectorAll("#mkHeadWrap [data-mkedit]").forEach(b=> b.onclick = ()=> openMkEdit(b.dataset.mkedit, acct));
+}
+// Share the public media kit: anyone with the link sees only the kit (no login).
+function kitPublicUrl(acct){ return (window.appOrigin ? window.appOrigin() : location.origin) + "/kit/" + encodeURIComponent(String(acct.username||"").replace(/^@/,"")); }
+function openKitShare(acct){
+  if(!acct || !acct.username){ alert("Connect Instagram first — your kit link uses your Instagram username."); return; }
+  const url = kitPublicUrl(acct);
+  let m = document.getElementById("kitShareModal"); if(m) m.remove();
+  m = el("div","modal-overlay open"); m.id = "kitShareModal";
+  m.innerHTML = `<div class="modal"><div class="modal-head"><strong>Share your media kit</strong><button class="icon-btn" id="ksClose">✕</button></div>
+    <div class="modal-form"><p class="muted" style="margin:0 0 10px">Anyone with this link can see your media kit — no login needed. They see only the kit.</p>
+      <div style="display:flex;gap:8px"><input id="ksUrl" readonly value="${esc(url)}" style="flex:1"><button class="btn" id="ksCopy">Copy</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <a class="btn ghost" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent("My media kit: "+url)}">💬 Share on WhatsApp</a>
+        <a class="btn ghost" target="_blank" rel="noopener" href="${esc(url)}">👀 Open as a brand sees it</a></div></div></div>`;
+  document.body.appendChild(m);
+  const close = ()=> m.remove();
+  m.querySelector("#ksClose").onclick = close; m.onclick = e=>{ if(e.target===m) close(); };
+  m.querySelector("#ksCopy").onclick = async e=>{
+    const b = e.currentTarget, i = m.querySelector("#ksUrl");
+    try{ await navigator.clipboard.writeText(url); }catch(_e){ i.select(); document.execCommand && document.execCommand("copy"); }
+    b.textContent = "Copied ✓"; setTimeout(()=> b.textContent = "Copy", 1500);
+  };
 }
 async function mkFetchAcct(){
   const memberId = (window.Auth && Auth.profile && Auth.profile.id) || null;
@@ -6012,20 +6103,49 @@ function renderAiChat(){
   if(form) form.onsubmit=e=>{ e.preventDefault(); const v=$("#aiInput").value.trim(); if(v) sendAiMessage(v); };
   const inp=$("#aiInput"); if(inp) inp.focus();
 }
+// Built-in assistant (no outside AI, no API key). Creators get answers from their own campaigns' data
+// (brief, contract, step, deadline, courier); brands / agencies get a short how-to.
+const AI_ACTION_ORDER = ["changes_requested","content_created","contract_sent","contract_signed","content_approved","product_sent","invited",
+  "content_submitted","address_confirmed","published","brand_confirmed","accepted","sent_to_brand","shortlisted","eligible","applied","completed"];
+async function builtInAnswer(text){
+  const hi = window.CampaignHelper ? CampaignHelper.isHinglish(text) : false;
+  const T = (h,e)=> hi ? h : e;
+  if(currentRole !== "creator"){
+    const q = text.toLowerCase();
+    if(/delete|hata|remove/.test(q)) return T("Campaign kholo → **🗑 Request delete** dabao aur wajah likho. Super Admin approve karega tab campaign delete hoga.",
+                                              "Open the campaign → tap **🗑 Request delete** and add a reason. It's deleted once the Super Admin approves.");
+    if(/bulk|sheet|upload|excel|csv/.test(q)) return T("Campaign kholo → **📥 Bulk upload creators**. Wahan sheet ka template aur guide hai — naam, WhatsApp number, email, Instagram aur 'approved' tick bharo.",
+                                              "Open the campaign → **📥 Bulk upload creators**. The sheet template and guide are there — name, WhatsApp number, email, Instagram and the 'approved' tick.");
+    if(/invite|creator dh|find|discover|search/.test(q)) return T("**Discover** mein category / followers se creators dhoondo, ya campaign mein **🎯 Invite creators** dabao.",
+                                              "Use **Discover** to find creators by category / followers, or tap **🎯 Invite creators** in a campaign.");
+    if(/new campaign|campaign bana|create campaign|naya campaign/.test(q)) return T("**Campaigns → New campaign** — brand, product, deliverables, brief aur contract terms bharo. Phir creators jodo.",
+                                              "**Campaigns → New campaign** — fill brand, product, deliverables, brief and contract terms, then add creators.");
+    if(/whatsapp|message|template|notification/.test(q)) return T("Har step ka update creators ko WhatsApp + email + app pe apne aap jaata hai. Delivery status Super Admin → **WhatsApp & email** mein dikhta hai.",
+                                              "Every step's update reaches creators on WhatsApp + email + the app automatically. Delivery status is in Super Admin → **WhatsApp & email**.");
+    return T("Main campaigns mein madad karta hoon: naya campaign, creators jodna (bulk upload / invite), process aur delete request. Kya karna hai, likho.",
+             "I help with campaigns: creating one, adding creators (bulk upload / invite), the process and delete requests. Tell me what you need.");
+  }
+  if(!window.CampaignHelper) return T("Helper load ho raha hai — ek pal mein dobara poochho.","The helper is still loading — ask again in a moment.");
+  const { data } = await sb.schema("api").rpc("get_my_campaigns");
+  const mine = Array.isArray(data) ? data : [];
+  if(!mine.length) return T("Abhi aapke account pe koi campaign nahi hai. **Campaigns** mein jaake apply karo — select hote hi har update WhatsApp pe aayega.",
+                            "You don't have a campaign yet. Go to **Campaigns** and apply — once selected, every update comes on WhatsApp.");
+  const ql = text.toLowerCase();
+  const c = mine.find(x=>[x.campaign,x.brand,x.product].some(n=> n && String(n).length>2 && ql.includes(String(n).toLowerCase())))
+    || mine.slice().sort((a,b)=>((AI_ACTION_ORDER.indexOf(a.stage)+1)||99)-((AI_ACTION_ORDER.indexOf(b.stage)+1)||99))[0];
+  const { data:k } = await sb.schema("api").rpc("get_my_contract", { p_participation:c.participation_id }).then(r=>r, ()=>({data:null}));
+  const a = CampaignHelper.answer(text, c, k||null);
+  return (mine.length>1 ? `📌 **${c.campaign}${c.brand?" · "+c.brand:""}**\n\n` : "") + a.reply;
+}
 async function sendAiMessage(text){
   AI_HISTORY.push({role:"user", content:text});
   AI_HISTORY.push({role:"assistant", content:"…", _pending:true});
   renderAiChat();
   try{
-    if(!(window.sb && window.sb.functions)) throw new Error("Not connected.");
-    const ctx={ role:currentRole, roleLabel:ROLES[currentRole].name, page:(NAV_META[currentPage]&&NAV_META[currentPage].label)||currentPage,
-      name:(window.Auth&&Auth.profile&&Auth.profile.name)||"", org:(window.Auth&&Auth.profile&&Auth.profile.org)||"" };
-    const msgs=AI_HISTORY.filter(m=>!m._pending).map(m=>({role:m.role, content:m.content}));
-    const { data, error } = await sb.functions.invoke("ai-chat", { body:{ messages:msgs, context:ctx } });
-    if(error) throw new Error(await fnError(error));
-    if(data && data.error) throw new Error(data.error);
+    if(!window.sb) throw new Error("Not connected.");
+    const reply = await builtInAnswer(text);
     AI_HISTORY=AI_HISTORY.filter(m=>!m._pending);
-    AI_HISTORY.push({role:"assistant", content:(data&&data.reply)||"(no response)"});
+    AI_HISTORY.push({role:"assistant", content: reply || "(no answer)"});
   }catch(ex){
     AI_HISTORY=AI_HISTORY.filter(m=>!m._pending);
     AI_HISTORY.push({role:"assistant", content:"Sorry — the helper couldn't answer right now. "+(ex.message||ex)});

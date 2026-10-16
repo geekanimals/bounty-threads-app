@@ -861,10 +861,17 @@
       hist.push({role:"user",content:q}); hist.push({role:"assistant",content:"…",_p:true}); paint();
       var inp=document.getElementById("ccIn"); if(inp) inp.value="";
       try{
-        var r=await window.sb.functions.invoke("ai-chat",{ body:{ participation_id:part, messages:hist.filter(function(m){ return !m._p; }).map(function(m){ return {role:m.role,content:m.content}; }), context:{ role:"creator" } } });
-        var msg=null;
-        if(r.error){ try{ var j=await r.error.context.json(); msg=j&&j.error; }catch(e){} msg=msg||r.error.message||"Couldn't reach the helper."; }
-        else if(r.data&&r.data.error) msg=r.data.error;
+        // built-in helper: reads THIS campaign's own data fresh from the backend and answers from it (no outside AI)
+        var r={ data:null, error:null }, msg=null;
+        var cr=await api("get_my_campaigns");
+        var camp=((cr&&cr.data)||_mineCache||[]).filter(function(x){ return x.participation_id===part; })[0];
+        if(cr && cr.data) _mineCache=cr.data;
+        if(!camp) msg="This campaign isn't on your account any more.";
+        else if(!window.CampaignHelper) msg="The helper is still loading — try again in a moment.";
+        else {
+          var kr=await api("get_my_contract",{p_participation:part}).then(function(x){ return x; }, function(){ return {data:null}; });
+          r.data=window.CampaignHelper.answer(q, camp, (kr&&kr.data)||null);
+        }
         hist=AI_CHATS[part]=hist.filter(function(m){ return !m._p; });
         hist.push({role:"assistant",content: msg ? "Sorry — "+msg : ((r.data&&r.data.reply)||"(no answer)")});
         if(!msg && r.data && Array.isArray(r.data.suggestions)){ var sg=document.getElementById("ccSug"); if(sg){ sg.innerHTML=r.data.suggestions.filter(function(x){ return x!==q; }).slice(0,6).map(function(x){ return '<button type="button" class="cs-chip" data-ccq="'+esc(x)+'">'+esc(x)+'</button>'; }).join(""); sg.querySelectorAll("[data-ccq]").forEach(function(b){ b.onclick=function(){ ask(b.getAttribute("data-ccq")); }; }); } }

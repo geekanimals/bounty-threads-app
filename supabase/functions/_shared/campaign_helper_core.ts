@@ -15,13 +15,14 @@ const INTENTS: [string, string[]][] = [
   ["address", ["address", "pata ", "location", "pin code", "pincode"]],
   ["product", ["product", "parcel", "courier", "delivery", "deliver", "track", "tracking", "kab aayega", "kab ayega", "kab milega", "shipping", "dispatch", "ship", "gift", "received", "mila nahi", "nahi mila"]],
   ["deadline", ["deadline", "kab tak", "last date", "due", "kitne din", "how many days", "time limit", "date "]],
-  ["video", ["video", "shoot", "brief", "kya dikhana", "kya bolna", "content", "script", "reel bana", "idea", "do's", "dos", "dont", "don'ts", "kya karna hai video"]],
+  ["about", ["description", "details", "detail", "about the campaign", "about this campaign", "campaign kya hai", "campaign ke bare", "campaign ke baare", "bare mein", "baare mein", "kya hai ye", "what is this campaign", "tell me about", "brief", "requirement", "requirements", "eligibility"]],
+  ["video", ["video", "shoot", "kya dikhana", "kya bolna", "content", "script", "reel bana", "idea", "do's", "dos", "dont", "don'ts", "kya karna hai video"]],
   ["submit", ["submit", "drive", "upload", "link bhej", "send video", "bhejna", "kaise bheju", "kaise bhejna"]],
   ["changes", ["changes", "change ", "reject", "approve", "approval", "approved", "review", "naya link", "new link", "redo"]],
   ["post", ["post", "caption", "hashtag", "tag", "mention", "collab", "collaborator", "upload on insta", "instagram pe", "story", "publish"]],
   ["adrights", ["ad rights", "usage", "whitelist", "ads ", "advert", "rights"]],
   ["feedback", ["feedback", "complete", "rating", "khatam", "finish"]],
-  ["brand", ["brand", "kaun hai", "about", "company"]],
+  ["brand", ["brand kaun", "kaun sa brand", "konsa brand", "which brand", "brand name", "brand ka naam", "company kaun", "which company"]],
   ["human", ["call", "team", "human", "support", "baat kar", "contact", "number", "whatsapp", "help me"]],
   ["next", ["kya karna", "next", "ab kya", "what do i do", "what should i do", "aage", "step", "status", "kaha tak", "kahan tak", "update", "kya hua", "progress"]],
 ];
@@ -77,8 +78,19 @@ export function campaignHelperAnswer(question: string, c: Any, k: Any | null): H
   const hi = isHinglish(question);
   const T = (h: string, e: string) => (hi ? h : e);
   let intents = detectIntents(question);
-  if (!intents.length) intents = ["next"];
+  if (!intents.length) {
+    // nothing matched a topic → look for the answer inside this campaign's own brief / video brief / contract
+    const hit = briefSearch(question, c, k);
+    if (hit.length) {
+      const stage0 = String(c.stage || "");
+      const nxt = STEP[stage0] ? T(STEP[stage0][0], STEP[stage0][1]) : "";
+      return { reply: `**${T("Campaign brief mein likha hai", "From this campaign's brief")}:**\n${hit.map((x) => "• " + x).join("\n")}` + (nxt ? `\n\n**${T("Abhi aapka step", "Your step now")}:** ${nxt}` : ""),
+               intents: ["brief_search"], suggestions: suggestionsFor(hi) };
+    }
+    intents = ["next"];
+  }
   // keep the answer short: at most the two most specific topics
+  if (intents.includes("about") && intents.includes("video") && c.video_brief) intents = intents.filter((x) => x !== "about");
   // "video" is a generic word — when the question is really about submitting, the deadline or posting, answer that
   if (intents.length > 1 && intents.some((x) => ["submit", "deadline", "changes", "blocked", "post"].includes(x))) intents = intents.filter((x) => x !== "video");
   intents = intents.filter((x) => !(x === "next" && intents.length > 1)).slice(0, 2);
@@ -105,6 +117,20 @@ export function campaignHelperAnswer(question: string, c: Any, k: Any | null): H
                        `⏳ Video due: **${fmtDate(c.deadline)}**${d != null ? ` (${d >= 0 ? d + " days left" : "overdue"})` : ""}.`));
         }
         break;
+      case "about": {
+        const dates = [c.starts_on, c.ends_on].filter(Boolean).map(fmtDate).join(" → ");
+        const l = [
+          `**${c.campaign || T("Campaign", "Campaign")}**${c.brand ? ` · ${c.brand}` : ""}${c.org_name ? ` (${c.org_name})` : ""}`,
+          c.brief ? String(c.brief).slice(0, 900) : "",
+          c.product ? T(`🎁 Product: **${c.product}**${c.product_value ? ` (₹${c.product_value})` : ""}`, `🎁 Product: **${c.product}**${c.product_value ? ` (₹${c.product_value})` : ""}`) : "",
+          deliver ? T(`📦 Banana hai: **${deliver}**`, `📦 Deliverables: **${deliver}**`) : "",
+          tags.length ? T(`#️⃣ Caption mein: ${tags.join(" ")}`, `#️⃣ In your caption: ${tags.join(" ")}`) : "",
+          dates ? T(`📅 Campaign: ${dates}`, `📅 Runs: ${dates}`) : "",
+          c.product_link ? `🔗 ${c.product_link}` : "",
+        ].filter(Boolean);
+        parts.push(l.join("\n"));
+        break;
+      }
       case "contract": {
         if (!k) { parts.push(T("Contract abhi bana nahi hai — select hone ke baad card pe aa jayega.", "Your contract isn't issued yet — it appears on the card once you're selected.")); break; }
         const lines = [
@@ -220,8 +246,28 @@ export function campaignHelperAnswer(question: string, c: Any, k: Any | null): H
   }
   if (!parts.length) parts.push(`**${T("Ab aapko yeh karna hai", "What to do now")}:** ${step}`);
 
-  const sug = hi
-    ? ["Ab mujhe kya karna hai?", "Contract simple mein samjhao", "Video mein kya dikhana hai?", "Product kab aayega?", "Deadline kab hai?", "Kaise post karun?", "Payment milega?"]
-    : ["What do I do next?", "Explain my contract", "What should my video show?", "When does my product arrive?", "When is the deadline?", "How do I post?", "Will I get paid?"];
-  return { reply: parts.join("\n\n"), intents, suggestions: sug };
+  return { reply: parts.join("\n\n"), intents, suggestions: suggestionsFor(hi) };
+}
+
+function suggestionsFor(hi: boolean): string[] {
+  return hi
+    ? ["Ab mujhe kya karna hai?", "Campaign ki details batao", "Contract simple mein samjhao", "Video mein kya dikhana hai?", "Product kab aayega?", "Deadline kab hai?", "Kaise post karun?"]
+    : ["What do I do next?", "Tell me about this campaign", "Explain my contract", "What should my video show?", "When does my product arrive?", "When is the deadline?", "How do I post?"];
+}
+
+const STOP = new Set(["the","and","for","with","this","that","what","when","where","which","have","will","from","your","about","there","their","then","than","into","kya","hai","hain","mera","mere","mujhe","karna","kaise","kab","kitna","bhai","please","batao","bata","campaign","video","koi","kuch","aur","yeh","woh","nahi","does","should","would","could","can","are","you","how","why","who"]);
+const words = (t: string) => norm(t).trim().split(" ").filter((w) => w.length > 2 && !STOP.has(w));
+
+// the 1–2 lines of this campaign's own text that best match the question
+export function briefSearch(question: string, c: Any, k: Any | null): string[] {
+  const q = new Set(words(question));
+  if (!q.size) return [];
+  const vb = c.video_brief || {};
+  const src: string[] = [c.brief, vb.what_to_shoot, vb.key_messages, vb.dos && "Do's: " + vb.dos, vb.donts && "Don'ts: " + vb.donts,
+    vb.posting_note, vb.caption && "Caption: " + vb.caption, c.deliverables_text,
+    ...((k && Array.isArray(k.clauses)) ? k.clauses.map((x: Any) => `${x.title}: ${x.text}`) : [])].filter(Boolean).map(String);
+  const lines = src.flatMap((t) => t.replace(/([.!?])\s+/g, "$1\n").split(/\n+/)).map((x) => x.trim()).filter((x) => x.length > 8);
+  const scored = lines.map((l) => ({ l, n: words(l).filter((w) => q.has(w) || [...q].some((qw) => qw.length > 4 && (w.startsWith(qw) || qw.startsWith(w)))).length }))
+    .filter((x) => x.n > 0).sort((a, b) => b.n - a.n);
+  return scored.slice(0, 2).map((x) => x.l.slice(0, 300));
 }

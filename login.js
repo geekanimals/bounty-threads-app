@@ -4,12 +4,12 @@
 // Super Admin approval queue; they can't enter the OS until approved. Super Admin is verified server-side
 // (is_platform_admin) — the tab is only a door, never the authority.
 
-const LOGIN_ROLES = [
-  ["creator","Creator","📸"],
-  ["owner","Agency Owner","🏢"],
-  ["brand","Brand","🛍️"],
-  ["admin","Super Admin","🛡️"]
-];
+// The Super Admin door is NOT on the normal login screen — it opens only at <site>/superadmin
+// (Vercel rewrites /superadmin → app.html). Everyone else sees Creator · Agency Owner · Brand.
+const ADMIN_DOOR = /^\/superadmin\/?$/i.test(location.pathname);
+const LOGIN_ROLES = ADMIN_DOOR
+  ? [["admin","Super Admin","🛡️"]]
+  : [["creator","Creator","📸"], ["owner","Agency Owner","🏢"], ["brand","Brand","🛍️"]];
 
 // If the user arrived via a team-invite link, capture the token — signup passes it so the
 // server-side trigger lets them join the inviting org (email match alone is not enough).
@@ -92,7 +92,7 @@ function loginView(role, mode){
         <div><div class="brand-name">Geek Influencer OS</div>
         <div class="muted">Creators, agencies & brands — one platform</div></div>
       </div>
-      <div class="auth-tabs auth-roles" style="flex-wrap:wrap">${tabs}</div>
+      ${ADMIN_DOOR ? `<h3 style="margin:6px 0 2px">🛡️ Super Admin</h3>` : `<div class="auth-tabs auth-roles" style="flex-wrap:wrap">${tabs}</div>`}
       ${body}
     </div>
     <div class="auth-side">
@@ -109,10 +109,12 @@ function loginView(role, mode){
   </div>`;
 }
 
-let _loginRole = INVITE_TOKEN ? "owner" : "creator";
+let _loginRole = ADMIN_DOOR ? "admin" : (INVITE_TOKEN ? "owner" : "creator");
 
 function mountLogin(mode="login", role){
   if(role) _loginRole = role;
+  if(ADMIN_DOOR) _loginRole = "admin";
+  else if(_loginRole === "admin") _loginRole = "creator";   // the admin form never shows on the public login
   const root = document.getElementById("authRoot");
   root.innerHTML = loginView(_loginRole, mode);
   root.classList.add("open");
@@ -172,5 +174,5 @@ async function startApp(){
   if(window.__igLoggingIn){ return; } // Instagram callback is finishing — don't flash login
   const session = await Auth.currentSession();
   if(session){ bootOS(); }
-  else { mountLogin(INVITE_TOKEN ? "signup" : "login"); }
+  else { mountLogin(INVITE_TOKEN && !ADMIN_DOOR ? "signup" : "login"); }
 }

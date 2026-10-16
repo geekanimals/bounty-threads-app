@@ -7,7 +7,7 @@
   <meta name="description" content="A creator media kit, powered by Geek Influencer OS.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="/styles.css">
   <style>
     body{background:var(--bg,#f7f8fc);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
     .pub-wrap{max-width:760px;margin:0 auto;padding:24px 18px 60px}
@@ -22,16 +22,13 @@
 </head>
 <body>
 <div class="pub-wrap">
-  <div class="pub-top">
-    <a href="index.html" class="pub-brand"><span class="pub-mark">G</span> Geek Influencer OS</a>
-    <a href="app.html" class="pub-cta">Build your own kit →</a>
-  </div>
   <div id="kit"><div class="pub-loading">Loading media kit…</div></div>
-  <div class="pub-foot">This media kit is powered by <a href="index.html">Geek Influencer OS</a> — the OS for creators, brands &amp; agencies.</div>
+  <div class="pub-foot">Media kit · <a href="/">Geek Influencer OS</a></div>
 </div>
 
 <script src="/api/config"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/mk-audience.js"></script>
 <script>
 const SUPABASE_URL = (window.GEEK_CONFIG && GEEK_CONFIG.supabaseUrl) || 'https://edibibytqfrrxfztukpm.supabase.co';
 const SUPABASE_KEY = (window.GEEK_CONFIG && GEEK_CONFIG.supabaseKey) || 'sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf';
@@ -68,8 +65,6 @@ function renderKit(a){
   const mCards=mentions.slice(0,6).map(m=>{const img=m.media_type==="VIDEO"?(m.thumbnail_url||m.media_url):m.media_url;return `<a href="${esc(safeUrl(m.permalink))}" target="_blank" rel="noopener" class="mk-post"><img src="${esc(safeUrl(img))}" alt="" loading="lazy"><span class="mk-meta">@${esc(m.username)||"tagged"}</span></a>`;}).join("");
   const portfolio=Array.isArray(E.portfolio)?E.portfolio:[];
   const portHtml=portfolio.length?`<div class="mk-portfolio">${portfolio.map(p=>`<div class="mk-brand"><div class="mk-brand-ic">${esc((p.brand||'?').slice(0,2).toUpperCase())}</div><div class="mk-brand-b"><div class="mk-brand-n">${esc(p.brand)}</div>${p.note?`<div class="muted" style="font-size:12px">${esc(p.note)}</div>`:''}</div>${p.url?`<a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener" class="mk-brand-link">↗</a>`:''}</div>`).join("")}</div>`:"";
-  const rates=Array.isArray(E.rate_card)?E.rate_card:[];
-  const rateHtml=rates.length?`<table class="mk-rates"><tbody>${rates.map(r=>`<tr><td>${esc(r.item)}</td><td class="mk-rate-p">${esc(r.price)}</td></tr>`).join("")}</tbody></table>`:"";
 
   return `<div class="mk-kit">
     <div class="mk-cover"><div class="mk-cover-grad"></div><div class="mk-hero">
@@ -79,10 +74,7 @@ function renderKit(a){
       ${headline?`<div class="mk-headline">${esc(headline)}</div>`:''}${bio?`<div class="mk-bio">${esc(bio)}</div>`:""}
       ${a.website?`<a class="mk-web" href="${esc(safeUrl(a.website))}" target="_blank" rel="noopener">🔗 ${esc(a.website)}</a>`:""}</div></div></div>
     <div class="mk-tiles">${tile(fmtNum(a.followers_count),"Followers","hero")}${tile(engStr,"Avg. engagement")}${tile(reachStr,"Avg. reach / post")}${tile(fmtNum(avgLikes),"Avg. likes")}${tile(fmtNum(a.media_count),"Total posts")}</div>
-    <div class="mk-cols">
-      <div class="card mk-section"><div class="mk-sec-head"><h3>Audience</h3></div>${hasAud?`${audGA.length?`<div class="mk-sub">Age &amp; gender</div>${audGA.map(x=>bar(x.k,x.pct)).join("")}`:''}${audC.length?`<div class="mk-sub" style="margin-top:12px">Top countries</div>${audC.map(x=>bar(x.k,x.pct)).join("")}`:''}${audCity.length?`<div class="mk-sub" style="margin-top:12px">Top cities</div>${audCity.map(x=>bar(x.k,x.pct)).join("")}`:''}`:`<div class="muted" style="padding:8px">Audience insights not available.</div>`}</div>
-      ${rateHtml?`<div class="card mk-section"><div class="mk-sec-head"><h3>Rate card</h3></div>${rateHtml}</div>`:`<div class="card mk-section"><div class="mk-sec-head"><h3>Work with ${esc((a.name||a.username||"me").split(" ")[0])}</h3></div><div class="muted" style="padding:8px">Reach out on Instagram to collaborate.</div></div>`}
-    </div>
+    ${(window.mkAudienceHtml && window.mkAudienceHtml(a.audience)) ? `<div class="card mk-section mk-aud-card"><div class="mk-sec-head"><h3>Audience</h3></div>${window.mkAudienceHtml(a.audience)}</div>` : ""}
     ${tops?`<div class="card mk-section"><h3>Top performing posts</h3><div class="mk-grid">${tops}</div></div>`:""}
     ${portHtml?`<div class="card mk-section"><div class="mk-sec-head"><h3>Work portfolio</h3></div>${portHtml}</div>`:""}
     ${mCards?`<div class="card mk-section"><h3>Mentions</h3><div class="mk-grid">${mCards}</div></div>`:""}
@@ -91,15 +83,17 @@ function renderKit(a){
 }
 
 (async function(){
-  const u = new URLSearchParams(location.search).get("u");
+  const m = /^\/kit\/([^/?#]+)/i.exec(location.pathname);
+  const u = (m ? decodeURIComponent(m[1]) : new URLSearchParams(location.search).get("u") || "").replace(/^@/,"").trim();
   const root = document.getElementById("kit");
-  if(!u){ root.innerHTML = `<div class="pub-empty">No creator specified.</div>`; return; }
+  if(!u){ root.innerHTML = `<div class="pub-empty">This media kit link is incomplete.</div>`; return; }
   if(!sb){ root.innerHTML = `<div class="pub-empty">Couldn't load.</div>`; return; }
   try{
     const { data, error } = await sb.rpc("public_profile", { p_username: u });
     const a = (data && data[0]) || null;
     if(error || !a){ root.innerHTML = `<div class="pub-empty">Media kit not found for “${esc(u)}”.</div>`; return; }
     document.title = `${a.name || a.username} — Media Kit`;
+    const md=document.querySelector('meta[name=description]'); if(md) md.setAttribute('content', `${a.name||a.username} (@${a.username}) — ${fmtNum(a.followers_count)} followers. Media kit.`);
     root.innerHTML = renderKit(a);
   }catch(e){ root.innerHTML = `<div class="pub-empty">Couldn't load this media kit.</div>`; }
 })();

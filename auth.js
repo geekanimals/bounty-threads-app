@@ -108,7 +108,8 @@ const Auth = {
     await sb.auth.signOut();
     this.profile = null;
     this.user = null;
-    location.href = 'index.html';
+    // a Super Admin goes back to their own door, everyone else to the home page
+    location.href = (window.__isAdmin || /^\/superadmin\/?$/i.test(location.pathname)) ? '/superadmin' : 'index.html';
   },
 
   isDemo() { return false; }
