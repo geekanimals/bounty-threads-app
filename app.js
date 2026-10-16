@@ -3942,7 +3942,7 @@ function bulkHtml(){
 }
 function bkWaLine(){
   const w = _bk.wa; if(!w || w==="loading") return "";
-  if(w.whatsapp) return `<div class="bk-wa ok">✅ WhatsApp + email invites are on <span class="muted">(invite template <code>${bkEsc(w.invite_template||"geek_campaign_access")}</code> · every later update on <code>${bkEsc(w.update_template==="geek_campaign_update"||!w.update_template?"geek_campaign_step":w.update_template)}</code>)</span></div>`;
+  if(w.whatsapp) return `<div class="bk-wa ok">✅ WhatsApp + email invites are on <span class="muted">(invite template <code>${bkEsc(w.invite_template||"geek_campaign_access")}</code> · every step update on its own <code>geek_step_*</code> template)</span></div>`;
   return `<div class="bk-wa warn">⚠️ <b>WhatsApp invites are waiting</b> — the WhatsApp template isn't set yet, so invites go by <b>email</b> now and on WhatsApp automatically the moment it's set.
     ${w.is_admin ? `<a href="#" id="bkSetWa">Set the template now →</a>` : `Ask the Geek Super Admin to set it (Super Admin → WhatsApp &amp; email).`}</div>`;
 }
@@ -5148,7 +5148,7 @@ async function adminWaTemplates(){
     rejected:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">rejected</span>'})[st]||esc(st);
   box.innerHTML = `<h3 style="margin-top:0">WhatsApp templates · one per campaign <span class="muted" style="font-size:12px;font-weight:400">· category Utility · footer “Reply STOP…”</span></h3>
     <p class="muted" style="font-size:12.5px;margin:0 0 10px">One per campaign, written from the campaign's name and brand, made the moment a campaign is created. Each creator gets their campaign's updates on that campaign's template once approved — held messages then go out on their own.</p>
-    <div class="wa-auto ok" style="margin-bottom:10px">💌 <b>Every campaign invite</b> (Invite creators, bulk upload, Instagram-handle invites — by Super Admin, agency or brand) goes on <code>geek_campaign_access</code>: name · campaign · brand · app link. <b>Every step update</b> goes on <code>geek_campaign_step</code> (“Hi … Thank you for … Next, please … Once that is done, we will …”) — the same words go by email. While a template waits for Meta, <code>${WA_UPD_NAME}</code> is the automatic backup.</div>
+    <div class="wa-auto ok" style="margin-bottom:10px">💌 <b>Every campaign invite</b> (Invite creators, bulk upload, Instagram-handle invites — by Super Admin, agency or brand) goes on <code>geek_campaign_access</code>: name · campaign · brand · app link. <b>Every step update</b> has its own UTILITY template — <code>geek_step_contract</code>, <code>geek_step_address</code>, <code>geek_step_shipped</code>, <code>geek_step_brief</code>, <code>geek_step_video_due</code>, <code>geek_step_video_overdue</code>, <code>geek_step_on_hold</code>, <code>geek_step_changes</code>, <code>geek_step_approved</code>, <code>geek_step_caption</code>, <code>geek_step_feedback</code>, <code>geek_step_completed</code> and <code>geek_team_update</code> for the team (“Hi … Thank you for … Next, please … Once that is done, we will …”) — the same words go by email. While a template waits for Meta, <code>${WA_UPD_NAME}</code> is the automatic backup.</div>
     ${modeBox}
     ${L.length?`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Campaign</th><th>Template name</th><th>Text</th><th>Status</th><th></th></tr></thead><tbody>
     ${L.map(t=>`<tr><td><b>${esc(t.campaign||"")}</b><div class="muted" style="font-size:12px">${esc(t.brand||"")}</div></td>
