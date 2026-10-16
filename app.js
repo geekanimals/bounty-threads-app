@@ -3766,45 +3766,58 @@ const BK_FIELDS = [
   ["courier","Courier", /(courier|carrier|delivery partner|shipping partner)/i],
   ["tracking","Tracking", /(track|awb|consignment|docket|waybill)/i]
 ];
-// each creator can already be on a different step — the sheet's Status column says which
+// each creator can already be on any step — the sheet's Status column uses these exact words (= the Barter process steps)
+// [key, write this in the sheet, what happens, message the creator gets]
 const BK_STATUSES = [
-  ["invited","Invited","gets the campaign with an Apply button"],
-  ["approved","Approved","contract goes out straight away"],
-  ["contract_signed","Contract signed","next: confirm delivery address"],
-  ["address_confirmed","Address confirmed","next: you add the courier"],
-  ["courier_sent","Courier sent","next: creator taps Received"],
-  ["courier_received","Courier received","video brief unlocks · video deadline starts"]];
+  ["registered","Registered","added to the campaign, waiting for screening","no message"],
+  ["screened","Screened","checked against the brand's criteria","no message"],
+  ["sent_to_brand","Sent to brand","on the brand's final list","no message"],
+  ["approved","Approved","brand said yes → contract goes out","Invite (geek_campaign_access)"],
+  ["contract_sent","Contract sent","creator signs it in the app","Sign your contract"],
+  ["contract_signed","Contract signed","next: creator confirms the address","Confirm your address"],
+  ["address_confirmed","Address confirmed","next: you add the courier","no message"],
+  ["courier_sent","Courier sent","next: creator taps Received","Product shipped"],
+  ["courier_delivered","Courier delivered","video brief goes out · video deadline starts today","Video brief"],
+  ["video_brief_sent","Video brief sent","video deadline starts today (campaign's days) + reminders","Video brief"],
+  ["video_submitted","Video submitted","waiting for the brand's review","no message"],
+  ["client_approved","Client approved","next: creator posts it","Video approved — post it"],
+  ["posted","Posted","next: creator's feedback","Share your feedback"],
+  ["done","Done","campaign complete for them","Campaign complete"]];
 const bkStLabel = k => (BK_STATUSES.find(x=>x[0]===k)||BK_STATUSES[0])[1];
+const bkStMsg = k => (BK_STATUSES.find(x=>x[0]===k)||BK_STATUSES[0])[3];
+const bkStRank = k => Math.max(0, BK_STATUSES.findIndex(x=>x[0]===k)) + 1;
 // same reading as the database (intel.ci_bulk_status): null = not understood
 function bkStatus(v){
-  const t = String(v==null?"":v).trim().toLowerCase();
-  if(!t || /^(invited|invite|new|pending|apply|to apply|no|-|—|not approved)$/.test(t)) return "invited";
-  if(/(receiv|deliver|recieved|in hand|got it|reached)/.test(t)) return "courier_received";
-  if(/(courier|ship|dispatch|sent|transit|awb|on the way|out for)/.test(t)) return "courier_sent";
-  if(/address/.test(t)) return "address_confirmed";
-  if(/(contract|sign)/.test(t)) return "contract_signed";
-  if(/^(y|yes|approved?|selected|confirmed?|final|done|ok|okay|true|1|✓|✔|☑|x|shortlisted|brand approved)$/.test(t)) return "approved";
+  const t = String(v==null?"":v).trim().toLowerCase().replace(/^\d+\s*[.)-]?\s*/,"").replace(/\s+/g," ");
+  const M = { registered:["","registered","register","applied","invited","invite","new","pending","-","—"], screened:["screened","eligible","shortlisted"],
+    sent_to_brand:["sent to brand","sent to the brand","with brand"], approved:["approved","brand confirmed","brand approved","selected","confirmed","yes","y","ok","final","✓","✔"],
+    contract_sent:["contract sent","contract"], contract_signed:["contract signed","signed"], address_confirmed:["address confirmed","address","address done"],
+    courier_sent:["courier sent","shipped","dispatched","in transit","product sent"],
+    courier_delivered:["courier delivered","courier received","delivered","received","product received","product delivered"],
+    video_brief_sent:["video brief sent","brief sent","video brief"], video_submitted:["video submitted","submitted","video sent"],
+    client_approved:["client approved","video approved","content approved"], posted:["posted","live","published","reel posted"], done:["done","completed","complete"] };
+  for(const k in M) if(M[k].includes(t)) return k;
   return null;
 }
-const bkNeedsAddr = k => ["address_confirmed","courier_sent","courier_received"].includes(k);
+const bkNeedsAddr = k => { const r = bkStRank(k); return r>=7 && r<=9; };
 const BK_SAMPLE = [
   ["Name","Instagram","WhatsApp","Email","City","Status","Address","State","PIN code","Courier","Tracking"],
   ["Asha Rao","@asha.creates","9876543210","asha@example.com","Mumbai","Approved","","","","",""],
   ["Rohan Mehta","https://instagram.com/rohan.eats","+91 98111 22233","rohan@example.com","Delhi","",""," ","","",""],
   ["Meera Shah","meera.styles","9000011111","","Pune","Address confirmed","Flat 4B, Lake View, Koregaon Park","Maharashtra","411001","",""],
   ["Kabir Sen","@kabir.cooks","9830012345","kabir@example.com","Kolkata","Courier sent","12 Park St","West Bengal","700016","DTDC","D12345678"],
-  ["Nisha Jain","nisha.home","9123456780","","Jaipur","Courier received","22 C-Scheme","Rajasthan","302001","Delhivery","https://www.delhivery.com/track/package/1234"]].map(r=>r.map(c=>c.trim()));
+  ["Nisha Jain","nisha.home","9123456780","","Jaipur","Video brief sent","22 C-Scheme","Rajasthan","302001","Delhivery","https://www.delhivery.com/track/package/1234"]].map(r=>r.map(c=>c.trim()));
 const BK_GUIDE = [
   ["Name","Creator's name — their profile is made with it","Asha Rao","optional"],
   ["Instagram","@handle, handle or profile link — followers, name & photo are fetched automatically","@asha.creates","one of these 3"],
   ["WhatsApp","10-digit number (India) or +country code — the invite + all updates go here","9876543210","one of these 3"],
   ["Email","Their email — the invite goes here too","asha@example.com","one of these 3"],
   ["City","City","Mumbai","optional"],
-  ["Status","Where this creator is right now (see Statuses above). Blank = Invited","Courier sent","optional"],
-  ["Address","Delivery address — needed from “Address confirmed” onwards","12 Park St","for address+"],
+  ["Status","The exact step name (see Statuses above). Blank = Registered","Video brief sent","optional"],
+  ["Address","Delivery address — for Address confirmed / Courier sent / Courier delivered","12 Park St","for those 3"],
   ["State","State of the address","West Bengal","optional"],
   ["PIN code","6-digit PIN (we also find it inside the address)","700016","optional"],
-  ["Courier","Courier company — for “Courier sent” / “Courier received”","DTDC","optional"],
+  ["Courier","Courier company — for Courier sent / Courier delivered","DTDC","optional"],
   ["Tracking","Tracking ID or tracking link","D12345678","optional"]];
 async function bkDownloadXlsx(){
   await bkLoadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
@@ -3905,13 +3918,13 @@ function bkSetRows(rows, src){
       else if(_bk.map.handle==null && vals.filter(v=>/instagram\.com|^@/.test(v)).length >= Math.max(1, vals.length/3)) _bk.map.handle = i;
     }
   }
-  _bk.rows = body.map(r=> ({ cells: r, status: _bk.map.status!=null ? (bkStatus(r[_bk.map.status])||"invited") : "invited" }));
+  _bk.rows = body.map(r=> ({ cells: r, status: _bk.map.status!=null ? (bkStatus(r[_bk.map.status])||"registered") : "registered" }));
   _bk.src = src; _bk.preview = null;
 }
 function bkRowData(r){
   const g = k => _bk.map[k]!=null ? String(r.cells[_bk.map[k]]||"").trim() : "";
   return { name:g("name"), handle:g("handle"), phone:g("phone"), email:g("email"), city:g("city"), followers:g("followers"),
-           status: r.status||"invited", approved: (r.status||"invited")!=="invited",
+           status: r.status||"registered", approved: bkStRank(r.status||"registered")>=4,
            address:g("address"), state:g("state"), pincode:g("pincode"), courier:g("courier"), tracking:g("tracking") };
 }
 async function bkCheck(){
@@ -3928,30 +3941,33 @@ async function loadBulkList(){
 function bkStatusChip(p, r){
   if(!p) return '<span class="muted">…</span>';
   if(p.no_contact) return '<span class="tag warn">⚠ no WhatsApp / email / Instagram</span>';
-  const st = (r && r.status) || "invited";
+  const st = (r && r.status) || "registered";
   const bad = (p.phone_bad?" · number looks wrong":"") + (p.email_bad?" · email looks wrong":"");
   const warn = [bad.slice(3), r && r._addrMissing ? "add the address" : ""].filter(Boolean).join(" · ");
   const ig = p.ig && (p.ig.followers || p.ig.name) ? `<div class="muted bk-ig">📸 ${p.ig.name?bkEsc(p.ig.name)+" · ":""}${p.ig.followers?Number(p.ig.followers).toLocaleString("en-IN")+" followers":""}</div>` : "";
-  const land = st==="invited" ? "" : ` → <b>${bkEsc(bkStLabel(st))}</b>`;
+  const land = ` → <b>${bkEsc(bkStLabel(st))}</b>`;
   const main = p.on_platform
     ? (p.stage ? `<span class="tag">already in · ${bkEsc(String(p.stage).replace(/_/g," "))}${land}</span>`
                : `<span class="tag good">On Geek OS${p.who?` · ${bkEsc(p.who)}`:""} — added now${land}</span>`)
-    : `<span class="tag">New — invite on ${[p.phone?"WhatsApp":null, p.email?"email":null].filter(Boolean).join(" + ")||"Instagram only"}${land?` · lands on ${bkEsc(bkStLabel(st))}`:""}</span>`;
-  return main + (warn?`<span class="tag warn">${bkEsc(warn)}</span>`:"") + ig;
+    : `<span class="tag">New — joins on ${bkEsc(bkStLabel(st))} after sign-up</span>`;
+  const msg = bkStMsg(st), via = [p.phone?"WhatsApp":null, p.email?"email":null].filter(Boolean).join(" + ");
+  const msgTag = msg==="no message" ? `<div class="muted bk-ig">✉️ no message for this step</div>` : `<div class="muted bk-ig">✉️ sends: <b>${bkEsc(msg)}</b>${via?` on ${via}`:""}</div>`;
+  return main + (warn?`<span class="tag warn">${bkEsc(warn)}</span>`:"") + msgTag + ig;
 }
 function bkStatusSelect(attr, val, extra){
-  return `<select class="bk-stsel st-${bkEsc(val||"invited")}" ${attr}${extra||""}>${BK_STATUSES.map(([k,l])=>`<option value="${k}"${k===val?" selected":""}>${l}</option>`).join("")}</select>`;
+  const r = bkStRank(val), cls = !val ? "" : r<=3 ? "st-pre" : r<=6 ? "st-contract" : r<=9 ? "st-ship" : r<=12 ? "st-video" : "st-done";
+  return `<select class="bk-stsel ${cls}" ${attr}${extra||""}>${BK_STATUSES.map(([k,l],n)=>`<option value="${k}"${k===val?" selected":""}>${n+1}. ${l}</option>`).join("")}</select>`;
 }
 function bulkHtml(){
   const rows = _bk.rows||[], pv = Array.isArray(_bk.preview) ? _bk.preview : null;
   const valid = pv ? pv.filter(p=>!p.no_contact).length : rows.length;
   rows.forEach(r=>{ const d = bkRowData(r); r._addrMissing = bkNeedsAddr(r.status) && !d.address; });
   const live = rows.filter((r,i)=> !(pv && pv[i] && pv[i].no_contact));
-  const byStatus = BK_STATUSES.map(([k,l])=>[l, live.filter(r=>(r.status||"invited")===k).length]).filter(x=>x[1]);
+  const byStatus = BK_STATUSES.map(([k,l])=>[l, live.filter(r=>(r.status||"registered")===k).length]).filter(x=>x[1]);
   const noAddr = live.filter(r=>r._addrMissing).length;
   return `<div class="card bk-card">
       <h3 style="margin:0 0 4px">📥 Upload creators in bulk</h3>
-      <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Give every creator a <b>Status</b> — where they are right now. New creators always get the <b>invite</b> first → they register, connect Instagram (media kit) and complete their profile (pre-filled from your sheet) → then they join the campaign <b>right at their status</b>. Creators already on Geek OS with a complete profile are put on their step straight away.</div>
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Give every creator a <b>Status</b> — the exact step they are on (see the guide). They get <b>one message for that step</b>: <b>Approved</b> → the invite; a later step → only that step's message. Creators on Geek OS with a complete profile go on that step now; new ones register, connect Instagram and complete their profile (pre-filled from your sheet) and then land on their step. From there the normal flow and reminders carry on.</div>
       ${bkWaLine()}
       ${bkGuideHtml(!rows.length)}
       <div class="bk-src">
@@ -3974,7 +3990,7 @@ function bulkHtml(){
           const raw = _bk.map.status!=null ? String(r.cells[_bk.map.status]||"").trim() : "";
           const unread = raw && !bkStatus(raw);
           const ship = [d.address, [d.state, d.pincode].filter(Boolean).join(" "), [d.courier, d.tracking].filter(Boolean).join(" · ")].filter(Boolean).join(" · ");
-          return `<tr class="${p&&p.no_contact?"bk-bad":""}"><td>${bkStatusSelect(`data-bkst="${i}"`, r.status||"invited", p&&p.no_contact?" disabled":"")}${unread?`<div class="muted bk-raw" title="Couldn't read this status — pick it">“${bkEsc(raw.slice(0,24))}”?</div>`:""}</td>
+          return `<tr class="${p&&p.no_contact?"bk-bad":""}"><td>${bkStatusSelect(`data-bkst="${i}"`, r.status||"registered", p&&p.no_contact?" disabled":"")}${unread?`<div class="muted bk-raw" title="Couldn't read this status — pick it">“${bkEsc(raw.slice(0,24))}”?</div>`:""}</td>
             <td>${bkEsc(d.name)||'<span class="muted">—</span>'}</td><td>${p&&p.handle?"@"+bkEsc(p.handle):bkEsc(d.handle)}</td>
             <td>${p&&p.phone?bkEsc(p.phone):bkEsc(d.phone)}</td><td>${bkEsc(p&&p.email||d.email)}</td><td>${bkEsc(d.city)}</td>
             <td class="bk-ship">${ship?bkEsc(ship):'<span class="muted">—</span>'}</td>
@@ -4002,13 +4018,17 @@ function bkGuideHtml(open){
       <li><b>Download a template</b> below (Excel or CSV) — or copy it straight into a new Google Sheet.</li>
       <li><b>One creator per row.</b> Keep the first row as the column names.</li>
       <li>Every row needs <b>at least one of WhatsApp, Email or Instagram</b> — best is WhatsApp + email: the invite goes to both and all later updates go there.</li>
-      <li><b>Status</b> column: where each creator is <b>right now</b> — every row can be different. Write one of the statuses below (blank = <b>Invited</b>). You can also change it here before and after the upload.</li>
-      <li>From <b>Address confirmed</b> onwards add the <b>Address</b> (+ State, PIN code). For <b>Courier sent / received</b> add the <b>Courier</b> and <b>Tracking</b> ID or link.</li>
-      <li><b>What the creator does:</b> gets the <b>invite</b> on WhatsApp + email (whatever their status) → registers → <b>connects Instagram</b> (media kit) → <b>completes the profile</b> — name, city, email, WhatsApp and delivery address are already <b>pre-filled from your sheet</b>, and their Instagram followers, name and photo are <b>fetched automatically</b>. The moment the profile is complete they join the campaign <b>right at their status</b> (steps done before are marked “confirmed offline”) and get one message for that step.</li>
+      <li><b>Status</b> column: write <b>exactly</b> one of the 14 step names below — where that creator is right now (every row can be different; blank = <b>Registered</b>). You can also change it here before and after the upload.</li>
+      <li><b>Messages:</b> each creator gets <b>one</b> message for their step — <b>Approved</b> → the invite; Contract sent / Contract signed / Courier sent / Courier delivered / Video brief sent / Client approved / Posted / Done → that step's message. Registered, Screened, Sent to brand, Address confirmed and Video submitted send no message.</li>
+      <li><b>After that the normal flow runs:</b> next steps, follow-ups and reminders. From <b>Courier delivered / Video brief sent</b> the video deadline is the campaign's own number of days <b>from today</b>, with the usual reminders.</li>
+      <li>For <b>Address confirmed</b>, <b>Courier sent</b> and <b>Courier delivered</b> add the <b>Address</b> (+ State, PIN code); for <b>Courier sent / delivered</b> also the <b>Courier</b> and <b>Tracking</b> ID or link.</li>
+      <li><b>New creators</b> (not on Geek OS yet): the step's message carries the app link → they register → <b>connect Instagram</b> (media kit) → <b>complete the profile</b> (name, city, email, WhatsApp, address are <b>pre-filled from your sheet</b>; Instagram followers, name and photo are <b>fetched automatically</b>) → they join the campaign <b>right on their step</b> (earlier steps marked “confirmed offline”). No second message.</li>
       <li>Upload the file — or paste a Google Sheet link (Share → <b>Anyone with the link</b> → Viewer). Column names don't have to match exactly; we match them and you can fix them in the dropdowns.</li>
     </ol>
-    <div class="bk-mini"><b>Statuses</b> — what happens for each:</div>
-    <div class="bk-stlist">${BK_STATUSES.map(([k,l,h],n)=>`<div class="bk-stitem"><span class="bk-stn">${n+1}</span><div><b>${bkEsc(l)}</b><div class="muted">${bkEsc(h)}</div></div></div>`).join("")}</div>
+    <div class="bk-mini"><b>Statuses — write exactly this in the sheet:</b></div>
+    <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable bk-sttable"><thead><tr><th>#</th><th>Write in Status</th><th>What happens</th><th>Message to the creator</th></tr></thead><tbody>
+      ${BK_STATUSES.map(([k,l,h,m],n)=>`<tr><td><span class="bk-stn">${n+1}</span></td><td><code>${bkEsc(l)}</code></td><td>${bkEsc(h)}</td><td>${m==="no message"?'<span class="muted">— no message</span>':`✉️ ${bkEsc(m)}`}</td></tr>`).join("")}
+    </tbody></table></div>
     <div class="bk-mini">Columns:</div>
     <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable"><thead><tr><th>Column</th><th>What to put</th><th>Example</th><th>Needed?</th></tr></thead><tbody>
       ${BK_GUIDE.map(g=>`<tr><td><b>${bkEsc(g[0])}</b></td><td>${bkEsc(g[1])}</td><td><code>${bkEsc(g[2])}</code></td><td>${g[3]==="optional"?'<span class="muted">optional</span>':`<span class="tag">${bkEsc(g[3])}</span>`}</td></tr>`).join("")}
@@ -4050,7 +4070,7 @@ function bkListHtml(){
           ${err?`<div class="muted" style="font-size:12px;color:#b45309">${bkEsc(String(err).slice(0,140))}</div>`:""}</div>
         <div class="bk-act">
           ${x.participation_id?`<button class="mini-btn" data-bkopen="${bkEsc(x.participation_id)}">Open</button>`:""}
-          <label class="bk-chg" title="Where this creator is — moves them forward (never back)">${bkStatusSelect(`data-bkset="${bkEsc(x.invite_id)}"`, x.sheet_status||(x.approved?"approved":"invited"), "")}</label>
+          <label class="bk-chg" title="Where this creator is — moves them forward (never back)">${bkStatusSelect(`data-bkset="${bkEsc(x.invite_id)}"`, x.sheet_status==="invited"?"registered":x.sheet_status==="courier_received"?"courier_delivered":(x.sheet_status||(x.approved?"approved":"registered")), "")}</label>
           ${x.status!=="joined"?`<button class="mini-btn ghost" data-bkre="${bkEsc(x.invite_id)}">Resend</button><button class="mini-btn ghost" data-bkdel="${bkEsc(x.invite_id)}">Remove</button>`:""}
         </div></div>`; }).join("")}`;
 }
@@ -4080,7 +4100,7 @@ function wireBulk(){
   const lg = $b("bkLinkGo"); if(lg) lg.onclick = ()=>{ const u = $b("bkLink").value.trim(); if(u){ lg.textContent = "Loading…"; take(()=>bkReadSheetLink(u), "Google Sheet").finally(()=>{ if(lg.isConnected) lg.textContent = "Load sheet"; }); } };
   const pg = $b("bkPasteGo"); if(pg) pg.onclick = ()=>{ const t = $b("bkPaste").value; take(async()=>{ const r = bkSplitCsv(t); return r.length && r[0].length>1 ? r : bkFromLines(t.split("\n")); }, "pasted rows"); };
   document.querySelectorAll("[data-bkmap]").forEach(s=> s.onchange = ()=>{ const k = s.dataset.bkmap; if(s.value==="") delete _bk.map[k]; else _bk.map[k] = +s.value;
-    if(k==="status") _bk.rows.forEach(r=> r.status = _bk.map.status!=null ? (bkStatus(r.cells[_bk.map.status])||"invited") : "invited");
+    if(k==="status") _bk.rows.forEach(r=> r.status = _bk.map.status!=null ? (bkStatus(r.cells[_bk.map.status])||"registered") : "registered");
     _bk.preview = null; paintBulk(); bkCheck(); });
   document.querySelectorAll("[data-bkst]").forEach(c=> c.onchange = ()=>{ _bk.rows[+c.dataset.bkst].status = c.value; paintBulk(); });
   const all = $b("bkAllSt"); if(all){ all.insertAdjacentHTML("afterbegin", '<option value="" selected>— choose —</option>'); all.value = "";
@@ -4103,7 +4123,7 @@ function wireBulk(){
     if(error){ paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = error.message||String(error); return; }
     const d = data||{};
     _bk.rows = null; _bk.preview = null; paintBulk();
-    gateToast(`✓ ${d.added||0} put on their step now · ${d.invited||0} invited on WhatsApp/email (they join at their status once their profile + Instagram are done)${d.waiting_profile?` · ${d.waiting_profile} on Geek OS, finishing their profile`:""}${d.skipped?` · ${d.skipped} skipped (no contact)`:""}`);
+    gateToast(`✓ ${d.added||0} put on their step now · ${d.invited||0} invited on WhatsApp/email (each got their step's message; they join on their step once profile + Instagram are done)${d.waiting_profile?` · ${d.waiting_profile} on Geek OS, finishing their profile`:""}${d.skipped?` · ${d.skipped} skipped (no contact)`:""}`);
     loadBulkList(); loadBarterProcess(true);
   };
   wireBulkList();

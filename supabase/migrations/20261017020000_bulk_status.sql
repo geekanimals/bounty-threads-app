@@ -1,5 +1,8 @@
--- Bulk upload: a STATUS column instead of "Approved". Each creator can already be at a different step:
---   Invited (blank) · Approved · Contract signed · Address confirmed · Courier sent · Courier received
+-- Bulk upload: a STATUS column instead of "Approved". Each creator can already be at any step of the Barter
+-- process — the sheet uses the exact step names: Registered · Screened · Sent to brand · Approved · Contract sent ·
+-- Contract signed · Address confirmed · Courier sent · Courier delivered · Video brief sent · Video submitted ·
+-- Client approved · Posted · Done. Messages: Approved → the invite template; any later step → only that step's
+-- template; the regular flow + reminders carry on from there (video deadline = the campaign's days from today).
 -- Optional columns that go with it: Address, State, PIN code, Courier, Tracking (ID or link).
 -- Whatever the status, someone new first gets the INVITE. They register → make their creator profile (blank fields
 -- are pre-filled from the sheet: name, city, email, WhatsApp, delivery address + what Instagram shows for the
@@ -146,37 +149,58 @@ alter table intel.ci_campaign_invite add column if not exists ship_address jsonb
 alter table intel.ci_campaign_invite add column if not exists courier      text;
 alter table intel.ci_campaign_invite add column if not exists tracking_ref text;
 alter table intel.ci_campaign_invite add column if not exists tracking_url text;
-update intel.ci_campaign_invite set status = case when approved then 'approved' else 'invited' end where status is null;
+alter table intel.ci_campaign_invite add column if not exists status_messaged text;   -- the status the upload message told them about
+update intel.ci_campaign_invite set status = case when approved then 'approved' else 'registered' end where status is null;
 
--- "Courier received" / "delivered" / "Address ✓" / "yes" / "" → one of the six statuses (null = not understood)
+-- Sheet status = the exact step names of the Barter process (case doesn't matter):
+--   Registered · Screened · Sent to brand · Approved · Contract sent · Contract signed · Address confirmed ·
+--   Courier sent · Courier delivered · Video brief sent · Video submitted · Client approved · Posted · Done
+-- (blank = Registered). null = not understood.
 create or replace function intel.ci_bulk_status(p text)
 returns text language plpgsql immutable set search_path = '' as $$
-declare v text := lower(btrim(coalesce(p, '')));
+declare v text := regexp_replace(lower(btrim(coalesce(p, ''))), '^\d+\s*[.)-]?\s*', '');
 begin
-  if v = '' or v in ('invited','invite','new','pending','apply','to apply','no','-','—','not approved') then return 'invited'; end if;
-  if v ~ '(receiv|deliver|recieved|in hand|got it|reached)' then return 'courier_received'; end if;
-  if v ~ '(courier|ship|dispatch|sent|transit|awb|on the way|out for)' then return 'courier_sent'; end if;
-  if v ~ 'address' then return 'address_confirmed'; end if;
-  if v ~ '(contract|sign)' then return 'contract_signed'; end if;
-  if v ~ '^(y|yes|approved?|selected|confirmed?|final|done|ok|okay|true|1|✓|✔|☑|x|shortlisted|brand approved)$' then return 'approved'; end if;
+  v := regexp_replace(v, '\s+', ' ', 'g');
+  if v in ('', 'registered', 'register', 'applied', 'invited', 'invite', 'new', 'pending', '-', '—') then return 'registered'; end if;
+  if v in ('screened', 'eligible', 'shortlisted') then return 'screened'; end if;
+  if v in ('sent to brand', 'sent to the brand', 'with brand') then return 'sent_to_brand'; end if;
+  if v in ('approved', 'brand confirmed', 'brand approved', 'selected', 'confirmed', 'yes', 'y', 'ok', 'final', '✓', '✔') then return 'approved'; end if;
+  if v in ('contract sent', 'contract') then return 'contract_sent'; end if;
+  if v in ('contract signed', 'signed') then return 'contract_signed'; end if;
+  if v in ('address confirmed', 'address', 'address done') then return 'address_confirmed'; end if;
+  if v in ('courier sent', 'shipped', 'dispatched', 'in transit', 'product sent') then return 'courier_sent'; end if;
+  if v in ('courier delivered', 'courier received', 'delivered', 'received', 'product received', 'product delivered') then return 'courier_delivered'; end if;
+  if v in ('video brief sent', 'brief sent', 'video brief') then return 'video_brief_sent'; end if;
+  if v in ('video submitted', 'submitted', 'video sent') then return 'video_submitted'; end if;
+  if v in ('client approved', 'video approved', 'content approved') then return 'client_approved'; end if;
+  if v in ('posted', 'live', 'published', 'reel posted') then return 'posted'; end if;
+  if v in ('done', 'completed', 'complete') then return 'done'; end if;
   return null;
 end $$;
 
 create or replace function intel.ci_bulk_rank(p_status text)
 returns int language sql immutable set search_path = '' as $$
-  select case p_status when 'approved' then 1 when 'contract_signed' then 2 when 'address_confirmed' then 3
-                       when 'courier_sent' then 4 when 'courier_received' then 5 else 0 end $$;
+  select case p_status when 'registered' then 1 when 'invited' then 1 when 'screened' then 2 when 'sent_to_brand' then 3
+    when 'approved' then 4 when 'contract_sent' then 5 when 'contract_signed' then 6 when 'address_confirmed' then 7
+    when 'courier_sent' then 8 when 'courier_received' then 9 when 'courier_delivered' then 9 when 'video_brief_sent' then 10
+    when 'video_submitted' then 11 when 'client_approved' then 12 when 'posted' then 13 when 'done' then 14 else 1 end $$;
 
--- how far a participation already is, on the same 0–5 scale
 create or replace function intel.ci_stage_rank(p_stage text)
 returns int language sql immutable set search_path = '' as $$
-  select case
-    when p_stage in ('brand_confirmed','accepted','contract_sent') then 1
-    when p_stage = 'contract_signed' then 2
-    when p_stage = 'address_confirmed' then 3
-    when p_stage = 'product_sent' then 4
-    when p_stage in ('content_created','content_submitted','changes_requested','content_approved','published','completed') then 5
-    else 0 end $$;
+  select case p_stage when 'invited' then 1 when 'shortlisted' then 1 when 'applied' then 1 when 'eligible' then 2
+    when 'sent_to_brand' then 3 when 'brand_confirmed' then 4 when 'accepted' then 4 when 'contract_sent' then 5
+    when 'contract_signed' then 6 when 'address_confirmed' then 7 when 'product_sent' then 8 when 'content_created' then 10
+    when 'content_submitted' then 11 when 'changes_requested' then 11 when 'content_approved' then 12
+    when 'published' then 13 when 'completed' then 14 else 0 end $$;
+
+-- the ONE message a creator gets for the step they are put on (null = that step has no creator message)
+create or replace function intel.ci_bulk_status_key(p_status text)
+returns text language sql immutable set search_path = '' as $$
+  select case p_status when 'approved' then 'invited' when 'contract_sent' then 'contract_sent'
+    when 'contract_signed' then 'confirm_address' when 'courier_sent' then 'product_shipped'
+    when 'courier_delivered' then 'parcel_received' when 'courier_received' then 'parcel_received'
+    when 'video_brief_sent' then 'parcel_received' when 'client_approved' then 'content_approved'
+    when 'posted' then 'feedback_request' when 'done' then 'completed' end $$;
 
 -- ---------------------------------------------------------------------------------------------------
 -- 2) The creator profile is made for them from the sheet (+ what Instagram already told us about the handle)
@@ -250,29 +274,39 @@ exception when others then return null;
 end $$;
 
 -- ---------------------------------------------------------------------------------------------------
--- 3) Put a creator straight into the step the sheet says (no message storm: one message for where they are)
+-- 3) Put a creator straight on the sheet's step. Quiet while it walks; then ONE message for that step
+--    (Approved → the invite template; later steps → that step's template). From there the normal flow and
+--    reminders carry on — the video deadline counts the campaign's own number of days from today.
 -- ---------------------------------------------------------------------------------------------------
-create or replace function intel.ci_bulk_fastforward(p_part uuid, p_invite uuid, p_actor uuid)
+create or replace function intel.ci_bulk_fastforward(p_part uuid, p_invite uuid, p_actor uuid, p_message boolean default true, p_new boolean default false)
 returns text language plpgsql security definer set search_path = '' as $$
-declare i intel.ci_campaign_invite%rowtype; v_target int; v_stage text; v_camp uuid; v_identity uuid; v_addr uuid;
-        s record; v_ship uuid; v_name text; v_member uuid; v_why text := 'confirmed offline — bulk upload';
+declare i intel.ci_campaign_invite%rowtype; v_st text; v_target int; v_stage text; v_camp uuid; v_identity uuid; v_addr uuid;
+        s record; v_ship uuid; v_name text; v_member uuid; v_key text; v_why text := 'confirmed offline — bulk upload';
 begin
   select * into i from intel.ci_campaign_invite where invite_id = p_invite;
-  v_target := intel.ci_bulk_rank(coalesce(i.status, case when i.approved then 'approved' else 'invited' end));
+  v_st := coalesce(i.status, case when i.approved then 'approved' else 'registered' end);
+  v_target := intel.ci_bulk_rank(v_st);
   select stage, campaign_id, identity_id into v_stage, v_camp, v_identity from intel.ci_campaign_participation where participation_id = p_part;
-  if v_stage is null or v_target < 1 or intel.ci_stage_rank(v_stage) >= v_target then return v_stage; end if;
-  if v_stage in ('rejected','dropped','ineligible','brand_declined') then return v_stage; end if;
+  if v_stage is null or v_stage in ('rejected','dropped','ineligible','brand_declined') then return v_stage; end if;
+  -- already there (or further): nothing to do — except a creator who has just joined still gets their step message
+  if intel.ci_stage_rank(v_stage) >= v_target and not p_new then return v_stage; end if;
 
-  if v_target >= 2 then perform set_config('geek.bulk_quiet', 'on', true); end if;
+  perform set_config('geek.bulk_quiet', 'on', true);
   begin
-    -- 1) approved → contract issued
-    if intel.ci_stage_rank(v_stage) < 1 then perform intel.ci_bulk_promote(p_part, p_actor); end if;
+    -- 1–3) screening (before the brand's yes)
+    if v_stage in ('invited','shortlisted') then
+      perform intel.ci_participation_advance(p_part, 'applied', p_actor, v_why); v_stage := 'applied';
+    end if;
+    if v_target >= 2 and v_stage = 'applied' then perform intel.ci_participation_advance(p_part, 'eligible', p_actor, v_why); v_stage := 'eligible'; end if;
+    if v_target >= 3 and v_stage = 'eligible' then perform intel.ci_participation_advance(p_part, 'sent_to_brand', p_actor, v_why); v_stage := 'sent_to_brand'; end if;
+    -- 4–5) approved → the contract is issued
+    if v_target >= 4 and v_stage = 'sent_to_brand' then perform intel.ci_participation_advance(p_part, 'brand_confirmed', p_actor, 'approved on the bulk upload'); end if;
     select stage into v_stage from intel.ci_campaign_participation where participation_id = p_part;
-    if v_stage in ('brand_confirmed','accepted') then perform intel.ci_issue_contract(p_part, p_actor); end if;
+    if v_target >= 4 and v_stage in ('brand_confirmed','accepted') then perform intel.ci_issue_contract(p_part, p_actor); end if;
     select stage into v_stage from intel.ci_campaign_participation where participation_id = p_part;
 
-    -- 2) contract signed (offline)
-    if v_target >= 2 and v_stage = 'contract_sent' then
+    -- 6) contract signed (offline)
+    if v_target >= 6 and v_stage = 'contract_sent' then
       update intel.ci_campaign_contract set signed_at = coalesce(signed_at, now()),
              signature_name = coalesce(signature_name, 'Confirmed offline (bulk upload)'), asci_ack = true, terms_ack = true, updated_at = now()
        where participation_id = p_part;
@@ -282,8 +316,8 @@ begin
       v_stage := 'contract_signed';
     end if;
 
-    -- 3) address confirmed (the sheet's address, when given, is their delivery address)
-    if v_target >= 3 and v_stage = 'contract_signed' then
+    -- 7) address confirmed (the sheet's / profile's address is the delivery address)
+    if v_target >= 7 and v_stage = 'contract_signed' then
       select address_id into v_addr from private.creator_address
        where identity_id = v_identity and deleted_at is null order by is_default desc, created_at desc limit 1;
       if v_addr is not null then update intel.ci_campaign_participation set shipping_address_id = v_addr where participation_id = p_part; end if;
@@ -293,18 +327,18 @@ begin
       v_stage := 'address_confirmed';
     end if;
 
-    -- 4) courier sent
-    if v_target >= 4 and v_stage in ('address_confirmed','accepted') then
+    -- 8) courier sent
+    if v_target >= 8 and v_stage in ('address_confirmed','accepted') then
       select * into s from intel.ci_campaign_shipment where participation_id = p_part order by created_at desc limit 1;
       if s.shipment_id is not null and s.status in ('pending','shipped') then
         update intel.ci_campaign_shipment set courier = coalesce(i.courier, courier, 'Courier'), tracking_ref = coalesce(i.tracking_ref, tracking_ref),
                tracking_url = coalesce(i.tracking_url, tracking_url), status = 'shipped', shipped_at = coalesce(shipped_at, now())
-         where shipment_id = s.shipment_id returning shipment_id into v_ship;
+         where shipment_id = s.shipment_id;
       else
         insert into intel.ci_campaign_shipment(participation_id, product, courier, tracking_ref, tracking_url, shipped_at, status)
         values (p_part, coalesce((select product from intel.ci_campaign_contract where participation_id = p_part),
                                  (select product from intel.ci_campaign where campaign_id = v_camp)),
-                coalesce(i.courier, 'Courier'), i.tracking_ref, i.tracking_url, now(), 'shipped') returning shipment_id into v_ship;
+                coalesce(i.courier, 'Courier'), i.tracking_ref, i.tracking_url, now(), 'shipped');
       end if;
       insert into intel.ci_campaign_event(campaign_id, participation_id, entity, from_status, to_status, actor_member_id, reason)
         values (v_camp, p_part, 'shipment', s.status, 'shipped', p_actor, v_why);
@@ -312,30 +346,34 @@ begin
       v_stage := 'product_sent';
     end if;
 
-    -- 5) courier received → video brief unlocks, video deadline starts now
-    if v_target >= 5 and v_stage = 'product_sent' then
+    -- 9–10) courier delivered → video brief sent (deliverables due in the campaign's days from today + reminders)
+    if v_target >= 9 and v_stage = 'product_sent' then
       select shipment_id into v_ship from intel.ci_campaign_shipment where participation_id = p_part and status = 'shipped'
        order by created_at desc limit 1;
-      if v_ship is not null then
-        perform intel.ci_shipment_set_status(v_ship, 'delivered', p_actor, jsonb_build_object('note', v_why));
-      end if;
+      if v_ship is not null then perform intel.ci_shipment_set_status(v_ship, 'delivered', p_actor, jsonb_build_object('note', v_why));
+      else perform intel.ci_participation_advance(p_part, 'content_created', p_actor, v_why); end if;
+      select stage into v_stage from intel.ci_campaign_participation where participation_id = p_part;
     end if;
+
+    -- 11–14) video submitted → client approved → posted → done
+    if v_target >= 11 and v_stage = 'content_created' then perform intel.ci_participation_advance(p_part, 'content_submitted', p_actor, v_why); v_stage := 'content_submitted'; end if;
+    if v_target >= 12 and v_stage = 'content_submitted' then perform intel.ci_participation_advance(p_part, 'content_approved', p_actor, v_why); v_stage := 'content_approved'; end if;
+    if v_target >= 13 and v_stage = 'content_approved' then perform intel.ci_participation_advance(p_part, 'published', p_actor, v_why); v_stage := 'published'; end if;
+    if v_target >= 14 and v_stage = 'published' then perform intel.ci_participation_advance(p_part, 'completed', p_actor, v_why); v_stage := 'completed'; end if;
   exception when others then
     perform set_config('geek.bulk_quiet', 'off', true);
     raise;
   end;
   perform set_config('geek.bulk_quiet', 'off', true);
 
-  -- ONE message for the step they are on now
+  -- ONE message for the step they are on now (skipped when the upload message already told them)
   select stage into v_stage from intel.ci_campaign_participation where participation_id = p_part;
+  v_key := intel.ci_bulk_status_key(v_st);
   v_member := intel.ci_member_of_identity(v_identity);
-  select name into v_name from intel.ci_campaign where campaign_id = v_camp;
-  if v_target >= 2 and v_member is not null then
-    perform intel.ci_notify(v_member, v_camp, p_part,
-      case v_stage when 'contract_signed' then 'confirm_address' when 'product_sent' then 'product_shipped'
-                   when 'content_created' then 'parcel_received' else null end,
-      jsonb_build_object('campaign', coalesce(v_name, 'your campaign'), 'participation_id', p_part::text))
-    where v_stage in ('contract_signed','product_sent','content_created');
+  if p_message and v_key is not null and v_member is not null then
+    select name into v_name from intel.ci_campaign where campaign_id = v_camp;
+    perform intel.ci_notify(v_member, v_camp, p_part, v_key,
+      jsonb_build_object('campaign', coalesce(v_name, 'your campaign'), 'participation_id', p_part::text));
   end if;
   return v_stage;
 end $$;
@@ -350,8 +388,8 @@ declare i intel.ci_campaign_invite%rowtype; v_identity uuid; v_part uuid; v_stag
 begin
   select * into i from intel.ci_campaign_invite where invite_id = p_invite for update;
   if i.invite_id is null then return null; end if;
-  v_status := coalesce(i.status, case when i.approved then 'approved' else 'invited' end);
-  v_ok := v_status <> 'invited';
+  v_status := coalesce(i.status, case when i.approved then 'approved' else 'registered' end);
+  v_ok := intel.ci_bulk_rank(v_status) >= 4;     -- approved or later
   select c.name, coalesce(c.submitted_brand_name, b.name), c.product into v_name, v_brand, v_prod
     from intel.ci_campaign c left join intel.ci_brand b on b.brand_id = c.brand_id where c.campaign_id = i.campaign_id;
 
@@ -385,22 +423,18 @@ begin
   select participation_id, stage into v_part, v_stage from intel.ci_campaign_participation
    where campaign_id = i.campaign_id and identity_id = v_identity;
   if v_part is null then
-    if intel.ci_bulk_rank(v_status) >= 2 then perform set_config('geek.bulk_quiet', 'on', true); end if;
+    perform set_config('geek.bulk_quiet', 'on', true);
     insert into intel.ci_campaign_participation(campaign_id, identity_id, stage, needs_approval, applied_profile)
-    values (i.campaign_id, v_identity, case when v_ok then 'brand_confirmed' else 'invited' end, not v_ok, i.handle)
+    values (i.campaign_id, v_identity, case when v_ok then 'brand_confirmed' else 'applied' end, not v_ok, i.handle)
     returning participation_id, stage into v_part, v_stage;
     insert into intel.ci_campaign_event(campaign_id, participation_id, entity, from_status, to_status, actor_member_id, reason)
-    values (i.campaign_id, v_part, 'participation', null, case when v_ok then 'brand_confirmed' else 'invited' end, p_actor,
-            case when v_ok then 'approved on the bulk upload' else 'invited from the bulk upload' end);
-    if not v_ok then
-      perform intel.ci_notify(p_member, i.campaign_id, v_part, 'bulk_invited',
-        jsonb_build_object('campaign', coalesce(v_name,'a campaign'), 'brand', coalesce(v_brand,'A brand'),
-                           'product_line', case when v_prod is null then '' else ' You get: ' || v_prod || '.' end));
-    end if;
+    values (i.campaign_id, v_part, 'participation', null, case when v_ok then 'brand_confirmed' else 'applied' end, p_actor,
+            case when v_ok then 'approved on the bulk upload' else 'added from the bulk upload' end);
   end if;
   update intel.ci_campaign_invite set claimed_by = p_member, claimed_at = coalesce(claimed_at, now()), reserved_by = p_member,
          participation_id = v_part where invite_id = p_invite;
-  if v_ok then v_stage := intel.ci_bulk_fastforward(v_part, p_invite, p_actor); end if;
+  -- to their step; the step message goes now unless the upload message already told them about this step
+  v_stage := intel.ci_bulk_fastforward(v_part, p_invite, p_actor, coalesce(i.status_messaged, '') <> v_status, true);
   perform set_config('geek.bulk_quiet', 'off', true);
   select stage into v_stage from intel.ci_campaign_participation where participation_id = v_part;
   return jsonb_build_object('status', 'joined', 'member_id', p_member, 'participation_id', v_part, 'stage', v_stage);
@@ -430,6 +464,67 @@ begin
   return jsonb_strip_nulls(jsonb_build_object('line1', left(v_line, 300), 'city', nullif(btrim(coalesce(x->>'city','')), ''),
            'state', nullif(btrim(coalesce(x->>'state','')), ''), 'postal_code', v_pin));
 end $$;
+
+-- the message for someone who isn't in the campaign yet (WhatsApp to the sheet's number + email), with the
+-- invite link: Approved → the invite template (geek_campaign_access); a later step → that step's template;
+-- a step with no creator message (Registered · Screened · Sent to brand · Address confirmed · Video submitted) → none
+create or replace function intel.ci_send_bulk_invite(p_invite uuid)
+returns int language plpgsql security definer set search_path = '' as $$
+declare i intel.ci_campaign_invite%rowtype; v_name text; v_brand text; v_prod text; v_n int := 0; v_route text; v_first text;
+        v_st text; v_key text; sw intel.ci_step_wa%rowtype; t intel.ci_notification_template%rowtype; v_subject text; v_mail text; v_wa jsonb;
+begin
+  select * into i from intel.ci_campaign_invite where invite_id = p_invite;
+  if i.invite_id is null or i.claimed_at is not null then return 0; end if;
+  v_st := coalesce(i.status, case when i.approved then 'approved' else 'registered' end);
+  v_key := intel.ci_bulk_status_key(v_st);
+  if v_key is null then return 0; end if;
+  select c.name, coalesce(c.submitted_brand_name, b.name), c.product into v_name, v_brand, v_prod
+    from intel.ci_campaign c left join intel.ci_brand b on b.brand_id = c.brand_id where c.campaign_id = i.campaign_id;
+  v_first := coalesce(nullif(split_part(btrim(coalesce(i.full_name,'')), ' ', 1), ''), case when i.handle is not null then '@' || i.handle end, 'there');
+  v_route := '/app.html?cinv=' || i.token::text;
+
+  if v_key = 'invited' then
+    v_subject := 'Approved for ' || coalesce(v_name,'the campaign') || ' 🎉';
+    v_mail := 'Hello ' || v_first || E',\n\nThank you for applying for the campaign ' || coalesce(v_name,'our campaign')
+           || E'.\n\nCongratulations! Your profile has been approved by ' || coalesce(v_brand,'the brand')
+           || ' for the upcoming barter collaboration through Geek Creative Agency.'
+           || case when i.note is not null then ' Note from the brand: “' || i.note || '”' else '' end
+           || E'\n\nBefore we proceed with product dispatch, please follow these steps:\nStep 1 - Register on our app (button below).\nStep 2 - Go to My Campaigns and continue the entire process on the app.'
+           || E'\n\nIf there is any confusion, please reply to this email.';
+    v_wa := jsonb_build_object('title', v_subject, 'text', v_mail, 'action_route', v_route, 'action_label', 'Register & join', 'to_name', v_first,
+              'force_template', true, 'wa_template', 'geek_campaign_access', 'wa_lang', 'en',
+              'wa_vars', jsonb_build_array(v_first, coalesce(v_name,'our campaign'), coalesce(v_brand,'the brand'), 'LINK'));
+  else
+    select * into sw from intel.ci_step_wa where template_key = v_key;
+    select * into t from intel.ci_notification_template where template_key = v_key;
+    if sw.template_key is null then return 0; end if;
+    v_subject := intel.ci_render(coalesce(t.title, coalesce(v_name,'Your campaign')), jsonb_build_object('campaign', coalesce(v_name,'your campaign'), 'brand', coalesce(v_brand,'the brand')));
+    v_mail := replace(replace(replace(replace(
+                regexp_replace(sw.body, E'\n\n[^\n]*\\{\\{4\\}\\}', E'\n\nClick the button below to open it on the app.'),
+                '*', ''), '{{1}}', v_first), '{{2}}', coalesce(v_name, 'your campaign')), '{{3}}', coalesce(v_brand, 'the brand'));
+    v_mail := replace(v_mail, E'\n\nThank you!\nTeam Geek Animals', '');
+    v_wa := jsonb_build_object('title', v_subject, 'text', v_mail, 'action_route', v_route, 'action_label', 'Open the app', 'to_name', v_first,
+              'force_template', true, 'wa_template', sw.wa_template, 'wa_lang', 'en',
+              'wa_vars', jsonb_build_array(v_first, coalesce(v_name,'your campaign'), coalesce(v_brand,'the brand'), 'LINK'));
+  end if;
+
+  if i.phone_e164 is not null and not exists (select 1 from public.wa_contacts w where w.phone_e164 = i.phone_e164 and w.opt_out_at is not null) then
+    insert into intel.ci_outbox(channel, recipient_member_id, to_address, campaign_id, template_key, payload, dedupe_key)
+    values ('whatsapp', null, i.phone_e164, i.campaign_id, 'bulk_invite', v_wa, 'binv:' || i.invite_id || ':wa:' || (i.invites_sent + 1));
+    v_n := v_n + 1;
+  end if;
+  if i.email is not null then
+    insert into intel.ci_outbox(channel, recipient_member_id, to_address, campaign_id, template_key, payload, dedupe_key)
+    values ('email', null, i.email, i.campaign_id, 'bulk_invite',
+            jsonb_build_object('subject', v_subject, 'html', v_mail, 'to_name', v_first, 'action_route', v_route,
+                               'action_label', case when v_key = 'invited' then 'Register & join' else 'Open the app' end),
+            'binv:' || i.invite_id || ':em:' || (i.invites_sent + 1));
+    v_n := v_n + 1;
+  end if;
+  update intel.ci_campaign_invite set invites_sent = invites_sent + 1, last_invited_at = now(), status_messaged = v_st where invite_id = p_invite;
+  return v_n;
+end $$;
+revoke all on function intel.ci_send_bulk_invite(uuid) from public, anon, authenticated;
 
 -- rows: [{name, handle, phone, email, city, followers, status, address, state, pincode, courier, tracking}]
 create or replace function api.bulk_preview(p_campaign uuid, p_rows jsonb)
@@ -461,8 +556,9 @@ begin
       'phone_bad', coalesce(x->>'phone','') <> '' and v_ph is null,
       'email_bad', coalesce(x->>'email','') <> '' and v_em is null,
       'no_contact', v_ph is null and v_em is null and v_h is null,
-      'status', coalesce(v_st, 'invited'), 'status_bad', coalesce(btrim(x->>'status'),'') <> '' and v_st is null,
-      'needs_address', v_st in ('address_confirmed','courier_sent','courier_received') and coalesce(btrim(x->>'address'),'') = '',
+      'status', coalesce(v_st, 'registered'), 'status_bad', coalesce(btrim(x->>'status'),'') <> '' and v_st is null,
+      'message', intel.ci_bulk_status_key(coalesce(v_st, 'registered')),
+      'needs_address', intel.ci_bulk_rank(v_st) between 7 and 9 and coalesce(btrim(x->>'address'),'') = '',
       'on_platform', v_m is not null, 'who', v_who, 'stage', v_stage, 'ig', v_ig));
     n := n + 1;
   end loop;
@@ -487,7 +583,7 @@ begin
     v_em := nullif(lower(btrim(coalesce(x->>'email',''))), ''); if v_em !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then v_em := null; end if;
     v_h := intel.ci_norm_handle(x->>'handle');
     v_status := coalesce(intel.ci_bulk_status(x->>'status'),
-                         case when lower(coalesce(x->>'approved','')) in ('true','yes','1') then 'approved' else 'invited' end);
+                         case when lower(coalesce(x->>'approved','')) in ('true','yes','1') then 'approved' else 'registered' end);
     v_addr := intel.ci_bulk_address(x);
     v_courier := nullif(btrim(coalesce(x->>'courier','')), '');
     v_trk := nullif(btrim(coalesce(x->>'tracking','')), '');
@@ -504,15 +600,15 @@ begin
                                            batch_id, dm_status)
       values (p_campaign, 'instagram', v_h, v_note, auth.uid(), v_org, 'bulk', nullif(btrim(coalesce(x->>'name','')),''), v_ph, v_em,
               nullif(btrim(coalesce(x->>'city','')),''), nullif(regexp_replace(coalesce(x->>'followers',''), '[^0-9]', '', 'g'),'')::bigint,
-              coalesce(x->'extra','{}'::jsonb), v_status <> 'invited', v_status, v_addr, v_courier,
+              coalesce(x->'extra','{}'::jsonb), intel.ci_bulk_rank(v_status) >= 4, v_status, v_addr, v_courier,
               case when v_trk !~* '^https?://' then v_trk end, case when v_trk ~* '^https?://' then v_trk end, v_batch, 'manual')
       returning invite_id into v_id;
     else
       update intel.ci_campaign_invite set
         handle = coalesce(handle, v_h), phone_e164 = coalesce(phone_e164, v_ph), email = coalesce(email, v_em),
         full_name = coalesce(nullif(btrim(coalesce(x->>'name','')),''), full_name), city = coalesce(nullif(btrim(coalesce(x->>'city','')),''), city),
-        status = case when intel.ci_bulk_rank(v_status) > intel.ci_bulk_rank(coalesce(status,'invited')) then v_status else coalesce(status,'invited') end,
-        approved = approved or v_status <> 'invited',
+        status = case when intel.ci_bulk_rank(v_status) > intel.ci_bulk_rank(coalesce(status,'registered')) then v_status else coalesce(status,'registered') end,
+        approved = approved or intel.ci_bulk_rank(v_status) >= 4,
         ship_address = coalesce(v_addr, ship_address), courier = coalesce(v_courier, courier),
         tracking_ref = coalesce(case when v_trk !~* '^https?://' then v_trk end, tracking_ref),
         tracking_url = coalesce(case when v_trk ~* '^https?://' then v_trk end, tracking_url),
@@ -531,14 +627,16 @@ begin
     if v_part is not null then
       perform intel.ci_bulk_fastforward(v_part, v_id, auth.uid());   -- already in: move them to the sheet's step
       v_added := v_added + 1;
-    elsif v_m is not null then
-      v_res := intel.ci_bulk_attach(v_id, v_m, auth.uid());
-      if v_res->>'status' = 'joined' then v_added := v_added + 1; else v_waiting := v_waiting + 1; end if;
     else
-      if (select invites_sent from intel.ci_campaign_invite where invite_id = v_id) = 0 then
-        v_msgs := v_msgs + intel.ci_send_bulk_invite(v_id);
+      if v_m is not null then v_res := intel.ci_bulk_attach(v_id, v_m, auth.uid()); else v_res := null; end if;
+      if v_res->>'status' = 'joined' then v_added := v_added + 1;
+      else
+        if v_m is not null then v_waiting := v_waiting + 1; else v_invited := v_invited + 1; end if;
+        -- not in the campaign yet: the message for their step (Approved → invite) — once per status
+        if (select status_messaged is distinct from status from intel.ci_campaign_invite where invite_id = v_id) then
+          v_msgs := v_msgs + intel.ci_send_bulk_invite(v_id);
+        end if;
       end if;
-      v_invited := v_invited + 1;
     end if;
   end loop;
 
@@ -561,7 +659,7 @@ begin
       'invite_id', i.invite_id, 'name', i.full_name, 'handle', i.handle, 'phone', i.phone_e164, 'email', i.email, 'city', i.city,
       'followers', coalesce(i.followers, x.followers), 'approved', i.approved, 'created_at', i.created_at, 'invites_sent', i.invites_sent,
       'last_invited_at', i.last_invited_at, 'claimed_at', i.claimed_at,
-      'sheet_status', coalesce(i.status, case when i.approved then 'approved' else 'invited' end),
+      'sheet_status', coalesce(i.status, case when i.approved then 'approved' else 'registered' end), 'status_messaged', i.status_messaged,
       'address', i.ship_address, 'courier', i.courier, 'tracking', coalesce(i.tracking_ref, i.tracking_url),
       'ig', case when x.handle is not null then jsonb_strip_nulls(jsonb_build_object('name', x.display_name, 'followers', x.followers,
                  'pic', x.profile_picture_url, 'fetched', x.enriched_at is not null, 'error', x.enrich_error)) end,
@@ -594,8 +692,10 @@ begin
   select * into i from intel.ci_campaign_invite where invite_id = p_invite;
   if i.invite_id is null or not intel.ci_can_manage_campaign(i.campaign_id) then raise exception 'not your campaign' using errcode = '42501'; end if;
   if v_st is null then raise exception 'unknown status "%"', p_status using errcode = '22023'; end if;
-  update intel.ci_campaign_invite set status = v_st, approved = v_st <> 'invited' where invite_id = p_invite;
-  if i.participation_id is not null then v_stage := intel.ci_bulk_fastforward(i.participation_id, p_invite, auth.uid()); end if;
+  update intel.ci_campaign_invite set status = v_st, approved = intel.ci_bulk_rank(v_st) >= 4 where invite_id = p_invite;
+  if i.participation_id is not null then v_stage := intel.ci_bulk_fastforward(i.participation_id, p_invite, auth.uid());
+  elsif i.claimed_at is null then perform intel.ci_send_bulk_invite(p_invite);    -- not in yet: the new step's message
+  end if;
   return jsonb_build_object('status', v_st, 'stage', v_stage);
 end $$;
 
@@ -603,7 +703,7 @@ create or replace function api.bulk_set_approved(p_invite uuid, p_approved boole
 returns jsonb language plpgsql security definer set search_path = '' as $$
 begin
   if not p_approved then
-    update intel.ci_campaign_invite set approved = false, status = 'invited'
+    update intel.ci_campaign_invite set approved = false, status = 'registered'
      where invite_id = p_invite and intel.ci_can_manage_campaign(campaign_id);
     return jsonb_build_object('approved', false);
   end if;
@@ -615,14 +715,14 @@ create or replace function public.invite_preview(p_token uuid)
 returns jsonb language sql stable security definer set search_path = '' as $$
   select (select jsonb_build_object('campaign', c.name, 'brand', coalesce(c.submitted_brand_name, b.name), 'product', c.product,
             'first_name', nullif(split_part(btrim(coalesce(i.full_name,'')), ' ', 1), ''), 'approved', i.approved,
-            'sheet_status', coalesce(i.status, case when i.approved then 'approved' else 'invited' end),
+            'sheet_status', coalesce(i.status, case when i.approved then 'approved' else 'registered' end),
             'phone_hint', case when i.phone_e164 is not null then '••••' || right(i.phone_e164, 4) end,
             'joined', i.claimed_at is not null)
      from intel.ci_campaign_invite i join intel.ci_campaign c on c.campaign_id = i.campaign_id
      left join intel.ci_brand b on b.brand_id = c.brand_id where i.token = p_token) $$;
 
 revoke all on function intel.ci_bulk_status(text), intel.ci_bulk_rank(text), intel.ci_stage_rank(text), intel.ci_bulk_address(jsonb),
-  intel.ci_bulk_profile(uuid,uuid), intel.ci_bulk_fastforward(uuid,uuid,uuid), intel.ci_bulk_attach(uuid,uuid,uuid),
+  intel.ci_bulk_status_key(text), intel.ci_bulk_profile(uuid,uuid), intel.ci_bulk_fastforward(uuid,uuid,uuid,boolean,boolean), intel.ci_bulk_attach(uuid,uuid,uuid),
   intel.tg_claim_on_identity() from public, anon, authenticated;
 revoke all on function api.bulk_set_status(uuid,text), api.bulk_preview(uuid,jsonb), api.bulk_import_creators(uuid,jsonb,text),
   api.bulk_invites(uuid), api.bulk_set_approved(uuid,boolean) from public, anon;
