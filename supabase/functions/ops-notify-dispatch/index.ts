@@ -152,7 +152,8 @@ Deno.serve(async (req) => {
         if (prefs.email_off) { await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped", p_error: "unsubscribed" }); skipped++; continue; }
         const unsub = unsubLink(prefs.token, "email");
         const html = (p.html && String(p.html).includes("<")) ? String(p.html)
-          : renderEmailHtml(String(p.subject || ""), String(p.html || ""), link ?? undefined, p.action_label as string, unsub ?? undefined);
+          : renderEmailHtml(String(p.subject || ""), String(p.html || ""), link ?? undefined, p.action_label as string, unsub ?? undefined,
+                            APP_URL ? `${APP_URL}/assets/geek-icon-192.png` : undefined);
         const res = await getEmailProvider().send({ to: row.to_address, subject: String(p.subject || "Update"), html,
           text: String(p.html || "") + (link ? `\n\n${link}` : "") + (unsub ? `\n\nStop update emails: ${unsub}` : ""),
           headers: unsub ? { "List-Unsubscribe": `<${unsub}>` } : undefined });
