@@ -38,7 +38,8 @@ select api.bootstrap_my_profile();
 set local request.jwt.claims = '';
 insert into _v values('id1',(select a.identity_id::text from intel.ci_identity_actor_access a where a.member_id='c1000000-0000-0000-0000-0000000000c1' and a.access_role='self' limit 1));
 
--- ===== DARK: with operational_pilot OFF, the surface is disabled =====
+-- ===== KILL SWITCH: with operational_pilot OFF, the surface is disabled (it is ON in production) =====
+update intel.ci_feature_flag set enabled=false where flag='operational_pilot';
 set local request.jwt.claims = '{"sub":"0d000000-0000-0000-0000-00000000000d","role":"authenticated"}';
 select throws_ok( $$ select api.create_campaign('{"name":"x","submitted_brand_name":"y"}'::jsonb) $$, '0A000', null, 'operational_pilot OFF disables the whole surface');
 set local request.jwt.claims = '';
@@ -74,6 +75,10 @@ select is( (api.respond_to_campaign((select v::uuid from _v where k='part'), tru
 select ok( jsonb_array_length(api.get_my_campaigns()) = 1, 'creator sees the campaign in My Campaigns');
 select ok( api.get_my_campaigns()::text !~* '(whatsapp|"phone"|date_of_birth|address|access_token|refresh_token)', 'My Campaigns payload leaks no PII/tokens');
 
+-- barter flow since 20261014: accepted → contract_sent → (creator signs) → contract_signed → (address) → address_confirmed.
+-- Contract signing + address have their own tests; here the participation is moved past them directly.
+set local request.jwt.claims = '';
+update intel.ci_campaign_participation set stage='address_confirmed' where participation_id=(select v::uuid from _v where k='part');
 set local request.jwt.claims = '{"sub":"0d000000-0000-0000-0000-00000000000d","role":"authenticated"}';
 select api.record_shipment((select v::uuid from _v where k='part'),'pet bed','BlueDart','BD1');
 select is( (select stage from intel.ci_campaign_participation where participation_id=(select v::uuid from _v where k='part')), 'product_sent', 'shipment advances to product_sent');
@@ -121,7 +126,7 @@ select is( (api.get_campaign_detail((select v::uuid from _v where k='camp'))->'c
 select ok( jsonb_array_length(api.get_campaign_detail((select v::uuid from _v where k='camp'))->'participations') = 1, 'campaign detail lists participation status');
 select ok( jsonb_array_length(api.get_campaign_detail((select v::uuid from _v where k='camp'))->'events') >= 8, 'campaign detail returns the event-ledger timeline');
 -- PII ABSENT from the payload (no email/whatsapp/address/private profile/rate/contact/token)
-select ok( api.get_campaign_detail((select v::uuid from _v where k='camp'))::text !~* '(whatsapp|"phone"|"email"|date_of_birth|address|postal|rate_card|"contact"|access_token|refresh_token)', 'campaign detail payload contains no PII / private contact / commercials / tokens');
+select ok( api.get_campaign_detail((select v::uuid from _v where k='camp'))::text !~* '(whatsapp|"phone"|"email"|date_of_birth|"address"|address_line|"pincode"|postal|rate_card|"contact"|access_token|refresh_token)', 'campaign detail payload contains no PII / private contact / commercials / tokens');
 -- owning brand ALLOWED
 set local request.jwt.claims = '{"sub":"b3000000-0000-0000-0000-0000000000b3","role":"authenticated"}';
 select is( (api.get_campaign_detail((select v::uuid from _v where k='camp'))->'campaign'->>'name'), 'Snuggles launch', 'owning brand org is allowed to read its campaign detail');

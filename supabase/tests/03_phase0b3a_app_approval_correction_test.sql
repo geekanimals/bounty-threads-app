@@ -60,7 +60,7 @@ select is( (select client_id from intel.ci_provider_config where provider='insta
 
 -- ---------- H. release flags remain OFF ----------
 select is( intel.ci_feature_enabled('creator_ig_connect'), false, 'H: creator_ig_connect remains OFF');
-select is( intel.ci_feature_enabled('creator_profile_api'), false, 'H2: creator_profile_api remains OFF');
+select ok( exists(select 1 from intel.ci_feature_flag where flag = 'creator_profile_api'), 'H2: creator_profile_api flag exists (ON since the creator profile went live)');
 
 select * from finish();
 rollback;

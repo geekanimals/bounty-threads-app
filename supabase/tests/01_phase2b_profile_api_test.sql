@@ -16,8 +16,10 @@ insert into intel.ci_identity_actor_access(identity_id, member_id, access_role) 
   ('aaaaaaaa-1111-1111-1111-11111111111a','aaaaaaaa-0000-0000-0000-00000000000a','self'),
   ('bbbbbbbb-1111-1111-1111-11111111111b','bbbbbbbb-0000-0000-0000-00000000000b','self');
 
--- ===== A. feature flag defaults OFF (dark) + M. fail-closed while OFF =====
-select is(intel.ci_feature_enabled('creator_profile_api'), false, 'A: flag defaults OFF');
+-- ===== A. feature flag OFF (kill switch) + M. fail-closed while OFF =====
+-- The flag is ON in production since the creator profile went live (20261012*); switching it OFF must still close the API.
+update intel.ci_feature_flag set enabled = false where flag = 'creator_profile_api';
+select is(intel.ci_feature_enabled('creator_profile_api'), false, 'A: flag can be switched OFF');
 select is(api.creator_profile_api_enabled(), false, 'A: introspection reports OFF');
 set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-0000-0000-00000000000a","role":"authenticated"}';
 select throws_ok($$ select api.get_my_profile_draft() $$, '0A000', null, 'M: read fails closed while flag OFF');
