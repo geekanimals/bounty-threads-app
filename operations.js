@@ -672,12 +672,16 @@
       case 'content_approved': return box('✅','Approved — let\'s post!','Tap <b>Let\'s post</b> — your post opens right here in the app with the format, caption, @mentions, #hashtags and collaborator filled in from the campaign. Pick your approved video and publish.',
           '<button class="btn sm" data-letspost="'+P+'">🚀 Let\'s post</button>','act');
       case 'published':
-        if(c.feedback_requested_at) return box('⭐','One last step — your feedback','Rate this campaign to complete it. Your post\'s numbers open right after.', feedbackForm(c),'act');
         var left=pendingFormats(c);
         if(left.length) return box('📲','Next: post your '+esc(left.join(' + ')),'Your first post is live ✓. The rest is filled in the same way — tap below.',
           '<button class="btn sm" data-letspost="'+P+'">🚀 Post my '+esc(left[0])+'</button>','act');
         return box('📈','You\'re live!','Your post is recorded on the campaign. The brand wraps up once the numbers are in.');
-      case 'completed': return box('🏁','Campaign complete','Thank you! Your numbers are below.');
+      case 'completed':
+        var left2=pendingFormats(c);
+        return box('🏁','Campaign complete 🎉','Thank you! Your post is live and your numbers are below.'
+            + (left2.length?'<div style="margin-top:6px">Still to post: <b>'+esc(left2.join(' + '))+'</b></div>':'')
+            + (!c.feedback_at?'<div class="mc-sec" style="margin-top:10px">⭐ Quick feedback <span class="muted" style="font-weight:400">(optional)</span></div>'+feedbackForm(c):'<div class="muted" style="font-size:12px;margin-top:6px">⭐ Thanks for your feedback!</div>'),
+          left2.length?'<button class="btn sm" data-letspost="'+P+'">🚀 Post my '+esc(left2[0])+'</button>':'', !c.feedback_at?'act':'');
     }
     return '';
   }
@@ -686,7 +690,7 @@
     return '<div class="fb-box"><div class="fb-stars" data-fbstars="'+P+'">'+[1,2,3,4,5].map(function(n){ return '<button type="button" data-star="'+n+'">★</button>'; }).join("")+'</div>'
       + yn('fbClear','Was the brief clear?') + yn('fbSmooth','Was everything smooth?') + yn('fbAgain','Work with this brand again?')
       + '<textarea id="fbText'+P+'" rows="2" placeholder="Anything to tell the brand or the Geek team? (optional)"></textarea>'
-      + '<button class="btn sm" data-fbsend="'+P+'">Submit feedback &amp; complete</button><span class="ci-hint" id="fbMsg'+P+'"></span></div>';
+      + '<button class="btn sm" data-fbsend="'+P+'">Submit feedback</button><span class="ci-hint" id="fbMsg'+P+'"></span></div>';
   }
   function briefHtml(c){
     var b=c.video_brief; if(!b) return '';
@@ -702,10 +706,6 @@
   }
   function postsHtml(c){
     var ps=c.posts||[]; if(!ps.length) return '';
-    if(c.stage!=='completed') return '<div class="mc-dl">'+ps.map(function(p){
-        return '<div class="mc-dlrow"><div class="mc-dlh"><b>'+esc(p.media_type)+' ✅ posted</b><span class="muted" style="font-size:12px">'+fmtDate(p.posted_at)
-          +(p.permalink?' · <a href="'+esc(safeLink(p.permalink))+'" target="_blank" rel="noopener">Open ↗</a>':'')+'</span></div>'
-          +'<div class="muted" style="font-size:12px">🔒 Your numbers open once you share your feedback.</div></div>'; }).join("")+'</div>';
     return '<div class="mc-dl">'+ps.map(function(p){
       var s=p.stats||{}, rows=[["👁","Views",s.views],["📈","Reach",s.reach],["❤️","Likes",s.likes],["💬","Comments",s.comments],["↗️","Shares",s.shares],["🔖","Saves",s.saves]].filter(function(x){ return x[2]!=null; });
       return '<div class="mc-dlrow"><div class="mc-dlh"><b>'+esc(p.media_type)+'</b><span class="muted" style="font-size:12px">posted '+fmtDate(p.posted_at)
@@ -785,7 +785,7 @@
       b.disabled=true; b.textContent="Sending…";
       api("submit_campaign_feedback",{ p_participation:P, p_payload:{ rating:rating, brief_clear:val("fbClear"), smooth:val("fbSmooth"), again:val("fbAgain"),
         comment:(document.getElementById("fbText"+P).value||"").trim() } }).then(function(r){
-        if(r.error){ msg.textContent=r.error.message||r.error; b.disabled=false; b.textContent="Submit feedback & complete"; return; }
+        if(r.error){ msg.textContent=r.error.message||r.error; b.disabled=false; b.textContent="Submit feedback"; return; }
         loadMyCampaigns(); updateAlertsBadge(); }); }; });
     document.querySelectorAll("#opsMine [data-received]").forEach(function(b){ b.onclick=function(){
       if(!confirm("Confirm you've received the product? Your video brief unlocks now and your deadline starts.")) return;

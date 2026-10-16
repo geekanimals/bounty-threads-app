@@ -3781,8 +3781,7 @@ const BK_STATUSES = [
   ["video_brief_sent","Video brief sent","video deadline starts today (campaign's days) + reminders","Video brief"],
   ["video_submitted","Video submitted","waiting for the brand's review","no message"],
   ["client_approved","Client approved","next: creator posts it","Video approved — post it"],
-  ["posted","Posted","next: creator's feedback","Share your feedback"],
-  ["done","Done","campaign complete for them","Campaign complete"]];
+  ["posted","Posted","campaign complete · numbers show everywhere · feedback optional","Campaign complete"]];
 const bkStLabel = k => (BK_STATUSES.find(x=>x[0]===k)||BK_STATUSES[0])[1];
 const bkStMsg = k => (BK_STATUSES.find(x=>x[0]===k)||BK_STATUSES[0])[3];
 const bkStRank = k => Math.max(0, BK_STATUSES.findIndex(x=>x[0]===k)) + 1;
@@ -3795,7 +3794,7 @@ function bkStatus(v){
     courier_sent:["courier sent","shipped","dispatched","in transit","product sent"],
     courier_delivered:["courier delivered","courier received","delivered","received","product received","product delivered"],
     video_brief_sent:["video brief sent","brief sent","video brief"], video_submitted:["video submitted","submitted","video sent"],
-    client_approved:["client approved","video approved","content approved"], posted:["posted","live","published","reel posted"], done:["done","completed","complete"] };
+    client_approved:["client approved","video approved","content approved"], posted:["posted","live","published","reel posted","done","completed","complete"] };
   for(const k in M) if(M[k].includes(t)) return k;
   return null;
 }
@@ -4018,8 +4017,8 @@ function bkGuideHtml(open){
       <li><b>Download a template</b> below (Excel or CSV) — or copy it straight into a new Google Sheet.</li>
       <li><b>One creator per row.</b> Keep the first row as the column names.</li>
       <li>Every row needs <b>at least one of WhatsApp, Email or Instagram</b> — best is WhatsApp + email: the invite goes to both and all later updates go there.</li>
-      <li><b>Status</b> column: write <b>exactly</b> one of the 14 step names below — where that creator is right now (every row can be different; blank = <b>Registered</b>). You can also change it here before and after the upload.</li>
-      <li><b>Messages:</b> each creator gets <b>one</b> message for their step — <b>Approved</b> → the invite; Contract sent / Contract signed / Courier sent / Courier delivered / Video brief sent / Client approved / Posted / Done → that step's message. Registered, Screened, Sent to brand, Address confirmed and Video submitted send no message.</li>
+      <li><b>Status</b> column: write <b>exactly</b> one of the 13 step names below — where that creator is right now (every row can be different; blank = <b>Registered</b>). You can also change it here before and after the upload.</li>
+      <li><b>Messages:</b> each creator gets <b>one</b> message for their step — <b>Approved</b> → the invite; Contract sent / Contract signed / Courier sent / Courier delivered / Video brief sent / Client approved / Posted → that step's message. <b>Posted</b> is the last step — the campaign is complete. Registered, Screened, Sent to brand, Address confirmed and Video submitted send no message.</li>
       <li><b>After that the normal flow runs:</b> next steps, follow-ups and reminders. From <b>Courier delivered / Video brief sent</b> the video deadline is the campaign's own number of days <b>from today</b>, with the usual reminders.</li>
       <li>For <b>Address confirmed</b>, <b>Courier sent</b> and <b>Courier delivered</b> add the <b>Address</b> (+ State, PIN code); for <b>Courier sent / delivered</b> also the <b>Courier</b> and <b>Tracking</b> ID or link.</li>
       <li><b>New creators</b> (not on Geek OS yet): the step's message carries the app link → they register → <b>connect Instagram</b> (media kit) → <b>complete the profile</b> (name, city, email, WhatsApp, address are <b>pre-filled from your sheet</b>; Instagram followers, name and photo are <b>fetched automatically</b>) → they join the campaign <b>right on their step</b> (earlier steps marked “confirmed offline”). No second message.</li>
@@ -4310,8 +4309,9 @@ function bpTrackerHtml(list){
           ${x.stage==="product_sent"&&ship.status==="shipped"?`<button class="btn sm" data-bpdeliv="${esc(P)}">📦 Mark delivered → send video brief</button>`:""}
           ${x.blocked_at?`${x.phone?`<a class="btn sm ghost" href="tel:${esc(x.phone)}">📞 Call</a>`:""}<button class="btn sm" data-bpunblock="${esc(P)}">✅ Called — unblock</button><button class="btn sm ghost" data-bpcall="${esc(P)}">📝 Note a call</button>`:""}
           ${x.stage==="content_submitted"?`<button class="btn sm" data-bpapprove="${esc(P)}">✅ Approve video</button><button class="btn sm ghost" data-bpchanges="${esc(P)}">✏️ Ask for changes</button><button class="btn sm ghost" data-bprelink="${esc(P)}">🔗 Request a new link</button>`:""}
+          ${["content_created","content_submitted","changes_requested","content_approved","published","completed"].includes(x.stage)?`<button class="btn sm${x.stage==="content_approved"?"":" ghost"}" data-bppost="${esc(P)}" title="The creator couldn't post from the app? Paste the link they sent you">🔗 Add post link</button>`:""}
           ${["published","completed"].includes(x.stage)&&posts.length?`<button class="btn sm ghost" data-bpmetrics="${esc(P)}">📈 Add numbers</button>`:""}
-          ${x.stage==="published"&&!x.feedback_requested_at?`<button class="btn sm" data-bpdone="${esc(P)}">🏁 Mark done → ask for feedback</button>`:""}
+          ${x.stage==="published"?`<button class="btn sm" data-bpdone="${esc(P)}">🏁 Mark complete</button>`:""}
           ${!["dropped","rejected","completed","published","ineligible","brand_declined"].includes(x.stage)?`<button class="btn sm ghost" data-bpreassign="${esc(P)}">↪ Send product to someone else</button>`:""}
           ${!x.blacklisted&&!["completed"].includes(x.stage)?`<button class="btn sm ghost" data-bpblack="${esc(P)}">⛔ Blacklist</button>`:""}
         </div></div>`:""}</div>`; }).join("");
@@ -4480,6 +4480,7 @@ function wireBarterProcess(){
     const n = (prompt("What happened on the call? (e.g. no answer, will call back)")||"").trim(); if(!n) return;
     call("bp_log_call", { p_participation:b.dataset.bpcall, p_note:n }, b, b.innerHTML); });
   body.querySelectorAll("[data-bpmetrics]").forEach(b=> b.onclick = ()=> openBpMetrics(b.dataset.bpmetrics));
+  body.querySelectorAll("[data-bppost]").forEach(b=> b.onclick = ()=> openBpPostLink(b.dataset.bppost));
   body.querySelectorAll("[data-bpdone]").forEach(b=> b.onclick = ()=> call("bp_mark_done", { p_participation:b.dataset.bpdone }, b, b.innerHTML));
   body.querySelectorAll("[data-bpblack]").forEach(b=> b.onclick = async ()=>{
     const r = (prompt("Blacklist this creator — why?\nThey stay on the list until you lift it. Per the contract they must re-ship the product at their own cost — use “Send product to someone else” to pick who.")||"").trim(); if(!r) return;
@@ -4627,6 +4628,24 @@ function openBpUnblock(part){
     const { error } = await sb.schema("api").rpc("bp_unblock_after_call", { p_participation:part, p_reason:reason, p_days:+f.get("days") });
     if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Unblock"; return; }
     m.remove(); loadBarterProcess(true);
+  };
+}
+// the creator couldn't post from the app → they send the link (WhatsApp / anything) → paste it here
+function openBpPostLink(part){
+  const x = ((_bpData&&_bpData.creators)||[]).find(c=>c.participation_id===part)||{};
+  const m = bpModal("Add the post link", `<form class="modal-form" id="bpPForm">
+      <p class="muted" style="font-size:13px;margin:0">${x.username?`@${esc(x.username)} `:"The creator "}couldn't post from the app? Paste the Instagram link they sent you. The post is added to the campaign, its numbers are fetched, and the campaign is marked complete.</p>
+      <label>Instagram link<input name="link" required placeholder="https://www.instagram.com/reel/…"></label>
+      <label>Type<select name="type"><option value="reel">Reel</option><option value="post">Post</option><option value="story">Story</option></select></label>
+      <div class="auth-err" id="bpPErr"></div><button class="btn" type="submit">Add post</button></form>`);
+  document.getElementById("bpPForm").onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(e.target), err = document.getElementById("bpPErr"), btn = e.target.querySelector("button");
+    btn.disabled = true; btn.textContent = "Adding…";
+    const { data, error } = await sb.schema("api").rpc("bp_add_post_link", { p_participation:part, p_payload:{ permalink:String(f.get("link")||"").trim(), media_type:f.get("type") } });
+    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Add post"; return; }
+    m.remove(); gateToast(data && data.matched ? "Post added ✓ — numbers loading · campaign complete" : "Post added ✓ — campaign complete. Numbers load once their Instagram syncs (or add them with 📈 Add numbers).");
+    loadBarterProcess(true);
   };
 }
 function openBpMetrics(part){

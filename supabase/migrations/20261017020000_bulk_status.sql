@@ -1,7 +1,7 @@
 -- Bulk upload: a STATUS column instead of "Approved". Each creator can already be at any step of the Barter
 -- process — the sheet uses the exact step names: Registered · Screened · Sent to brand · Approved · Contract sent ·
 -- Contract signed · Address confirmed · Courier sent · Courier delivered · Video brief sent · Video submitted ·
--- Client approved · Posted · Done. Messages: Approved → the invite template; any later step → only that step's
+-- Client approved · Posted (posting completes the campaign). Messages: Approved → the invite template; any later step → only that step's
 -- template; the regular flow + reminders carry on from there (video deadline = the campaign's days from today).
 -- Optional columns that go with it: Address, State, PIN code, Courier, Tracking (ID or link).
 -- Whatever the status, someone new first gets the INVITE. They register → make their creator profile (blank fields
@@ -154,7 +154,7 @@ update intel.ci_campaign_invite set status = case when approved then 'approved' 
 
 -- Sheet status = the exact step names of the Barter process (case doesn't matter):
 --   Registered · Screened · Sent to brand · Approved · Contract sent · Contract signed · Address confirmed ·
---   Courier sent · Courier delivered · Video brief sent · Video submitted · Client approved · Posted · Done
+--   Courier sent · Courier delivered · Video brief sent · Video submitted · Client approved · Posted (= complete)
 -- (blank = Registered). null = not understood.
 create or replace function intel.ci_bulk_status(p text)
 returns text language plpgsql immutable set search_path = '' as $$
@@ -173,8 +173,8 @@ begin
   if v in ('video brief sent', 'brief sent', 'video brief') then return 'video_brief_sent'; end if;
   if v in ('video submitted', 'submitted', 'video sent') then return 'video_submitted'; end if;
   if v in ('client approved', 'video approved', 'content approved') then return 'client_approved'; end if;
-  if v in ('posted', 'live', 'published', 'reel posted') then return 'posted'; end if;
-  if v in ('done', 'completed', 'complete') then return 'done'; end if;
+  -- Posted is the last step: posting completes the campaign
+  if v in ('posted', 'live', 'published', 'reel posted', 'done', 'completed', 'complete') then return 'posted'; end if;
   return null;
 end $$;
 
@@ -183,7 +183,7 @@ returns int language sql immutable set search_path = '' as $$
   select case p_status when 'registered' then 1 when 'invited' then 1 when 'screened' then 2 when 'sent_to_brand' then 3
     when 'approved' then 4 when 'contract_sent' then 5 when 'contract_signed' then 6 when 'address_confirmed' then 7
     when 'courier_sent' then 8 when 'courier_received' then 9 when 'courier_delivered' then 9 when 'video_brief_sent' then 10
-    when 'video_submitted' then 11 when 'client_approved' then 12 when 'posted' then 13 when 'done' then 14 else 1 end $$;
+    when 'video_submitted' then 11 when 'client_approved' then 12 when 'posted' then 13 when 'done' then 13 else 1 end $$;
 
 create or replace function intel.ci_stage_rank(p_stage text)
 returns int language sql immutable set search_path = '' as $$
@@ -200,7 +200,7 @@ returns text language sql immutable set search_path = '' as $$
     when 'contract_signed' then 'confirm_address' when 'courier_sent' then 'product_shipped'
     when 'courier_delivered' then 'parcel_received' when 'courier_received' then 'parcel_received'
     when 'video_brief_sent' then 'parcel_received' when 'client_approved' then 'content_approved'
-    when 'posted' then 'feedback_request' when 'done' then 'completed' end $$;
+    when 'posted' then 'completed' when 'done' then 'completed' end $$;
 
 -- ---------------------------------------------------------------------------------------------------
 -- 2) The creator profile is made for them from the sheet (+ what Instagram already told us about the handle)
