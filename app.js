@@ -4236,33 +4236,51 @@ function bpTrackerHtml(list){
         </div></div>`:""}</div>`; }).join("");
 }
 // the contract terms + video brief this campaign sends out (editable here too)
+// Every text field is a notepad-style box that grows as you type (one point / link per line).
 function bpTermsHtml(){
   const pb = (_bpData&&_bpData.playbook)||{}, k = pb.contract||{}, b = pb.brief||{};
-  const ta = (id,label,val,ph,rows)=>`<label class="cp-f"><span>${label}</span><textarea id="${id}" rows="${rows||2}" placeholder="${esc(ph||"")}">${esc(val||"")}</textarea></label>`;
-  const inp = (id,label,val,ph,type)=>`<label class="cp-f"><span>${label}</span><input id="${id}" ${type?`type="${type}"`:""} placeholder="${esc(ph||"")}" value="${esc(val??"")}"></label>`;
-  return `<div class="card"><h4 style="margin-top:0">📜 Contract — goes out automatically when a creator is approved</h4>
-    <p class="muted" style="font-size:13px;margin:0 0 12px">Changes apply to contracts sent from now on. Use “Resend contract” on a creator who hasn't signed yet to give them the latest terms.</p>
-    <div class="cp-grid">
-      ${inp("bpkProd","Product the creator gets",k.product,"Momo box (12 pcs)")}
-      ${inp("bpkVal","Product value (₹)",k.product_value,"1500","number")}
-      ${inp("bpkDel","Deliverables",k.deliverables,"1 Reel + 2 Stories")}
-      ${inp("bpkDays","Content due (days after delivery)",k.content_days??7,"7","number")}
-      ${inp("bpkMonths","Ad rights (months)",k.ad_rights_months??1,"1","number")}
+  const ta = (id,label,val,ph,hint,rows)=>`<label class="bt-f"><span class="bt-l">${label}</span>
+      <textarea id="${id}" class="bt-grow" rows="${rows||3}" placeholder="${esc(ph||"")}">${esc(val||"")}</textarea>${hint?`<span class="bt-h">${hint}</span>`:""}</label>`;
+  const num = (id,label,val,ph)=>`<label class="bt-f"><span class="bt-l">${label}</span><input id="${id}" type="number" min="0" placeholder="${esc(ph||"")}" value="${esc(val??"")}"></label>`;
+  const chk = (id,on,html)=>`<label class="bt-check"><input type="checkbox" id="${id}"${on?" checked":""}><span>${html}</span></label>`;
+  return `<div class="bt">
+  <div class="card bt-card"><div class="bt-head"><h4>📜 Contract</h4><span class="bt-sub">Goes out automatically when a creator is approved. Changes apply to contracts sent from now on — use “Resend contract” for someone who hasn't signed yet.</span></div>
+    <div class="bt-sec">What the creator gets &amp; makes</div>
+    ${ta("bpkProd","Product the creator gets",k.product,"Momo box (12 pcs)","",2)}
+    <div class="bt-row3">
+      ${num("bpkVal","Product value (₹)",k.product_value,"1500")}
+      ${num("bpkDays","Content due (days after delivery)",k.content_days??7,"7")}
+      ${num("bpkMonths","Ad rights (months)",k.ad_rights_months??1,"1")}
     </div>
-    <label class="cp-check"><input type="checkbox" id="bpkCollab"${k.collab_rights===false?"":" checked"}> Collab rights — the creator adds the brand as an Instagram collaborator</label>
-    <label class="cp-check"><input type="checkbox" id="bpkBlack"${k.blacklist_clause===false?"":" checked"}> <span><b>Non-delivery = blacklist</b> from the platform</span></label>
-    <label class="cp-check"><input type="checkbox" id="bpkReship"${k.reship_clause===false?"":" checked"}> <span><b>Re-ship the product at their own cost</b> to another creator we name</span></label>
-    ${ta("bpkExtra","Other terms (optional)",k.extra_terms,"No competitor brands for 30 days after posting")}
+    ${ta("bpkDel","Deliverables",k.deliverables,"1 Reel\n1 Story","One per line",2)}
+    <div class="bt-sec">Rules</div>
+    <div class="bt-checks">
+      ${chk("bpkCollab",k.collab_rights!==false,"<b>Collab rights</b> — the creator adds the brand as an Instagram collaborator")}
+      ${chk("bpkBlack",k.blacklist_clause!==false,"<b>Non-delivery = blacklist</b> from the platform")}
+      ${chk("bpkReship",k.reship_clause!==false,"<b>Re-ship the product at their own cost</b> to another creator we name")}
+    </div>
+    ${ta("bpkExtra","Other terms (optional)",k.extra_terms,"No competitor brands for 30 days after posting","One term per line",3)}
   </div>
-  <div class="card"><h4 style="margin-top:0">🎬 Video brief — goes out automatically when the product is delivered</h4>
-    ${ta("bpbShoot","What to shoot",b.what_to_shoot,"Unboxing + first bite, 20–30 sec, vertical 9:16",3)}
-    ${ta("bpbMsg","Key messages",b.key_messages,"Steamed fresh in 10 minutes, 400+ outlets")}
-    <div class="cp-grid">${ta("bpbDos","Do's",b.dos,"Natural light, show the box")}${ta("bpbDonts","Don'ts",b.donts,"No other brands in frame")}</div>
-    <div class="cp-grid">${inp("bpbCap","Caption to use",b.caption,"Best momos in town 🥟")}${inp("bpbRefs","Reference links",b.reference_links,"https://instagram.com/reel/…")}</div>
-    <div class="cp-grid">${inp("bpbTags","Hashtags",b.hashtags,"#momofest #ad")}${inp("bpbMent","Tag / mention",b.mentions,"@momoco")}</div>
-    ${inp("bpbNote","Posting note (optional)",b.posting_note,"Post between 6–9 pm, tag the brand in the story")}
-    <div class="cp-addrow"><button class="btn sm" id="bpSaveTerms">Save contract &amp; brief</button><span class="cp-hint" id="bpTermsOut"></span></div>
-  </div>`;
+  <div class="card bt-card"><div class="bt-head"><h4>🎬 Video brief</h4><span class="bt-sub">Goes out automatically when the product is delivered.</span></div>
+    <div class="bt-sec">The video</div>
+    ${ta("bpbShoot","What to shoot",b.what_to_shoot,"Unboxing + first bite\n20–30 sec, vertical 9:16","",5)}
+    ${ta("bpbMsg","Key messages",b.key_messages,"Steamed fresh in 10 minutes\n400+ outlets","One message per line",3)}
+    <div class="bt-row2">${ta("bpbDos","Do's",b.dos,"Natural light\nShow the box","One per line",4)}${ta("bpbDonts","Don'ts",b.donts,"No other brands in frame","One per line",4)}</div>
+    <div class="bt-sec">Posting</div>
+    ${ta("bpbCap","Caption to use",b.caption,"Best momos in town 🥟","",3)}
+    <div class="bt-row2">${ta("bpbTags","Hashtags",b.hashtags,"#momofest\n#ad","Space or new line between hashtags",2)}${ta("bpbMent","Tag / mention",b.mentions,"@momoco","Space or new line between handles",2)}</div>
+    ${ta("bpbRefs","Reference links",b.reference_links,"https://instagram.com/reel/…\nhttps://instagram.com/reel/…","Paste one Instagram / video link per line — the creator gets each as a clickable link",3)}
+    ${ta("bpbNote","Posting note (optional)",b.posting_note,"Post between 6–9 pm\nTag the brand in the story","",3)}
+    <div class="bt-save"><button class="btn" id="bpSaveTerms">Save contract &amp; brief</button><span class="cp-hint" id="bpTermsOut"></span></div>
+  </div></div>`;
+}
+// notepad boxes grow with their text (any .bt-grow on the page)
+function btAutoGrow(root){
+  (root||document).querySelectorAll("textarea.bt-grow").forEach(t=>{
+    const fit = ()=>{ t.style.height = "auto"; t.style.height = Math.max(t.scrollHeight + 2, 44) + "px"; };
+    if(!t.__grow){ t.__grow = true; t.addEventListener("input", fit); }
+    requestAnimationFrame(fit);
+  });
 }
 function bpAnalyticsHtml(){
   const a = _bpAnalytics;
@@ -4387,6 +4405,7 @@ function wireBarterProcess(){
     call("blacklist_creator", { p_participation:b.dataset.bpblack, p_reason:r }, b, "⛔ Blacklist"); });
   body.querySelectorAll("[data-bpreassign]").forEach(b=> b.onclick = ()=> openBpReassign(b.dataset.bpreassign));
   const rep = body.querySelector("#bpRepCsv"); if(rep) rep.onclick = ()=> bpDownloadReport();
+  btAutoGrow(body);
   const terms = body.querySelector("#bpSaveTerms");
   if(terms) terms.onclick = async ()=>{
     const v = id => ((document.getElementById(id)||{}).value || "").trim(), ck = id => !!(document.getElementById(id)||{}).checked;
