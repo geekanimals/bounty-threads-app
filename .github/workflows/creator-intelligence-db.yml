@@ -43,6 +43,9 @@ jobs:
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
+      - name: Legacy app schema first (CI-only)
+        run: cp supabase/tests-integration/fixtures/legacy_schema.sql supabase/migrations/20260101000000_ci_legacy_fixture.sql
+
       # Command discovery — don't assume the newer CLI behaves like v2.33.9.
       - name: CLI capability discovery
         run: |
@@ -79,7 +82,7 @@ jobs:
         with:
           deno-version: v2.x
       - name: Deno unit tests (Meta OAuth boundary — mocked, no network)
-        run: deno test supabase/functions/_shared/
+        run: deno test --allow-env supabase/functions/_shared/
       - name: Secret-leak guard (fixtures must be synthetic; no real tokens/secrets committed)
         run: |
           set -e
@@ -106,23 +109,10 @@ jobs:
       - name: Install psql client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
-      - name: Start local database
+      - name: Legacy app schema first (CI-only)
+        run: cp supabase/tests-integration/fixtures/legacy_schema.sql supabase/migrations/20260101000000_ci_legacy_fixture.sql
+      - name: Start local database (applies legacy fixture, then all migrations)
         run: supabase db start
-
-      # Rebuild in production direction: drop the foundation that db-start applied, then apply the
-      # LEGACY fixture FIRST and the six CI migrations SECOND.
-      - name: Remove auto-applied foundation schemas
-        run: psql "$DB_URL" -v ON_ERROR_STOP=1 -c "drop schema if exists intel cascade; drop schema if exists private cascade; drop schema if exists api cascade;"
-
-      - name: Apply legacy schema fixture (ordering-corrected)
-        run: psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests-integration/fixtures/legacy_schema.sql
-
-      - name: Apply the six Creator Intelligence migrations (in order)
-        run: |
-          for f in supabase/migrations/2026*.sql; do
-            echo "== applying $f"
-            psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$f"
-          done
 
       - name: Ensure pgTAP is installed (direct pg_prove needs it on the path)
         run: psql "$DB_URL" -v ON_ERROR_STOP=1 -c "create extension if not exists pgtap with schema public;"
