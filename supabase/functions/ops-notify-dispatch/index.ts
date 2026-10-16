@@ -58,8 +58,11 @@ Deno.serve(async (req) => {
   try {
     const { data: ws } = await api.rpc("ops_wa_settings");
     if (ws?.template) { genTpl = String(ws.template); genLang = String(ws.lang || "en"); }
-    APP_URL = ENV_APP_URL || String(ws?.app_url || "").replace(/\/+$/, "");
-    if (!ENV_APP_URL && ws?.app_url) linkSource = "vercel";
+    const wsUrl = String(ws?.app_url || "").replace(/\/+$/, "");
+    // a *.vercel.app project host is never the public domain — the live domain saved in Super Admin wins
+    const envIsPreview = /\.vercel\.app$/i.test(ENV_APP_URL);
+    APP_URL = (ENV_APP_URL && !(envIsPreview && wsUrl)) ? ENV_APP_URL : (wsUrl || ENV_APP_URL);
+    linkSource = APP_URL === ENV_APP_URL && ENV_APP_URL ? "secret" : (wsUrl ? "settings" : "none");
   } catch (_e) { /* keep env */ }
   try { await api.rpc("ops_report_links", { p_domain: APP_URL || "", p_source: linkSource }); } catch (_e) { /* status only */ }
   const prefsCache = new Map<string, any>();
