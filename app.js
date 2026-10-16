@@ -3314,7 +3314,7 @@ function wireMkHead(acct){
   document.querySelectorAll("#mkHeadWrap [data-mkedit]").forEach(b=> b.onclick = ()=> openMkEdit(b.dataset.mkedit, acct));
 }
 // Share the public media kit: anyone with the link sees only the kit (no login).
-function kitPublicUrl(acct){ return (window.appOrigin ? window.appOrigin() : location.origin) + "/kit/" + encodeURIComponent(String(acct.username||"").replace(/^@/,"")); }
+function kitPublicUrl(acct){ return (window.appOrigin ? window.appOrigin() : location.origin) + "/p.html?u=" + encodeURIComponent(String(acct.username||"").replace(/^@/,"")); }
 function openKitShare(acct){
   if(!acct || !acct.username){ alert("Connect Instagram first — your kit link uses your Instagram username."); return; }
   const url = kitPublicUrl(acct);

@@ -5,8 +5,8 @@
 // (is_platform_admin) — the tab is only a door, never the authority.
 
 // The Super Admin door is NOT on the normal login screen — it opens only at <site>/superadmin
-// (Vercel rewrites /superadmin → app.html). Everyone else sees Creator · Agency Owner · Brand.
-const ADMIN_DOOR = /^\/superadmin\/?$/i.test(location.pathname);
+// (/superadmin/index.html sends you to app.html?door=superadmin — works on any host, no server config). Everyone else sees Creator · Agency Owner · Brand.
+const ADMIN_DOOR = /^\/superadmin\/?$/i.test(location.pathname) || new URLSearchParams(location.search).get("door") === "superadmin";
 const LOGIN_ROLES = ADMIN_DOOR
   ? [["admin","Super Admin","🛡️"]]
   : [["creator","Creator","📸"], ["owner","Agency Owner","🏢"], ["brand","Brand","🛍️"]];

@@ -109,7 +109,7 @@ const Auth = {
     this.profile = null;
     this.user = null;
     // a Super Admin goes back to their own door, everyone else to the home page
-    location.href = (window.__isAdmin || /^\/superadmin\/?$/i.test(location.pathname)) ? '/superadmin' : 'index.html';
+    location.href = (window.__isAdmin || /door=superadmin/.test(location.search)) ? '/app.html?door=superadmin' : 'index.html';
   },
 
   isDemo() { return false; }
