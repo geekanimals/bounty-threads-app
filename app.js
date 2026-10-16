@@ -3951,7 +3951,7 @@ function bulkHtml(){
   const noAddr = live.filter(r=>r._addrMissing).length;
   return `<div class="card bk-card">
       <h3 style="margin:0 0 4px">📥 Upload creators in bulk</h3>
-      <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Give every creator a <b>Status</b> — where they are right now. Creators already on Geek OS are put on that step straight away; the rest get a WhatsApp + email invite, and the moment they register their profile is made from your sheet and they land on that step.</div>
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Give every creator a <b>Status</b> — where they are right now. New creators always get the <b>invite</b> first → they register, connect Instagram (media kit) and complete their profile (pre-filled from your sheet) → then they join the campaign <b>right at their status</b>. Creators already on Geek OS with a complete profile are put on their step straight away.</div>
       ${bkWaLine()}
       ${bkGuideHtml(!rows.length)}
       <div class="bk-src">
@@ -3983,7 +3983,7 @@ function bulkHtml(){
       ${_bk.preview && _bk.preview.error ? `<div class="auth-err">${bkEsc(_bk.preview.error)}</div>` : ""}
       <label class="bk-note"><span>Message to the creators (optional — goes with the invite)</span><input id="bkNote" maxlength="200" value="${bkEsc(_bk.note)}" placeholder="e.g. Diwali drop — we loved your recent reels!"></label>
       <div class="bk-go"><button class="btn" id="bkUpload"${_bk.busy||!valid?" disabled":""}>${_bk.busy?"Uploading…":`Upload &amp; invite ${valid} creator${valid===1?"":"s"}`}</button>
-        <span class="muted">${byStatus.map(([l,n])=>`${n} ${bkEsc(l.toLowerCase())}`).join(" · ")}${noAddr?` · <b style="color:#b45309">${noAddr} without an address</b> (they confirm it in the app)`:""}</span>
+        <span class="muted">${byStatus.map(([l,n])=>`${n} ${bkEsc(l.toLowerCase())}`).join(" · ")}${noAddr?` · <b style="color:#b45309">${noAddr} without an address</b> (they add it in their profile)`:""}</span>
         <button class="btn sm ghost" id="bkClear">Clear</button></div>
       <div id="bkResult"></div>` : ""}
     </div>
@@ -4004,7 +4004,7 @@ function bkGuideHtml(open){
       <li>Every row needs <b>at least one of WhatsApp, Email or Instagram</b> — best is WhatsApp + email: the invite goes to both and all later updates go there.</li>
       <li><b>Status</b> column: where each creator is <b>right now</b> — every row can be different. Write one of the statuses below (blank = <b>Invited</b>). You can also change it here before and after the upload.</li>
       <li>From <b>Address confirmed</b> onwards add the <b>Address</b> (+ State, PIN code). For <b>Courier sent / received</b> add the <b>Courier</b> and <b>Tracking</b> ID or link.</li>
-      <li>When a creator registers through the invite link (or with the same WhatsApp / email / Instagram) their <b>profile is made from your sheet</b> — name, city, email, WhatsApp, delivery address — and their Instagram followers, name and photo are <b>fetched automatically</b>. They land straight on their step; steps done before are marked “confirmed offline”.</li>
+      <li><b>What the creator does:</b> gets the <b>invite</b> on WhatsApp + email (whatever their status) → registers → <b>connects Instagram</b> (media kit) → <b>completes the profile</b> — name, city, email, WhatsApp and delivery address are already <b>pre-filled from your sheet</b>, and their Instagram followers, name and photo are <b>fetched automatically</b>. The moment the profile is complete they join the campaign <b>right at their status</b> (steps done before are marked “confirmed offline”) and get one message for that step.</li>
       <li>Upload the file — or paste a Google Sheet link (Share → <b>Anyone with the link</b> → Viewer). Column names don't have to match exactly; we match them and you can fix them in the dropdowns.</li>
     </ol>
     <div class="bk-mini"><b>Statuses</b> — what happens for each:</div>
@@ -4031,12 +4031,12 @@ function bkListHtml(){
   if(!L.length) return `<div class="muted">Nobody uploaded yet.</div>`;
   const n = s => L.filter(x=>x.status===s).length;
   const ch = o => !o ? "" : o.status==="sent" ? "✓" : o.status==="failed" ? "✗" : o.status==="skipped" ? "⏸" : "…";
-  return `<div class="bk-sum"><span><b>${n("joined")}</b> in the campaign</span><span><b>${n("registered")}</b> registered · joining</span><span><b>${n("invited")}</b> invited · not registered yet</span></div>
+  return `<div class="bk-sum"><span><b>${n("joined")}</b> in the campaign</span><span><b>${n("registered")}</b> registered · setting up profile</span><span><b>${n("invited")}</b> invited · not registered yet</span></div>
     ${L.map(x=>{
       const who = x.instagram || (x.handle?"@"+x.handle:"") || x.name || x.phone || x.email;
       const miss = Array.isArray(x.missing) ? x.missing : [];
       const st = x.status==="joined" ? `<span class="tag good">✓ ${bkEsc(String(x.stage||"").replace(/_/g," "))}</span>`
-               : x.status==="registered" ? `<span class="tag warn">Registered · joining</span>`
+               : x.status==="registered" ? `<span class="tag warn">Registered · setting up profile</span>`
                : `<span class="tag">Invited · not registered</span>`;
       const ig = x.ig ? (x.ig.followers || x.ig.name ? `<span class="muted bk-ch">📸 ${x.ig.name?bkEsc(x.ig.name)+" · ":""}${x.ig.followers?Number(x.ig.followers).toLocaleString("en-IN")+" followers":""}</span>`
                                                      : `<span class="muted bk-ch">📸 ${x.ig.error?"Instagram: "+bkEsc(String(x.ig.error).slice(0,60)):"fetching Instagram…"}</span>`) : "";
@@ -4103,7 +4103,7 @@ function wireBulk(){
     if(error){ paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = error.message||String(error); return; }
     const d = data||{};
     _bk.rows = null; _bk.preview = null; paintBulk();
-    gateToast(`✓ ${d.added||0} put on their step now · ${d.invited||0} invited on WhatsApp/email (they land on their step when they register)${d.waiting_profile?` · ${d.waiting_profile} joining`:""}${d.skipped?` · ${d.skipped} skipped (no contact)`:""}`);
+    gateToast(`✓ ${d.added||0} put on their step now · ${d.invited||0} invited on WhatsApp/email (they join at their status once their profile + Instagram are done)${d.waiting_profile?` · ${d.waiting_profile} on Geek OS, finishing their profile`:""}${d.skipped?` · ${d.skipped} skipped (no contact)`:""}`);
     loadBulkList(); loadBarterProcess(true);
   };
   wireBulkList();
@@ -6393,7 +6393,8 @@ window.onProfileRequirements = function(req){
   window.__profileGate = !req.complete;
   if(wasGated && req.complete){
     if(window.Tracker) Tracker.security("profile_completed");
-    if(window.__inviteGo){ claimCreatorInvites().then(()=>{ currentPage = "mycampaigns"; renderShell(); }); }
+    // a campaign held for them (bulk upload / invite) opens now, right at their step
+    claimCreatorInvites().then(()=>{ if(window.__inviteGo){ currentPage = "mycampaigns"; renderShell(); } });
     gateToast("🎉 Profile complete — you're ready for campaigns! Everything is unlocked.");
     renderNav();
   } else if(wasGated !== !!window.__profileGate){ renderNav(); }

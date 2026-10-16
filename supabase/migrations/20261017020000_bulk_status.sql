@@ -1,9 +1,10 @@
 -- Bulk upload: a STATUS column instead of "Approved". Each creator can already be at a different step:
 --   Invited (blank) · Approved · Contract signed · Address confirmed · Courier sent · Courier received
 -- Optional columns that go with it: Address, State, PIN code, Courier, Tracking (ID or link).
--- On Geek OS already → put straight on that step now. Not on Geek OS → invited; the moment they register
--- (WhatsApp / email / Instagram / the invite link) their creator profile is made from the sheet (name, city,
--- email, WhatsApp, delivery address + what Instagram shows for the handle) and they land on that step.
+-- Whatever the status, someone new first gets the INVITE. They register → make their creator profile (blank fields
+-- are pre-filled from the sheet: name, city, email, WhatsApp, delivery address + what Instagram shows for the
+-- handle) → connect Instagram (media kit) → the moment the profile is complete they join the campaign and land
+-- straight on the sheet's step. Creators already on Geek OS with a complete profile + Instagram join now.
 -- Steps done offline are recorded as "confirmed offline — bulk upload". No message storm: they get ONE message
 -- for the step they land on (address → product shipped → parcel received / video brief).
 -- Every Instagram handle in the sheet goes to the auto-fetch queue (followers, name, photo, bio).
@@ -345,7 +346,7 @@ end $$;
 create or replace function intel.ci_bulk_attach(p_invite uuid, p_member uuid, p_actor uuid default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare i intel.ci_campaign_invite%rowtype; v_identity uuid; v_part uuid; v_stage text; v_name text; v_brand text; v_prod text;
-        v_status text; v_ok boolean;
+        v_status text; v_ok boolean; v_ig boolean; v_req jsonb; v_need jsonb := '[]'::jsonb;
 begin
   select * into i from intel.ci_campaign_invite where invite_id = p_invite for update;
   if i.invite_id is null then return null; end if;
@@ -360,8 +361,26 @@ begin
      where id = p_member and whatsapp_e164 is null and not exists (select 1 from public.wa_contacts w where w.user_id = p_member);
   end if;
 
-  -- their creator profile is made (or completed) from the sheet — nobody waits on a profile form
-  v_identity := intel.ci_bulk_profile(p_member, p_invite);
+  -- first their own profile + Instagram (media kit); the sheet only pre-fills what they haven't written
+  v_identity := intel.ci_member_identity(p_member);
+  if v_identity is not null then perform intel.ci_bulk_profile(p_member, p_invite); end if;
+  v_ig := exists (select 1 from public.social_accounts sa where sa.member_id = p_member and sa.platform = 'instagram'
+                    and coalesce(sa.username, '') <> '');
+  if v_identity is null then v_need := v_need || '"Create the creator profile"'::jsonb;
+  else
+    v_req := intel.ci_profile_requirements(v_identity);
+    if not coalesce((v_req->>'complete')::boolean, false) then v_need := v_need || '"Complete the creator profile"'::jsonb; end if;
+  end if;
+  if not v_ig then v_need := v_need || '"Connect Instagram (media kit)"'::jsonb; end if;
+  if jsonb_array_length(v_need) > 0 then
+    -- hold the campaign for them and say what's left (once)
+    if i.reserved_by is distinct from p_member then
+      update intel.ci_campaign_invite set reserved_by = p_member where invite_id = p_invite;
+      perform intel.ci_notify(p_member, i.campaign_id, null, 'bulk_waiting',
+        jsonb_build_object('campaign', coalesce(v_name,'a campaign'), 'brand', coalesce(v_brand,'A brand')));
+    end if;
+    return jsonb_build_object('status', 'waiting_profile', 'member_id', p_member, 'needs', v_need);
+  end if;
 
   select participation_id, stage into v_part, v_stage from intel.ci_campaign_participation
    where campaign_id = i.campaign_id and identity_id = v_identity;
@@ -386,6 +405,17 @@ begin
   select stage into v_stage from intel.ci_campaign_participation where participation_id = v_part;
   return jsonb_build_object('status', 'joined', 'member_id', p_member, 'participation_id', v_part, 'stage', v_stage);
 end $$;
+
+-- "waiting" message: what is left before the campaign opens
+update intel.ci_notification_template set
+  title = '{{brand}} has a campaign waiting for you: {{campaign}}',
+  body_md = 'You''re on **{{campaign}}** with {{brand}}. Connect your Instagram (media kit) and complete your creator profile — the campaign opens for you the moment it''s done, right at your step.',
+  action_route = 'mediakit', action_label = 'Finish setting up'
+ where template_key = 'bulk_waiting';
+update intel.ci_step_copy set did = 'registering for {{campaign}} with {{brand}}',
+  next_step = 'connect your Instagram (media kit) and complete your creator profile in the app',
+  then_we = 'open the campaign for you right at your step'
+ where template_key = 'bulk_waiting';
 
 -- ---------------------------------------------------------------------------------------------------
 -- 5) Team side
@@ -539,9 +569,11 @@ begin
       'status', case when p.participation_id is not null then 'joined' when mem.mid is not null then 'registered' else 'invited' end,
       'stage', p.stage, 'participation_id', p.participation_id,
       'instagram', (select '@'||sa.username from public.social_accounts sa where sa.member_id = mem.mid and sa.platform='instagram' limit 1),
-      'missing', case when mem.mid is null then null
-                      when intel.ci_member_identity(mem.mid) is null then jsonb_build_array('Creator profile not started')
-                      else intel.ci_profile_requirements(intel.ci_member_identity(mem.mid))->'missing' end,
+      'missing', case when mem.mid is null then null else
+                   case when not exists (select 1 from public.social_accounts sa where sa.member_id = mem.mid and sa.platform = 'instagram')
+                        then jsonb_build_array('Connect Instagram (media kit)') else '[]'::jsonb end
+                   || case when intel.ci_member_identity(mem.mid) is null then jsonb_build_array('Creator profile not started')
+                           else coalesce(intel.ci_profile_requirements(intel.ci_member_identity(mem.mid))->'missing', '[]'::jsonb) end end,
       'wa', (select jsonb_build_object('status', o.status, 'error', o.last_error, 'at', coalesce(o.sent_at, o.created_at)) from intel.ci_outbox o
               where o.dedupe_key like 'binv:' || i.invite_id || ':wa:%' order by o.created_at desc limit 1),
       'mail', (select jsonb_build_object('status', o.status, 'error', o.last_error, 'at', coalesce(o.sent_at, o.created_at)) from intel.ci_outbox o
