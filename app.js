@@ -3747,40 +3747,72 @@ function wireMkComposer(){
 
 /* ================= BULK CREATOR UPLOAD (inside a campaign's Barter process → 📥 Bulk upload) =================
  * Google Sheet link / Excel / CSV / Word (table or list) / paste → columns matched automatically → preview with a
- * tick for everyone already approved → Upload & invite. On Geek OS already → added to the campaign now (ticked →
- * contract goes out on its own). Not on Geek OS → WhatsApp (sheet's number) + email invite with a link; the
- * campaign opens for them the moment they register. The list below follows every row live.            */
+ * STATUS for every creator (each one can already be on a different step: Invited · Approved · Contract signed ·
+ * Address confirmed · Courier sent · Courier received) → Upload & invite. On Geek OS already → put on that step
+ * now. Not on Geek OS → WhatsApp + email invite; when they register their profile is made from the sheet and they
+ * land on that step. Instagram handles are auto-fetched (followers, name, photo). The list follows every row live. */
 let _bk = { rows:null, head:null, map:null, preview:null, list:null, src:"", busy:false, note:"" };
 const BK_FIELDS = [
   ["name","Name", /^(full ?name|name|creator( name)?|influencer( name)?)$/i],
-  ["handle","Instagram", /(insta|^ig\b|handle|username|profile|account|link|url)/i],
-  ["phone","WhatsApp", /(whats ?app|phone|mobile|contact( no| number)?|number|cell|wa\b)/i],
+  ["handle","Instagram", /^(?!.*(track|awb|courier)).*(insta|^ig\b|handle|username|profile|account|link|url)/i],
+  ["phone","WhatsApp", /^(?!.*(track|awb|courier|pin|zip|postal|follower)).*(whats ?app|phone|mobile|contact( no| number)?|number|cell|wa\b)/i],
   ["email","Email", /(e-?mail|mail id)/i],
   ["city","City", /(city|location|place|town)/i],
   ["followers","Followers", /(follower|followers|reach|fans)/i],
-  ["approved","Approved", /(approv|status|selected|confirm|final|shortlist|tick|✓)/i]
+  ["status","Status", /^(?!.*(mail|address|track)).*(status|stage|phase|step|approv|selected|confirm|final|shortlist|tick|✓)/i],
+  ["address","Address", /^(?!.*(e-?mail|mail id)).*(address|addr\b)/i],
+  ["state","State", /^(state|province)\b/i],
+  ["pincode","PIN code", /(pin ?code|^pin\b|zip|postal|post ?code)/i],
+  ["courier","Courier", /(courier|carrier|delivery partner|shipping partner)/i],
+  ["tracking","Tracking", /(track|awb|consignment|docket|waybill)/i]
 ];
+// each creator can already be on a different step — the sheet's Status column says which
+const BK_STATUSES = [
+  ["invited","Invited","gets the campaign with an Apply button"],
+  ["approved","Approved","contract goes out straight away"],
+  ["contract_signed","Contract signed","next: confirm delivery address"],
+  ["address_confirmed","Address confirmed","next: you add the courier"],
+  ["courier_sent","Courier sent","next: creator taps Received"],
+  ["courier_received","Courier received","video brief unlocks · video deadline starts"]];
+const bkStLabel = k => (BK_STATUSES.find(x=>x[0]===k)||BK_STATUSES[0])[1];
+// same reading as the database (intel.ci_bulk_status): null = not understood
+function bkStatus(v){
+  const t = String(v==null?"":v).trim().toLowerCase();
+  if(!t || /^(invited|invite|new|pending|apply|to apply|no|-|—|not approved)$/.test(t)) return "invited";
+  if(/(receiv|deliver|recieved|in hand|got it|reached)/.test(t)) return "courier_received";
+  if(/(courier|ship|dispatch|sent|transit|awb|on the way|out for)/.test(t)) return "courier_sent";
+  if(/address/.test(t)) return "address_confirmed";
+  if(/(contract|sign)/.test(t)) return "contract_signed";
+  if(/^(y|yes|approved?|selected|confirmed?|final|done|ok|okay|true|1|✓|✔|☑|x|shortlisted|brand approved)$/.test(t)) return "approved";
+  return null;
+}
+const bkNeedsAddr = k => ["address_confirmed","courier_sent","courier_received"].includes(k);
 const BK_SAMPLE = [
-  ["Name","Instagram","WhatsApp","Email","City","Followers","Approved"],
-  ["Asha Rao","@asha.creates","9876543210","asha@example.com","Mumbai","25000","Yes"],
-  ["Rohan Mehta","https://instagram.com/rohan.eats","+91 98111 22233","rohan@example.com","Delhi","12000",""],
-  ["Meera Shah","meera.styles","9000011111","","Pune","8000","Yes"]];
+  ["Name","Instagram","WhatsApp","Email","City","Status","Address","State","PIN code","Courier","Tracking"],
+  ["Asha Rao","@asha.creates","9876543210","asha@example.com","Mumbai","Approved","","","","",""],
+  ["Rohan Mehta","https://instagram.com/rohan.eats","+91 98111 22233","rohan@example.com","Delhi","",""," ","","",""],
+  ["Meera Shah","meera.styles","9000011111","","Pune","Address confirmed","Flat 4B, Lake View, Koregaon Park","Maharashtra","411001","",""],
+  ["Kabir Sen","@kabir.cooks","9830012345","kabir@example.com","Kolkata","Courier sent","12 Park St","West Bengal","700016","DTDC","D12345678"],
+  ["Nisha Jain","nisha.home","9123456780","","Jaipur","Courier received","22 C-Scheme","Rajasthan","302001","Delhivery","https://www.delhivery.com/track/package/1234"]].map(r=>r.map(c=>c.trim()));
 const BK_GUIDE = [
-  ["Name","Creator's name","Asha Rao","optional"],
-  ["Instagram","@handle, handle or profile link","@asha.creates","one of these 3"],
+  ["Name","Creator's name — their profile is made with it","Asha Rao","optional"],
+  ["Instagram","@handle, handle or profile link — followers, name & photo are fetched automatically","@asha.creates","one of these 3"],
   ["WhatsApp","10-digit number (India) or +country code — the invite + all updates go here","9876543210","one of these 3"],
   ["Email","Their email — the invite goes here too","asha@example.com","one of these 3"],
   ["City","City","Mumbai","optional"],
-  ["Followers","Number only","25000","optional"],
-  ["Approved","Yes = brand already approved → contract goes straight away · blank = they get “Apply”","Yes","optional"]];
+  ["Status","Where this creator is right now (see Statuses above). Blank = Invited","Courier sent","optional"],
+  ["Address","Delivery address — needed from “Address confirmed” onwards","12 Park St","for address+"],
+  ["State","State of the address","West Bengal","optional"],
+  ["PIN code","6-digit PIN (we also find it inside the address)","700016","optional"],
+  ["Courier","Courier company — for “Courier sent” / “Courier received”","DTDC","optional"],
+  ["Tracking","Tracking ID or tracking link","D12345678","optional"]];
 async function bkDownloadXlsx(){
   await bkLoadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
   const ws = XLSX.utils.aoa_to_sheet(BK_SAMPLE);
-  ws["!cols"] = [{wch:18},{wch:32},{wch:18},{wch:24},{wch:12},{wch:10},{wch:10}];
+  ws["!cols"] = [{wch:16},{wch:30},{wch:16},{wch:22},{wch:11},{wch:18},{wch:34},{wch:14},{wch:9},{wch:11},{wch:30}];
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Creators");
   XLSX.writeFile(wb, "geek-creators-template.xlsx");
 }
-const bkYes = v => /^(y|yes|approved?|selected|confirmed?|final|done|ok|true|1|✓|✔|☑|x)$/i.test(String(v||"").trim());
 const bkEsc = s => esc(s==null ? "" : String(s));
 
 function bkSplitCsv(text){
@@ -3873,12 +3905,14 @@ function bkSetRows(rows, src){
       else if(_bk.map.handle==null && vals.filter(v=>/instagram\.com|^@/.test(v)).length >= Math.max(1, vals.length/3)) _bk.map.handle = i;
     }
   }
-  _bk.rows = body.map(r=> ({ cells: r, approved: _bk.map.approved!=null ? bkYes(r[_bk.map.approved]) : false }));
+  _bk.rows = body.map(r=> ({ cells: r, status: _bk.map.status!=null ? (bkStatus(r[_bk.map.status])||"invited") : "invited" }));
   _bk.src = src; _bk.preview = null;
 }
 function bkRowData(r){
   const g = k => _bk.map[k]!=null ? String(r.cells[_bk.map[k]]||"").trim() : "";
-  return { name:g("name"), handle:g("handle"), phone:g("phone"), email:g("email"), city:g("city"), followers:g("followers"), approved: !!r.approved };
+  return { name:g("name"), handle:g("handle"), phone:g("phone"), email:g("email"), city:g("city"), followers:g("followers"),
+           status: r.status||"invited", approved: (r.status||"invited")!=="invited",
+           address:g("address"), state:g("state"), pincode:g("pincode"), courier:g("courier"), tracking:g("tracking") };
 }
 async function bkCheck(){
   if(!_bk.rows) return;
@@ -3891,22 +3925,33 @@ async function loadBulkList(){
   _bk.list = error ? { error: error.message||String(error) } : (data||[]);
   const box = document.getElementById("bkList"); if(box) box.innerHTML = bkListHtml(); wireBulkList();
 }
-function bkStatusChip(p){
+function bkStatusChip(p, r){
   if(!p) return '<span class="muted">…</span>';
   if(p.no_contact) return '<span class="tag warn">⚠ no WhatsApp / email / Instagram</span>';
+  const st = (r && r.status) || "invited";
   const bad = (p.phone_bad?" · number looks wrong":"") + (p.email_bad?" · email looks wrong":"");
-  if(p.on_platform) return p.stage ? `<span class="tag">already in · ${bkEsc(String(p.stage).replace(/_/g," "))}</span>`
-                                   : `<span class="tag good">On Geek OS${p.who?` · ${bkEsc(p.who)}`:""} — added now</span>`;
-  return `<span class="tag">New — invite on ${[p.phone?"WhatsApp":null, p.email?"email":null].filter(Boolean).join(" + ")||"Instagram only"}</span>${bad?`<span class="tag warn">${bkEsc(bad.slice(3))}</span>`:""}`;
+  const warn = [bad.slice(3), r && r._addrMissing ? "add the address" : ""].filter(Boolean).join(" · ");
+  const ig = p.ig && (p.ig.followers || p.ig.name) ? `<div class="muted bk-ig">📸 ${p.ig.name?bkEsc(p.ig.name)+" · ":""}${p.ig.followers?Number(p.ig.followers).toLocaleString("en-IN")+" followers":""}</div>` : "";
+  const land = st==="invited" ? "" : ` → <b>${bkEsc(bkStLabel(st))}</b>`;
+  const main = p.on_platform
+    ? (p.stage ? `<span class="tag">already in · ${bkEsc(String(p.stage).replace(/_/g," "))}${land}</span>`
+               : `<span class="tag good">On Geek OS${p.who?` · ${bkEsc(p.who)}`:""} — added now${land}</span>`)
+    : `<span class="tag">New — invite on ${[p.phone?"WhatsApp":null, p.email?"email":null].filter(Boolean).join(" + ")||"Instagram only"}${land?` · lands on ${bkEsc(bkStLabel(st))}`:""}</span>`;
+  return main + (warn?`<span class="tag warn">${bkEsc(warn)}</span>`:"") + ig;
+}
+function bkStatusSelect(attr, val, extra){
+  return `<select class="bk-stsel st-${bkEsc(val||"invited")}" ${attr}${extra||""}>${BK_STATUSES.map(([k,l])=>`<option value="${k}"${k===val?" selected":""}>${l}</option>`).join("")}</select>`;
 }
 function bulkHtml(){
-  const sample = "data:text/csv;charset=utf-8," + encodeURIComponent("Name,Instagram,WhatsApp,Email,City,Followers,Approved\nAsha Rao,@asha.creates,9876543210,asha@example.com,Mumbai,25000,Yes\nRohan Mehta,https://instagram.com/rohan.eats,+91 98111 22233,rohan@example.com,Delhi,12000,\n");
   const rows = _bk.rows||[], pv = Array.isArray(_bk.preview) ? _bk.preview : null;
   const valid = pv ? pv.filter(p=>!p.no_contact).length : rows.length;
-  const ticked = rows.filter((r,i)=> r.approved && !(pv && pv[i] && pv[i].no_contact)).length;
+  rows.forEach(r=>{ const d = bkRowData(r); r._addrMissing = bkNeedsAddr(r.status) && !d.address; });
+  const live = rows.filter((r,i)=> !(pv && pv[i] && pv[i].no_contact));
+  const byStatus = BK_STATUSES.map(([k,l])=>[l, live.filter(r=>(r.status||"invited")===k).length]).filter(x=>x[1]);
+  const noAddr = live.filter(r=>r._addrMissing).length;
   return `<div class="card bk-card">
       <h3 style="margin:0 0 4px">📥 Upload creators in bulk</h3>
-      <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Tick everyone who is <b>already approved</b> — they go straight to the contract. Everyone gets the campaign; people not on Geek OS yet get a WhatsApp + email invite to register.</div>
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Give every creator a <b>Status</b> — where they are right now. Creators already on Geek OS are put on that step straight away; the rest get a WhatsApp + email invite, and the moment they register their profile is made from your sheet and they land on that step.</div>
       ${bkWaLine()}
       ${bkGuideHtml(!rows.length)}
       <div class="bk-src">
@@ -3916,25 +3961,29 @@ function bulkHtml(){
         <button class="btn sm ghost" id="bkPick">🎯 Pick from Geek OS instead</button>
       </div>
       <details class="bk-paste"><summary>…or paste rows (copy cells from Sheets / Excel / Word)</summary>
-        <textarea id="bkPaste" rows="4" placeholder="Name, Instagram, WhatsApp, Email, City, Approved"></textarea>
+        <textarea id="bkPaste" rows="4" placeholder="Name, Instagram, WhatsApp, Email, City, Status, Address, State, PIN code, Courier, Tracking"></textarea>
         <button class="btn sm ghost" id="bkPasteGo">Use pasted rows</button></details>
       <div class="auth-err" id="bkErr"></div>
       ${rows.length ? `
       <div class="bk-meta"><b>${rows.length}</b> row${rows.length>1?"s":""} from ${bkEsc(_bk.src)} · match the columns:</div>
       <div class="bk-map">${BK_FIELDS.map(([k,l])=>`<label><span>${l}</span><select data-bkmap="${k}"><option value="">—</option>${_bk.head.map((h,i)=>`<option value="${i}"${_bk.map[k]===i?" selected":""}>${bkEsc(h)}</option>`).join("")}</select></label>`).join("")}</div>
+      <div class="bk-setall"><span>Set everyone to</span>${bkStatusSelect('id="bkAllSt"', "", "")}<span class="muted">— or change each row below</span></div>
       <div class="bk-tablewrap"><table class="bk-table"><thead><tr>
-        <th><label title="Tick all"><input type="checkbox" id="bkAll"${rows.length && rows.every(r=>r.approved)?" checked":""}> Approved</label></th>
-        <th>Name</th><th>Instagram</th><th>WhatsApp</th><th>Email</th><th>City</th><th>What happens</th></tr></thead><tbody>
+        <th>Status</th><th>Name</th><th>Instagram</th><th>WhatsApp</th><th>Email</th><th>City</th><th>Address · courier</th><th>What happens</th></tr></thead><tbody>
         ${rows.map((r,i)=>{ const d = bkRowData(r), p = pv && pv[i];
-          return `<tr class="${p&&p.no_contact?"bk-bad":""}"><td><input type="checkbox" data-bkapp="${i}"${r.approved?" checked":""}${p&&p.no_contact?" disabled":""}></td>
+          const raw = _bk.map.status!=null ? String(r.cells[_bk.map.status]||"").trim() : "";
+          const unread = raw && !bkStatus(raw);
+          const ship = [d.address, [d.state, d.pincode].filter(Boolean).join(" "), [d.courier, d.tracking].filter(Boolean).join(" · ")].filter(Boolean).join(" · ");
+          return `<tr class="${p&&p.no_contact?"bk-bad":""}"><td>${bkStatusSelect(`data-bkst="${i}"`, r.status||"invited", p&&p.no_contact?" disabled":"")}${unread?`<div class="muted bk-raw" title="Couldn't read this status — pick it">“${bkEsc(raw.slice(0,24))}”?</div>`:""}</td>
             <td>${bkEsc(d.name)||'<span class="muted">—</span>'}</td><td>${p&&p.handle?"@"+bkEsc(p.handle):bkEsc(d.handle)}</td>
             <td>${p&&p.phone?bkEsc(p.phone):bkEsc(d.phone)}</td><td>${bkEsc(p&&p.email||d.email)}</td><td>${bkEsc(d.city)}</td>
-            <td>${pv?bkStatusChip(p):'<span class="muted">checking…</span>'}</td></tr>`; }).join("")}
+            <td class="bk-ship">${ship?bkEsc(ship):'<span class="muted">—</span>'}</td>
+            <td>${pv?bkStatusChip(p, r):'<span class="muted">checking…</span>'}</td></tr>`; }).join("")}
       </tbody></table></div>
       ${_bk.preview && _bk.preview.error ? `<div class="auth-err">${bkEsc(_bk.preview.error)}</div>` : ""}
       <label class="bk-note"><span>Message to the creators (optional — goes with the invite)</span><input id="bkNote" maxlength="200" value="${bkEsc(_bk.note)}" placeholder="e.g. Diwali drop — we loved your recent reels!"></label>
       <div class="bk-go"><button class="btn" id="bkUpload"${_bk.busy||!valid?" disabled":""}>${_bk.busy?"Uploading…":`Upload &amp; invite ${valid} creator${valid===1?"":"s"}`}</button>
-        <span class="muted">${ticked} ticked as approved → contract goes out automatically · ${Math.max(valid-ticked,0)} get the campaign to apply</span>
+        <span class="muted">${byStatus.map(([l,n])=>`${n} ${bkEsc(l.toLowerCase())}`).join(" · ")}${noAddr?` · <b style="color:#b45309">${noAddr} without an address</b> (they confirm it in the app)`:""}</span>
         <button class="btn sm ghost" id="bkClear">Clear</button></div>
       <div id="bkResult"></div>` : ""}
     </div>
@@ -3953,9 +4002,14 @@ function bkGuideHtml(open){
       <li><b>Download a template</b> below (Excel or CSV) — or copy it straight into a new Google Sheet.</li>
       <li><b>One creator per row.</b> Keep the first row as the column names.</li>
       <li>Every row needs <b>at least one of WhatsApp, Email or Instagram</b> — best is WhatsApp + email: the invite goes to both and all later updates go there.</li>
-      <li><b>Approved</b> column: write <b>Yes</b> for creators the brand has already approved (their contract goes out the moment they join). Leave it blank for the rest — they get the campaign with an <b>Apply</b> button. You can also tick/untick here after uploading the file.</li>
+      <li><b>Status</b> column: where each creator is <b>right now</b> — every row can be different. Write one of the statuses below (blank = <b>Invited</b>). You can also change it here before and after the upload.</li>
+      <li>From <b>Address confirmed</b> onwards add the <b>Address</b> (+ State, PIN code). For <b>Courier sent / received</b> add the <b>Courier</b> and <b>Tracking</b> ID or link.</li>
+      <li>When a creator registers through the invite link (or with the same WhatsApp / email / Instagram) their <b>profile is made from your sheet</b> — name, city, email, WhatsApp, delivery address — and their Instagram followers, name and photo are <b>fetched automatically</b>. They land straight on their step; steps done before are marked “confirmed offline”.</li>
       <li>Upload the file — or paste a Google Sheet link (Share → <b>Anyone with the link</b> → Viewer). Column names don't have to match exactly; we match them and you can fix them in the dropdowns.</li>
     </ol>
+    <div class="bk-mini"><b>Statuses</b> — what happens for each:</div>
+    <div class="bk-stlist">${BK_STATUSES.map(([k,l,h],n)=>`<div class="bk-stitem"><span class="bk-stn">${n+1}</span><div><b>${bkEsc(l)}</b><div class="muted">${bkEsc(h)}</div></div></div>`).join("")}</div>
+    <div class="bk-mini">Columns:</div>
     <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable"><thead><tr><th>Column</th><th>What to put</th><th>Example</th><th>Needed?</th></tr></thead><tbody>
       ${BK_GUIDE.map(g=>`<tr><td><b>${bkEsc(g[0])}</b></td><td>${bkEsc(g[1])}</td><td><code>${bkEsc(g[2])}</code></td><td>${g[3]==="optional"?'<span class="muted">optional</span>':`<span class="tag">${bkEsc(g[3])}</span>`}</td></tr>`).join("")}
     </tbody></table></div>
@@ -3977,24 +4031,26 @@ function bkListHtml(){
   if(!L.length) return `<div class="muted">Nobody uploaded yet.</div>`;
   const n = s => L.filter(x=>x.status===s).length;
   const ch = o => !o ? "" : o.status==="sent" ? "✓" : o.status==="failed" ? "✗" : o.status==="skipped" ? "⏸" : "…";
-  return `<div class="bk-sum"><span><b>${n("joined")}</b> in the campaign</span><span><b>${n("registered")}</b> registered · profile pending</span><span><b>${n("invited")}</b> invited · not registered yet</span></div>
+  return `<div class="bk-sum"><span><b>${n("joined")}</b> in the campaign</span><span><b>${n("registered")}</b> registered · joining</span><span><b>${n("invited")}</b> invited · not registered yet</span></div>
     ${L.map(x=>{
       const who = x.instagram || (x.handle?"@"+x.handle:"") || x.name || x.phone || x.email;
       const miss = Array.isArray(x.missing) ? x.missing : [];
       const st = x.status==="joined" ? `<span class="tag good">✓ ${bkEsc(String(x.stage||"").replace(/_/g," "))}</span>`
-               : x.status==="registered" ? `<span class="tag warn">Registered · finishing profile</span>`
+               : x.status==="registered" ? `<span class="tag warn">Registered · joining</span>`
                : `<span class="tag">Invited · not registered</span>`;
+      const ig = x.ig ? (x.ig.followers || x.ig.name ? `<span class="muted bk-ch">📸 ${x.ig.name?bkEsc(x.ig.name)+" · ":""}${x.ig.followers?Number(x.ig.followers).toLocaleString("en-IN")+" followers":""}</span>`
+                                                     : `<span class="muted bk-ch">📸 ${x.ig.error?"Instagram: "+bkEsc(String(x.ig.error).slice(0,60)):"fetching Instagram…"}</span>`) : "";
       const msgs = x.status==="invited" ? `<span class="muted bk-ch">${x.phone?`WhatsApp ${ch(x.wa)}`:""}${x.phone&&x.email?" · ":""}${x.email?`Email ${ch(x.mail)}`:""}${x.invites_sent>1?` · sent ${x.invites_sent}×`:""}</span>` : "";
       const err = [x.wa&&x.wa.status!=="sent"&&x.wa.error, x.mail&&x.mail.status!=="sent"&&x.mail.error].filter(Boolean)[0];
       return `<div class="bk-row">
         <div class="bk-who"><b>${bkEsc(who)}</b>${x.name&&who!==x.name?` <span class="muted">${bkEsc(x.name)}</span>`:""}
           <div class="muted" style="font-size:12px">${[x.phone,x.email,x.city].filter(Boolean).map(bkEsc).join(" · ")}</div></div>
-        <div class="bk-st">${st} ${x.approved?'<span class="tag good">approved</span>':""} ${msgs}
+        <div class="bk-st">${st} ${msgs} ${ig}
           ${miss.length && x.status!=="invited" ? `<div class="muted" style="font-size:12px">Still to do: ${miss.slice(0,3).map(bkEsc).join(", ")}${miss.length>3?` +${miss.length-3} more`:""}</div>`:""}
           ${err?`<div class="muted" style="font-size:12px;color:#b45309">${bkEsc(String(err).slice(0,140))}</div>`:""}</div>
         <div class="bk-act">
           ${x.participation_id?`<button class="mini-btn" data-bkopen="${bkEsc(x.participation_id)}">Open</button>`:""}
-          ${!x.approved?`<button class="mini-btn ghost" data-bkok="${bkEsc(x.invite_id)}">Mark approved</button>`:""}
+          <label class="bk-chg" title="Where this creator is — moves them forward (never back)">${bkStatusSelect(`data-bkset="${bkEsc(x.invite_id)}"`, x.sheet_status||(x.approved?"approved":"invited"), "")}</label>
           ${x.status!=="joined"?`<button class="mini-btn ghost" data-bkre="${bkEsc(x.invite_id)}">Resend</button><button class="mini-btn ghost" data-bkdel="${bkEsc(x.invite_id)}">Remove</button>`:""}
         </div></div>`; }).join("")}`;
 }
@@ -4009,7 +4065,11 @@ function wireBulkList(){
   const act = (sel, fn)=> box.querySelectorAll(sel).forEach(b=> b.onclick = async ()=>{ b.disabled = true; try{ await fn(b); }catch(e){ gateToast(e.message||String(e)); } b.disabled = false; loadBulkList(); });
   act("[data-bkre]", async b=>{ const { data, error } = await sb.schema("api").rpc("bulk_resend_invite", { p_invite:b.dataset.bkre }); if(error) throw error;
     gateToast(data && data.status==="joined" ? "They're on Geek OS — added to the campaign ✓" : "Invite sent again ✓"); });
-  act("[data-bkok]", async b=>{ const { error } = await sb.schema("api").rpc("bulk_set_approved", { p_invite:b.dataset.bkok, p_approved:true }); if(error) throw error; gateToast("Approved ✓ — contract goes out as soon as they're in"); });
+  box.querySelectorAll("[data-bkset]").forEach(sel=> sel.onchange = async ()=>{ sel.disabled = true;
+    try{ const { data, error } = await sb.schema("api").rpc("bulk_set_status", { p_invite:sel.dataset.bkset, p_status:sel.value }); if(error) throw error;
+      gateToast(`Status → ${bkStLabel(sel.value)} ✓${data && data.stage ? " · now: "+String(data.stage).replace(/_/g," ") : " · applies when they join"}`); }
+    catch(e){ gateToast(e.message||String(e)); }
+    sel.disabled = false; loadBulkList(); });
   act("[data-bkdel]", async b=>{ if(!confirm("Remove this creator from the upload? (No message is sent.)")) return; const { error } = await sb.schema("api").rpc("bulk_delete_invite", { p_invite:b.dataset.bkdel }); if(error) throw error; });
   box.querySelectorAll("[data-bkopen]").forEach(b=> b.onclick = ()=>{ _bpOpen = b.dataset.bkopen; _bpTab = "tracker"; paintBarterProcess(); });
 }
@@ -4020,10 +4080,11 @@ function wireBulk(){
   const lg = $b("bkLinkGo"); if(lg) lg.onclick = ()=>{ const u = $b("bkLink").value.trim(); if(u){ lg.textContent = "Loading…"; take(()=>bkReadSheetLink(u), "Google Sheet").finally(()=>{ if(lg.isConnected) lg.textContent = "Load sheet"; }); } };
   const pg = $b("bkPasteGo"); if(pg) pg.onclick = ()=>{ const t = $b("bkPaste").value; take(async()=>{ const r = bkSplitCsv(t); return r.length && r[0].length>1 ? r : bkFromLines(t.split("\n")); }, "pasted rows"); };
   document.querySelectorAll("[data-bkmap]").forEach(s=> s.onchange = ()=>{ const k = s.dataset.bkmap; if(s.value==="") delete _bk.map[k]; else _bk.map[k] = +s.value;
-    if(k==="approved") _bk.rows.forEach(r=> r.approved = _bk.map.approved!=null ? bkYes(r.cells[_bk.map.approved]) : false);
+    if(k==="status") _bk.rows.forEach(r=> r.status = _bk.map.status!=null ? (bkStatus(r.cells[_bk.map.status])||"invited") : "invited");
     _bk.preview = null; paintBulk(); bkCheck(); });
-  document.querySelectorAll("[data-bkapp]").forEach(c=> c.onchange = ()=>{ _bk.rows[+c.dataset.bkapp].approved = c.checked; paintBulk(); });
-  const all = $b("bkAll"); if(all) all.onchange = ()=>{ _bk.rows.forEach(r=> r.approved = all.checked); paintBulk(); };
+  document.querySelectorAll("[data-bkst]").forEach(c=> c.onchange = ()=>{ _bk.rows[+c.dataset.bkst].status = c.value; paintBulk(); });
+  const all = $b("bkAllSt"); if(all){ all.insertAdjacentHTML("afterbegin", '<option value="" selected>— choose —</option>'); all.value = "";
+    all.onchange = ()=>{ if(!all.value) return; _bk.rows.forEach(r=> r.status = all.value); paintBulk(); }; }
   const note = $b("bkNote"); if(note) note.oninput = ()=>{ _bk.note = note.value; };
   if(_bk.wa===undefined){ _bk.wa = "loading";
     sb.schema("api").rpc("wa_invite_ready").then(r=>{ _bk.wa = r && !r.error ? (r.data||{}) : null; paintBulk(); }, ()=>{ _bk.wa = null; }); }
@@ -4042,7 +4103,7 @@ function wireBulk(){
     if(error){ paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = error.message||String(error); return; }
     const d = data||{};
     _bk.rows = null; _bk.preview = null; paintBulk();
-    gateToast(`✓ ${d.added||0} added to the campaign · ${d.invited||0} invited on WhatsApp/email${d.waiting_profile?` · ${d.waiting_profile} finishing their profile`:""}${d.skipped?` · ${d.skipped} skipped (no contact)`:""}`);
+    gateToast(`✓ ${d.added||0} put on their step now · ${d.invited||0} invited on WhatsApp/email (they land on their step when they register)${d.waiting_profile?` · ${d.waiting_profile} joining`:""}${d.skipped?` · ${d.skipped} skipped (no contact)`:""}`);
     loadBulkList(); loadBarterProcess(true);
   };
   wireBulkList();
@@ -6134,8 +6195,8 @@ async function builtInAnswer(text){
     const q = text.toLowerCase();
     if(/delete|hata|remove/.test(q)) return T("Campaign kholo → **🗑 Request delete** dabao aur wajah likho. Super Admin approve karega tab campaign delete hoga.",
                                               "Open the campaign → tap **🗑 Request delete** and add a reason. It's deleted once the Super Admin approves.");
-    if(/bulk|sheet|upload|excel|csv/.test(q)) return T("Campaign kholo → **📥 Bulk upload creators**. Wahan sheet ka template aur guide hai — naam, WhatsApp number, email, Instagram aur 'approved' tick bharo.",
-                                              "Open the campaign → **📥 Bulk upload creators**. The sheet template and guide are there — name, WhatsApp number, email, Instagram and the 'approved' tick.");
+    if(/bulk|sheet|upload|excel|csv/.test(q)) return T("Campaign kholo → **📥 Bulk upload creators**. Wahan sheet ka template aur guide hai — naam, WhatsApp, email, Instagram aur har creator ka **Status** (Invited · Approved · Contract signed · Address confirmed · Courier sent · Courier received), address aur courier bharo.",
+                                              "Open the campaign → **📥 Bulk upload creators**. The sheet template and guide are there — name, WhatsApp, email, Instagram and each creator's **Status** (Invited · Approved · Contract signed · Address confirmed · Courier sent · Courier received), plus address and courier.");
     if(/invite|creator dh|find|discover|search/.test(q)) return T("**Discover** mein category / followers se creators dhoondo, ya campaign mein **🎯 Invite creators** dabao.",
                                               "Use **Discover** to find creators by category / followers, or tap **🎯 Invite creators** in a campaign.");
     if(/new campaign|campaign bana|create campaign|naya campaign/.test(q)) return T("**Campaigns → New campaign** — brand, product, deliverables, brief aur contract terms bharo. Phir creators jodo.",

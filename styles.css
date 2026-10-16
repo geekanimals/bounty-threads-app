@@ -1207,6 +1207,26 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .bk-mini{font-size:12px;margin:10px 0 6px;line-height:1.5}
 .bk-dl{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .bk-gtable td:first-child,.bk-gtable .tag{white-space:nowrap}
+/* bulk upload — status per creator */
+.bk-guide .bk-sample{min-width:1080px}
+.bk-card > .bk-tablewrap .bk-table{min-width:1080px}
+.bk-card > .bk-tablewrap .bk-table td:nth-child(4){white-space:nowrap}
+.bk-stsel{padding:5px 26px 5px 9px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--text,inherit);font:inherit;font-size:12.5px;font-weight:600;max-width:100%;cursor:pointer}
+.bk-stsel.st-invited{border-color:var(--line)}
+.bk-stsel.st-approved{border-color:rgba(108,92,231,.55);background:rgba(108,92,231,.08)}
+.bk-stsel.st-contract_signed{border-color:rgba(0,148,198,.55);background:rgba(0,178,225,.08)}
+.bk-stsel.st-address_confirmed{border-color:rgba(247,144,9,.55);background:rgba(247,144,9,.08)}
+.bk-stsel.st-courier_sent{border-color:rgba(234,88,12,.55);background:rgba(234,88,12,.08)}
+.bk-stsel.st-courier_received{border-color:rgba(18,183,106,.6);background:rgba(18,183,106,.1)}
+.bk-setall{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 10px;font-size:13px}
+.bk-table td.bk-ship{font-size:12px;color:var(--muted);max-width:220px}
+.bk-raw{font-size:11px;margin-top:3px;color:#b45309}
+.bk-ig{font-size:12px;margin-top:4px;flex-basis:100%}
+.bk-chg .bk-stsel{font-size:12px;padding:4px 24px 4px 8px}
+.bk-stlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin:4px 0 6px}
+.bk-stitem{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border:1px solid var(--line);border-radius:10px;line-height:1.4}
+.bk-stitem .muted{font-size:12px}
+.bk-stn{flex:0 0 22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;background:rgba(0,178,225,.12);color:#0094c6}
 .wa-auto{font-size:13px;line-height:1.55;padding:10px 12px;border-radius:12px;margin:0 0 12px}
 .wa-auto.ok{background:rgba(18,183,106,.08);border:1px solid rgba(18,183,106,.3)}
 .wa-auto.warn{background:rgba(247,144,9,.08);border:1px solid rgba(247,144,9,.4)}
