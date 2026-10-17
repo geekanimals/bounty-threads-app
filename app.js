@@ -253,6 +253,7 @@ async function paintMeCard(){
         ${handle?`<a class="me-handle" href="https://instagram.com/${encodeURIComponent(handle)}" target="_blank" rel="noopener">@${esc(handle)} ↗</a>`:`<div class="muted" style="font-size:12.5px">${esc(roleLabel)}${P.org&&!isCreator?" · "+esc(P.org):""}</div>`}
         ${type?`<span class="me-type">${esc(type)}</span>`:""}</div>
       <button class="me-x" id="meX" aria-label="Close">✕</button></div>
+    ${isCreator && handle ? `<div class="me-accts" id="meAccts"></div>`:""}
     ${isCreator && handle ? `
       <div class="me-stats">
         <div><b>${k(a.media_count)}</b><span>Posts</span></div><div><b>${k(a.followers_count)}</b><span>Followers</span></div>
@@ -270,7 +271,7 @@ async function paintMeCard(){
     <div class="me-prefs" id="mePrefs"></div>
     <button class="me-out" id="meOut">↪ Sign out</button></div>`;
   c.querySelector("#meX").onclick = closeMeCard;
-  paintMePrefs();
+  paintMePrefs(); if(isCreator && handle) paintMeAccounts();
   c.querySelectorAll("[data-mego]").forEach(b=> b.onclick = ()=>{ const pg = b.dataset.mego; closeMeCard();
     if(window.__profileGate && typeof GATE_OPEN_PAGES!=="undefined" && !GATE_OPEN_PAGES.includes(pg)){ gateToast("Complete your profile first"); currentPage = "profile"; } else currentPage = pg; renderShell(); });
   c.querySelector("#meOut").onclick = ()=>{ if(window.Tracker) Tracker.security("sign_out"); setTimeout(()=> window.Auth && Auth.signOut(), 150); };
@@ -281,6 +282,28 @@ async function paintMeCard(){
   anchorMeCard();
 }
 
+
+// Profile card → switch between connected Instagram accounts (like Instagram's own account switcher)
+async function paintMeAccounts(){
+  const box = document.getElementById("meAccts"); if(!box) return;
+  const L = await igAccountsLoad(true); if(!box.isConnected) return;
+  const others = L.filter(a=>!a.active);
+  box.innerHTML = `<div class="me-accts-h"><span>Your accounts${L.length>1?` · ${L.length}`:""}</span><button class="me-mini" id="meAddAcct">+ Add account</button></div>`
+    + (others.length ? others.map(a=>`<button class="me-acct" data-meacct="${esc(a.ig_user_id)}"${a.token_expired?' data-expired="1"':""}>
+        ${a.profile_picture_url?`<img src="${esc(safeUrl(a.profile_picture_url))}" alt="" referrerpolicy="no-referrer">`:`<span class="me-acct-ph">📸</span>`}
+        <span class="me-acct-n"><b>@${esc(a.username||"account")}</b><em>${a.token_expired?"Login expired — reconnect":(a.followers_count!=null?Number(a.followers_count).toLocaleString("en-IN")+" followers":"")}</em></span>
+        <span class="me-acct-go">${a.token_expired?"Reconnect":"Switch"}</span></button>`).join("")
+      : `<div class="me-accts-none">Run another page? Add it and switch between accounts here.</div>`);
+  box.querySelector("#meAddAcct").onclick = ()=>{ closeMeCard(); igAddAnother(currentPage); };
+  box.querySelectorAll("[data-meacct]").forEach(b=> b.onclick = async ()=>{
+    if(b.dataset.expired){ closeMeCard(); igAddAnother(currentPage); return; }
+    const to = L.find(x=>x.ig_user_id===b.dataset.meacct)||{};
+    closeMeCard(); showBusy(`Switching to @${to.username||"account"}…`);
+    try{ await igSwitchTo(b.dataset.meacct); applyIgAvatar(true); gateToast(`Switched to @${to.username||"account"} ✓`); renderShell(); }
+    catch(e){ gateToast(e.message); }
+    finally{ setTimeout(hideBusy, 300); }
+  });
+}
 
 // Profile card → which channels send me updates. Turning one off never stops login / recovery codes.
 async function paintMePrefs(){

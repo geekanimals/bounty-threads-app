@@ -166,7 +166,7 @@
       + (REQ ? '' : (''
       + '  <div class="cp-progress"><div class="cp-bar"><span style="width:'+pct+'%"></span></div><b>'+pct+'% complete</b></div>'
       + '  <div class="cp-chips">'+chip("personal","Personal")+chip("contact","Contact")+chip("professional","Professional")
-      +      chip("skills","Skills")+chip("barter","Barter")+chip("rate_card","Rate card")
+      +      chip("skills","Skills")
       +      '<span class="cp-chip opt">'+(groups&&groups.brand_experience?"✓":"○")+' Brands (optional)</span>'
       +      '<span class="cp-chip opt">'+(groups&&groups.dream_brands?"✓":"○")+' Dream brands (optional)</span></div>'
       + (missing.length ? '<div class="muted cp-todo">Still to complete: '+missing.map(esc).join(", ")+'</div>' : '<div class="muted cp-todo">Core profile complete. Optional sections don\'t affect completion.</div>')
@@ -217,8 +217,10 @@
     var d = DATA, personal = d.personal||{}, contact = d.contact||{}, pro = d.professional||{}, conn = d.connection;
     var body = "";
 
-    // Phase 1B connect disclosure/CTA (not connected) or first-run ingestion progress (connected).
-    if(window.ciConnect){ body += window.ciConnect.panelHtml(!!(conn && conn.connected), window.__ciIngest); }
+    // (the "Building your verified Creator Intelligence profile" progress card is no longer shown here)
+    // Profile complete — what's done / what's left, right at the top
+    window.__hasIg = !!(IG || (conn && conn.connected));
+    if(window.__ciOpsEnabled) body += section("campready","Profile complete",'<div id="opsOnbBody">'+(window.skel?skel("list",2):'')+'</div>',{sub:""});
 
     // connection (verified IG) — read-only, live
     if(conn && conn.connected){
@@ -354,6 +356,10 @@
       + '<div class="cp-note">Brands you tag in posts (and brands that tag you) are picked up from Instagram automatically — remove any that aren\'t a real collaboration.</div>',
       {sub:"Auto + manual"});
 
+    /* Barter preferences + Rate card are switched off for now (bring back later: set SHOW_COMMERCIAL = true).
+       They are not required for the profile to be complete. */
+    var SHOW_COMMERCIAL = false;
+    if(SHOW_COMMERCIAL){
     // G Barter preferences
     var cp = d.commercial_preference||{};
     body += section("barter","Barter preferences",
@@ -381,6 +387,8 @@
       + '<div class="cp-note">Rates are your declared expectations (INR). Negotiated campaign commercials are stored separately and never shown here.</div>',
       {sub:"Cost per Reel required"});
 
+    }
+
     // I Dream brands
     var dreams = (d.dream_brands||[]);
     body += section("dreams","Favourite brands",
@@ -393,20 +401,18 @@
       {sub:"At least 1"});
 
     // J Visibility
-    body += section("visibility","Visibility & privacy",
+    body += section("visibility","Visibility and privacy settings",
         '<div class="cp-note" style="margin-top:0">Private always: WhatsApp, email, full DOB, marital status, anniversary, full address.</div>'
-      + '<label class="cp-check"><input type="checkbox" id="cp_vis_rate" '+(visOn("rate_card")?"checked":"")+'> Show my rate range in the marketplace summary</label>'
+      + (SHOW_COMMERCIAL ? '<label class="cp-check"><input type="checkbox" id="cp_vis_rate" '+(visOn("rate_card")?"checked":"")+'> Show my rate range in the marketplace summary</label>' : '')
       + '<label class="cp-check"><input type="checkbox" id="cp_vis_brands" '+(visOn("brand_experience")?"checked":"")+'> Show my verified brand experience to brands</label>'
       + '<div class="cp-note">Disabling data sharing may reduce Verified Data Coverage — it never lowers Performance, raises Fraud risk, or labels you unreliable.</div>',
       {sub:""});
 
-    // "Get campaign-ready" lives inside the profile (was its own tab)
-    if(window.__ciOpsEnabled) body += section("campready","Get campaign-ready",'<div id="opsOnbBody">'+(window.skel?skel("list",2):'')+'</div>',{sub:""});
     bodyEl.innerHTML = body;
     if(window.__ciOpsEnabled && window.ciOps && window.ciOps.loadOnboarding) window.ciOps.loadOnboarding();
     wire(); wireReq();
     autoFill();
-    maybeOnboard();
+    // maybeOnboard();   // the reel-rate + barter popup is off while those sections are hidden
   }
 
   /* keep derived fields in sync without a button: display name, primary city/state, detected categories & brands */

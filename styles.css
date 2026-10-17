@@ -1346,3 +1346,18 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .mk-building h3,.mk-building .muted{text-align:center}
 .mk-topbar .ig-sw{max-width:100%}
 @media (max-width:560px){ .ig-sw{border-radius:16px;width:100%} .ig-sw-add{margin-left:auto} }
+
+/* profile card: account switcher */
+.me-accts{margin:10px 0 2px;border:1px solid var(--line);border-radius:14px;padding:8px}
+.me-accts-h{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);padding:2px 4px 6px;text-transform:uppercase;letter-spacing:.04em}
+.me-acct{display:flex;align-items:center;gap:10px;width:100%;padding:8px;border:0;background:transparent;border-radius:10px;cursor:pointer;text-align:left;color:inherit;font:inherit}
+.me-acct:hover{background:rgba(108,92,231,.07)}
+.me-acct img,.me-acct-ph{width:34px;height:34px;border-radius:50%;object-fit:cover;flex:0 0 auto;display:grid;place-items:center;background:rgba(0,178,225,.12)}
+.me-acct-n{display:flex;flex-direction:column;min-width:0;flex:1}
+.me-acct-n b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.me-acct-n em{font-style:normal;font-size:12px;color:var(--muted)}
+.me-acct-go{font-size:12px;font-weight:700;color:#6c5ce7}
+.me-accts-none{font-size:12.5px;color:var(--muted);padding:2px 6px 4px}
+/* profile: "Profile complete" status card sits flush inside its section */
+.cp-sec[data-sec="campready"] .ops-onb{padding:0}
+.cp-sec[data-sec="campready"] .ops-checks{margin-top:10px}

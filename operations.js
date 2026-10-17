@@ -1077,23 +1077,25 @@
   }
   function renderOnb(s, prof){
     var pro=(prof&&prof.professional)||{}, brands=((prof&&prof.brand_experience)||[]).filter(function(b){return !b.creator_rejected_at;});
+    var req=window.__profileReq||null, ig=!!(s.instagram_connected||window.__hasIg), done=!!((req&&req.complete)||s.basic_complete);
     var checks=[
-      ["Instagram connected", !!s.instagram_connected],
-      ["Profile complete", !!s.basic_complete],
+      ["Instagram connected", ig],
+      ["Profile complete", done],
       ["Categories added", (pro.categories||[]).length>0],
       ["Languages added", (pro.languages||[]).length>0],
       ["Location added", !!(pro.city_coarse||pro.state_coarse)],
-      ["Brands added", brands.length>0],
-      ["Barter preference", !!s.barter_declared],
-      ["Rate card", !!s.rate_card_present]
+      ["Brands added", brands.length>0]
     ];
-    var FUNNEL=[["STARTED",true],["PROFILE COMPLETE",!!s.basic_complete],["CAMPAIGN READY",s.status==='campaign_ready']];
+    var ready=ig&&done;
+    s.status = ready ? 'campaign_ready' : (s.status==='campaign_ready' ? 'profile_complete' : s.status);
+    if(req && req.total) s.profile_pct = Math.round(100*req.done/req.total);
+    var FUNNEL=[["STARTED",true],["PROFILE COMPLETE",done],["CAMPAIGN READY",ready]];
     var funnel='<div class="ops-funnel">'+FUNNEL.map(function(f){ return '<div class="ops-fstep '+(f[1]?"on":"")+'">'+(f[1]?"✓":"○")+' '+esc(f[0])+'</div>'; }).join('<span class="ops-farrow">→</span>')+'</div>';
     var pct=(s.profile_pct!=null?s.profile_pct:0);
-    var body='<div class="card"><div class="ci-mh"><h4>Status: '+esc((s.status||"started").replace(/_/g," "))+'</h4><span class="ci-pill '+(s.status==='campaign_ready'?'ci-ok':'ci-warn')+'">'+(pct)+'% profile</span></div>'
+    var body='<div class="ops-onb"><div class="ci-mh"><h4>'+(ready?'✅ You\'re campaign-ready':'Status: '+esc((s.status||"started").replace(/_/g," ")))+'</h4><span class="ci-pill '+(s.status==='campaign_ready'?'ci-ok':'ci-warn')+'">'+(pct)+'% profile</span></div>'
       + funnel
       + '<div class="ops-checks">'+checks.map(function(c){ return '<div class="ops-check '+(c[1]?"on":"")+'">'+(c[1]?"✓":"○")+' '+esc(c[0])+'</div>'; }).join("")+'</div>'
-      + '<div class="ci-note">'+(s.status==='campaign_ready'?'You\'re campaign-ready. Invitations will appear under “My Campaigns”.':'Finish the unchecked items in your Creator Profile to become campaign-ready.')+'</div></div>';
+      + '<div class="ci-note">'+(ready?'Your profile is complete. Invitations will appear under “My Campaigns”.':'Finish the unchecked items below to complete your profile.')+'</div></div>';
     document.getElementById("opsOnbBody").innerHTML=body;
   }
 
