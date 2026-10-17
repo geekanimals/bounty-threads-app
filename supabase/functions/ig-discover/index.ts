@@ -6,6 +6,10 @@
 //   { action: "tagged" }              → the accounts that tagged / mentioned this Instagram, filed as candidates
 //   { action: "hashtag", tag, edge }  → top (or recent) public posts for a #hashtag (Instagram Public Content Access);
 //                                        the @accounts mentioned in those captions are filed as candidates
+//   { action: "scout", city, category }  → finds creators of a city and/or category live: builds the matching
+//                                        hashtags (#delhifoodblogger…), reads their top + recent posts, collects the
+//                                        @accounts those posts name, then pulls each one's full public profile
+//                                        (followers, bio, posts, engagement) and files them under that city/category
 //
 // Honest about Meta's limits: public lookup of an arbitrary handle is the Facebook Graph "business discovery"
 // edge, which needs a Facebook Page linked to the Instagram account plus App Review. When that isn't granted
@@ -62,7 +66,7 @@ Deno.serve(async (req) => {
       let src = fbt?.access_token ? fbt : null;
       if (!src) { const { data: shared } = await admin.schema("api").rpc("ops_discovery_token"); if (shared?.platform === "facebook") src = await openRow(shared); }
       if (!src?.access_token || !src?.ig_user_id) {
-        await admin.schema("api").rpc("save_external_candidates", { p_items: [{ handle: username, source: "manual" }] }).then(() => {}, () => {});
+        await userClient.schema("api").rpc("save_external_candidates", { p_items: [{ handle: username, source: "manual" }] }).then(() => {}, () => {});
         return json({ error: `@${username} is added. Live Instagram numbers switch on once the Geek Super Admin turns on Instagram search (one-time).`, needs_facebook: true, added: true }, 200);
       }
       const igId = String(src.ig_user_id);
@@ -78,7 +82,7 @@ Deno.serve(async (req) => {
           ? `@${username} isn't a public Business or Creator account (or doesn't exist) — Instagram only shares numbers for those. It's still added; invite them anyway.`
           : needsPermission(j) ? `Instagram refused the lookup: ${m || "permission"} — reconnect with Facebook and select the Page + Instagram account.`
           : (m || "Instagram couldn't return that profile.");
-        await admin.schema("api").rpc("save_external_candidates", { p_items: [{ handle: username, source: "manual" }] }).then(() => {}, () => {});
+        await userClient.schema("api").rpc("save_external_candidates", { p_items: [{ handle: username, source: "manual" }] }).then(() => {}, () => {});
         return json({ error: msg, needs_permission: needsPermission(j) }, 200);
       }
       const media: any[] = bd?.media?.data ?? [];
@@ -93,7 +97,7 @@ Deno.serve(async (req) => {
         permalink: media[0]?.permalink ?? null, caption, source: "manual",
         avg_likes: avg("like_count"), avg_comments: avg("comments_count"), mentions,
       };
-      await admin.schema("api").rpc("save_external_candidates", { p_items: [profile] }).then(() => {}, () => {});
+      await userClient.schema("api").rpc("save_external_candidates", { p_items: [profile] }).then(() => {}, () => {});
       return json({ ok: true, profile });
     }
 
@@ -107,7 +111,7 @@ Deno.serve(async (req) => {
         .map((m: any) => ({ handle: String(m.username).toLowerCase(), caption: String(m.caption || "").slice(0, 500), permalink: m.permalink ?? null, source: "tagged_brand" }));
       let saved = 0;
       if (items.length) {
-        const { data } = await admin.schema("api").rpc("save_external_candidates", { p_items: items });
+        const { data } = await userClient.schema("api").rpc("save_external_candidates", { p_items: items });
         saved = Number(data) || 0;
       }
       return json({ ok: true, found: items.length, saved });
@@ -139,9 +143,68 @@ Deno.serve(async (req) => {
       // Instagram doesn't say who posted a hashtag post — but captions name accounts (@handle): those become candidates
       const handles = [...new Set(posts.flatMap((p: any) => (p.caption.match(/@([A-Za-z0-9._]{2,30})/g) || []).map((x: string) => x.slice(1).toLowerCase().replace(/\.$/, ""))))].slice(0, 40);
       if (handles.length) {
-        await admin.schema("api").rpc("save_external_candidates", { p_items: handles.map((h) => ({ handle: h, source: "hashtag", caption: `#${tag}` })) }).then(() => {}, () => {});
+        await userClient.schema("api").rpc("save_external_candidates", { p_items: handles.map((h) => ({ handle: h, source: "hashtag", caption: `#${tag}` })) }).then(() => {}, () => {});
       }
       return json({ ok: true, tag, edge, posts, handles });
+    }
+
+
+    if (action === "scout") {
+      const city = String(body?.city || "").trim().slice(0, 40);
+      const category = String(body?.category || "").trim().slice(0, 40);
+      if (!city && !category) return json({ error: "Pick a city or a category first." }, 400);
+      const { data: fbtRaw } = await admin.from("social_tokens").select("access_token, ig_user_id")
+        .eq("member_id", user.id).eq("platform", "facebook").maybeSingle();
+      let src = await openRow(fbtRaw);
+      if (!src?.access_token) { const { data: shared } = await admin.schema("api").rpc("ops_discovery_token"); if (shared?.platform === "facebook") src = await openRow(shared); }
+      if (!src?.access_token || !src?.ig_user_id) {
+        return json({ error: "Live city / category search switches on once the Geek Super Admin turns on Instagram search (Connect with Facebook, one time).", needs_facebook: true }, 200);
+      }
+      const igId = encodeURIComponent(String(src.ig_user_id)), FT = encodeURIComponent(String(src.access_token));
+      const tags = scoutTags(city, category);
+      const count = new Map<string, number>(), seenIn = new Map<string, string>();
+      const used: string[] = []; let lastErr = "", permErr = false;
+      for (const tag of tags) {
+        const hs = await (await fetch(`${FB_GRAPH}/ig_hashtag_search?user_id=${igId}&q=${encodeURIComponent(tag)}&access_token=${FT}`)).json().catch(() => ({}));
+        const hid = hs?.data?.[0]?.id;
+        if (!hid) { if (hs?.error) { lastErr = String(hs.error.message || ""); permErr = permErr || needsPermission(hs); } continue; }
+        used.push(tag);
+        for (const edge of ["top_media", "recent_media"]) {
+          const mr = await (await fetch(`${FB_GRAPH}/${hid}/${edge}?user_id=${igId}&fields=caption&limit=50&access_token=${FT}`)).json().catch(() => ({}));
+          for (const m of (mr?.data ?? [])) {
+            for (const x of (String(m?.caption || "").match(/@([A-Za-z0-9._]{2,30})/g) || [])) {
+              const h = x.slice(1).toLowerCase().replace(/\.+$/, "");
+              if (h.length < 2) continue;
+              count.set(h, (count.get(h) || 0) + 1);
+              if (!seenIn.has(h)) seenIn.set(h, tag);
+            }
+          }
+        }
+      }
+      if (!used.length) {
+        return json({ error: lastErr ? `Instagram refused the search: ${lastErr}` : "Instagram has no public posts for these hashtags right now.", needs_permission: permErr, tags }, 200);
+      }
+      // most-mentioned first; pull the full public profile of each (Business / Creator accounts only — Meta's rule)
+      const ranked = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([h]) => h).slice(0, 30);
+      const want = (category ? [category] : []);
+      const profiles: any[] = [], noStats: string[] = [];
+      for (let i = 0; i < ranked.length; i += 6) {
+        const batch = ranked.slice(i, i + 6);
+        const got = await Promise.all(batch.map((h) => bdProfile(igId, FT, h)));
+        got.forEach((p, k) => {
+          const h = batch[k];
+          if (!p) { noStats.push(h); return; }
+          profiles.push({ ...p, source: "hashtag", city: cityFor(p.bio, city), category: want.join(","), caption: `${p.caption} #${seenIn.get(h)}`.slice(0, 1500) });
+        });
+      }
+      const items = [...profiles, ...noStats.map((h) => ({ handle: h, source: "hashtag", city: city || null, category: want.join(","), caption: `#${seenIn.get(h)}` }))];
+      if (items.length) {
+        const { error: se } = await userClient.schema("api").rpc("save_external_candidates", { p_items: items });
+        if (se) console.error("scout save:", se.message);
+      }
+      profiles.sort((a, b) => (b.followers || 0) - (a.followers || 0));
+      return json({ ok: true, tags: used, found: ranked.length, with_stats: profiles.length,
+        profiles: profiles.map(({ caption: _c, mentions: _m, ...r }) => r), no_stats: noStats });
     }
 
     return json({ error: "Unknown action" }, 400);
@@ -150,3 +213,57 @@ Deno.serve(async (req) => {
     return json({ error: "Something went wrong. Please try again." }, 500);
   }
 });
+
+// one public profile through business discovery (null = personal / private / missing account)
+async function bdProfile(igId: string, FT: string, username: string) {
+  const fields = `business_discovery.username(${encodeURIComponent(username)}){username,name,biography,followers_count,media_count,profile_picture_url,media.limit(12){caption,permalink,like_count,comments_count}}`;
+  const j = await (await fetch(`${FB_GRAPH}/${igId}?fields=${fields}&access_token=${FT}`)).json().catch(() => ({}));
+  const bd = j?.business_discovery;
+  if (!bd) return null;
+  const media: any[] = bd?.media?.data ?? [];
+  const avg = (k: string) => media.length ? media.reduce((s2: number, m: any) => s2 + (Number(m?.[k]) || 0), 0) / media.length : null;
+  const caption = media.map((m: any) => m?.caption || "").join(" ").slice(0, 1200);
+  const me = String(bd.username || username).toLowerCase();
+  return { handle: me, name: bd.name ?? null, bio: String(bd.biography ?? "").slice(0, 300), followers: bd.followers_count ?? null,
+    media_count: bd.media_count ?? null, profile_picture_url: bd.profile_picture_url ?? null, permalink: media[0]?.permalink ?? null,
+    avg_likes: avg("like_count"), avg_comments: avg("comments_count"), caption };
+}
+
+// city / category → the hashtags creators there actually use. Kept to 4 per search: Meta allows 30 different
+// hashtags per 7 days for one Instagram account, and searching the same hashtag again doesn't use up more.
+const CITY_TAG: Record<string, string> = { "delhi ncr": "delhi", "new delhi": "delhi", "gurugram": "gurgaon", "bengaluru": "bangalore", "bombay": "mumbai", "calcutta": "kolkata" };
+const CAT_TAGS: Record<string, string[]> = {
+  food: ["foodblogger", "food", "foodie"], fashion: ["fashionblogger", "fashion", "fashioninfluencer"],
+  beauty: ["beautyblogger", "makeup", "beautyinfluencer"], fitness: ["fitness", "fitnessinfluencer", "gym"],
+  travel: ["travelblogger", "travel", "traveldiaries"], tech: ["tech", "techreview", "techinfluencer"],
+  comedy: ["comedy", "comedian", "memes"], lifestyle: ["lifestyleblogger", "blogger", "influencer"],
+  parenting: ["momblogger", "mommyblogger", "parenting"], gaming: ["gaming", "gamer", "streamer"],
+  finance: ["finance", "stockmarket", "personalfinance"], music: ["singer", "music", "musician"],
+  dance: ["dancer", "dance", "choreography"], art: ["artist", "art", "artistsoninstagram"],
+  photography: ["photographer", "photography", "photographers"], pets: ["dogsofinstagram", "petlover", "petsofinstagram"],
+  "home decor": ["homedecor", "interiordesign", "homedecorideas"], auto: ["carsofinstagram", "motovlogger", "automobile"],
+  health: ["healthylifestyle", "nutritionist", "wellness"], education: ["education", "studygram", "learning"],
+  sports: ["sports", "cricket", "athlete"], business: ["entrepreneur", "business", "startup"],
+  entertainment: ["actor", "entertainment", "reels"], spirituality: ["spirituality", "spiritual", "meditation"],
+};
+// file the searched city unless the bio clearly says another one (a Mumbai creator tagged in a #delhifood post stays Mumbai)
+const CITY_WORDS = ["delhi", "mumbai", "bangalore", "bengaluru", "hyderabad", "chennai", "kolkata", "pune", "ahmedabad", "jaipur", "lucknow",
+  "chandigarh", "indore", "surat", "kochi", "goa", "bhopal", "nagpur", "patna", "dehradun", "guwahati", "gurgaon", "gurugram", "noida"];
+function cityFor(bio: string, city: string): string | null {
+  if (!city) return null;
+  const b = String(bio || "").toLowerCase(), c = city.toLowerCase();
+  const mine = (w: string) => c.includes(w) || (CITY_TAG[c] || "").includes(w) || (c.includes("delhi") && ["gurgaon", "gurugram", "noida"].includes(w)) || (c === "bengaluru" && w === "bangalore");
+  const other = CITY_WORDS.some((w) => b.includes(w) && !mine(w));
+  const same = CITY_WORDS.some((w) => b.includes(w) && mine(w));
+  return other && !same ? null : city;
+}
+function scoutTags(city: string, category: string): string[] {
+  const slug = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, "");
+  const c0 = city.toLowerCase().trim(); const c = slug(CITY_TAG[c0] || c0.split(/[\s,]+/)[0] || "");
+  const k = category ? (CAT_TAGS[category.toLowerCase().trim()] || [slug(category) + "blogger", slug(category)]) : [];
+  let t: string[];
+  if (c && k.length) t = [c + k[0], c + k[1], k[0] + c, c + (k[2] || "blogger")];
+  else if (c) t = [c + "blogger", c + "influencer", c + "creator", c + "diaries"];
+  else t = [k[0], k[0] + "india", k[1], k[2] || k[0] + "s"];
+  return [...new Set(t.filter((x) => x && /^[a-z0-9_]{2,60}$/.test(x)))].slice(0, 4);
+}

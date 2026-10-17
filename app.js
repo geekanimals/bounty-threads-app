@@ -2381,6 +2381,8 @@ function mountCreatorSearch(root, opts){
     // a #hashtag → live public posts from Instagram (Instagram Public Content Access) + the accounts they mention
     const tag = /^#/.test(S.q||"") ? String(S.q).replace(/^#/,"").trim().toLowerCase() : "";
     if(tag && /^[\p{L}\p{N}_]{2,60}$/u.test(tag)) csHashtagPanel($i("Res"), tag, S, ()=>{ run(true); pool(); });
+    // a city and/or a category picked → find more of them live on Instagram (full public profiles)
+    if((S.location || S.categories.length) && S.source!=="platform" && S.page===1) csScoutPanel($i("Res"), S, ()=>{ run(true); pool(); });
     const pages = d.pages||1;
     if(pages>1){
       const nums = []; for(let p=Math.max(1,S.page-2); p<=Math.min(pages,S.page+2); p++) nums.push(p);
@@ -2494,6 +2496,33 @@ async function csHashtagPanel(res, tag, S, refresh){
     const { data:lk } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h } }).then(r=>r, ()=>({data:null}));
     b.textContent = lk && lk.profile ? `@${h} · ${kfmtN(lk.profile.followers||0)}` : "@"+h; gateToast(lk && lk.profile ? `@${h} added with live numbers` : ((lk && lk.error) || `@${h} added`)); });
   if(H.length && refresh) setTimeout(refresh, 400);
+}
+// City / category → live Instagram: hashtags of that city + category, the creators those posts name, each with full profile
+function csScoutPanel(res, S, refresh){
+  const city = S.location || "", cat = S.categories[0] || "";
+  const key = (city+"|"+cat).toLowerCase(), done = (S._scout||{})[key];
+  const what = `${cat?`<b>${esc(cat)}</b> creators`:"creators"}${city?` in <b>${esc(city)}</b>`:""}`;
+  res.insertAdjacentHTML("afterbegin", `<div class="card cs-scout" id="csScoutBox"><div class="cs-scout-h"><div><b>📡 Find more ${what} live on Instagram</b>
+      <div class="muted">We read the hashtags they post with, find the creators, and bring in each one's full profile — followers, bio, posts, engagement.</div></div>
+      <button class="btn sm" id="csScoutGo">${done?"🔄 Search again":"📡 Find on Instagram"}</button></div><div id="csScoutMsg">${done?csScoutSummary(done):""}</div></div>`);
+  const go = document.getElementById("csScoutGo");
+  go.onclick = async ()=>{
+    go.disabled = true; go.textContent = "Searching Instagram…";
+    const msg = document.getElementById("csScoutMsg");
+    msg.innerHTML = `<div class="cs-scout-run"><span class="mk-spin sm"></span> Reading Instagram posts and pulling profiles — about 20–40 seconds…</div>`;
+    const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"scout", city, category:cat } }).then(r=>r, e=>({error:e}));
+    go.disabled = false; go.textContent = "🔄 Search again";
+    if(error || !data || data.error){ msg.innerHTML = `<div class="muted">${esc((data && data.error) || (error && error.message) || "Couldn't reach Instagram.")}</div>`; return; }
+    S._scout = Object.assign({}, S._scout, { [key]: data });
+    gateToast(`${data.with_stats||0} creator(s) with full profile${(data.no_stats||[]).length?` + ${(data.no_stats||[]).length} more handle(s)`:""} added`);
+    if(refresh) refresh();
+  };
+}
+function csScoutSummary(d){
+  const P = d.profiles||[];
+  return `<div class="cs-scout-sum">✅ Found <b>${fmtNum(d.found||0)}</b> account(s) on ${(d.tags||[]).map(t=>"#"+esc(t)).join(", ")} — <b>${fmtNum(d.with_stats||0)}</b> with full profile, added to the list below.
+      ${(d.no_stats||[]).length?`<span class="muted">${(d.no_stats||[]).length} are personal / private accounts (Instagram shares no numbers for those) — added as handles.</span>`:""}</div>`
+    + (P.length ? `<div class="cs-tag-handles">${P.slice(0,24).map(p=>`<span class="cs-chip on" title="${esc(p.bio||"")}">@${esc(p.handle)} · ${kfmtN(p.followers||0)}</span>`).join("")}</div>` : "");
 }
 function kfmtN(n){ n = Number(n)||0; return n>=1e7 ? (n/1e6).toFixed(0)+"M" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e4 ? Math.round(n/1e3)+"K" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(Math.round(n)); }
 async function csInvite(b, opts){

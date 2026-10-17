@@ -1546,3 +1546,12 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 .cs-tag-sub{font-size:13px;color:var(--muted);margin:4px 0 6px}
 .cs-tag-handles{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .cs-tag-grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
+/* Discover: live city / category search */
+.cs-scout{border:1px solid rgba(124,92,255,.25);background:linear-gradient(135deg,rgba(124,92,255,.06),rgba(0,178,225,.05))}
+.cs-scout-h{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.cs-scout-h .muted{font-size:13px;margin-top:3px}
+.cs-scout-run{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:13px}
+.cs-scout-run .mk-spin{margin:0}
+.cs-scout-sum{margin:12px 0 8px;font-size:13px;line-height:1.5}
+.cs-scout-sum .muted{display:block}
+@media (max-width:640px){.cs-scout-h .btn{width:100%}}
