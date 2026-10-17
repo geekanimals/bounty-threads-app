@@ -566,8 +566,7 @@ async function loadCreatorDashboard(silent){
       <div class="card"><h3 style="margin-top:0">🟢 Running campaigns</h3>
         ${running.length ? `<div class="list">${running.slice(0,6).map(c=>`<div class="row" data-cdgo="mycampaigns" style="cursor:pointer"><div class="r-main"><div class="r-title">${esc(c.campaign||"Campaign")}</div><div class="r-sub">${esc(c.brand||"")} · ${esc(String(c.stage||"").replace(/_/g," "))}${c.deadline?` · due ${esc(fmtDate(c.deadline))}`:""}</div></div></div>`).join("")}</div>`
           : `<div class="muted" style="padding:6px">Nothing running yet — apply from Campaigns.</div>`}</div></div>
-    ${top.length ? `<div class="card" style="margin-top:14px"><h3 style="margin-top:0">🔥 Your top posts</h3><div class="mk-grid">${top.map(m=>{ const img = m.media_type==="VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
-        return `<a href="${esc(safeUrl(m.permalink))}" target="_blank" rel="noopener" class="mk-post">${img?`<img src="${esc(safeUrl(img))}" alt="" loading="lazy">`:""}<span class="mk-meta">❤ ${fmtNum(m.like_count||0)} · 💬 ${fmtNum(m.comments_count||0)}</span></a>`; }).join("")}</div></div>` : ""}`;
+    `;   // (top posts live in the Media Kit only — it always shows the account that is open there)
   box.querySelectorAll("[data-cdgo]").forEach(el=> el.onclick = ()=>{
     let go = el.dataset.cdgo; go = ({onboarding:"profile", alerts:"dashboard", growth:"mycampaigns", marketplace:"opencampaigns", barter:"opencampaigns"})[go] || go;
     if(window.__profileGate && !GATE_OPEN_PAGES.includes(go)){ gateToast("Complete your profile first."); currentPage="profile"; renderShell(); return; }
@@ -2418,6 +2417,7 @@ function csCard(c, opts){
       <div class="cs-id"><a href="https://instagram.com/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener"><b>@${esc(c.handle)}</b></a>
         <div class="muted"><span class="cs-src ${c.kind==="platform"?"on":""}">${c.kind==="platform"?"On Geek OS":"Not on Geek OS"}</span>${c.city?` 📍 ${esc(c.city)}`:""}</div>
         ${c.name?`<div class="muted">${esc(c.name)}</div>`:""}</div></div>
+    ${c.kind==="platform" && c.member_id && Number(c.accounts)>1 ? `<button type="button" class="cs-accts" data-igaccts="${esc(c.member_id)}" data-igname="${esc(c.name||c.handle)}">📸 ${Number(c.accounts)} accounts · same creator →</button>` : ""}
     <div class="cs-stats"><div><b>${c.followers!=null?kfmtN(c.followers):"—"}</b><span>Followers</span></div>
       <div><b>${c.engagement!=null?(Math.round(c.engagement*10)/10)+"%":"—"}</b><span>Engagement</span></div>
       <div><b>${c.avg_likes!=null?kfmtN(c.avg_likes):"—"}</b><span>Avg likes</span></div></div>
@@ -2425,6 +2425,32 @@ function csCard(c, opts){
     <div class="cs-tags">${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(x.replace(/\b\w/g,m=>m.toUpperCase()))}</span>`).join("")}</div>
     <div class="cs-act">${btn}${c.kind!=="platform"?`<a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">💬 DM</a>`:""}</div></div>`;
 }
+// every Instagram account one Geek OS creator has connected (Discovery, campaign invite, Super Admin)
+async function openIgAccountsModal(memberId, name){
+  let m = document.getElementById("igAcctsModal"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id = "igAcctsModal";
+  m.innerHTML = `<div class="modal"><div class="modal-head"><strong>📸 ${esc(name||"Creator")} — Instagram accounts</strong><button class="icon-btn" id="igAcctsX">✕</button></div>
+    <div class="modal-form" id="igAcctsBody">${skel("list",3)}</div></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  const close = ()=> m.remove();
+  document.getElementById("igAcctsX").onclick = close; m.onclick = e=>{ if(e.target.id==="igAcctsModal") close(); };
+  const { data, error } = await sb.schema("api").rpc("creator_ig_accounts", { p_member: memberId });
+  const body = document.getElementById("igAcctsBody"); if(!body) return;
+  if(error){ body.innerHTML = `<div class="ci-err-inline">${esc(error.message)}</div>`; return; }
+  const L = data || [];
+  body.innerHTML = !L.length ? `<div class="muted">No Instagram connected yet.</div>`
+    : `<div class="muted" style="font-size:13px;margin-bottom:6px">${L.length} account${L.length>1?"s":""} connected with Instagram login. The <b>active</b> one is used for their Media Kit right now; they can apply to campaigns with any of them.</div>
+       <div class="ig-acct-list">${L.map(a=>`<div class="ig-acct-row">
+         ${a.profile_picture_url?`<img src="${esc(safeUrl(a.profile_picture_url))}" alt="" referrerpolicy="no-referrer">`:`<span class="avatar">📸</span>`}
+         <div style="min-width:0;flex:1"><a href="https://instagram.com/${encodeURIComponent(a.username||"")}" target="_blank" rel="noopener"><b>@${esc(a.username||"")}</b></a>${a.active?' <span class="tag good">Active</span>':""}
+           <div class="muted" style="font-size:12.5px">${esc([a.name||"", a.followers!=null?kfmtN(a.followers)+" followers":"", a.posts!=null?a.posts+" posts":""].filter(Boolean).join(" · "))}</div></div>
+         <div class="muted" style="font-size:12px;white-space:nowrap">added ${esc(fmtDate(a.connected_at))}</div></div>`).join("")}</div>`;
+}
+window.openIgAccountsModal = openIgAccountsModal;
+document.addEventListener("click", e=>{
+  const b = e.target && e.target.closest && e.target.closest("[data-igaccts]"); if(!b) return;
+  e.preventDefault(); e.stopPropagation(); openIgAccountsModal(b.dataset.igaccts, b.dataset.igname);
+}, true);
 function kfmtN(n){ n = Number(n)||0; return n>=1e7 ? (n/1e6).toFixed(0)+"M" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e4 ? Math.round(n/1e3)+"K" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(Math.round(n)); }
 async function csInvite(b, opts){
   const handle = b.dataset.csinv, mid = b.dataset.csmid || null;
@@ -5046,19 +5072,20 @@ const agoTxt = t=>{ if(!t) return "—"; const m=Math.round((Date.now()-new Date
 const kNum = n=> n==null ? "—" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(n);
 async function adminCreators(body, silent){
   if(!silent) body.innerHTML = skel("cards",8);
-  const { data, error } = await sb.rpc("admin_creators");
+  const [{ data, error }, ig] = await Promise.all([ sb.rpc("admin_creators"), sb.rpc("admin_ig_accounts").then(r=>r, ()=>({data:null})) ]);
   if(error){ if(!silent) body.innerHTML = adminErr(error); return; }
-  const sig = JSON.stringify(data); if(silent && sig===_acrSig) return; _acrSig = sig;
-  _acrData = data||[];
+  const sig = JSON.stringify([data, ig && ig.data]); if(silent && sig===_acrSig) return; _acrSig = sig;
+  const IGM = (ig && ig.data) || {};
+  _acrData = (data||[]).map(c=> Object.assign({}, c, { ig_accounts: IGM[c.member_id] || [] }));
   const all = _acrData, n = f=>all.filter(f).length;
   body.innerHTML = `<div class="rp-kpis acr-kpis">
       ${[["all","Creators",all.length],["ig","Instagram connected",n(c=>c.ig_username)],["complete","Profile complete",n(c=>c.complete)],["incomplete","Profile incomplete",n(c=>!c.complete)],
-         ["barter","Open to barter",n(c=>c.accepts_barter)],["rate","Reel rate added",n(c=>c.reel_rate)],["applied","Applied to campaigns",n(c=>c.applied>0)],["approved","Approved in campaigns",n(c=>c.approved>0)]]
+         ["barter","Open to barter",n(c=>c.accepts_barter)],["rate","Reel rate added",n(c=>c.reel_rate)],["applied","Applied to campaigns",n(c=>c.applied>0)],["multi","2+ Instagram accounts",n(c=>(c.ig_accounts||[]).length>1)],["approved","Approved in campaigns",n(c=>c.approved>0)]]
         .map(([k,l,v])=>`<div data-acrf="${k}" class="${_acrF===k?"act":""}" style="cursor:pointer"><b>${fmtNum(v)}</b>${l}</div>`).join("")}</div>
     <div class="card"><div class="acr-bar">
       <h3 style="margin:0">Creators <span class="muted" style="font-size:12px;font-weight:400">· live, refreshes every 30s</span></h3>
       <div class="acr-tools"><input id="acrQ" placeholder="🔍 Name, @handle, city, niche, phone…" value="${esc(_acrQ)}">
-        <select id="acrF">${[["all","All creators"],["ig","Instagram connected"],["noig","Instagram not connected"],["complete","Profile complete"],["incomplete","Profile incomplete"],["barter","Open to barter"],["rate","Reel rate added"],["applied","Applied to campaigns"],["pending","Waiting for approval"],["approved","Approved in campaigns"],["travel","Travelling now"],["pages","Manages other pages"]]
+        <select id="acrF">${[["all","All creators"],["ig","Instagram connected"],["noig","Instagram not connected"],["complete","Profile complete"],["incomplete","Profile incomplete"],["barter","Open to barter"],["rate","Reel rate added"],["applied","Applied to campaigns"],["pending","Waiting for approval"],["approved","Approved in campaigns"],["travel","Travelling now"],["multi","2+ Instagram accounts"],["pages","Manages other pages"]]
           .map(([k,l])=>`<option value="${k}"${_acrF===k?" selected":""}>${l}</option>`).join("")}</select>
         <select id="acrSort">${[["new","Newest first"],["followers","Most followers"],["eng","Best engagement"],["seen","Recently active"],["applied","Most applications"]].map(([k,l])=>`<option value="${k}"${_acrSort===k?" selected":""}>${l}</option>`).join("")}</select>
         <button class="mini-btn ghost" id="acrCsv">⬇ CSV</button></div></div>
@@ -5085,10 +5112,10 @@ async function adminCreators(body, silent){
 function filteredCreators(){
   const q = _acrQ.trim().toLowerCase();
   const F = { all:()=>true, ig:c=>c.ig_username, noig:c=>!c.ig_username, complete:c=>c.complete, incomplete:c=>!c.complete, barter:c=>c.accepts_barter,
-              rate:c=>c.reel_rate, applied:c=>c.applied>0, pending:c=>c.pending>0, approved:c=>c.approved>0, travel:c=>c.travel_city, pages:c=>c.pages>0 }[_acrF] || (()=>true);
+              rate:c=>c.reel_rate, applied:c=>c.applied>0, pending:c=>c.pending>0, approved:c=>c.approved>0, travel:c=>c.travel_city, pages:c=>c.pages>0, multi:c=>(c.ig_accounts||[]).length>1 }[_acrF] || (()=>true);
   const S = { new:(a,b)=>new Date(b.joined_at||0)-new Date(a.joined_at||0), followers:(a,b)=>(b.followers||0)-(a.followers||0), eng:(a,b)=>(b.engagement||0)-(a.engagement||0),
               seen:(a,b)=>new Date(b.last_seen||0)-new Date(a.last_seen||0), applied:(a,b)=>(b.applied||0)-(a.applied||0) }[_acrSort];
-  return _acrData.filter(F).filter(c=> !q || [c.name,c.ig_username,c.city,c.state,c.whatsapp,c.email,(c.categories||[]).join(" "),(c.skills||[]).join(" ")].join(" ").toLowerCase().includes(q)).sort(S);
+  return _acrData.filter(F).filter(c=> !q || [c.name,c.ig_username,(c.ig_accounts||[]).map(a=>a.username).join(" "),c.city,c.state,c.whatsapp,c.email,(c.categories||[]).join(" "),(c.skills||[]).join(" ")].join(" ").toLowerCase().includes(q)).sort(S);
 }
 function paintCreators(){
   const g = document.getElementById("acrGrid"); if(!g) return;
@@ -5100,7 +5127,8 @@ function paintCreators(){
                         : `<span class="avatar">${esc(String(c.name||"?").slice(0,2).toUpperCase())}</span>`;
       return `<div class="acr-card" data-acr="${esc(c.member_id)}" tabindex="0">
         <div class="acr-top">${pic}<div style="min-width:0"><div class="acr-name">${esc(c.name)}</div>
-          <div class="muted acr-handle">${c.ig_username?"@"+esc(c.ig_username):'<span class="tag warn">Instagram not connected</span>'}</div></div>
+          <div class="muted acr-handle">${c.ig_username?"@"+esc(c.ig_username):'<span class="tag warn">Instagram not connected</span>'}</div>
+          ${(c.ig_accounts||[]).length ? `<button type="button" class="acr-igs" data-igaccts="${esc(c.member_id)}" data-igname="${esc(c.name||"")}">📸 ${(c.ig_accounts||[]).length} Instagram ${(c.ig_accounts||[]).length>1?"accounts":"account"} →</button>` : ""}</div>
           ${c.complete?'<span class="tag good">Ready</span>':`<span class="tag warn">${c.done??0}/${c.total??"?"}</span>`}</div>
         <div class="acr-stats"><div><b>${kNum(c.followers)}</b><span>Followers</span></div><div><b>${c.engagement!=null?c.engagement+"%":"—"}</b><span>Engagement</span></div>
           <div><b>${c.reel_rate?"₹"+kNum(Number(c.reel_rate)):"—"}</b><span>Per Reel</span></div><div><b>${c.applied||0}<small>/${c.approved||0}</small></b><span>Applied / ✓</span></div></div>
