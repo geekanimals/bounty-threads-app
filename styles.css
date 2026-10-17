@@ -1464,3 +1464,50 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .ig-acct-row img,.ig-acct-row .avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;flex:none;display:grid;place-items:center}
 .ig-acct-row a{color:var(--ink)}
 @media(max-width:600px){.ig-acct-row{flex-wrap:wrap}.ig-acct-row>.muted:last-child{width:100%;padding-left:56px}}
+/* campaign card: "Questions? Ask us" sits in the header, next to the stage */
+.mc-top-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.mc-ask{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:20px;border:1px solid rgba(108,92,231,.35);background:rgba(108,92,231,.08);color:var(--brand,#6c5ce7);font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit}
+.mc-ask:hover{background:rgba(108,92,231,.16)}
+@media(max-width:600px){.mc-top{flex-wrap:wrap}.mc-top-r{width:100%;justify-content:flex-start}}
+
+/* ---------- login: cleaner spacing ---------- */
+.auth-card{gap:0}
+.auth-brand{margin-bottom:36px}
+.auth-door{font-size:26px;margin:0 0 8px;line-height:1.2}
+.auth-lead{margin:0 0 26px;color:var(--muted);font-size:14.5px;line-height:1.55;max-width:420px}
+.auth-card .auth-note{margin:0 0 22px}
+.auth-card .auth-tabs{margin:6px 0 18px}
+.auth-form{gap:16px}
+.auth-form label{text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--ink);gap:8px}
+.auth-form input,.auth-form select{padding:14px 16px;font-size:16px;border-radius:12px}
+#waCodeRow{display:flex;flex-direction:column;gap:8px}
+.auth-mini{margin:0}
+.auth-submit{margin-top:4px;padding:15px;font-size:15.5px;border-radius:12px}
+.auth-err:empty{min-height:0;display:none}
+@media(max-width:820px){.auth-card{padding:32px 22px 28px}.auth-brand{margin-bottom:26px}.auth-door{font-size:22px}.auth-lead{margin-bottom:20px}}
+/* ---------- availability picker (profile header · Professional · Dashboard) ---------- */
+.av-pick{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.av-btn{display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:20px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+.av-btn.on.av-available{background:rgba(16,185,129,.14);border-color:rgba(16,185,129,.55);color:#047857}
+.av-btn.on.av-limited{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.6);color:#b45309}
+.av-btn.on.av-unavailable{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.5);color:#b91c1c}
+.av-limit{padding:7px 10px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-family:inherit;font-size:13px}
+.cp-hero-avail{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.cp-hero-avail>span{font-size:11px;text-transform:uppercase;letter-spacing:.12em;opacity:.75;font-weight:700}
+.cp-hero .av-btn{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff}
+.cp-hero .av-btn.on{background:#fff;border-color:#fff}
+.cp-hero .av-limit{background:rgba(255,255,255,.95);border-color:transparent}
+/* content types */
+.cp-ctypes{display:flex;flex-wrap:wrap;gap:8px}
+.cp-ctype{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:20px;border:1px solid var(--line);background:var(--panel-2);font-size:13px;font-weight:600;cursor:pointer;user-select:none}
+.cp-ctype input{display:none}
+.cp-ctype.on{background:rgba(108,92,231,.12);border-color:rgba(108,92,231,.5);color:var(--brand,#6c5ce7)}
+.cp-travel-tick{align-items:flex-start}
+/* dashboard: account + availability on top */
+.cd-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-bottom:14px}
+.cd-top .card{margin:0;padding:12px 14px}
+.cd-avail{display:flex;flex-direction:column;gap:8px}
+.cd-avail-l{display:flex;flex-direction:column;gap:2px}
+.cd-avail-l .muted{font-size:12px}
+@media(max-width:760px){.cd-top{grid-template-columns:1fr}}
+.cp-f .av-limit,.av-pick .av-limit{width:auto!important;flex:0 0 auto;min-width:170px}

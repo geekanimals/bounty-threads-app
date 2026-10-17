@@ -82,7 +82,7 @@ function loginView(role, mode){
       <div class="muted" style="text-align:center;font-size:12px;margin-top:10px"><a href="#" id="backToWa">Already have an account? Sign in</a></div>`;
   } else if(role === "creator"){
     body = `<div id="cinvBanner"></div>
-      <div class="auth-note" style="margin-top:4px">Sign in with your <b>WhatsApp</b> number — no password. Next you connect Instagram and we build your media kit automatically.</div>
+      <p class="auth-lead">Sign in with your <b>WhatsApp</b> number — no password. Next you connect Instagram and we build your media kit automatically.</p>
       ${otpFormHtml(false)}`;
   } else if(role === "admin" || mode === "password"){
     body = `

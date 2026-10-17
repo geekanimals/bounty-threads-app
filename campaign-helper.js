@@ -75,7 +75,7 @@ function detectIntents(question) {
 }
 function campaignHelperAnswer(question, c, k) {
     var _a;
-    const hi = isHinglish(question);
+    const hi = false;            // answers are always in English (questions can still be typed in Hindi / Hinglish)
     const T = (h, e) => (hi ? h : e);
     let intents = detectIntents(question);
     if (!intents.length) {

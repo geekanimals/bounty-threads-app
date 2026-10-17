@@ -64,7 +64,7 @@
       PETS = extra[1] || []; PAGES = extra[2] || []; TRAVEL = extra[3] || null; IG = extra[5] || null;
       if(extra[4] && extra[4].whatsapp_e164){ DATA.contact = DATA.contact || {}; DATA.contact.whatsapp_e164 = extra[4].whatsapp_e164;
         DATA.contact.whatsapp_verified_at = DATA.contact.whatsapp_verified_at || extra[4].verified_at; }
-      await loadReq();
+      await Promise.all([loadReq(), loadAvailability()]);
       try { var ing = await api("get_my_ingestion_status"); window.__ciIngest = (ing && !ing.error) ? ing.data : null; } catch(e){ window.__ciIngest = null; }
       renderAll();
     }catch(e){
@@ -116,6 +116,45 @@
   function petAge(m){ if(m==null) return ""; var y=Math.floor(m/12), r=m%12;
     return y<1 ? (m||1)+" mo" : (r ? y+" yr "+r+" mo" : y+" yr"); }
   function defaultAddr(){ var a = (DATA && DATA.addresses) || []; return a.filter(function(x){ return x.is_default; })[0] || a[0] || null; }
+  var CONTENT_TYPES = [["reel","Reels"],["story","Stories"],["post","Posts"],["carousel","Carousels"],["live","Lives"],["ugc","UGC videos"],
+                       ["unboxing","Unboxing"],["review","Reviews"],["tutorial","Tutorials"],["vlog","Vlogs"]];
+  var AVAIL_LIMITS = ["1 full day a week","2 full days a week","3 full days a week","4 full days a week","Weekends only","Half days only"];
+  // Available / Limited (+ how much) / Unavailable — the same control in the profile header, Professional and Dashboard
+  function availPicker(where, cur){
+    cur = cur || (window.__availability) || {};
+    var st = cur.status || "";
+    var b = function(k,l,ic){ return '<button type="button" class="av-btn av-'+k+(st===k?" on":"")+'" data-avset="'+k+'" data-avwhere="'+where+'">'+ic+' '+l+'</button>'; };
+    return '<div class="av-pick" data-avbox="'+where+'">'+b("available","Available","🟢")+b("limited","Limited","🟡")+b("unavailable","Unavailable","🔴")
+      + '<select class="av-limit" data-avlimit="'+where+'" style="'+(st==="limited"?"":"display:none")+'"><option value="">How much?</option>'
+      +   AVAIL_LIMITS.map(function(x){ return '<option'+(cur.limit===x?" selected":"")+'>'+esc(x)+'</option>'; }).join("")+'</select></div>';
+  }
+  window.availPicker = function(where){ return availPicker(where); };
+  async function setAvailability(status, limit){
+    var r = await api("set_my_availability", { p_status:status, p_limit:limit||null });
+    if(r.error) throw r.error;
+    window.__availability = r.data || { status:status, limit:limit||null };
+    document.querySelectorAll("[data-avbox]").forEach(function(box){ box.outerHTML = availPicker(box.getAttribute("data-avbox")); });
+    if(window.gateToast) gateToast(status==="available" ? "🟢 You're available for campaigns" : status==="limited" ? "🟡 Limited availability"+(limit?" — "+limit:"") : "🔴 Marked unavailable — brands won't expect new work");
+    return window.__availability;
+  }
+  async function loadAvailability(){
+    try{ var r = await api("get_my_availability"); if(!r.error) window.__availability = r.data || {}; }catch(e){}
+    return window.__availability || {};
+  }
+  window.ciAvailability = { load: loadAvailability, set: setAvailability, picker: availPicker };
+  // one click handler for every picker on the page
+  document.addEventListener("click", async function(e){
+    var b = e.target && e.target.closest && e.target.closest("[data-avset]"); if(!b) return;
+    var k = b.getAttribute("data-avset"), box = b.closest("[data-avbox]"), sel = box && box.querySelector("[data-avlimit]");
+    if(k==="limited"){ if(sel){ sel.style.display=""; } box.querySelectorAll("[data-avset]").forEach(function(x){ x.classList.toggle("on", x===b); });
+      if(sel && !sel.value){ sel.focus(); return; } }
+    try{ await setAvailability(k, k==="limited" && sel ? sel.value : null); }catch(ex){ alert(ex.message||ex); }
+  });
+  document.addEventListener("change", async function(e){
+    var sel = e.target && e.target.matches && e.target.matches("[data-avlimit]") ? e.target : null; if(!sel || !sel.value) return;
+    try{ await setAvailability("limited", sel.value); }catch(ex){ alert(ex.message||ex); }
+  });
+
   function fullName(){ var p = (DATA && DATA.personal) || {}; return [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || (IG && IG.name) || ""; }
 
   async function paintIgAccounts(){
@@ -175,7 +214,8 @@
       + '  <div class="cp-hero-row">'
       + '    <div class="cp-hero-av">'+(ig.profile_picture_url?'<img src="'+esc(ig.profile_picture_url)+'" alt="">':'<span>'+esc((nm.replace("@","")[0]||"G").toUpperCase())+'</span>')+'</div>'
       + '    <div class="cp-hero-id"><div class="cp-hero-k">Creator Profile</div><h3>'+esc(nm)+'</h3>'
-      +        '<div class="cp-hero-m">'+(ig.username?'<span>📸 @'+esc(ig.username)+'</span>':'')+(ig.followers_count!=null?'<span>'+Number(ig.followers_count).toLocaleString("en-IN")+' followers</span>':'')+'<span id="cpSave" class="cp-savestate"></span></div></div>'
+      +        '<div class="cp-hero-m">'+(ig.username?'<span>📸 @'+esc(ig.username)+'</span>':'')+(ig.followers_count!=null?'<span>'+Number(ig.followers_count).toLocaleString("en-IN")+' followers</span>':'')+'<span id="cpSave" class="cp-savestate"></span></div>'
+      +        '<div class="cp-hero-avail"><span>Availability</span>'+availPicker("hero")+'</div></div>'
       + '    '+ring
       + '  </div>'
       + (REQ ? (REQ.complete
@@ -335,20 +375,20 @@
     // D Professional — name / city come from above, categories from Instagram
     var da = defaultAddr(), cats = (pro.categories||[]).length ? pro.categories : inferCategories();
     var catsAuto = !(pro.categories||[]).length && cats.length;
+    var myTypes = (pro.content_formats||[]).map(function(x){ return String(x); });
+    var hasTravel = !!(TRAVEL && TRAVEL.city);
     body += section("professional","Professional",
         '<div class="cp-grid">'
-      + field("Creator / display name","cp_dname",fullName()||pro.display_name,{readonly:true,hint:"From your first & last name above"})
-      + field("Instagram username","cp_iguser",conn?("@"+(conn.username||"")):(pro.instagram_username||""),{readonly:true,source:conn?"from_instagram":null})
-      + field("Primary city","cp_city2",(da&&da.city)||pro.city_coarse,{readonly:true,hint:da?"From your default address":"Add an address above"})
-      + field("State","cp_state2",(da&&da.state)||pro.state_coarse,{readonly:true})
-      + field("Profile category / niche","cp_cats",cats.join(", "),{hint:catsAuto?"Detected from your Instagram — edit if needed (comma separated)":"Comma separated, e.g. Food, Travel",source:catsAuto?"detected_from_content":null})
-      + field("Instagram account type","cp_igtype",IG&&IG.account_type?String(IG.account_type).replace(/_/g," ").toLowerCase():"—",{readonly:true,source:IG&&IG.account_type?"from_instagram":null})
-      + field("Content languages (comma separated)","cp_langs",(pro.languages||[]).join(", "),{hint:"e.g. Hindi, English"})
+      + field("Creator / display name","cp_dname",pro.display_name||fullName(),{hint:"The name brands see on your Media Kit and in campaigns"})
       + field("Travel willingness","cp_travel",pro.travel_willingness,{select:[["","—"],["city_only","City only"],["domestic","Domestic"],["international","International"],["not_available","Not available"]]})
-      + field("Availability","cp_avail",pro.availability_status,{select:[["","—"],["available","Available"],["limited","Limited"],["unavailable","Unavailable"]]})
       + field("Management","cp_mgmt",pro.management_status,{select:[["","—"],["self_managed","Self-managed"],["agency_managed","Agency-managed"],["celebrity_agent_managed","Celebrity / agent-managed"]]})
       + '</div>'
-      + '<div class="cp-sub-block"><div class="cp-hint"><b>✈️ Travelling right now?</b> (optional) — brands planning a campaign there can find you</div>'
+      + '<div class="cp-f" style="margin-top:6px"><span>Content types <span class="muted">— what you make (pick all that apply)</span></span>'
+      +   '<div class="cp-ctypes">'+CONTENT_TYPES.map(function(t){ var on=myTypes.indexOf(t[0])>=0;
+            return '<label class="cp-ctype'+(on?" on":"")+'"><input type="checkbox" data-ctype value="'+esc(t[0])+'"'+(on?" checked":"")+'> '+esc(t[1])+'</label>'; }).join("")+'</div></div>'
+      + '<div class="cp-f" style="margin-top:12px"><span>Availability</span>'+availPicker("pro")+'</div>'
+      + '<label class="cp-check cp-travel-tick" style="margin-top:14px"><input type="checkbox" id="cp_tr_on"'+(hasTravel?" checked":"")+'> <span><b>✈️ I\'m travelling right now</b> <span class="muted">— brands planning a campaign there can find you</span></span></label>'
+      + '<div class="cp-sub-block" id="cp_tr_box" style="'+(hasTravel?"":"display:none")+'">'
       + '<div class="cp-grid cp-grid-4">'
       + field("City","cp_tr_city",TRAVEL&&TRAVEL.city) + field("State","cp_tr_state",TRAVEL&&TRAVEL.state)
       + field("Country","cp_tr_country",(TRAVEL&&TRAVEL.country)||"") + field("Till","cp_tr_until",TRAVEL&&TRAVEL.until_date,{type:"date"})
@@ -361,19 +401,7 @@
       + '<div class="cp-f" style="margin-top:14px"><span>Resources / equipment * <span class="muted">what you can use for shoots</span></span>'+multiSelect("ms_res", RESOURCES, myRes, "Select your resources")+'</div>',
       {sub:"At least 1 of each"});
 
-    // F Brands worked with — auto-detected from Instagram + manual
-    var brands = (d.brand_experience||[]).filter(function(b){return !b.creator_rejected_at;});
-    body += section("brands","Brands worked with",
-        (brands.length ? '<div class="cp-list">'+brands.map(function(b){
-            var det = b.source_type==="content_detected_suggestion";
-            return '<div class="cp-item"><div><b>'+esc(b.submitted_brand_name||"(brand)")+'</b> '+(det?'<span class="cp-badge cp-ig">From Instagram</span>':'<span class="cp-badge cp-self">Added by you</span>')
-              + '<div class="muted">'+esc((b.compensation_type||b.relationship_type||"").replace(/_/g," "))+(b.deliverables?" · "+esc(b.deliverables):"")+'</div></div>'
-              + '<button class="btn sm ghost" '+(det?'data-rejbrand':'data-delbrand')+'="'+esc(b.experience_id)+'">Remove</button></div>';
-          }).join("")+'</div>'
-         : '<div class="muted">'+(IG?"No brand tags found in your recent posts yet.":"Connect Instagram to auto-detect brands you've tagged.")+' Add brands you\'ve worked with below.</div>')
-      + '<div class="cp-addrow"><input id="cp_brand_name" placeholder="Brand name or @handle"><select id="cp_brand_rel"><option value="paid">Paid</option><option value="barter">Barter</option><option value="hybrid">Hybrid</option><option value="gifting">Gifting</option><option value="organic">Organic mention</option></select><button class="btn sm" data-add="brand">+ Add</button></div>'
-      + '<div class="cp-note">Brands you tag in posts (and brands that tag you) are picked up from Instagram automatically — remove any that aren\'t a real collaboration.</div>',
-      {sub:"Auto + manual"});
+    // (Brands worked with is no longer part of the Creator Profile — past collaborations show in the Media Kit's Work portfolio)
 
     /* Barter preferences + Rate card are switched off for now (bring back later: set SHOW_COMMERCIAL = true).
        They are not required for the profile to be complete. */
@@ -537,7 +565,8 @@
   function sectionApi(key){ return key==="barter"?"commercial_preference":key; }
   async function saveTravel(){
     function v(id){ var e=document.getElementById(id); return e?e.value.trim():""; }
-    var city=v("cp_tr_city"), t={ p_city:city, p_state:v("cp_tr_state")||null, p_country:v("cp_tr_country")||null, p_until:v("cp_tr_until")||null };
+    var on=document.getElementById("cp_tr_on");
+    var city=(on && !on.checked) ? "" : v("cp_tr_city"), t={ p_city:city, p_state:v("cp_tr_state")||null, p_country:v("cp_tr_country")||null, p_until:v("cp_tr_until")||null };
     var cur=TRAVEL||{};
     if((cur.city||"")===city && (cur.state||null)===t.p_state && (cur.country||null)===t.p_country && (cur.until_date||null)===t.p_until) return;
     var r=await api("set_my_travel", t); if(r.error) throw r.error;
@@ -559,8 +588,10 @@
       return p;
     }
     if(key==="professional"){
-      return { categories:arr("cp_cats"), languages:arr("cp_langs"),
-               travel_willingness:v("cp_travel")||null, availability_status:v("cp_avail")||null, management_status:v("cp_mgmt")||null };
+      var types=[].slice.call(document.querySelectorAll("[data-ctype]:checked")).map(function(c){ return c.value; });
+      var out={ travel_willingness:v("cp_travel")||null, management_status:v("cp_mgmt")||null, content_formats:types };
+      var dn=v("cp_dname"); if(dn!==undefined) out.display_name=String(dn).trim()||null;
+      return out;
     }
     if(key==="barter"){
       var bv=v("cp_barter_on"), on=bv==="yes"?true:bv==="no"?false:null;
@@ -658,6 +689,10 @@
     if(bon) bon.onchange=function(){ document.getElementById("cp_barter_more").style.display = bon.value==="yes"?"":"none"; };
     var dob=document.getElementById("cp_dob");
     if(dob) dob.onchange=function(){ var a=deriveAge(dob.value); var h=dob.parentNode.querySelector(".cp-hint"); if(h) h.textContent = a!=null?("Age "+a+" (calculated, never stored)"):"Age is calculated from DOB, never stored"; };
+    var trOn=document.getElementById("cp_tr_on");
+    if(trOn) trOn.onchange=function(){ var bx=document.getElementById("cp_tr_box"); if(bx) bx.style.display = trOn.checked?"":"none";
+      if(trOn.checked){ var c=document.getElementById("cp_tr_city"); if(c) setTimeout(function(){ c.focus(); }, 30); } };
+    document.querySelectorAll("[data-ctype]").forEach(function(cb){ cb.addEventListener("change", function(){ cb.parentNode.classList.toggle("on", cb.checked); }); });
     var pet=document.getElementById("cp_pet_on");
     if(pet) pet.onchange=function(){ var m=document.getElementById("cp_pet_more"); if(m) m.style.display = pet.value==="yes"?"":"none"; };
     // auto-save (debounced) on any change within a savable section

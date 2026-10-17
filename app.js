@@ -70,7 +70,8 @@ function creatorNavKeys(){
   let keys = ROLES.creator.nav.slice();
   if(!window.__ciProfileEnabled) keys = keys.filter(k=>k!=="profile");
   if(!window.__ciOpsEnabled) keys = keys.map(k=> k==="opencampaigns" ? "marketplace" : k).filter(k=>k!=="mycampaigns");
-  if(window.__ciIntelEnabled) keys.push("intelligence");
+  // Creator Intelligence is hidden from the creator sidebar for now (bring back: uncomment)
+  // if(window.__ciIntelEnabled) keys.push("intelligence");
   return keys;
 }
 function navKeyAllowed(k){
@@ -530,20 +531,28 @@ async function loadCreatorDashboard(silent){
     mkFetchAcct(),
     window.__ciOpsEnabled ? api("list_open_campaigns") : Promise.resolve({data:[]}),
     window.__ciOpsEnabled ? api("get_my_campaigns") : Promise.resolve({data:[]}),
-    window.__ciOpsEnabled ? api("get_my_notifications", { p_only_unread:false }) : Promise.resolve({data:[]})
+    window.__ciOpsEnabled ? api("get_my_notifications", { p_only_unread:false }) : Promise.resolve({data:[]}),
+    window.ciAvailability ? window.ciAvailability.load() : null
   ]);
   if(!box.isConnected) return;
   const a = acct || {}, media = Array.isArray(a.recent_media) ? a.recent_media : [];
+  // campaigns follow the account that's open: the ones applied with it (older ones without an account count everywhere)
+  const mine_h = String(a.username||"").toLowerCase();
+  mine.data = (mine.data||[]).filter(c=> !c.applied_profile || !mine_h || String(c.applied_profile).toLowerCase().replace(/^@/,"") === mine_h);
   const eng = a.followers_count && media.length ? (100 * media.reduce((x,m)=> x + (Number(m.like_count)||0) + (Number(m.comments_count)||0), 0) / media.length / a.followers_count) : null;
   const O = open.data||[], M = mine.data||[], N = (notes.data||[]).slice(0,6), req = window.__profileReq;
   const PEND = ["applied","eligible","sent_to_brand","shortlisted","invited"], DONE = ["completed"], DECL = ["ineligible","brand_declined","dropped","rejected"];
   const running = M.filter(c=>!PEND.includes(c.stage) && !DONE.includes(c.stage) && !DECL.includes(c.stage));
   const kind = c => c.campaign_type || ({cash:"paid",hybrid:"barter_paid",barter:"barter"})[c.comp_type] || "";
-  const sig = JSON.stringify([a.followers_count, a.media_count, a.avg_reach, media.length, O.length, M.map(c=>c.stage), N.map(n=>n.notification_id+n.read), req&&req.done]);
+  const sig = JSON.stringify([a.username, a.followers_count, a.media_count, a.avg_reach, media.length, O.length, M.map(c=>c.stage), N.map(n=>n.notification_id+n.read), req&&req.done, window.__availability]);
   if(silent && sig === _cdSig) return; _cdSig = sig;
   const stat = (v,l,go)=>`<div class="ws-stat"${go?` data-cdgo="${go}" style="cursor:pointer"`:""}><b>${v}</b><span>${l}</span></div>`;
   const top = media.slice().sort((x,y)=>((y.like_count||0)+(y.comments_count||0))-((x.like_count||0)+(x.comments_count||0))).slice(0,4);
   box.innerHTML = `
+    <div class="cd-top">
+      <div class="card cd-acct"><div id="cdAcctSwitch"></div></div>
+      ${window.ciAvailability ? `<div class="card cd-avail"><div class="cd-avail-l"><b>Your availability</b><span class="muted">Brands see this before inviting you</span></div>${window.ciAvailability.picker("dash")}</div>` : ""}
+    </div>
     ${req && !req.complete ? `<div class="card" style="margin-bottom:14px;border:1px solid rgba(108,92,231,.35);background:rgba(108,92,231,.06);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
         <div><b>🔒 Finish your profile to apply for campaigns</b><div class="muted" style="font-size:13px">${req.done}/${req.total} done · next: ${esc((req.missing||[])[0]||"")}</div></div><button class="btn" data-cdgo="profile">Complete profile →</button></div>`
       : req ? `<div class="card" style="margin-bottom:14px;border:1px solid rgba(16,185,129,.4);background:rgba(16,185,129,.07);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
@@ -567,6 +576,7 @@ async function loadCreatorDashboard(silent){
         ${running.length ? `<div class="list">${running.slice(0,6).map(c=>`<div class="row" data-cdgo="mycampaigns" style="cursor:pointer"><div class="r-main"><div class="r-title">${esc(c.campaign||"Campaign")}</div><div class="r-sub">${esc(c.brand||"")} · ${esc(String(c.stage||"").replace(/_/g," "))}${c.deadline?` · due ${esc(fmtDate(c.deadline))}`:""}</div></div></div>`).join("")}</div>`
           : `<div class="muted" style="padding:6px">Nothing running yet — apply from Campaigns.</div>`}</div></div>
     `;   // (top posts live in the Media Kit only — it always shows the account that is open there)
+  paintIgSwitcher("cdAcctSwitch", "Dashboard of");
   box.querySelectorAll("[data-cdgo]").forEach(el=> el.onclick = ()=>{
     let go = el.dataset.cdgo; go = ({onboarding:"profile", alerts:"dashboard", growth:"mycampaigns", marketplace:"opencampaigns", barter:"opencampaigns"})[go] || go;
     if(window.__profileGate && !GATE_OPEN_PAGES.includes(go)){ gateToast("Complete your profile first."); currentPage="profile"; renderShell(); return; }
@@ -3027,8 +3037,8 @@ function mkNotConnected(){
 function mkEdits(a){ return (a && a.edits && typeof a.edits==="object" && !Array.isArray(a.edits)) ? a.edits : {}; }
 
 // how many items each Media Kit section shows (grows with "Load more"; kept across the 60 s refresh)
-let _mkShown = { top:6, show:9, ment:6, port:6 };
-const MK_STEP = { top:6, show:9, ment:6, port:6 };
+let _mkShown = { top:6, show:9, ment:6, port:6, collab:6 };
+const MK_STEP = { top:6, show:9, ment:6, port:6, collab:6 };
 // every post we know: the latest (refreshed every minute) + the whole-account scan, newest first, no duplicates
 function mkAllMedia(a){
   const seen = new Set(), out = [];
@@ -3082,7 +3092,13 @@ function mkHead(a){
   const mentions = Array.isArray(a.mentions)?a.mentions:[];
   const mentionCards = mentions.slice(0,_mkShown.ment).map(m=>postCard(m, "@"+(esc(m.username)||"tagged"))).join("");
 
-  // Work portfolio (editable)
+  // Work portfolio = campaigns done on Geek OS (filled in by mkCampaignWork) + this account's past brand collaborations /
+  // paid partnerships found in its own posts + anything the creator added by hand
+  const COLLAB_RX = /#(ad|ads|sponsored|collab|collaboration|paidpartnership|partnership|gifted|brandpartner|ambassador|promo)\b|paid partnership|in collaboration with|sponsored by|in association with/i;
+  const collabs = all.filter(m=> COLLAB_RX.test(String(m.caption||""))).map(m=>{
+    const tag = (String(m.caption||"").match(/@([a-z0-9._]{2,30})/i)||[])[1] || "";
+    return { m, brand: tag ? "@"+tag : "Brand collaboration" }; });
+  const collabCards = collabs.slice(0, _mkShown.collab || 6).map(x=> postCard(x.m, esc(x.brand))).join("");
   const portfolio = Array.isArray(E.portfolio)?E.portfolio:[];
   const portfolioHtml = portfolio.length
     ? `<div class="mk-portfolio">${portfolio.slice(0,_mkShown.port).map(p=>`<div class="mk-brand"><div class="mk-brand-ic">${esc((p.brand||'?').slice(0,2).toUpperCase())}</div><div class="mk-brand-b"><div class="mk-brand-n">${esc(p.brand)}</div>${p.note?`<div class="muted" style="font-size:12px">${esc(p.note)}</div>`:''}</div>${p.url?`<a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener" class="mk-brand-link">↗</a>`:''}</div>`).join("")}</div>`
@@ -3120,7 +3136,9 @@ function mkHead(a){
     <div class="card mk-section"><div class="mk-sec-head"><h3>Top performing posts</h3><span class="muted mk-sec-sub">${scanning?"⏳ checking your whole account…":`best of ${fmtNum(all.length)} posts · likes + comments`}</span></div>
       ${tops?`<div class="mk-grid">${tops}</div>${mkMoreBtn("top", sorted.length)}`:`<div class="muted" style="padding:8px">${scanning?"Finding your best posts…":"No posts yet."}</div>`}</div>
 
-    <div class="card mk-section"><div class="mk-sec-head"><h3>Work portfolio</h3>${editBtn("portfolio")}</div><div id="mkCampWork"></div>${portfolioHtml}${mkMoreBtn("port", portfolio.length)}</div>
+    <div class="card mk-section"><div class="mk-sec-head"><h3>Work portfolio</h3>${editBtn("portfolio")}</div><div id="mkCampWork"></div>
+      ${collabs.length?`<div class="mk-cw-h">🤝 Past collaborations &amp; paid partnerships</div><div class="mk-grid">${collabCards}</div>${mkMoreBtn("collab", collabs.length)}`:""}
+      ${portfolio.length?`<div class="mk-cw-h">✍️ Brands you added</div>`:""}${portfolio.length||!collabs.length?portfolioHtml:""}${mkMoreBtn("port", portfolio.length)}</div>
 
     <div class="card mk-section"><div class="mk-sec-head"><h3>Mentions</h3>${mentions.length?`<span class="muted mk-sec-sub">${fmtNum(mentions.length)} tagged posts</span>`:""}</div>
       ${mentionCards ? `<div class="mk-grid">${mentionCards}</div>${mkMoreBtn("ment", mentions.length)}` : `<div class="muted" style="padding:8px">Posts where brands &amp; others tag you will appear here once they're available from Instagram.</div>`}</div>
@@ -3358,12 +3376,15 @@ async function mkCampaignWork(acct){
   if(!_mkCampWork || Date.now() - _mkCampWorkAt > 60000){
     const { data } = await sb.schema("api").rpc("get_my_campaigns").then(r=>r, ()=>({data:[]}));
     _mkCampWork = []; _mkCampWorkAt = Date.now();
-    (data||[]).forEach(c=> (c.posts||[]).forEach(p=> _mkCampWork.push(Object.assign({ campaign:c.campaign, brand:c.brand }, p))));
+    (data||[]).forEach(c=> (c.posts||[]).forEach(p=> _mkCampWork.push(Object.assign({ campaign:c.campaign, brand:c.brand, applied_profile:c.applied_profile }, p))));
   }
+  // only the campaigns done with the account that's open (older ones without an account show everywhere)
+  const me_h = String(acct && acct.username || "").toLowerCase();
+  const camp = (_mkCampWork||[]).filter(p=> !p.applied_profile || !me_h || String(p.applied_profile).toLowerCase().replace(/^@/,"") === me_h);
   const media = [].concat(acct && acct.recent_media || [], acct && acct.recent_stories || []);
   const norm = u => String(u||"").toLowerCase().replace(/[?#].*$/,"").replace(/^(https?:\/\/)?(www\.)?/,"").replace(/\/$/,"");
   const thumb = p => { const m = media.find(x=> norm(x.permalink) && norm(x.permalink)===norm(p.permalink)); return m ? (m.thumbnail_url || m.media_url) : null; };
-  const L = (_mkCampWork||[]).slice().sort((a,b)=> String(b.posted_at).localeCompare(String(a.posted_at)));
+  const L = camp.slice().sort((a,b)=> String(b.posted_at).localeCompare(String(a.posted_at)));
   const el2 = document.getElementById("mkCampWork"); if(!el2) return;
   const LL = L.slice(0, _mkShown.cw || 6);
   el2.innerHTML = L.length ? `<div class="mk-cw-h">🎬 Campaigns on Geek OS</div><div class="mk-cw">${LL.map(p=>{ const t = thumb(p);
@@ -3582,7 +3603,7 @@ async function loadMediaKit(){
   wrap.innerHTML = `<div class="ig-sw-row mk-topbar"><div id="mkAcctSwitch"></div><div class="muted" id="mkSyncStamp" style="font-size:12px"></div></div>`
     + `<div id="mkHeadWrap"></div>`;
   paintIgSwitcher("mkAcctSwitch", "Media kit of");
-  _mkShown = { top:6, show:9, ment:6, port:6 };
+  _mkShown = { top:6, show:9, ment:6, port:6, collab:6 };
   const fresh = !(acct.recent_media||[]).length && !acct.archive_synced_at;
   if(fresh){
     // a brand-new kit: show a proper loader (never a blank screen) while the first Instagram sync runs

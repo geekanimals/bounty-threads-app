@@ -505,7 +505,7 @@
         +'<div class="ci-pop-body">'+(profs.length?profs.map(function(p,i){
             return '<label class="ci-ppick-row"><input type="radio" name="ciPickP" value="'+esc(p.handle)+'"'+(i===0?' checked':'')+'><span><b>@'+esc(p.handle)+'</b><span class="muted">'+esc(p.label)+(p.followers!=null?' · '+Number(p.followers).toLocaleString("en-IN")+' followers':'')+'</span></span></label>'; }).join("")
           :'<div class="muted">Your connected Instagram will be used.</div>')
-        +'<div class="cp-hint" style="margin-top:4px">Add more pages in <b>Creator Profile → Other pages you manage</b>.</div></div>'
+        +'<div class="cp-hint" style="margin-top:4px">Connect more Instagram accounts in <b>Creator Profile → Your Instagram accounts</b>. The brand sees and works with the one you pick — all through the campaign.</div></div>'
         +'<div class="ci-pop-foot"><button class="btn ghost" data-x>Cancel</button><button class="btn" data-go>Apply</button></div></div>';
       document.body.appendChild(ov);
       var done=function(v){ ov.remove(); document.removeEventListener("keydown",k); resolve(v); };
@@ -748,7 +748,8 @@
       (c.starts_on||c.ends_on)?'🗓 '+fmtDate(c.starts_on)+' – '+fmtDate(c.ends_on):''].filter(Boolean);
     var vb=c.video_brief, vbHint=vb?preview(vb.what_to_shoot||vb.key_messages||''):'';
     return '<div class="card mc-card'+(declined?' mc-off':'')+'">'
-      + '<div class="mc-top"><div class="mc-title"><h4>'+esc(c.campaign||"Campaign")+'</h4><span class="muted">'+esc(c.brand||"")+(c.org_name?' · '+esc(c.org_name):'')+'</span></div>'+spill(c.stage)+'</div>'
+      + '<div class="mc-top"><div class="mc-title"><h4>'+esc(c.campaign||"Campaign")+'</h4><span class="muted">'+esc(c.brand||"")+(c.org_name?' · '+esc(c.org_name):'')+'</span></div>'
+      +   '<div class="mc-top-r">'+spill(c.stage)+(!declined?'<button class="mc-ask" data-askai="'+P+'" title="Contract, brief, video, courier, posting — ask anything">💬 Questions? Ask us</button>':'')+'</div></div>'
       + (meta.length?'<div class="mc-meta">'+meta.map(function(m){ return '<span>'+m+'</span>'; }).join("")+'</div>':'')
       + (declined?'<div class="mc-banner no"><b>Not selected this time.</b>'+(c.reason_label?' Reason: <b>'+esc(c.reason_label)+'</b>.':'')
           +(c.reason&&c.reason!==c.reason_label?'<div class="mc-note">“'+esc(String(c.reason).replace(/^.*?—\s*/,""))+'”</div>':'')+'</div>'
@@ -758,7 +759,6 @@
       + (vb?fold('vb-'+P,'🎬 Video brief'+(c.deadline&&['content_created','changes_requested'].indexOf(c.stage)>=0?' <span class="ci-pill ci-warn" style="margin-left:6px">Due '+fmtDate(c.deadline)+'</span>':''), vbHint, briefHtml(c), false):'')
       + fold('cd-'+P,'📄 Campaign details &amp; brief', c.brief?preview(c.brief):'', details, c.stage==='invited')
       + (!approved&&!declined&&c.reason?'<div class="ci-hint">Note: '+esc(c.reason)+'</div>':'')
-      + (!declined?'<div class="mc-ai"><button class="btn sm ghost" data-askai="'+P+'">🤖 Ask AI about this campaign</button><span class="muted">Contract, brief, video, courier, posting — ask anything, in Hindi or English</span></div>':'')
       + '</div>';
   }
   function wireMine(){
@@ -844,14 +844,14 @@
   function aiFmt(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/(^|\n)[-•]\s+/g,"$1• ").replace(/\n/g,"<br>"); }
   function openCampaignChat(part){
     var c=(_mineCache||[]).filter(function(x){ return x.participation_id===part; })[0]||{};
-    var hist = AI_CHATS[part] = AI_CHATS[part] || [{ role:"assistant", content:"Namaste! 🙏 Main **"+(c.campaign||"is campaign")+"** ka helper hoon — contract, brief, video, deadline aur courier sab is campaign ki details se batata hoon. Hindi ya English mein poochho. 🙂" }];
-    var SUG = ["Ab mujhe kya karna hai?","Contract simple mein samjhao","Video mein kya dikhana hai?","Product kab aayega?","Deadline kab hai?","Kaise post karun?","Payment milega?"];
-    opsModal('<div class="ci-mh"><h3>🤖 Campaign helper</h3><button class="wa-x" id="opsMx">×</button></div>'
+    var hist = AI_CHATS[part] = AI_CHATS[part] || [{ role:"assistant", content:"Hi! 👋 Ask me anything about **"+(c.campaign||"this campaign")+"** — your next step, the contract, the brief, what to show in the video, the deadline or your courier. I answer from this campaign's own details." }];
+    var SUG = ["What do I do next?","Explain my contract","What should my video show?","When does my product arrive?","When is the deadline?","How do I post?","Will I get paid?"];
+    opsModal('<div class="ci-mh"><h3>💬 Questions? Ask us</h3><button class="wa-x" id="opsMx">×</button></div>'
       + '<div class="ci-hint" style="margin-top:-4px">'+esc(c.campaign||"")+(c.brand?' · '+esc(c.brand):'')+'</div>'
       + '<div class="cc-thread" id="ccThread"></div>'
       + '<div class="cc-sug" id="ccSug">'+SUG.map(function(q){ return '<button type="button" class="cs-chip" data-ccq="'+esc(q)+'">'+esc(q)+'</button>'; }).join("")+'</div>'
       + '<form class="cc-form" id="ccForm"><input id="ccIn" placeholder="Type your question…" autocomplete="off" maxlength="800"><button class="btn sm" id="ccSend">Send</button></form>'
-      + '<div class="ci-hint" style="font-size:11.5px">Answers come from this campaign\'s details. Kuch aur poochhna ho toh <a href="https://wa.me/'+GEEK_WA+'?text='+encodeURIComponent("Hi Geek team, I have a question about "+(c.campaign||"my campaign")+": ")+'" target="_blank" rel="noopener">talk to the Geek team on WhatsApp ↗</a></div>');
+      + '<div class="ci-hint" style="font-size:11.5px">Answers come from this campaign\'s details. Need something else? <a href="https://wa.me/'+GEEK_WA+'?text='+encodeURIComponent("Hi Geek team, I have a question about "+(c.campaign||"my campaign")+": ")+'" target="_blank" rel="noopener">talk to the Geek team on WhatsApp ↗</a></div>');
     document.getElementById("opsMx").onclick=closeModal;
     var paint=function(){ var th=document.getElementById("ccThread"); if(!th) return;
       th.innerHTML=hist.map(function(m){ return '<div class="cc-msg '+(m.role==="user"?"me":"bot")+(m._p?" pend":"")+'">'+aiFmt(m.content)+'</div>'; }).join("");
@@ -1081,10 +1081,7 @@
     var checks=[
       ["Instagram connected", ig],
       ["Profile complete", done],
-      ["Categories added", (pro.categories||[]).length>0],
-      ["Languages added", (pro.languages||[]).length>0],
-      ["Location added", !!(pro.city_coarse||pro.state_coarse)],
-      ["Brands added", brands.length>0]
+      ["Content types added", (pro.content_formats||[]).length>0]
     ];
     var ready=ig&&done;
     s.status = ready ? 'campaign_ready' : (s.status==='campaign_ready' ? 'profile_complete' : s.status);
