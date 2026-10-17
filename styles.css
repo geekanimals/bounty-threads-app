@@ -347,8 +347,10 @@ tbody tr:hover{background:var(--panel-2)}
 /* ---------- Mobile: let wide tables scroll inside their card ---------- */
 .card table{width:100%}
 @media(max-width:760px){
-  .card table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
-  .card table thead,.card table tbody,.card table tr{display:table;width:100%;table-layout:fixed}
+  /* the table scrolls sideways inside its card; columns keep their natural width (no squeezed, overlapping text) */
+  .card table{display:block;width:100%;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  .card table th,.card table td{white-space:nowrap}
+  .card table td{max-width:240px;overflow:hidden;text-overflow:ellipsis}
 }
 
 /* ---------- AI Assistant chat ---------- */
@@ -1392,3 +1394,55 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .cp .cp-sec{border-radius:16px;box-shadow:0 1px 2px rgba(20,20,60,.04),0 8px 24px -16px rgba(20,20,60,.18)}
 .cp .cp-sec-h h4{font-size:15px;font-weight:750;letter-spacing:-.01em}
 @media(max-width:600px){.cp-hero{padding:18px!important}.cp-hero-av{width:52px;height:52px}.cp-ring{width:56px;height:56px}.cp-ring span{width:44px;height:44px;font-size:13px}.cp-hero-id h3{font-size:18px}}
+
+/* =====================================================================
+   Mobile polish (phones ≤ 760px) — one consistent, thumb-friendly layout
+   ===================================================================== */
+.wa-back{display:none}
+@media(max-width:760px){
+  html,body{overflow-x:hidden}
+  .content{padding:14px 12px 28px}
+  /* top bar: compact search icon, more room for the page */
+  .search-trigger{flex:0 0 40px;width:40px;height:40px;padding:0;display:flex;align-items:center;justify-content:center;font-size:0;border-radius:12px}
+  .search-trigger span{font-size:0}
+  .search-trigger span:before{content:"🔍";font-size:16px}
+  .topbar{justify-content:space-between}
+  .topbar-right{margin-left:auto;gap:8px}
+  .icon-btn{width:40px;height:40px}
+  /* page titles */
+  .page-head h1,.content>h1,.ph h1{font-size:24px;line-height:1.2}
+  /* buttons & inputs: 44px touch targets, no iOS zoom on focus */
+  input,select,textarea{font-size:16px!important}
+  .btn{min-height:40px}
+  .btn.sm{min-height:34px}
+  /* cards a bit tighter */
+  .card{padding:16px;border-radius:16px}
+  /* kanban boards: swipe sideways, one readable column at a time */
+  .kanban{display:flex;overflow-x:auto;gap:10px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:6px}
+  .kanban>.kan-col{flex:0 0 78%;scroll-snap-align:start}
+  .kan-col h4{gap:8px}
+  /* chip rows scroll sideways without a scrollbar */
+  .ci-chips{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px}
+  .ci-chips::-webkit-scrollbar{display:none}
+  .ci-chips>*{flex:0 0 auto}
+  /* Media Kit header: centred like an Instagram profile */
+  .mk-hero{flex-direction:column;align-items:center;text-align:center;padding:0 16px 18px;gap:6px}
+  .mk-avatar{margin-top:-46px}
+  .mk-hero-id{padding-top:4px;min-width:0;width:100%}
+  .mk-hero-actions{flex-direction:row;justify-content:center;align-self:center;padding-top:6px;flex-wrap:wrap}
+  .mk-post .mk-meta{font-size:10px;padding:5px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* WhatsApp chat: list first, tap a chat → full-width thread with a back button */
+  .wa-chat .wa-thread{display:none}
+  .wa-chat.wa-open .wa-list{display:none}
+  .wa-chat.wa-open .wa-thread{display:flex;min-height:70vh}
+  .wa-back{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;margin-right:8px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);font-size:16px;cursor:pointer;color:var(--ink)}
+  .wa-thead{display:flex;align-items:center}
+  .cp-item{flex-wrap:wrap;gap:8px}
+  /* modals & drawers fill the phone */
+  .drawer{width:100%!important;max-width:100%!important}
+  .cp-ob-overlay>*,.modal,.ci-modal{max-width:calc(100vw - 20px)!important}
+}
+@media(max-width:380px){
+  .kpi-row,.mk-tiles{grid-template-columns:1fr 1fr}
+  .topbar-right .icon-btn#themeBtn{display:none}
+}

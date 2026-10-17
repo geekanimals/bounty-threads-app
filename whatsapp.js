@@ -118,7 +118,9 @@
   }
   async function openConv(id, title){
     _conv=id;
-    document.getElementById("waThreadHead").innerHTML='<b>'+esc(title)+'</b>';
+    var chat=document.getElementById("waChat"); if(chat) chat.classList.add("wa-open");   // phones: show the thread full-width
+    document.getElementById("waThreadHead").innerHTML='<button type="button" class="wa-back" id="waBack" aria-label="Back to chats">←</button><b>'+esc(title)+'</b>';
+    var bk=document.getElementById("waBack"); if(bk) bk.onclick=function(){ if(chat) chat.classList.remove("wa-open"); };
     document.getElementById("waCompose").style.display="flex";
     document.getElementById("waSendMsg").onclick=sendMsg;
     document.getElementById("waInput").onkeydown=function(e){ if(e.key==="Enter") sendMsg(); };
