@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
     const force = !!(await req.json().catch(() => ({})))?.force;
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-    const { data: acct } = await admin.from("social_accounts").select("last_media_sync_at, recent_media, archive_synced_at, ig_user_id")
+    const { data: acct } = await admin.from("social_accounts").select("last_media_sync_at, recent_media, archive_synced_at, ig_user_id, username")
       .eq("member_id", user.id).eq("platform", "instagram").maybeSingle();
     if (!acct) return json({ error: "Instagram not connected" }, 400);
 
@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
     }
 
     const [prof, media, stories] = await Promise.all([
-      igGet("me?fields=followers_count,follows_count,media_count,username,profile_picture_url", tok.access_token),
+      igGet("me?fields=user_id,followers_count,follows_count,media_count,username,name,biography,website,account_type,profile_picture_url", tok.access_token),
       igGet("me/media?fields=id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count&limit=12", tok.access_token),
       igGet("me/stories?fields=id,media_type,media_url,permalink,thumbnail_url,timestamp", tok.access_token),
     ]);
@@ -89,6 +89,19 @@ Deno.serve(async (req) => {
       }
       if (prof.j?.username) patch.username = prof.j.username;
       if (prof.j?.profile_picture_url) patch.profile_picture_url = prof.j.profile_picture_url;
+      // the open account's own name, bio, website and type — always fresh from Instagram (no mix with another account)
+      for (const k of ["name", "biography", "website", "account_type"]) {
+        if (typeof prof.j?.[k] === "string") patch[k] = prof.j[k];
+        else if (k !== "account_type" && prof.j && !(k in prof.j)) patch[k] = null;   // Instagram leaves empty fields out
+      }
+      // never write one account's data onto another: the token must belong to the account that is open
+      const tokIds = [prof.j?.user_id, prof.j?.id].filter(Boolean).map(String);
+      const sameUser = !acct.username || !prof.j?.username || String(acct.username).toLowerCase() === String(prof.j.username).toLowerCase();
+      const sameId = !acct.ig_user_id || !tokIds.length || tokIds.includes(String(acct.ig_user_id));
+      if (!sameUser && !sameId) {
+        console.warn("instagram-media-sync: token belongs to another account — skipped", JSON.stringify({ open: acct.username, token: prof.j?.username }));
+        return json({ ok: false, skipped: "account_mismatch" });
+      }
     }
     // Merge, never wipe: an empty/failed media read must not erase the kit's posts. Fresh items win, but fields
     // the heavy sync added earlier (e.g. per-post reach) are kept for posts that are still in the list.

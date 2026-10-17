@@ -3050,6 +3050,44 @@ function mkMoreBtn(key, total){
   const shown = _mkShown[key]||0;
   return total > shown ? `<div class="mk-more"><button class="btn sm ghost" data-mkmore="${key}">Load more <span class="muted">(${total - shown} more)</span></button></div>` : "";
 }
+// What this Instagram account is about — read from ITS OWN bio + captions (each account gets its own),
+// and its type in plain words (Instagram's API doesn't hand out the category label shown in the app)
+const IG_CAT_WORDS = {
+  "Food":["food","foodie","recipe","recipes","chef","cook","cooking","baking","restaurant","cafe","eats","dessert","biryani","momos","streetfood","foodblogger","homecook"],
+  "Travel":["travel","traveller","traveler","wanderlust","trip","explore","backpack","mountains","beach","roadtrip","travelblogger","trek","hiking"],
+  "Fashion":["fashion","style","outfit","ootd","streetwear","stylist","wardrobe","designer","lookbook"],
+  "Beauty":["beauty","makeup","skincare","mua","cosmetic","hair","nails","glow","skin"],
+  "Fitness":["fitness","gym","workout","yoga","athlete","bodybuilding","trainer","running","fit","calisthenics"],
+  "Health":["health","wellness","nutrition","diet","doctor","mentalhealth","ayurveda"],
+  "Tech":["tech","gadget","gadgets","smartphone","coding","developer","unboxing","review","ai","laptop"],
+  "Comedy":["comedy","comedian","funny","memes","meme","standup","skits","humour","humor"],
+  "Entertainment":["actor","actress","entertainment","film","movies","bollywood","reels","creator","influencer"],
+  "Parenting":["mom","mommy","mother","dad","parenting","baby","kids","momblogger","parent"],
+  "Gaming":["gaming","gamer","esports","bgmi","pubg","valorant","stream","twitch","playstation"],
+  "Finance":["finance","investing","stocks","money","trading","crypto","personalfinance","ca"],
+  "Business":["business","entrepreneur","startup","founder","marketing","brand","ceo"],
+  "Education":["education","teacher","learn","study","tutor","exam","upsc","career"],
+  "Music":["music","singer","musician","rapper","guitar","producer","dj","song"],
+  "Dance":["dance","dancer","choreographer","kathak","bharatanatyam","hiphop"],
+  "Art":["art","artist","illustrator","painting","sketch","drawing","digitalart","craft","diy"],
+  "Photography":["photography","photographer","photo","camera","shotby","portrait","canon","nikon"],
+  "Sports":["sports","cricket","football","athlete","badminton","tennis","cyclist","marathon"],
+  "Pets":["pet","pets","dog","dogs","cat","cats","puppy","petlover","doglover"],
+  "Home decor":["decor","homedecor","interior","interiors","home","plants","furniture"],
+  "Auto":["car","cars","bike","bikes","auto","automobile","rider","motorcycle","supercar"],
+  "Lifestyle":["lifestyle","life","vlog","vlogger","daily","blogger","everyday"]
+};
+function igCategories(a){
+  const text = (String(a && a.biography || "") + " " + (Array.isArray(a && a.recent_media) ? a.recent_media.slice(0,12).map(m=>m && m.caption || "").join(" ") : "")).toLowerCase();
+  const words = new Set(text.replace(/[#@]/g," ").split(/[^a-z0-9]+/).filter(Boolean));
+  const score = Object.entries(IG_CAT_WORDS).map(([cat, ws])=>[cat, ws.reduce((n,w)=> n + (words.has(w)?1:0), 0)]).filter(x=>x[1]>0)
+    .sort((x,y)=>y[1]-x[1]);
+  const out = score.filter(x=>x[0]!=="Lifestyle" && x[0]!=="Entertainment").slice(0,3).map(x=>x[0]);
+  if(!out.length && score.length) out.push(score[0][0]);
+  return out;
+}
+function igTypeLabel(t){ t = String(t||"").toUpperCase(); return t==="MEDIA_CREATOR"||t==="CREATOR" ? "Creator account" : t==="BUSINESS" ? "Business account" : t ? t.replace(/_/g," ").toLowerCase() : ""; }
+window.igCategories = igCategories; window.igTypeLabel = igTypeLabel;
 function mkHead(a){
   const E = mkEdits(a);
   const media = Array.isArray(a.recent_media) ? a.recent_media : [];
@@ -3111,8 +3149,9 @@ function mkHead(a){
       <div class="mk-hero">
         ${a.profile_picture_url?`<img class="mk-avatar" src="${esc(safeUrl(a.profile_picture_url))}" alt="">`:`<div class="mk-avatar mk-ph">${initials}</div>`}
         <div class="mk-hero-id">
-          <div class="mk-name">${esc(a.name)||esc(a.username)} ${a.account_type?`<span class="mk-badge">${esc(a.account_type)}</span>`:""}</div>
+          <div class="mk-name">${esc(a.name)||esc(a.username)} ${a.account_type?`<span class="mk-badge">${esc(igTypeLabel(a.account_type))}</span>`:""}</div>
           <div class="mk-handle">@${esc(a.username)}</div>
+          ${igCategories(a).length?`<div class="mk-cats">${igCategories(a).map(c=>`<span>${esc(c)}</span>`).join("")}</div>`:""}
           ${headline?`<div class="mk-headline">${esc(headline)}</div>`:''}
           ${bio?`<div class="mk-bio">${esc(bio)}</div>`:""}
           ${a.website?`<a class="mk-web" href="${esc(safeUrl(a.website))}" target="_blank" rel="noopener">🔗 ${esc(a.website)}</a>`:""}

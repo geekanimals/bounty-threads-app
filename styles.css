@@ -1511,3 +1511,7 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .cd-avail-l .muted{font-size:12px}
 @media(max-width:760px){.cd-top{grid-template-columns:1fr}}
 .cp-f .av-limit,.av-pick .av-limit{width:auto!important;flex:0 0 auto;min-width:170px}
+
+.mk-cats{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
+.mk-cats span{padding:3px 10px;border-radius:20px;background:rgba(108,92,231,.1);color:var(--brand,#6c5ce7);font-size:12px;font-weight:700}
+@media(max-width:760px){.mk-cats{justify-content:center}}
