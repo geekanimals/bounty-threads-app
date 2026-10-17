@@ -5851,9 +5851,14 @@ const IG_SCOPES = "instagram_business_basic,instagram_business_content_publish,i
 // always the site root /app.html (the address registered in Meta), whatever page the creator clicked from (/agency, /brand, /superadmin/, …)
 const IG_REDIRECT = location.origin + "/app.html";
 
-function connectInstagram(fresh){
-  const state = "instagram:" + Math.random().toString(36).slice(2);
-  localStorage.setItem("geekos_oauth_state", state);
+async function connectInstagram(fresh){
+  // A signed-in member takes a one-time ticket along (inside "state"): on phones the Instagram app can hand the
+  // login back to a DIFFERENT browser where nobody is signed in — the ticket still connects it to this account.
+  let ticket = "";
+  try{ const { data:{ session } } = await sb.auth.getSession();
+       if(session){ const r = await sb.rpc("ig_connect_begin"); if(!r.error && r.data) ticket = String(r.data); } }catch(e){}
+  const state = "instagram:" + Math.random().toString(36).slice(2) + (ticket ? ":" + ticket : "");
+  try{ localStorage.setItem("geekos_oauth_state", state); }catch(e){}
   const p = new URLSearchParams({
     client_id: INSTAGRAM_APP_ID,
     redirect_uri: IG_REDIRECT,
@@ -5862,7 +5867,9 @@ function connectInstagram(fresh){
     state
   });
   if(fresh === true) p.set("force_reauth", "true");   // show the permission screen again (to allow messages)
-  location.href = "https://www.instagram.com/oauth/authorize?" + p.toString();
+  // api.instagram.com (not www.instagram.com): phones don't hand this address to the Instagram app, so the
+  // login + "Allow" happen right here in the browser and come straight back to Geek OS.
+  location.href = "https://api.instagram.com/oauth/authorize?" + p.toString();
 }
 
 /* ---------- Several Instagram accounts — every one connected through Instagram login; one is ACTIVE at a time
@@ -5915,7 +5922,7 @@ async function paintIgSwitcher(boxId, label){
 }
 
 // Called after Instagram redirects back with ?code — hands it to the Edge Function.
-async function finishInstagram(code){
+async function finishInstagram(code, ticket){
   showBusy("Connecting your Instagram and building your media kit…");
   setTimeout(hideBusy, 45000);          // never stuck
   try{
@@ -5932,11 +5939,36 @@ async function finishInstagram(code){
       if(window.Auth) await Auth.currentSession(); // startApp skipped it while __igLoggingIn was set
       let back = null; try{ back = localStorage.getItem("geekos_after_ig"); localStorage.removeItem("geekos_after_ig"); }catch(e){}
       const role = (window.Auth && Auth.profile && Auth.profile.role) || "";
-      currentPage = back ? back : (role === "creator" ? "mediakit" : "discover");
+      // creators land on their Media Kit (built from the account they just connected)
+      currentPage = role === "creator" ? "mediakit" : (back || "discover");
       if(currentPage === "discover") _dcTab = "external";
       if(window.__osBooted){ if(typeof renderShell==="function") renderShell(); }
       else if(typeof bootOS==="function") await bootOS();
       setTimeout(hideBusy, 400);           // the Media Kit shows its own loader from here
+      return;
+    }
+
+    // Not signed in on THIS browser, but the connect was started by a signed-in member (phone: Instagram app →
+    // another browser) → connect it to that member and sign them in here, then open the Media Kit.
+    if(ticket){
+      const { data, error } = await sb.functions.invoke("instagram-login", { body:{ code, redirect_uri: IG_REDIRECT, ticket } });
+      if(error) throw new Error(await fnError(error));
+      if(data && data.error) throw new Error(data.error);
+      try{ localStorage.setItem("geekos_conn_instagram","1"); localStorage.removeItem("geekos_after_ig"); }catch(e){}
+      if(data && data.token_hash){
+        const { error: vErr } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: "magiclink" });
+        if(vErr) throw vErr;
+        const authRoot = document.getElementById("authRoot");
+        if(authRoot){ authRoot.classList.remove("open"); authRoot.innerHTML = ""; }
+        if(window.Auth) await Auth.currentSession();
+        currentPage = "mediakit";
+        if(typeof bootOS==="function") await bootOS();
+        setTimeout(hideBusy, 400);
+        return;
+      }
+      hideBusy(); window.__igLoggingIn = false;
+      alert("Instagram connected ✓ — sign in to continue.");
+      if(window.startApp) mountLogin("login");
       return;
     }
 
@@ -6006,11 +6038,13 @@ async function handleOAuthCallback(){
   const platform = (state.split(":")[0]) || "";
   // Clean the URL immediately so the code isn't left in the address bar.
   history.replaceState({}, "", location.pathname);
-  if(state !== expected){ console.warn("OAuth state mismatch — ignoring."); return; }
-  localStorage.removeItem("geekos_oauth_state");
+  // Instagram: the one-time ticket inside state proves who started it, even when we came back in another browser
+  const igTicket = platform === "instagram" ? (state.split(":")[2] || "") : "";
+  if(state !== expected && !(platform === "instagram" && /^[0-9a-f]{48}$/.test(igTicket))){ console.warn("OAuth state mismatch — ignoring."); return; }
+  try{ localStorage.removeItem("geekos_oauth_state"); }catch(e){}
 
   // Instagram Login uses its own Edge Function flow.
-  if(platform === "instagram"){ window.__igLoggingIn = true; await finishInstagram(code); return; }
+  if(platform === "instagram"){ window.__igLoggingIn = true; await finishInstagram(code, igTicket); return; }
   if(platform === "facebook"){ await finishFacebookSearch(code); return; }
 
   try{
