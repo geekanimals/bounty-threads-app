@@ -2404,9 +2404,17 @@ function mountCreatorSearch(root, opts){
       if(k==="P") S.pageP = n; else if(k==="E") S.pageE = n; else S.page = n;
       run(true); (k==="E" ? root.querySelector(".cs-sec-ig") || root : root).scrollIntoView({behavior:"smooth", block:"start"}); });
     csWireCards(root, opts);
-    // Instagram cards without numbers → fetch them live, a few at a time, and update each card in place
-    const missing = ((E&&E.rows)||[]).filter(c=>{ const x = _csIgRows[c.handle]||c; return !x._done && (x.followers==null || x.engagement==null); }).map(c=> c.handle);
-    if(missing.length) igAutoFill(missing, (h, prof, err)=> csIgUpdate(root, h, prof, err, opts), root.querySelector(".cs-sec-ig .cs-igwarn"));
+    // Instagram cards: first everything we already hold (post they were seen in, who mentioned them, hashtags…),
+    // then live numbers for the ones without — a few at a time, each card updated in place
+    const igH = ((E&&E.rows)||[]).map(c=> c.handle);
+    if(igH.length){
+      const myRun = S._runId = (S._runId||0) + 1;
+      await csIgLoadKnown(igH);
+      if(S._runId !== myRun) return;
+      igH.forEach(h=> csIgUpdate(root, h, null, null, opts, true));
+      const missing = igH.filter(h=>{ const x = _csIgRows[h]||{}; return !x._done && (x.followers==null || x.engagement==null); });
+      if(missing.length) igAutoFill(missing, (h, prof, err)=> csIgUpdate(root, h, prof, err, opts), root.querySelector(".cs-sec-ig .cs-igwarn"));
+    }
   };
   const pool = async ()=>{
     const { data:p } = await sb.schema("api").rpc("discovery_pool_status").then(r=>r, ()=>({data:null}));
@@ -2457,28 +2465,63 @@ function csWireCards(scope, opts){
     gateToast(`@${h} — ${kfmtN(lk.profile.followers||0)} followers · updated from Instagram`); });
 }
 // Instagram creator (not on Geek OS) — its own card: picture, followers, engagement, avg likes, posts, bio
-function csIgCard(c, opts){
-  const st = c.state_in_campaign, h = String(c.handle||"");
-  const inv = opts && opts.campaign && st==="invited" ? `<span class="tag warn">Invited</span>` : `<button class="btn sm" data-csinv="${esc(h)}" data-csmid="">🎯 Invite</button>`;
+// everything we hold about an Instagram creator who isn't on Geek OS: numbers, bio, the post they were seen in,
+// where we found them and who mentioned / tagged them, hashtags, categories
+function csIgBody(c){
   const loading = c.followers==null && !c._err && !c._done;
   const v = (x, f)=> x!=null ? f(x) : (loading ? `<i class="cs-shim"></i>` : "—");
-  const ini = esc((h||"?").slice(0,2).toUpperCase());
-  return `<div class="card cs-card cs-igc${loading?" is-loading":""}" data-igcard="${esc(h)}">
-    <div class="cs-top"><span class="cs-ring">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${ini}'}))">`:`<span class="avatar">${ini}</span>`}</span>
-      <div class="cs-id"><a href="https://instagram.com/${encodeURIComponent(h)}" target="_blank" rel="noopener"><b>@${esc(h)}</b></a>
-        ${c.name?`<div class="cs-nm">${esc(c.name)}</div>`:""}
-        <div class="muted"><span class="cs-src ig">📸 Instagram</span>${c.city?` 📍 ${esc(c.city)}`:""}</div></div></div>
-    <div class="cs-stats cs-stats4"><div><b>${v(c.followers, kfmtN)}</b><span>Followers</span></div>
+  const via = [];
+  (c.mentioned_by||[]).slice(0,3).forEach(u=> via.push(`mentioned by <a href="https://instagram.com/${encodeURIComponent(u)}" target="_blank" rel="noopener">@${esc(u)}</a>`));
+  (c.tagged||[]).slice(0,2).forEach(u=> via.push(`tagged <a href="https://instagram.com/${encodeURIComponent(u)}" target="_blank" rel="noopener">@${esc(u)}</a>`));
+  const SRC = { hashtag:"a #hashtag search", manual:"your team", tagged_brand:"tagged one of our accounts", creator_caption:"a creator's post", snowball:"another creator's posts", enriched:"" };
+  if(!via.length) (c.sources||[]).forEach(x=>{ if(SRC[x]) via.push(SRC[x]); });
+  const bio = c.bio && c.bio !== c.seen_in_post ? c.bio : "";
+  const seen = c.seen_in_post || "";
+  const tags = (c.hashtags||[]).slice(0,6);
+  return `<div class="cs-stats cs-stats4"><div><b>${v(c.followers, kfmtN)}</b><span>Followers</span></div>
       <div><b>${v(c.engagement, x=> (Math.round(x*10)/10)+"%")}</b><span>Engagement</span></div>
       <div><b>${v(c.avg_likes, kfmtN)}</b><span>Avg likes</span></div>
       <div><b>${v(c.posts, kfmtN)}</b><span>Posts</span></div></div>
     ${loading?`<div class="cs-fetching"><span class="mk-spin sm"></span> Fetching from Instagram…</div>`:""}
-    ${c._err?`<div class="cs-nostat">${esc(c._err)}</div>`:""}
-    ${c.bio?`<div class="cs-bio">${esc(c.bio)}</div>`:""}
+    ${c._err && !c._errShown && c._err !== _igBlocked?`<div class="cs-nostat">${esc(c._err)}</div>`:""}
+    ${bio?`<div class="cs-bio">${esc(bio)}</div>`:""}
     ${c.matched_post?`<div class="cs-match">📝 In their post: “${esc(c.matched_post)}…”</div>`:""}
-    <div class="cs-tags">${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(String(x).replace(/\b\w/g,m=>m.toUpperCase()))}</span>`).join("")}</div>
+    ${seen?`<div class="cs-seen"><span>📝 Seen in a post</span>“${esc(seen)}”${c.post_link?` <a href="${esc(safeUrl(c.post_link))}" target="_blank" rel="noopener">Open post ↗</a>`:""}</div>`:""}
+    ${via.length||c.mention_count>1?`<div class="cs-via">🔗 Found via ${via.join(" · ")}${c.mention_count>1?` <span class="muted">· mentioned ${fmtNum(c.mention_count)}×</span>`:""}</div>`:""}
+    <div class="cs-tags">${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(String(x).replace(/\b\w/g,m=>m.toUpperCase()))}</span>`).join("")}${tags.map(t=>`<span class="cs-ht">#${esc(t)}</span>`).join("")}</div>
+    ${c.first_seen_at?`<div class="cs-seenat muted">First found ${esc(fmtDate(c.first_seen_at))}</div>`:""}`;
+}
+function csIgHead(c, badge){
+  const h = String(c.handle||""), ini = esc((h||"?").slice(0,2).toUpperCase());
+  return `<div class="cs-top"><span class="cs-ring">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${ini}'}))">`:`<span class="avatar">${ini}</span>`}</span>
+      <div class="cs-id"><a href="https://instagram.com/${encodeURIComponent(h)}" target="_blank" rel="noopener"><b>@${esc(h)}</b></a>
+        ${c.name?`<div class="cs-nm">${esc(c.name)}</div>`:""}
+        <div class="muted">${badge}${c.city?` 📍 ${esc(c.city)}`:""}</div></div></div>`;
+}
+function csIgCard(c, opts){
+  const st = c.state_in_campaign, h = String(c.handle||"");
+  const inv = opts && opts.campaign && st==="invited" ? `<span class="tag warn">Invited</span>` : `<button class="btn sm" data-csinv="${esc(h)}" data-csmid="">🎯 Invite</button>`;
+  const loading = c.followers==null && !c._err && !c._done;
+  return `<div class="card cs-card cs-igc${loading?" is-loading":""}" data-igcard="${esc(h)}">
+    ${csIgHead(c, `<span class="cs-src ig">📸 Instagram</span>`)}
+    ${csIgBody(c)}
     <div class="cs-act">${inv}<a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(h)}" target="_blank" rel="noopener">💬 DM</a>
-      <button class="btn sm ghost" data-cslive="${esc(h)}" title="Fetch the latest followers, posts and bio from Instagram">🔄 Refresh</button></div></div>`;
+      <button class="btn sm ghost" data-cslive="${esc(h)}" title="Fetch the latest followers, posts and bio from Instagram">🔄</button></div></div>`;
+}
+// what we hold in the database for these handles → merged into the cards (then live numbers on top)
+async function csIgLoadKnown(handles){
+  const need = handles.filter(h=> !(_csIgRows[h]||{})._known);
+  if(!need.length) return;
+  const { data } = await sb.schema("api").rpc("external_profiles", { p_handles: need }).then(r=>r, ()=>({ data:null }));
+  (data||[]).forEach(p=>{
+    const prev = _csIgRows[p.handle] || {};
+    const out = Object.assign({}, prev);
+    Object.keys(p).forEach(k=>{ if(p[k]!=null && !(Array.isArray(p[k]) && !p[k].length)) out[k] = p[k]; });
+    if(!p.bio && p.seen_in_post && out.bio === p.seen_in_post) out.bio = null;
+    if(!p.fetched && p.error && !out._err) out._err = csIgWhy(p.error);
+    out._known = true; _csIgRows[p.handle] = out;
+  });
+  need.forEach(h=>{ if(_csIgRows[h]) _csIgRows[h]._known = true; });
 }
 const _csIgRows = {};   // last data per Instagram handle, so a card can be redrawn when its numbers arrive
 function csIgSeed(c){
@@ -2498,9 +2541,10 @@ function csIgMerge(c, prof, err){
   } else { base._done = true; if(err) base._err = err; }
   _csIgRows[c.handle] = base; return base;
 }
-function csIgUpdate(root, h, prof, err, opts){
+function csIgUpdate(root, h, prof, err, opts, redrawOnly){
   const el = root.querySelector(`[data-igcard="${CSS.escape(h)}"]`); if(!el) return;
-  const c = csIgMerge(Object.assign({}, _csIgRows[h]||{}, { handle:h }), prof, err && !prof ? csIgWhy(err) : null);
+  const c = redrawOnly ? Object.assign({ handle:h }, _csIgRows[h]||{}) : csIgMerge(Object.assign({}, _csIgRows[h]||{}, { handle:h }), prof, err && !prof ? csIgWhy(err) : null);
+  if(c._err && _igBlocked && c._err === _igBlocked) c._errShown = true;   // the banner already says it once
   const tmp = document.createElement("div"); tmp.innerHTML = csIgCard(c, opts); const nu = tmp.firstElementChild;
   el.replaceWith(nu); csWireCards(nu, opts);
 }
@@ -2512,7 +2556,18 @@ function csIgWhy(err){
 // fetch live numbers for many handles: 3 at a time, max 12 per screen, each handle once per visit; stops when Meta says no
 const _igTried = new Set(); let _igBlocked = null;
 async function igAutoFill(handles, onOne, warnEl, max){
-  const showBlock = ()=>{ if(warnEl && _igBlocked){ warnEl.hidden = false; warnEl.innerHTML = `⚠️ ${esc(_igBlocked)}`; } };
+  const showBlock = async ()=>{
+    if(!warnEl || !_igBlocked) return;
+    warnEl.hidden = false;
+    const fb = /Facebook/i.test(_igBlocked);
+    warnEl.innerHTML = `<span>⚠️ ${fb ? "Followers, photo and engagement for these creators come from Instagram once <b>Instagram search</b> is switched on (Facebook Login, one time). Everything we already know is shown below." : esc(_igBlocked)}</span>`;
+    if(fb){
+      const adm = window.__isAdmin || await sb.rpc("is_platform_admin").then(r=> r.data===true, ()=>false);
+      if(adm && warnEl.isConnected){ warnEl.insertAdjacentHTML("beforeend", `<button class="btn sm" data-fbsearch>🔎 Connect Facebook now</button>`);
+        warnEl.querySelector("[data-fbsearch]").onclick = ()=>{ try{ localStorage.setItem("geekos_after_ig","discover"); }catch(e){} connectFacebookSearch(); }; }
+      else if(warnEl.isConnected) warnEl.insertAdjacentHTML("beforeend", `<span class="muted"> The Geek team switches this on.</span>`);
+    }
+  };
   if(_igBlocked){ showBlock(); handles.forEach(h=> onOne(h, null, _igBlocked)); return; }
   const q = handles.filter(h=> !_igTried.has(h)).slice(0, max || 12); q.forEach(h=> _igTried.add(h));
   handles.filter(h=> !q.includes(h)).forEach(h=> { const c = _csIgRows[h]; if(!c || c.followers==null) onOne(h, null, c && c._err || "No live numbers yet — tap 🔄 Refresh."); });
@@ -5157,10 +5212,7 @@ async function loadInvitePanel(){
   if(m.error){ body.innerHTML = `<div class="card"><div class="muted">${esc(m.error.message||m.error)}</div><button class="mini-btn ghost" onclick="window.__invClose&&window.__invClose()">Close</button></div>`; return; }
   _invMatches = m.data||[]; _invExternal = x.data||[]; _invDiscovered = (d.data||[]).filter(c=>!c.invited);
   // the numbers we already have for the off-platform invites (picture, followers, engagement, bio)
-  if(_invExternal.length){
-    const { data:pp } = await sb.schema("api").rpc("external_profiles", { p_handles:_invExternal.map(i=> String(i.handle||"").toLowerCase()) }).then(r=>r, ()=>({ data:[] }));
-    (pp||[]).forEach(c=> csIgSeed(Object.assign({}, c, { _err: c.fetched ? null : (c.error ? csIgWhy(c.error) : null) })));
-  }
+  if(_invExternal.length) await csIgLoadKnown(_invExternal.map(i=> String(i.handle||"").toLowerCase()));
   paintInvitePanel();
 }
 function paintInvitePanel(){
@@ -5221,20 +5273,9 @@ function invExCard(i){
   const h = String(i.handle||"").toLowerCase(), c = Object.assign({ handle:h }, _csIgRows[h]||{});
   const s = INV_EX_ST[i.dm_status] || [i.dm_status||"Invited", 'warn'];
   const loading = c.followers==null && !c._err && !c._done;
-  const v = (x, f)=> x!=null ? f(x) : (loading ? `<i class="cs-shim"></i>` : "—");
-  const ini = esc((h||"?").slice(0,2).toUpperCase());
   return `<div class="card cs-card cs-igc${loading?" is-loading":""}" data-igcard="${esc(h)}" data-invexh="${esc(h)}">
-    <div class="cs-top"><span class="cs-ring">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${ini}'}))">`:`<span class="avatar">${ini}</span>`}</span>
-      <div class="cs-id"><a href="https://instagram.com/${encodeURIComponent(h)}" target="_blank" rel="noopener"><b>@${esc(h)}</b></a>
-        ${c.name?`<div class="cs-nm">${esc(c.name)}</div>`:""}
-        <div class="muted">${i.claimed_at?'<span class="tag good">Joined — invite sent ✓</span>':`<span class="tag ${s[1]}">${esc(s[0])}</span>`}${c.city?` 📍 ${esc(c.city)}`:""}</div></div></div>
-    <div class="cs-stats cs-stats4"><div><b>${v(c.followers, kfmtN)}</b><span>Followers</span></div>
-      <div><b>${v(c.engagement, x=> (Math.round(x*10)/10)+"%")}</b><span>Engagement</span></div>
-      <div><b>${v(c.avg_likes, kfmtN)}</b><span>Avg likes</span></div>
-      <div><b>${v(c.posts, kfmtN)}</b><span>Posts</span></div></div>
-    ${loading?`<div class="cs-fetching"><span class="mk-spin sm"></span> Fetching from Instagram…</div>`:""}
-    ${c._err?`<div class="cs-nostat">${esc(c._err)}</div>`:""}
-    ${c.bio?`<div class="cs-bio">${esc(c.bio)}</div>`:""}
+    ${csIgHead(c, i.claimed_at?'<span class="tag good">Joined — invite sent ✓</span>':`<span class="tag ${s[1]}">${esc(s[0])}</span>`)}
+    ${csIgBody(c)}
     ${i.note?`<div class="muted" style="font-size:12px">“${esc(i.note)}”</div>`:""}
     <div class="cs-act">${i.claimed_at?"":`<a class="btn sm" href="https://ig.me/m/${encodeURIComponent(h)}" target="_blank" rel="noopener">Open DM</a>
       <button class="btn sm ghost" data-invcopy="${esc(h)}">Copy message</button>
