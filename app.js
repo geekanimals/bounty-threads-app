@@ -5867,9 +5867,11 @@ async function connectInstagram(fresh){
     state
   });
   if(fresh === true) p.set("force_reauth", "true");   // show the permission screen again (to allow messages)
-  // api.instagram.com (not www.instagram.com): phones don't hand this address to the Instagram app, so the
-  // login + "Allow" happen right here in the browser and come straight back to Geek OS.
-  location.href = "https://api.instagram.com/oauth/authorize?" + p.toString();
+  // Keep the login in the BROWSER on phones (never jump to the Instagram app, which just opens its feed):
+  // Instagram's app-link rules (instagram.com/.well-known/apple-app-site-association) exclude "/oauth/authorize/*"
+  // (note the trailing slash) and any address ending in "#weblink" — so this opens the web login + Allow screen,
+  // then comes straight back here and the Media Kit loads.
+  location.href = "https://www.instagram.com/oauth/authorize/?" + p.toString() + "#weblink";
 }
 
 /* ---------- Several Instagram accounts — every one connected through Instagram login; one is ACTIVE at a time
