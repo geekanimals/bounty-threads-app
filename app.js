@@ -3111,8 +3111,9 @@ function openMkEdit(section, acct){
 }
 
 function mkComposer(){
+  const who = _mkLastAcct && _mkLastAcct.username ? ` as <b>@${esc(_mkLastAcct.username)}</b>` : "";
   return `<div class="card" style="margin-top:16px"><h3>Publish to Instagram</h3>
-    <p class="muted" style="margin-bottom:10px">Post, carousel, Reel or Story — straight to your Instagram.</p>
+    <p class="muted" style="margin-bottom:10px">Post, carousel, Reel or Story — straight to your Instagram${who}. Switch the account at the top.</p>
     <form id="mkComposer" class="modal-form">
       <label>What are you publishing?<select name="kind" id="mkKind">
         <option value="feed">Post (1 photo) or Carousel (up to 10 photos/videos)</option>
@@ -3428,6 +3429,7 @@ async function loadInstagram(){
   wrap.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <div class="ci-chips" style="margin:0">${IG_TABS.map(([k,l])=>`<button class="ci-chip" data-igtab="${k}">${l}</button>`).join("")}</div>
       <div class="muted" id="mkSyncStamp" style="font-size:12px"></div></div>
+    <div id="igAcctSwitch" style="margin-bottom:10px"></div>
     <div id="igPane_post"><div class="mk-kit" id="mkComposerWrap"></div></div>
     <div id="igPane_stories"><div class="mk-kit" id="mkStoriesWrap"></div></div>
     <div id="igPane_comments"><div class="mk-kit" id="mkCommentsWrap"></div></div>
@@ -3438,6 +3440,7 @@ async function loadInstagram(){
   document.getElementById("mkInboxWrap").innerHTML = mkInboxHtml();
   _igMediaSig = JSON.stringify((acct.recent_media||[]).map(m=>[m.id,m.comments_count]));
   wireMkComposer(); wireMkComments(acct); loadMkInbox();
+  paintIgSwitcher("igAcctSwitch", "Posting as");
   document.querySelectorAll("[data-igtab]").forEach(b=> b.onclick = ()=>{ _igTab = b.dataset.igtab; paintIgTabs(); });
   paintIgTabs();
   _mkSyncedAt = 0; mkStamp(); refreshInstagram(false);
@@ -3485,8 +3488,9 @@ async function loadMediaKit(){
   if(!acct){ showConnect(); return; }
   _mkLastAcct = acct;
   // Media Kit = view only (reach, audience, stats, best work). Posting, comments and DMs live on the Instagram page.
-  wrap.innerHTML = `<div class="muted" id="mkSyncStamp" style="font-size:12px;text-align:right;margin-bottom:6px"></div>`
+  wrap.innerHTML = `<div class="ig-sw-row"><div id="mkAcctSwitch"></div><div class="muted" id="mkSyncStamp" style="font-size:12px"></div></div>`
     + `<div class="mk-kit" id="mkStoriesWrap"></div><div id="mkHeadWrap"></div>`;
+  paintIgSwitcher("mkAcctSwitch", "Viewing");
   _mkHeadHtml = mkHead(acct); _mkStoriesHtml = mkStories(acct);
   document.getElementById("mkHeadWrap").innerHTML = _mkHeadHtml;
   document.getElementById("mkStoriesWrap").innerHTML = _mkStoriesHtml;
@@ -5788,6 +5792,50 @@ function connectInstagram(fresh){
   });
   if(fresh === true) p.set("force_reauth", "true");   // show the permission screen again (to allow messages)
   location.href = "https://www.instagram.com/oauth/authorize?" + p.toString();
+}
+
+/* ---------- Several Instagram accounts — every one connected through Instagram login; one is ACTIVE at a time
+   (Media Kit, posting and campaigns use the active one). Switch from the Media Kit, the Instagram page or the
+   Creator Profile. Connecting another account makes it active and keeps the others. ---------- */
+let _igAccts = null;
+async function igAccountsLoad(force){
+  if(_igAccts && !force) return _igAccts;
+  try{ const { data, error } = await sb.rpc("my_ig_accounts"); _igAccts = error ? [] : (data||[]); }catch(e){ _igAccts = []; }
+  return _igAccts;
+}
+window.igAccountsLoad = igAccountsLoad;
+function igAddAnother(back){
+  try{ localStorage.setItem("geekos_after_ig", back || currentPage || "mediakit"); }catch(e){}
+  gateToast("Log in to the other Instagram account on the next screen (tap “Not you?” if it shows your current one).");
+  setTimeout(()=> connectInstagram(true), 900);
+}
+window.igAddAnother = igAddAnother;
+async function igSwitchTo(igId){
+  const { data, error } = await sb.rpc("ig_switch_account", { p_ig_user_id: igId });
+  if(error) throw new Error(error.message||String(error));
+  _igAccts = null; _mkLastAcct = null; _igAvatarUrl = null;
+  try{ await sb.functions.invoke("instagram-media-sync", { body:{ force:true } }); }catch(e){}
+  return data || {};
+}
+window.igSwitchTo = igSwitchTo;
+// a small "Viewing / Posting as @x ▾ · + Add another" bar
+async function paintIgSwitcher(boxId, label){
+  const box = document.getElementById(boxId); if(!box || !window.sb) return;
+  const L = await igAccountsLoad(true);
+  if(!box.isConnected) return;
+  const fmt = n => n==null ? "" : ` · ${Number(n).toLocaleString("en-IN")}`;
+  box.innerHTML = `<div class="ig-sw"><span class="ig-sw-l">${esc(label)}</span>
+      ${L.length>1 ? `<select class="ig-sw-sel" aria-label="Instagram account">${L.map(a=>`<option value="${esc(a.ig_user_id)}"${a.active?" selected":""}>@${esc(a.username||"account")}${fmt(a.followers_count)}${a.token_expired?" · login expired":""}</option>`).join("")}</select>`
+                   : `<b>@${esc((L[0]||{}).username||"")}</b>`}
+      <button class="btn sm ghost ig-sw-add" type="button">+ Add another Instagram</button></div>`;
+  const sel = box.querySelector(".ig-sw-sel");
+  if(sel) sel.onchange = async ()=>{
+    const to = L.find(a=>a.ig_user_id===sel.value)||{};
+    sel.disabled = true;
+    try{ await igSwitchTo(sel.value); gateToast(`Switched to @${to.username||"account"} ✓`); renderShell(); }
+    catch(e){ gateToast(e.message); sel.disabled = false; paintIgSwitcher(boxId, label); }
+  };
+  box.querySelector(".ig-sw-add").onclick = ()=> igAddAnother(currentPage);
 }
 
 // Called after Instagram redirects back with ?code — hands it to the Edge Function.

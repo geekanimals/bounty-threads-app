@@ -118,6 +118,28 @@
   function defaultAddr(){ var a = (DATA && DATA.addresses) || []; return a.filter(function(x){ return x.is_default; })[0] || a[0] || null; }
   function fullName(){ var p = (DATA && DATA.personal) || {}; return [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || (IG && IG.name) || ""; }
 
+  async function paintIgAccounts(){
+    var box=document.getElementById("cpIgAccts"); if(!box || !window.igAccountsLoad) return;
+    var L=await window.igAccountsLoad(true); if(!box.isConnected) return;
+    if(!L.length){ box.innerHTML='<div class="muted">No Instagram connected yet.</div>'; return; }
+    box.innerHTML=L.map(function(a){
+      return '<div class="cp-item"><div style="display:flex;gap:10px;align-items:center">'
+        + (a.profile_picture_url?'<img src="'+esc(a.profile_picture_url)+'" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover">':'<span style="font-size:26px">📸</span>')
+        + '<div><b>@'+esc(a.username||"account")+'</b> '+(a.active?'<span class="cp-badge cp-self">Active</span>':'')
+        + (a.token_expired?' <span class="cp-badge">Login expired</span>':'')
+        + '<div class="muted">'+esc([a.name||"", a.followers_count!=null?Number(a.followers_count).toLocaleString("en-IN")+" followers":""].filter(Boolean).join(" · "))+'</div></div></div>'
+        + (a.active?'<span class="muted" style="font-size:12px">In use</span>'
+            : '<div style="display:flex;gap:6px">'+(a.token_expired?'<button class="btn sm" data-igre="1">Reconnect</button>':'<button class="btn sm" data-igsw="'+esc(a.ig_user_id)+'">Switch to this</button>')
+              + '<button class="btn sm ghost" data-igrm="'+esc(a.ig_user_id)+'">Remove</button></div>')
+        + '</div>'; }).join("");
+    box.querySelectorAll("[data-igsw]").forEach(function(b){ b.onclick=async function(){ b.disabled=true;
+      try{ var r=await window.igSwitchTo(b.getAttribute("data-igsw")); if(window.gateToast) gateToast("Switched to @"+(r.username||"account")+" ✓"); load(); }
+      catch(e){ alert(e.message||e); b.disabled=false; } }; });
+    box.querySelectorAll("[data-igre]").forEach(function(b){ b.onclick=function(){ window.igAddAnother("profile"); }; });
+    box.querySelectorAll("[data-igrm]").forEach(function(b){ b.onclick=async function(){ if(!confirm("Remove this Instagram account from Geek OS? You can connect it again any time.")) return;
+      b.disabled=true; var r=await window.sb.rpc("ig_remove_account",{ p_ig_user_id:b.getAttribute("data-igrm") }); if(r.error){ alert(r.error.message); b.disabled=false; return; } paintIgAccounts(); }; });
+  }
+
   var REQ = null;
   async function loadReq(){
     try{ var r = await api("get_profile_requirements"); if(r && !r.error && r.data){ REQ = r.data; window.__profileReq = REQ; } }catch(e){}
@@ -211,21 +233,14 @@
         + '<a href="#" id="cpReconnect">Request correction / reconnect</a>.</div></div>';
     }
 
-    // Other pages / profiles the creator manages — picked at apply time
-    body += section("pages","Other pages & profiles you manage",
-        '<div class="cp-list">'+(PAGES.length?PAGES.map(function(p){
-            return '<div class="cp-item"><div><b>@'+esc(p.handle)+'</b> <span class="cp-badge cp-self">'+esc(p.platform)+'</span>'
-              + '<div class="muted">'+esc([p.followers!=null?Number(p.followers).toLocaleString("en-IN")+" followers":"", p.category||"", (p.relation||"").replace(/_/g," ")].filter(Boolean).join(" · "))+'</div></div>'
-              + '<button class="btn sm ghost" data-delpage="'+esc(p.managed_id)+'">Remove</button></div>'; }).join("")
-          : '<div class="muted">Run a food page, a brand page or a second account? Add it here — when you apply to a campaign you choose which profile to apply with.</div>')+'</div>'
-      + '<div class="cp-grid cp-grid-4" style="margin-top:12px">'
-      + field("Username","cp_pg_handle","",{hint:"e.g. @mumbaieats"})
-      + field("Platform","cp_pg_platform","instagram",{select:[["instagram","Instagram"],["youtube","YouTube"],["facebook","Facebook"],["x","X"],["linkedin","LinkedIn"],["other","Other"]]})
-      + field("Followers","cp_pg_followers","",{type:"number"})
-      + field("Page type","cp_pg_rel","own",{select:[["own","My own page"],["fan_page","Fan / meme page"],["brand_page","Brand page I run"],["client","Client page I manage"],["other","Other"]]})
-      + field("Category","cp_pg_cat","",{hint:"e.g. Food, Travel"})
-      + '</div><div class="cp-addrow"><button class="btn sm" id="cp_pg_add">+ Add profile</button></div>',
-      {sub:"Optional"});
+    // Every Instagram account the creator runs — each connected through Instagram login (like the first one).
+    // One is active at a time (Media Kit, posting, campaigns); switch here, in the Media Kit or on the Instagram page.
+    body += section("pages","Your Instagram accounts",
+        '<div class="muted" style="margin-bottom:10px">Run a food page, a brand page or a second account? Connect it with Instagram — exactly like your first one. '
+      + 'Switch between them in the Media Kit and when posting; when you apply to a campaign you choose which account to apply with.</div>'
+      + '<div class="cp-list" id="cpIgAccts"><div class="muted">Loading your accounts…</div></div>'
+      + '<div class="cp-addrow"><button class="btn sm" id="cp_ig_add">📸 + Connect another Instagram</button></div>',
+      {sub:"Instagram only"});
 
     // A Personal
     var mar = personal.marital_status || "";
@@ -635,15 +650,9 @@
       if(!n || !t){ alert("Add the pet's name and type."); return; } pa.disabled=true;
       var dob=(document.getElementById("cp_pet_dob")||{}).value || null;
       var r=await api("add_pet",{ p_name:n, p_type:t, p_birth_date:dob }); if(r.error){ alert(r.error.message||r.error); pa.disabled=false; return; } load(); };
-    // managed pages
-    var pg=document.getElementById("cp_pg_add");
-    if(pg) pg.onclick=async function(){
-      var h=document.getElementById("cp_pg_handle").value.trim().replace(/^@/,"");
-      if(!/^[A-Za-z0-9._-]{1,60}$/.test(h)){ alert("Enter the profile's username, e.g. @mumbaieats"); return; }
-      pg.disabled=true;
-      var r=await api("upsert_managed_profile",{ p_payload:{ handle:h, platform:document.getElementById("cp_pg_platform").value,
-        followers:document.getElementById("cp_pg_followers").value, category:document.getElementById("cp_pg_cat").value.trim(), relation:document.getElementById("cp_pg_rel").value } });
-      if(r.error){ alert(r.error.message||r.error); pg.disabled=false; return; } load(); };
+    // connected Instagram accounts
+    var ia=document.getElementById("cp_ig_add"); if(ia) ia.onclick=function(){ if(window.igAddAnother) window.igAddAnother("profile"); };
+    paintIgAccounts();
     // skills / resources multi-selects
     document.querySelectorAll("[data-ms]").forEach(function(cb){ cb.onchange=async function(){
       var skill=cb.getAttribute("data-ms")==="ms_skill", v=cb.value; cb.parentNode.classList.toggle("on", cb.checked);

@@ -492,6 +492,7 @@
       if(me){ var sa=await window.sb.from("social_accounts").select("username,followers_count").eq("platform","instagram").eq("member_id",me).limit(1);
         var row=sa&&sa.data&&sa.data[0]; if(row&&row.username) out.push({handle:String(row.username).toLowerCase(),followers:row.followers_count,label:"Connected Instagram"}); }
     }catch(e){}
+    try{ var ig=window.igAccountsLoad ? await window.igAccountsLoad(true) : []; (ig||[]).forEach(function(a){ if(a.username && !out.some(function(o){return o.handle===a.username;})) out.push({handle:a.username,followers:a.followers_count,label:a.active?"Instagram · active":"Instagram"}); }); }catch(e){}
     try{ var m=await apiCreator("get_my_managed_profiles"); ((m&&m.data)||[]).forEach(function(x){ if(!out.some(function(o){return o.handle===x.handle;})) out.push({handle:x.handle,followers:x.followers,label:x.category||"Managed profile"}); }); }catch(e){}
     return out;
   }

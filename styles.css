@@ -1321,3 +1321,9 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 @media(max-width:700px){.bt-row2,.bt-row3{grid-template-columns:1fr}.bt-card{padding:18px 16px}}
 /* creator side: multi-line brief text keeps its lines */
 .mc-text{white-space:pre-line}
+
+/* Instagram account switcher (Media Kit / Instagram page) */
+.ig-sw-row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.ig-sw{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+.ig-sw-l{color:var(--muted)}
+.ig-sw-sel{padding:6px 28px 6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--text,inherit);font:inherit;font-size:13px;font-weight:600;max-width:100%}
