@@ -80,7 +80,8 @@ function igTypeLabel(t){ t = String(t||"").toUpperCase(); return t==="MEDIA_CREA
 function safeUrl(u){ if(u==null) return "#"; const s=String(u).trim(); if(/^https?:\/\//i.test(s)||s.startsWith("/")||s.startsWith("#")) return s; if(/^[a-z0-9.-]+\.[a-z]{2,}([\/?#]|$)/i.test(s)) return "https://"+s; return "#"; }
 function fmtNum(n){ return (Number(n)||0).toLocaleString('en-IN'); }
 
-function edits(a){ return (a && a.edits && typeof a.edits==="object" && !Array.isArray(a.edits)) ? a.edits : {}; }
+function edits(a){ const E = (a && a.edits && typeof a.edits==="object" && !Array.isArray(a.edits)) ? { ...a.edits } : {};
+  if(E.bio && String(E.for_user||"") !== String(a.username||"").toLowerCase()) delete E.bio; return E; }
 
 function renderKit(a){
   const E = edits(a);

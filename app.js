@@ -3034,7 +3034,13 @@ function mkNotConnected(){
   </div>`;
 }
 
-function mkEdits(a){ return (a && a.edits && typeof a.edits==="object" && !Array.isArray(a.edits)) ? a.edits : {}; }
+function mkEdits(a){
+  const E = (a && a.edits && typeof a.edits==="object" && !Array.isArray(a.edits)) ? { ...a.edits } : {};
+  // a hand-written bio belongs to the account it was written for; otherwise the account's own Instagram bio shows
+  const me = String((a && (a.ig_user_id || a.username)) || "");
+  if(E.bio && (!E.for || String(E.for) !== me)) delete E.bio;
+  return E;
+}
 
 // how many items each Media Kit section shows (grows with "Load more"; kept across the 60 s refresh)
 let _mkShown = { top:6, show:9, ment:6, port:6, collab:6 };
@@ -3199,7 +3205,7 @@ function openMkEdit(section, acct){
   if(section==="profile"){
     title="Edit profile";
     fields = `<label>Headline / tagline<input name="headline" value="${esc(E.headline||'')}" placeholder="Tech &amp; lifestyle creator · Mumbai"></label>
-      <label>Bio<textarea name="bio" rows="3" placeholder="Short bio…">${esc(E.bio||acct.biography||'')}</textarea></label>`;
+      <label>Bio <span class="muted" style="font-weight:400">(leave as is to keep your Instagram bio — it updates on its own)</span><textarea name="bio" rows="3" placeholder="Short bio…">${esc(E.bio||acct.biography||'')}</textarea></label>`;
   } else if(section==="ratecard"){
     title="Edit rate card";
     const lines=(Array.isArray(E.rate_card)?E.rate_card:[]).map(r=>`${r.item} | ${r.price}`).join("\n");
@@ -3223,7 +3229,10 @@ function openMkEdit(section, acct){
     const f=new FormData(e.target), err=document.getElementById("mkeErr");
     const btn=e.target.querySelector("button[type=submit]"); btn.disabled=true; btn.textContent="Saving…";
     const newEdits = { ...E };
-    if(section==="profile"){ newEdits.headline=(f.get("headline")||"").trim(); newEdits.bio=(f.get("bio")||"").trim(); }
+    if(section==="profile"){ newEdits.headline=(f.get("headline")||"").trim();
+      const b=(f.get("bio")||"").trim();
+      // only keep a bio that's different from Instagram's; tag it with this account so it never shows on another
+      if(b && b !== String(acct.biography||"").trim()){ newEdits.bio=b; newEdits.for=String(acct.ig_user_id||acct.username||""); newEdits.for_user=String(acct.username||"").toLowerCase(); } else { delete newEdits.bio; delete newEdits.for; delete newEdits.for_user; } }
     else if(section==="ratecard"){ newEdits.rate_card=(f.get("lines")||"").split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{ const p=l.split("|").map(s=>s.trim()); return {item:p[0]||l, price:p[1]||""}; }); }
     else if(section==="portfolio"){ newEdits.portfolio=(f.get("lines")||"").split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{ const p=l.split("|").map(s=>s.trim()); return {brand:p[0]||l, note:p[1]||"", url:p[2]||""}; }); }
     try{
