@@ -14,6 +14,26 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const GRAPH = "https://graph.instagram.com/v23.0";
 const MIN_GAP_MS = 50_000, FORCE_GAP_MS = 10_000;
+const ARCHIVE_GAP_MS = 6 * 3600_000, ARCHIVE_MAX = 150;   // the whole-account scan (top posts, load more) every 6 h
+
+// every post of the account (newest first, up to ARCHIVE_MAX) with likes + comments — used for "Top performing"
+// across the whole account and for "Load more" in the Media Kit. 50 per page → at most 3 Instagram calls.
+async function fetchArchive(token: string) {
+  const out: any[] = [];
+  let url: string | null = `${GRAPH}/me/media?fields=id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count&limit=50&access_token=${encodeURIComponent(token)}`;
+  while (url && out.length < ARCHIVE_MAX) {
+    const r = await fetch(url); const j = await r.json().catch(() => ({}));
+    if (!r.ok || j?.error) break;
+    for (const m of (j?.data ?? [])) out.push(m);
+    url = j?.paging?.next ?? null;
+  }
+  return out.slice(0, ARCHIVE_MAX);
+}
+async function fetchTags(token: string, igUserId: string) {
+  const r = await fetch(`${GRAPH}/${igUserId}/tags?fields=id,caption,media_type,media_url,permalink,thumbnail_url,username,timestamp&limit=50&access_token=${encodeURIComponent(token)}`);
+  const j = await r.json().catch(() => ({}));
+  return r.ok && !j?.error && Array.isArray(j?.data) ? j.data : null;
+}
 
 async function igGet(path: string, token: string) {
   const r = await fetch(`${GRAPH}/${path}${path.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`);
@@ -33,7 +53,7 @@ Deno.serve(async (req) => {
     const force = !!(await req.json().catch(() => ({})))?.force;
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-    const { data: acct } = await admin.from("social_accounts").select("last_media_sync_at, recent_media")
+    const { data: acct } = await admin.from("social_accounts").select("last_media_sync_at, recent_media, archive_synced_at, ig_user_id")
       .eq("member_id", user.id).eq("platform", "instagram").maybeSingle();
     if (!acct) return json({ error: "Instagram not connected" }, 400);
 
@@ -83,6 +103,16 @@ Deno.serve(async (req) => {
     // /me/stories only returns stories that are live right now (last 24 h)
     if (stories.ok) patch.recent_stories = Array.isArray(stories.j?.data) ? stories.j.data : [];
 
+    // the whole account (top posts across everything + "Load more"), at most every 6 h — or right away for a new kit
+    const archAge = acct.archive_synced_at ? Date.now() - new Date(acct.archive_synced_at).getTime() : Infinity;
+    if (archAge > ARCHIVE_GAP_MS) {
+      try {
+        const [arch, tags] = await Promise.all([fetchArchive(tok.access_token), acct.ig_user_id ? fetchTags(tok.access_token, acct.ig_user_id) : Promise.resolve(null)]);
+        if (arch.length) { patch.archive_media = arch; patch.archive_synced_at = new Date().toISOString(); }
+        if (tags && tags.length) patch.mentions = tags;
+      } catch (e) { console.warn("instagram-media-sync archive:", (e as Error).message); }
+    }
+
     const { error } = await admin.from("social_accounts").update(patch)
       .eq("member_id", user.id).eq("platform", "instagram");
     if (error) throw error;
@@ -93,6 +123,7 @@ Deno.serve(async (req) => {
       ok: true, cached: false,
       posts: Array.isArray(patch.recent_media) ? (patch.recent_media as unknown[]).length : prev.length,
       posts_from_instagram: fresh.length,
+      archive: Array.isArray(patch.archive_media) ? (patch.archive_media as unknown[]).length : null,
       stories: Array.isArray(patch.recent_stories) ? (patch.recent_stories as unknown[]).length : null,
       partial: failed,
     });

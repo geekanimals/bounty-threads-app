@@ -1323,7 +1323,26 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .mc-text{white-space:pre-line}
 
 /* Instagram account switcher (Media Kit / Instagram page) */
-.ig-sw-row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-.ig-sw{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
-.ig-sw-l{color:var(--muted)}
-.ig-sw-sel{padding:6px 28px 6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--text,inherit);font:inherit;font-size:13px;font-weight:600;max-width:100%}
+.ig-sw-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.ig-sw{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 8px 6px 6px;border:1px solid var(--line);border-radius:999px;background:var(--panel);box-shadow:0 1px 2px rgba(15,18,34,.04)}
+.ig-sw-av{width:34px;height:34px;border-radius:50%;object-fit:cover;flex:0 0 auto}
+.ig-sw-ph{display:grid;place-items:center;background:rgba(0,178,225,.12);font-size:16px}
+.ig-sw-mid{display:flex;flex-direction:column;line-height:1.15;min-width:0}
+.ig-sw-l{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.ig-sw-one{font-size:14px}
+.ig-sw-sel{border:0;background:transparent;color:var(--text,inherit);font:inherit;font-size:14px;font-weight:700;padding:0 18px 0 0;cursor:pointer;max-width:220px}
+.ig-sw-n{font-size:11px;color:var(--muted);padding:2px 8px;border-radius:999px;background:rgba(108,92,231,.08)}
+.ig-sw-add{border-radius:999px}
+/* Media Kit: load more + section subtitles + loaders */
+.mk-sec-sub{font-size:12px;font-weight:400}
+.mk-more{display:flex;justify-content:center;margin-top:12px}
+.mk-building{text-align:center;padding:40px 20px}
+.mk-spin{width:38px;height:38px;margin:0 auto;border-radius:50%;border:3px solid rgba(0,178,225,.18);border-top-color:#00b2e1;animation:mkspin .8s linear infinite}
+@keyframes mkspin{to{transform:rotate(360deg)}}
+.geek-busy{position:fixed;inset:0;z-index:10050;display:flex;align-items:center;justify-content:center;background:rgba(244,246,251,.86);backdrop-filter:blur(3px)}
+.geek-busy-box{background:var(--panel,#fff);border:1px solid var(--line);border-radius:16px;padding:26px 30px;text-align:center;box-shadow:0 10px 40px rgba(15,18,34,.12);max-width:340px}
+.geek-busy-t{margin-top:12px;font-size:14px;font-weight:600}
+@media (prefers-color-scheme: dark){ .geek-busy{background:rgba(10,12,20,.8)} }
+.mk-building h3,.mk-building .muted{text-align:center}
+.mk-topbar .ig-sw{max-width:100%}
+@media (max-width:560px){ .ig-sw{border-radius:16px;width:100%} .ig-sw-add{margin-left:auto} }

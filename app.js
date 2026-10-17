@@ -2977,9 +2977,24 @@ function mkNotConnected(){
 
 function mkEdits(a){ return (a && a.edits && typeof a.edits==="object" && !Array.isArray(a.edits)) ? a.edits : {}; }
 
+// how many items each Media Kit section shows (grows with "Load more"; kept across the 60 s refresh)
+let _mkShown = { top:6, show:9, ment:6, port:6 };
+const MK_STEP = { top:6, show:9, ment:6, port:6 };
+// every post we know: the latest (refreshed every minute) + the whole-account scan, newest first, no duplicates
+function mkAllMedia(a){
+  const seen = new Set(), out = [];
+  [].concat(Array.isArray(a.recent_media)?a.recent_media:[], Array.isArray(a.archive_media)?a.archive_media:[]).forEach(m=>{
+    const k = m && (m.id || m.permalink); if(!k || seen.has(k)) return; seen.add(k); out.push(m); });
+  return out.sort((x,y)=> String(y.timestamp||"").localeCompare(String(x.timestamp||"")));
+}
+function mkMoreBtn(key, total){
+  const shown = _mkShown[key]||0;
+  return total > shown ? `<div class="mk-more"><button class="btn sm ghost" data-mkmore="${key}">Load more <span class="muted">(${total - shown} more)</span></button></div>` : "";
+}
 function mkHead(a){
   const E = mkEdits(a);
   const media = Array.isArray(a.recent_media) ? a.recent_media : [];
+  const all = mkAllMedia(a);
   const n = media.length || 0;
   const sum = (k)=> media.reduce((s,m)=>s+(Number(m[k])||0),0);
   const avgLikes = n ? Math.round(sum("like_count")/n) : 0;
@@ -2992,7 +3007,8 @@ function mkHead(a){
   const headline = E.headline || "";
 
   const eng = m=>(Number(m.like_count)||0)+(Number(m.comments_count)||0);
-  const sorted = [...media].sort((x,y)=>eng(y)-eng(x));
+  // top performing across the WHOLE account (likes + comments), not just the latest posts
+  const sorted = all.filter(m=> eng(m) > 0).sort((x,y)=>eng(y)-eng(x));
   const postCard = (m,meta)=>{
     const img = m.media_type==="VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
     const badge = m.media_type==="VIDEO" ? "▶" : (m.media_type==="CAROUSEL_ALBUM" ? "❏" : "");
@@ -3000,8 +3016,8 @@ function mkHead(a){
       <img src="${esc(safeUrl(img))}" alt="" loading="lazy">${badge?`<span class="mk-type">${badge}</span>`:""}
       <span class="mk-meta">${meta||`❤ ${fmtNum(m.like_count)} · 💬 ${fmtNum(m.comments_count)}`}</span></a>`;
   };
-  const posts = media.slice(0,9).map(m=>postCard(m)).join("");
-  const tops = sorted.slice(0,3).map(m=>postCard(m)).join("");
+  const posts = all.slice(0,_mkShown.show).map(m=>postCard(m)).join("");
+  const tops = sorted.slice(0,_mkShown.top).map((m,i)=>postCard(m, `${i<3?["🥇","🥈","🥉"][i]+" ":""}❤ ${fmtNum(m.like_count)} · 💬 ${fmtNum(m.comments_count)}`)).join("");
 
   const tile = (val,label,accent)=>`<div class="mk-tile ${accent||''}"><div class="mk-tile-v">${val}</div><div class="mk-tile-l">${label}</div></div>`;
   const editBtn = (s)=>`<button class="mk-edit" data-mkedit="${s}">✎ Edit</button>`;
@@ -3015,13 +3031,14 @@ function mkHead(a){
 
   // Mentions
   const mentions = Array.isArray(a.mentions)?a.mentions:[];
-  const mentionCards = mentions.slice(0,6).map(m=>postCard(m, "@"+(esc(m.username)||"tagged"))).join("");
+  const mentionCards = mentions.slice(0,_mkShown.ment).map(m=>postCard(m, "@"+(esc(m.username)||"tagged"))).join("");
 
   // Work portfolio (editable)
   const portfolio = Array.isArray(E.portfolio)?E.portfolio:[];
   const portfolioHtml = portfolio.length
-    ? `<div class="mk-portfolio">${portfolio.map(p=>`<div class="mk-brand"><div class="mk-brand-ic">${esc((p.brand||'?').slice(0,2).toUpperCase())}</div><div class="mk-brand-b"><div class="mk-brand-n">${esc(p.brand)}</div>${p.note?`<div class="muted" style="font-size:12px">${esc(p.note)}</div>`:''}</div>${p.url?`<a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener" class="mk-brand-link">↗</a>`:''}</div>`).join("")}</div>`
+    ? `<div class="mk-portfolio">${portfolio.slice(0,_mkShown.port).map(p=>`<div class="mk-brand"><div class="mk-brand-ic">${esc((p.brand||'?').slice(0,2).toUpperCase())}</div><div class="mk-brand-b"><div class="mk-brand-n">${esc(p.brand)}</div>${p.note?`<div class="muted" style="font-size:12px">${esc(p.note)}</div>`:''}</div>${p.url?`<a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener" class="mk-brand-link">↗</a>`:''}</div>`).join("")}</div>`
     : `<div class="muted" style="padding:8px">No collaborations yet — click <b>Edit</b> to showcase brands you've worked with.</div>`;
+  const scanning = !a.archive_synced_at;
 
   return `<div class="mk-kit">
     <div class="mk-cover">
@@ -3051,15 +3068,16 @@ function mkHead(a){
       ${(window.mkAudienceHtml && window.mkAudienceHtml(a.audience)) || `<div class="muted" style="padding:8px">Audience demographics appear automatically once your Instagram Insights sync (needs 100+ followers and approved insights access).</div>`}
     </div>
 
-    ${tops?`<div class="card mk-section"><h3>Top performing posts</h3><div class="mk-grid">${tops}</div></div>`:""}
+    <div class="card mk-section"><div class="mk-sec-head"><h3>Top performing posts</h3><span class="muted mk-sec-sub">${scanning?"⏳ checking your whole account…":`best of ${fmtNum(all.length)} posts · likes + comments`}</span></div>
+      ${tops?`<div class="mk-grid">${tops}</div>${mkMoreBtn("top", sorted.length)}`:`<div class="muted" style="padding:8px">${scanning?"Finding your best posts…":"No posts yet."}</div>`}</div>
 
-    <div class="card mk-section"><div class="mk-sec-head"><h3>Work portfolio</h3>${editBtn("portfolio")}</div><div id="mkCampWork"></div>${portfolioHtml}</div>
+    <div class="card mk-section"><div class="mk-sec-head"><h3>Work portfolio</h3>${editBtn("portfolio")}</div><div id="mkCampWork"></div>${portfolioHtml}${mkMoreBtn("port", portfolio.length)}</div>
 
-    <div class="card mk-section"><h3>Mentions</h3>
-      ${mentionCards ? `<div class="mk-grid">${mentionCards}</div>` : `<div class="muted" style="padding:8px">Posts where brands &amp; others tag you will appear here once they're available from Instagram.</div>`}</div>
+    <div class="card mk-section"><div class="mk-sec-head"><h3>Mentions</h3>${mentions.length?`<span class="muted mk-sec-sub">${fmtNum(mentions.length)} tagged posts</span>`:""}</div>
+      ${mentionCards ? `<div class="mk-grid">${mentionCards}</div>${mkMoreBtn("ment", mentions.length)}` : `<div class="muted" style="padding:8px">Posts where brands &amp; others tag you will appear here once they're available from Instagram.</div>`}</div>
 
-    <div class="card mk-section"><h3>Content showcase</h3>
-      ${posts?`<div class="mk-grid">${posts}</div>`:`<div class="muted" style="padding:8px">No posts yet.</div>`}</div>
+    <div class="card mk-section"><div class="mk-sec-head"><h3>Content showcase</h3>${all.length?`<span class="muted mk-sec-sub">${fmtNum(all.length)} posts</span>`:""}</div>
+      ${posts?`<div class="mk-grid">${posts}</div>${mkMoreBtn("show", all.length)}`:`<div class="muted" style="padding:8px">No posts yet.</div>`}</div>
 
     <div class="card mk-section mk-collab">
       <div><h3 style="margin:0 0 2px">Work with ${firstName}</h3>
@@ -3298,10 +3316,13 @@ async function mkCampaignWork(acct){
   const thumb = p => { const m = media.find(x=> norm(x.permalink) && norm(x.permalink)===norm(p.permalink)); return m ? (m.thumbnail_url || m.media_url) : null; };
   const L = (_mkCampWork||[]).slice().sort((a,b)=> String(b.posted_at).localeCompare(String(a.posted_at)));
   const el2 = document.getElementById("mkCampWork"); if(!el2) return;
-  el2.innerHTML = L.length ? `<div class="mk-cw-h">🎬 Campaigns on Geek OS</div><div class="mk-cw">${L.map(p=>{ const t = thumb(p);
+  const LL = L.slice(0, _mkShown.cw || 6);
+  el2.innerHTML = L.length ? `<div class="mk-cw-h">🎬 Campaigns on Geek OS</div><div class="mk-cw">${LL.map(p=>{ const t = thumb(p);
       return `<a class="mk-cw-item" href="${esc(safeUrl(p.permalink||"#"))}" target="_blank" rel="noopener">
         <div class="mk-cw-img">${t?`<img src="${esc(safeUrl(t))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:""}<i>${p.media_type==="story"?"Story":"▶ Reel"}</i></div>
-        <div class="mk-cw-b"><b>${esc(p.brand||"Brand")}</b><span>${esc(p.campaign||"")}</span><em>${esc(fmtDate(p.posted_at))} ↗</em></div></a>`; }).join("")}</div>` : "";
+        <div class="mk-cw-b"><b>${esc(p.brand||"Brand")}</b><span>${esc(p.campaign||"")}</span><em>${esc(fmtDate(p.posted_at))} ↗</em></div></a>`; }).join("")}</div>`
+    + (L.length > LL.length ? `<div class="mk-more"><button class="btn sm ghost" id="mkCwMore">Load more <span class="muted">(${L.length-LL.length} more)</span></button></div>` : "") : "";
+  const cm = document.getElementById("mkCwMore"); if(cm) cm.onclick = ()=>{ _mkShown.cw = (_mkShown.cw||6) + 6; mkCampaignWork(acct); };
 }
 function wireMkHead(acct){
   mkCampaignWork(acct);
@@ -3313,6 +3334,10 @@ function wireMkHead(acct){
     const c=document.getElementById("mkComposer"); if(c){ c.scrollIntoView({behavior:"smooth"}); return; }
     currentPage = "instagram"; renderShell(); };
   document.querySelectorAll("#mkHeadWrap [data-mkedit]").forEach(b=> b.onclick = ()=> openMkEdit(b.dataset.mkedit, acct));
+  document.querySelectorAll("#mkHeadWrap [data-mkmore]").forEach(b=> b.onclick = ()=>{
+    const k = b.dataset.mkmore; _mkShown[k] = (_mkShown[k]||0) + (MK_STEP[k]||6);
+    const hw = document.getElementById("mkHeadWrap"), a2 = _mkLastAcct || acct; if(!hw) return;
+    _mkHeadHtml = mkHead(a2); hw.innerHTML = _mkHeadHtml; wireMkHead(a2); });
 }
 // Share the public media kit: anyone with the link sees only the kit (no login).
 function kitPublicUrl(acct){ return (window.appOrigin ? window.appOrigin() : location.origin) + "/p.html?u=" + encodeURIComponent(String(acct.username||"").replace(/^@/,"")); }
@@ -3343,6 +3368,19 @@ async function mkFetchAcct(){
     .order("updated_at",{ascending:false}).limit(1);
   return error ? null : ((data && data[0]) || null);
 }
+function mkBuildingHtml(){
+  return `<div class="card mk-building"><div class="mk-spin"></div><h3 style="margin:10px 0 4px">Building your media kit…</h3>
+    <div class="muted">Reading your profile, posts, top performers and audience from Instagram. This takes a few seconds.</div></div>`;
+}
+// full-screen loader — used while Instagram connects / an account is switched, so the screen never goes blank
+function showBusy(msg){
+  let o = document.getElementById("geekBusy");
+  if(!o){ o = document.createElement("div"); o.id = "geekBusy"; o.className = "geek-busy"; document.body.appendChild(o); }
+  o.innerHTML = `<div class="geek-busy-box"><div class="mk-spin"></div><div class="geek-busy-t">${esc(msg||"Loading…")}</div></div>`;
+  o.style.display = "flex";
+}
+function hideBusy(){ const o = document.getElementById("geekBusy"); if(o) o.remove(); }
+window.showBusy = showBusy; window.hideBusy = hideBusy;
 function mkStamp(){
   const el = document.getElementById("mkSyncStamp"); if(!el) return;
   el.textContent = _mkSyncedAt ? `Synced with Instagram ${Math.max(0,Math.round((Date.now()-_mkSyncedAt)/1000))}s ago · auto-refreshes every 60s` : "Syncing with Instagram…";
@@ -3483,17 +3521,26 @@ async function loadMediaKit(){
   if(!wrap) return;
   const showConnect = ()=>{ wrap.innerHTML = mkNotConnected(); const b=document.getElementById("mkConnect"); if(b) b.onclick=connectInstagram; };
   if(!window.sb){ showConnect(); return; }
-  const acct = await mkFetchAcct();
+  let acct = await mkFetchAcct();
   if(!wrap.isConnected) return;               // page changed while loading — a newer render takes over
   if(!acct){ showConnect(); return; }
   _mkLastAcct = acct;
   // Media Kit = view only (reach, audience, stats, best work). Posting, comments and DMs live on the Instagram page.
-  wrap.innerHTML = `<div class="ig-sw-row"><div id="mkAcctSwitch"></div><div class="muted" id="mkSyncStamp" style="font-size:12px"></div></div>`
-    + `<div class="mk-kit" id="mkStoriesWrap"></div><div id="mkHeadWrap"></div>`;
-  paintIgSwitcher("mkAcctSwitch", "Viewing");
-  _mkHeadHtml = mkHead(acct); _mkStoriesHtml = mkStories(acct);
+  // live stories live on the Instagram page (🟣 Stories), not in the kit
+  wrap.innerHTML = `<div class="ig-sw-row mk-topbar"><div id="mkAcctSwitch"></div><div class="muted" id="mkSyncStamp" style="font-size:12px"></div></div>`
+    + `<div id="mkHeadWrap"></div>`;
+  paintIgSwitcher("mkAcctSwitch", "Media kit of");
+  _mkShown = { top:6, show:9, ment:6, port:6 };
+  const fresh = !(acct.recent_media||[]).length && !acct.archive_synced_at;
+  if(fresh){
+    // a brand-new kit: show a proper loader (never a blank screen) while the first Instagram sync runs
+    document.getElementById("mkHeadWrap").innerHTML = mkBuildingHtml();
+    await refreshMediaKit(true);
+    const a2 = await mkFetchAcct(); if(!document.getElementById("mkHeadWrap")) return;
+    if(a2){ acct = a2; _mkLastAcct = a2; }
+  }
+  _mkHeadHtml = mkHead(acct);
   document.getElementById("mkHeadWrap").innerHTML = _mkHeadHtml;
-  document.getElementById("mkStoriesWrap").innerHTML = _mkStoriesHtml;
   wireMkHead(acct);
   _mkSyncedAt = 0; mkStamp();
   refreshMediaKit(false);          // fresh posts + live stories on open
@@ -5824,22 +5871,29 @@ async function paintIgSwitcher(boxId, label){
   const L = await igAccountsLoad(true);
   if(!box.isConnected) return;
   const fmt = n => n==null ? "" : ` · ${Number(n).toLocaleString("en-IN")}`;
-  box.innerHTML = `<div class="ig-sw"><span class="ig-sw-l">${esc(label)}</span>
-      ${L.length>1 ? `<select class="ig-sw-sel" aria-label="Instagram account">${L.map(a=>`<option value="${esc(a.ig_user_id)}"${a.active?" selected":""}>@${esc(a.username||"account")}${fmt(a.followers_count)}${a.token_expired?" · login expired":""}</option>`).join("")}</select>`
-                   : `<b>@${esc((L[0]||{}).username||"")}</b>`}
-      <button class="btn sm ghost ig-sw-add" type="button">+ Add another Instagram</button></div>`;
+  const act = L.find(a=>a.active) || L[0] || {};
+  box.innerHTML = `<div class="ig-sw">
+      ${act.profile_picture_url?`<img class="ig-sw-av" src="${esc(safeUrl(act.profile_picture_url))}" alt="">`:`<span class="ig-sw-av ig-sw-ph">📸</span>`}
+      <div class="ig-sw-mid"><span class="ig-sw-l">${esc(label)}</span>
+      ${L.length>1 ? `<select class="ig-sw-sel" aria-label="Switch Instagram account">${L.map(a=>`<option value="${esc(a.ig_user_id)}"${a.active?" selected":""}>@${esc(a.username||"account")}${fmt(a.followers_count)}${a.token_expired?" · login expired":""}</option>`).join("")}</select>`
+                   : `<b class="ig-sw-one">@${esc(act.username||"")}</b>`}</div>
+      ${L.length>1?`<span class="ig-sw-n">${L.length} accounts</span>`:""}
+      <button class="btn sm ghost ig-sw-add" type="button">+ Add account</button></div>`;
   const sel = box.querySelector(".ig-sw-sel");
   if(sel) sel.onchange = async ()=>{
     const to = L.find(a=>a.ig_user_id===sel.value)||{};
-    sel.disabled = true;
+    sel.disabled = true; showBusy(`Switching to @${to.username||"account"}…`);
     try{ await igSwitchTo(sel.value); gateToast(`Switched to @${to.username||"account"} ✓`); renderShell(); }
     catch(e){ gateToast(e.message); sel.disabled = false; paintIgSwitcher(boxId, label); }
+    finally{ setTimeout(hideBusy, 300); }
   };
   box.querySelector(".ig-sw-add").onclick = ()=> igAddAnother(currentPage);
 }
 
 // Called after Instagram redirects back with ?code — hands it to the Edge Function.
 async function finishInstagram(code){
+  showBusy("Connecting your Instagram and building your media kit…");
+  setTimeout(hideBusy, 45000);          // never stuck
   try{
     if(!(window.sb && window.sb.functions)) throw new Error("Edge Functions not available.");
     const { data:{ session } } = await sb.auth.getSession();
@@ -5857,7 +5911,8 @@ async function finishInstagram(code){
       currentPage = back ? back : (role === "creator" ? "mediakit" : "discover");
       if(currentPage === "discover") _dcTab = "external";
       if(window.__osBooted){ if(typeof renderShell==="function") renderShell(); }
-      else if(typeof bootOS==="function") bootOS();
+      else if(typeof bootOS==="function") await bootOS();
+      setTimeout(hideBusy, 400);           // the Media Kit shows its own loader from here
       return;
     }
 
@@ -5875,8 +5930,10 @@ async function finishInstagram(code){
     // Remember this device so returning creators get a one-tap "welcome back" (no re-typing).
     try{ localStorage.setItem("geekos_last_name", (Auth.profile && Auth.profile.name) || ""); }catch(e){}
     currentPage = "mediakit";
-    if(typeof bootOS==="function") bootOS();
+    if(typeof bootOS==="function") await bootOS();
+    setTimeout(hideBusy, 400);
   }catch(ex){
+    hideBusy();
     window.__igLoggingIn = false;
     alert("Instagram sign-in failed: " + (ex.message||ex) + "\n\nMake sure the instagram-login & instagram-auth Edge Functions are deployed and this redirect URL is registered in Meta:\n" + IG_REDIRECT);
     const { data:{ session:s2 } } = await sb.auth.getSession();
