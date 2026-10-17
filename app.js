@@ -427,7 +427,7 @@ async function loadKPIs(){
       sb.from('dream_plans').select('score')
     ]);
     const C=creators.data||[], CA=campaigns.data||[], B=barter.data||[], AP=apps.data||[], ST=stories.data||[], PL=plans.data||[];
-    const activeSet=['Live','In Production','Sourcing','Approval'];
+    const activeSet=['Live','Shortlist completed','In Production','Sourcing','Approval'];
     const ratings=C.map(x=>Number(x.rating)).filter(x=>!isNaN(x));
     const vals={
       creators: fmtNum(C.length),
@@ -1523,7 +1523,7 @@ function campStatusPick(st){ return ({Sourcing:"Live","In Production":"Live",App
 function campStatusOptions(cur, endDate){
   const today = new Date().toISOString().slice(0,10), ended = !!endDate && endDate < today;
   const pick = (!cur && ended) ? "Completed" : campStatusPick(cur);
-  const list = [["Draft","Draft — not visible to creators"],["Live","Live — creators can apply"]];
+  const list = [["Draft","Draft — not visible to creators"],["Live","Live — creators can apply"],["Shortlist completed","Shortlist completed — running, no new applications"]];
   if(pick==="Approval") list.splice(1,0,["Approval","Waiting for approval"]);
   if(ended || pick==="Completed") list.push(["Completed","Completed"+(ended?" — already ended":"")]);
   const sel = list.some(x=>x[0]===pick) ? pick : (ended ? "Completed" : "Live");
@@ -2614,7 +2614,7 @@ async function adminApplications(body, silent){
 
 /* ---------- Super Admin → All campaigns (live): status override + decide applications for anyone ---------- */
 let _acTimer = null, _acOpen = null, _acSig = "";
-const CAMP_STATUSES = ["Draft","Approval","Live","Completed"];
+const CAMP_STATUSES = ["Draft","Approval","Live","Shortlist completed","Completed"];
 let _acPick = "", _acQ = "", _acPickOpened = false;
 // one campaign picked in Super Admin → where every creator is, at a glance
 function acPickSummary(c, pc){
@@ -2818,7 +2818,7 @@ async function loadBrands(){
   if(!body||!window.sb) return;
   const { data, error } = await sb.from("campaigns").select("brand,status,creators");
   if(error){ body.innerHTML=`<tr><td colspan="4" class="muted" style="padding:24px">Couldn't load: ${esc(error.message)}</td></tr>`; return; }
-  const map={}; const active=["Live","In Production","Sourcing","Approval"];
+  const map={}; const active=["Live","Shortlist completed","In Production","Sourcing","Approval"];
   (data||[]).forEach(c=>{ const b=((c.brand||"").trim())||"—"; map[b]=map[b]||{n:0,active:0,creators:0};
     map[b].n++; if(active.includes(c.status)) map[b].active++; map[b].creators+=parseInt(c.creators)||0; });
   const rows=Object.entries(map);
@@ -4206,6 +4206,16 @@ function bkGuideHtml(open){
     <div class="muted bk-mini">Google Sheets: copy → open a new sheet → click cell A1 → paste. · Word: make a table with the same columns, or write one creator per line like <code>Asha Rao – @asha.creates – 9876543210 – asha@example.com</code>.</div>
   </details>`;
 }
+// the creator's real step in the campaign, as a bulk Status (the sheet's value until they join)
+const BK_FROM_STAGE = { applied:"registered", eligible:"screened", shortlisted:"screened", sent_to_brand:"sent_to_brand", invited:"approved", accepted:"approved",
+  brand_confirmed:"approved", contract_sent:"contract_sent", contract_signed:"contract_signed", address_confirmed:"address_confirmed",
+  product_sent:"courier_sent", content_created:"video_brief_sent", content_submitted:"video_submitted", changes_requested:"video_brief_sent",
+  content_approved:"client_approved", published:"posted", completed:"posted" };
+function bkLiveStatus(x){
+  const sheet = x.sheet_status==="invited" ? "registered" : x.sheet_status==="courier_received" ? "courier_delivered" : (x.sheet_status || (x.approved ? "approved" : "registered"));
+  const live = x.stage && BK_FROM_STAGE[x.stage];
+  return live && bkStRank(live) >= bkStRank(sheet) ? live : sheet;
+}
 function bkListHtml(){
   const L = _bk.list;
   if(!L) return skel("list",3);
@@ -4232,7 +4242,7 @@ function bkListHtml(){
           ${err?`<div class="muted" style="font-size:12px;color:#b45309">${bkEsc(String(err).slice(0,140))}</div>`:""}</div>
         <div class="bk-act">
           ${x.participation_id?`<button class="mini-btn" data-bkopen="${bkEsc(x.participation_id)}">Open</button>`:""}
-          <label class="bk-chg" title="Where this creator is — moves them forward (never back)">${bkStatusSelect(`data-bkset="${bkEsc(x.invite_id)}"`, x.sheet_status==="invited"?"registered":x.sheet_status==="courier_received"?"courier_delivered":(x.sheet_status||(x.approved?"approved":"registered")), "")}</label>
+          <label class="bk-chg" title="Where this creator is right now — updates on its own as they move; pick a later step to move them forward (never back)">${bkStatusSelect(`data-bkset="${bkEsc(x.invite_id)}"`, bkLiveStatus(x), "")}</label>
           ${x.status!=="joined"?`<button class="mini-btn ghost" data-bkre="${bkEsc(x.invite_id)}">Resend</button><button class="mini-btn ghost" data-bkdel="${bkEsc(x.invite_id)}">Remove</button>`:""}
         </div></div>`; }).join("")}`;
 }
@@ -4389,10 +4399,13 @@ function paintBarterProcess(){
       <button class="ci-pop-x" id="bpX" aria-label="Close">✕</button></div>
     ${pb.saved===false?`<div class="ac360-miss">📜 This campaign has no contract terms or video brief saved yet — creators get the defaults (1 month ad rights, collab, 7 days to post, blacklist + re-ship clauses). <a href="#" id="bpGoTerms">Set them now →</a></div>`:""}
     ${needsYou?`<div class="bp-needs">⚡ <b>${needsYou}</b> creator${needsYou>1?"s need":" needs"} something from you — open them below.</div>`:""}
-    <div class="bp-flow">${BARTER_STEPS.filter(s=>s[0]!=="changes_requested").map(s=>`<div class="bp-fstep"><b>${done(s[0])}</b><span>${esc(s[1].replace(/^\d+\.\s*/,""))}</span></div>`).join("")}</div>
+    <div class="bp-flow">${BARTER_STEPS.filter(s=>s[0]!=="changes_requested").map(s=>`<button type="button" class="bp-fstep${_bpStage===s[0]?" on":""}" data-bpstage="${s[0]}" title="Show who reached this step"><b>${done(s[0])}</b><span>${esc(s[1].replace(/^\d+\.\s*/,""))}</span></button>`).join("")}</div>
     <div class="admin-tabs ac360-tabs">${tabs.map(t=>`<button class="${_bpTab===t[0]?"act":""}" data-bptab="${t[0]}">${t[1]}</button>`).join("")}</div>
-    <div class="ac360-sec">${_bpTab==="tracker"?bpTrackerHtml(list):_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(list)}</div>`;
+    <div class="ac360-sec">${_bpTab==="tracker"?bpStageBanner(list)+bpTrackerHtml(bpStageList(list)):_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(list)}</div>`;
   body.querySelector("#bpX").onclick = ()=> window.__bpClose && window.__bpClose();
+  body.querySelectorAll("[data-bpstage]").forEach(b=> b.onclick = ()=>{ _bpStage = _bpStage===b.dataset.bpstage ? null : b.dataset.bpstage; _bpTab = "tracker"; paintBarterProcess();
+    const sec = body.querySelector(".ac360-sec"); if(sec) sec.scrollIntoView({ behavior:"smooth", block:"start" }); });
+  const clr = body.querySelector("#bpStageClear"); if(clr) clr.onclick = ()=>{ _bpStage = null; paintBarterProcess(); };
   const goT = body.querySelector("#bpGoTerms"); if(goT) goT.onclick = e=>{ e.preventDefault(); _bpTab="terms"; paintBarterProcess(); };
   body.querySelectorAll("[data-bptab]").forEach(b=> b.onclick = async ()=>{
     _bpTab = b.dataset.bptab;
@@ -4400,6 +4413,82 @@ function paintBarterProcess(){
     paintBarterProcess(); });
   wireBarterProcess();
   if(_bpTab==="bulk"){ wireBulk(); if(!_bk.list) loadBulkList(); }
+}
+// step filter: everyone who reached the clicked step (the ones sitting on it right now first)
+let _bpStage = null;
+function bpStageList(list){
+  if(!_bpStage) return list;
+  const fail = s => ["dropped","rejected","ineligible","brand_declined"].includes(s), at = bpStageIndex(_bpStage);
+  return list.filter(x=> !fail(x.stage) && bpEffectiveIndex(x) >= at).sort((a,b)=> (bpEffectiveIndex(a)===at?0:1) - (bpEffectiveIndex(b)===at?0:1));
+}
+// full creator card from the barter process: who they are, every Instagram account, contact, address, this campaign
+async function bpCreatorProfile(pid){
+  const x = ((_bpData||{}).creators||[]).find(c=> c.participation_id===pid); if(!x) return;
+  const cr = x.creator||{}, to = x.ship_to||{}, con = x.contract||{}, ship = x.shipment||{}, idx = bpEffectiveIndex(x);
+  let m = document.getElementById("bpProf"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id = "bpProf";
+  const row = (k,v)=> v ? `<div class="bpp-row"><span>${esc(k)}</span><div>${v}</div></div>` : "";
+  const handle = cr.username || x.applied_profile || "";
+  m.innerHTML = `<div class="modal modal-lg"><div class="modal-head"><strong>Creator profile</strong><button class="icon-btn" id="bpProfX">✕</button></div>
+    <div class="modal-form bpp">
+      <div class="bpp-top">${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((handle||"?").slice(0,2).toUpperCase())}</span>`}
+        <div style="min-width:0;flex:1"><div class="bpp-name">${esc(cr.name||to.name||handle)}</div>
+          ${handle?`<a href="https://instagram.com/${encodeURIComponent(handle)}" target="_blank" rel="noopener">@${esc(handle)} ↗</a>`:""}
+          <div class="bpp-cats">${(cr.categories||[]).slice(0,4).map(c=>`<span>${esc(c)}</span>`).join("")}${cr.city?`<span>📍 ${esc(cr.city)}</span>`:""}</div></div>
+        ${handle?`<a class="btn sm" href="/p.html?u=${encodeURIComponent(handle)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}</div>
+      <div class="bpp-stats"><div><b>${cr.followers!=null?fmtNum(cr.followers):"—"}</b><span>Followers</span></div><div><b>${cr.engagement!=null?cr.engagement+"%":"—"}</b><span>Engagement</span></div>
+        <div><b>${cr.avg_reach?fmtNum(Math.round(cr.avg_reach)):"—"}</b><span>Avg reach</span></div><div><b>${esc(((BARTER_STEPS[idx]||[])[1]||"—").replace(/^\d+\.\s*/,""))}</b><span>Step now</span></div></div>
+      <div id="bppPro"></div>
+      <div class="bpp-sec">Contact</div>
+      ${row("WhatsApp", x.phone||to.phone ? esc(x.phone||to.phone) : "")}
+      ${row("Applied with", x.applied_profile ? "@"+esc(x.applied_profile) : "")}
+      ${row("Applied on", x.applied_at ? esc(fmtDate(x.applied_at)) : "")}
+      ${x.has_address||to.city ? `<div class="bpp-sec">Delivery address</div>${row("Address", esc([to.name, to.line1, to.line2, to.landmark, to.city, to.state, to.postal_code].filter(Boolean).join(", ")))}` : ""}
+      <div class="bpp-sec">This campaign</div>
+      ${row("Contract", con.signed_at ? "✓ signed "+esc(fmtDate(con.signed_at))+(con.signature_name?" by "+esc(con.signature_name):"") : con.issued_at ? "sent "+esc(fmtDate(con.issued_at))+" · not signed yet" : "")}
+      ${row("Courier", ship.courier ? esc(ship.courier)+(ship.tracking_ref?" · "+esc(ship.tracking_ref):"")+(ship.delivered_at?" · delivered "+esc(fmtDate(ship.delivered_at)):ship.shipped_at?" · sent "+esc(fmtDate(ship.shipped_at)):"") : "")}
+      ${row("Video due", x.due_on ? esc(fmtDate(x.due_on)) : "")}
+      ${row("Video", x.submission && x.submission.url ? `<a href="${esc(safeUrl(x.submission.url))}" target="_blank" rel="noopener">open ↗</a>` : "")}
+      ${row("Posts", (x.posts||[]).length ? (x.posts||[]).map(p=>`<a href="${esc(safeUrl(p.permalink||p.url||"#"))}" target="_blank" rel="noopener">${esc(p.media_type||"post")} ↗</a>`).join(" · ") : "")}
+      ${x.blacklisted?row("Note","⛔ Blacklisted"):""}
+      <div class="bpp-sec">All Instagram accounts</div><div id="bppAccts">${skel("list",1)}</div>
+    </div></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  document.getElementById("bpProfX").onclick = ()=> m.remove(); m.onclick = e=>{ if(e.target.id==="bpProf") m.remove(); };
+  const box = document.getElementById("bppAccts");
+  if(!cr.member_id){ box.innerHTML = `<div class="muted">Not on Geek OS yet.</div>`; return; }
+  sb.schema("api").rpc("creator_profile_card", { p_member: cr.member_id }).then(({ data:P })=>{
+    const pb = document.getElementById("bppPro"); if(!pb || !P) return;
+    const AV = { available:"🟢 Available", limited:"🟡 Limited", unavailable:"🔴 Unavailable" };
+    const nice = v => String(v||"").replace(/_/g," ").replace(/\b\w/g, c=>c.toUpperCase());
+    const list = a => (a||[]).map(nice).join(", ");
+    pb.innerHTML = `<div class="bpp-sec">Profile</div>`
+      + row("Display name", P.display_name ? esc(P.display_name) : "")
+      + row("Availability", P.availability ? esc((AV[P.availability]||P.availability) + (P.availability_limit ? " — "+P.availability_limit : "")) : "")
+      + row("Content types", (P.content_formats||[]).length ? esc(list(P.content_formats)) : "")
+      + row("Categories", (P.categories||[]).length ? esc(list(P.categories)) : "")
+      + row("Location", P.city||P.state ? esc([P.city,P.state].filter(Boolean).join(", ")) : "")
+      + row("Travel", P.travel_willingness ? esc(nice(P.travel_willingness)) : "")
+      + row("Travelling now", P.travelling ? esc([P.travelling.city,P.travelling.state,P.travelling.country].filter(Boolean).join(", ") + (P.travelling.until ? " · till "+fmtDate(P.travelling.until) : "")) : "")
+      + row("Management", P.management ? esc(nice(P.management)) : "")
+      + row("Skills", (P.skills||[]).length ? esc(list(P.skills)) : "")
+      + row("Equipment", (P.resources||[]).length ? esc(list(P.resources)) : "")
+      + row("Campaigns done", P.campaigns_done ? esc(String(P.campaigns_done)) : "")
+      + row("On Geek OS since", P.joined_at ? esc(fmtDate(P.joined_at)) : "");
+  }, ()=>{});
+  const { data, error } = await sb.schema("api").rpc("creator_ig_accounts", { p_member: cr.member_id }).then(r=>r, e=>({error:e}));
+  if(!box.isConnected) return;
+  const L = (!error && data) || [];
+  box.innerHTML = L.length ? `<div class="ig-acct-list">${L.map(a=>`<div class="ig-acct-row">${a.profile_picture_url?`<img src="${esc(safeUrl(a.profile_picture_url))}" alt="" referrerpolicy="no-referrer">`:`<span class="avatar">📸</span>`}
+      <div style="min-width:0;flex:1"><a href="https://instagram.com/${encodeURIComponent(a.username||"")}" target="_blank" rel="noopener"><b>@${esc(a.username||"")}</b></a>${a.active?' <span class="tag good">Active</span>':""}${String(a.username||"").toLowerCase()===String(x.applied_profile||"").toLowerCase()?' <span class="tag">On this campaign</span>':""}
+        <div class="muted" style="font-size:12.5px">${esc([a.followers!=null?kfmtN(a.followers)+" followers":"", a.posts!=null?a.posts+" posts":""].filter(Boolean).join(" · "))}</div></div></div>`).join("")}</div>`
+    : `<div class="muted">${error ? esc(error.message||String(error)) : "No Instagram connected."}</div>`;
+}
+function bpStageBanner(list){
+  if(!_bpStage) return "";
+  const at = bpStageIndex(_bpStage), L = bpStageList(list), here = L.filter(x=> bpEffectiveIndex(x)===at).length;
+  const lbl = ((BARTER_STEPS.find(s=>s[0]===_bpStage)||[])[1]||"").replace(/^\d+\.\s*/,"");
+  return `<div class="bp-stage-ban"><span>Showing <b>${L.length}</b> who reached <b>${esc(lbl)}</b> · <b>${here}</b> on this step right now</span><button class="mini-btn ghost" id="bpStageClear">Show everyone ✕</button></div>`;
 }
 function bpMetricLine(st){
   st = st||{}; const K = [["views","views"],["reach","reach"],["likes","likes"],["comments","comments"],["shares","shares"],["saves","saves"]];
@@ -4421,9 +4510,9 @@ function bpTrackerHtml(list){
     const P = x.participation_id;
     return `<div class="card bp-card${open?" open":""}">
       <div class="bp-head" data-bpopen="${esc(P)}">
-        ${cr.profile_picture_url?`<img class="ap-pic" src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((cr.username||"?").slice(0,2).toUpperCase())}</span>`}
+        <span class="bp-who" data-bpprof="${esc(P)}" title="Open the creator's full profile">${cr.profile_picture_url?`<img class="ap-pic" src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((cr.username||"?").slice(0,2).toUpperCase())}</span>`}</span>
         <div style="flex:1;min-width:0">
-          <div class="r-title">${cr.username?`@${esc(cr.username)}`:esc(cr.name||"Creator")}
+          <div class="r-title"><span class="bp-who-n" data-bpprof="${esc(P)}" title="Open the creator's full profile">${cr.username?`@${esc(cr.username)}`:esc(cr.name||"Creator")}</span> <button type="button" class="bp-prof-btn" data-bpprof="${esc(P)}">👤 Profile</button>
             ${x.applied_profile && x.applied_profile!==cr.username?`<span class="tag">via @${esc(x.applied_profile)}</span>`:""}
             ${x.blacklisted?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⛔ Blacklisted</span>':""}
             ${overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':""}
@@ -4619,6 +4708,7 @@ function wireBarterProcess(){
     if(error){ alert(error.message); if(btn){ btn.disabled=false; btn.innerHTML=label; } return false; }
     again(); return true;
   };
+  body.querySelectorAll("[data-bpprof]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); bpCreatorProfile(b.dataset.bpprof); });
   body.querySelectorAll("[data-bpopen]").forEach(h=> h.onclick = ()=>{ _bpOpen = _bpOpen===h.dataset.bpopen ? null : h.dataset.bpopen; paintBarterProcess(); });
   body.querySelectorAll("[data-bpscreen]").forEach(b=> b.onclick = ()=> call("screen_participation", { p_participation:b.dataset.bpscreen, p_eligible:true, p_reason:null }, b, "✓ Meets the brief"));
   body.querySelectorAll("[data-bpreject]").forEach(b=> b.onclick = async ()=>{

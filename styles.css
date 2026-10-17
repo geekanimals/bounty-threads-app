@@ -1515,3 +1515,24 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .mk-cats{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
 .mk-cats span{padding:3px 10px;border-radius:20px;background:rgba(108,92,231,.1);color:var(--brand,#6c5ce7);font-size:12px;font-weight:700}
 @media(max-width:760px){.mk-cats{justify-content:center}}
+
+/* barter process: clickable step counters, step filter, creator profile */
+button.bp-fstep{border:1px solid var(--line);cursor:pointer;font-family:inherit;color:inherit;text-align:center}
+button.bp-fstep:hover{border-color:var(--brand)}
+button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box-shadow:0 0 0 2px rgba(108,92,231,.25)}
+.bp-stage-ban{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;margin-bottom:12px;border-radius:12px;background:rgba(108,92,231,.08);border:1px solid rgba(108,92,231,.3);font-size:13.5px}
+.bp-who,.bp-who-n{cursor:pointer}
+.bp-who-n:hover{text-decoration:underline}
+.bp-prof-btn{margin-left:6px;padding:2px 9px;border-radius:20px;border:1px solid var(--line);background:var(--panel-2);font-size:11.5px;font-weight:700;cursor:pointer;color:var(--ink);font-family:inherit;vertical-align:middle}
+.bpp-top{display:flex;align-items:center;gap:14px}
+.bpp-top img,.bpp-top .avatar{width:64px;height:64px;border-radius:50%;object-fit:cover;flex:none;display:grid;place-items:center}
+.bpp-name{font-size:18px;font-weight:800}
+.bpp-cats{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.bpp-cats span{padding:2px 9px;border-radius:20px;background:var(--chip);font-size:12px;font-weight:600}
+.bpp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0 4px}
+.bpp-stats div{padding:10px;border-radius:12px;background:var(--panel-2);border:1px solid var(--line);text-align:center}
+.bpp-stats b{display:block;font-size:16px}.bpp-stats span{font-size:11.5px;color:var(--muted)}
+.bpp-sec{margin:14px 0 6px;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:var(--muted)}
+.bpp-row{display:grid;grid-template-columns:120px 1fr;gap:10px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.bpp-row>span{color:var(--muted)}
+@media(max-width:600px){.bpp-stats{grid-template-columns:repeat(2,1fr)}.bpp-row{grid-template-columns:1fr;gap:2px}}
