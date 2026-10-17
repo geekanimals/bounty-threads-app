@@ -5848,7 +5848,8 @@ const OAUTH = {
 const INSTAGRAM_APP_ID = "944216414793314"; // Instagram app ID (public)
 const IG_SCOPES = "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights,instagram_business_manage_comments,instagram_business_manage_messages";
 // Must EXACTLY match the redirect registered in Meta → Instagram login settings.
-const IG_REDIRECT = location.origin + location.pathname.replace(/[^/]*$/,"") + "app.html";
+// always the site root /app.html (the address registered in Meta), whatever page the creator clicked from (/agency, /brand, /superadmin/, …)
+const IG_REDIRECT = location.origin + "/app.html";
 
 function connectInstagram(fresh){
   const state = "instagram:" + Math.random().toString(36).slice(2);
