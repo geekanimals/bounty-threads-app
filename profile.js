@@ -77,7 +77,7 @@
   async function safe(fn, args){ try{ var r = await api(fn, args); return (r && !r.error) ? r.data : null; }catch(e){ return null; } }
   async function igAccount(){
     try{ var me = window.Auth && Auth.profile && Auth.profile.id; if(!me || !window.sb.from) return null;
-      var r = await window.sb.from("social_accounts").select("username,name,biography,account_type,followers_count,recent_media,mentions")
+      var r = await window.sb.from("social_accounts").select("username,name,biography,account_type,followers_count,profile_picture_url,recent_media,mentions")
         .eq("platform","instagram").eq("member_id", me).limit(1);
       return (r && r.data && r.data[0]) || null; }catch(e){ return null; }
   }
@@ -142,7 +142,12 @@
 
   var REQ = null;
   async function loadReq(){
-    try{ var r = await api("get_profile_requirements"); if(r && !r.error && r.data){ REQ = r.data; window.__profileReq = REQ; } }catch(e){}
+    try{ var r = await api("get_profile_requirements"); if(r && !r.error && r.data){ REQ = r.data;
+      // rate card + barter preference are off for now — never count them, even if the server still lists them
+      var its = (REQ.items||[]).filter(function(it){ return ["reel_rate","barter"].indexOf(it.key) < 0 && ["rate","barter"].indexOf(it.section) < 0; });
+      if(its.length !== (REQ.items||[]).length){ var dn = its.filter(function(it){ return it.done; }).length;
+        REQ = Object.assign({}, REQ, { items:its, total:its.length, done:dn, complete: dn === its.length }); }
+      window.__profileReq = REQ; } }catch(e){}
     if(REQ && window.onProfileRequirements) window.onProfileRequirements(REQ);
     return REQ;
   }
@@ -160,9 +165,23 @@
     var missing = (COMP && COMP.missing_core) ? COMP.missing_core : [];
     var groups = COMP ? COMP.groups : {};
     var chip = function(k,label){ var on = groups && groups[k]; return '<span class="cp-chip '+(on?"on":"")+'">'+(on?"✓":"○")+" "+esc(label)+'</span>'; };
+    var P = (DATA && DATA.personal) || {}, ig = IG || (DATA && DATA.connection) || {};
+    var nm = [P.first_name, P.last_name].filter(Boolean).join(" ") || ig.name || (ig.username ? "@"+ig.username : "Your profile");
+    var rp = REQ ? Math.round(100*REQ.done/Math.max(REQ.total,1)) : pct;
+    var ring = '<div class="cp-ring" style="--p:'+rp+'"><span>'+rp+'%</span></div>';
+    var left = REQ ? (REQ.items||[]).filter(function(it){ return !it.done; }) : [];
     return ''
-      + '<div id="cpHead" class="card cp-head">' + reqBanner()
-      + '  <div class="cp-head-top"><h3>Your Creator Profile</h3><span id="cpSave" class="cp-savestate"></span></div>'
+      + '<div id="cpHead" class="card cp-head cp-hero">'
+      + '  <div class="cp-hero-row">'
+      + '    <div class="cp-hero-av">'+(ig.profile_picture_url?'<img src="'+esc(ig.profile_picture_url)+'" alt="">':'<span>'+esc((nm.replace("@","")[0]||"G").toUpperCase())+'</span>')+'</div>'
+      + '    <div class="cp-hero-id"><div class="cp-hero-k">Creator Profile</div><h3>'+esc(nm)+'</h3>'
+      +        '<div class="cp-hero-m">'+(ig.username?'<span>📸 @'+esc(ig.username)+'</span>':'')+(ig.followers_count!=null?'<span>'+Number(ig.followers_count).toLocaleString("en-IN")+' followers</span>':'')+'<span id="cpSave" class="cp-savestate"></span></div></div>'
+      + '    '+ring
+      + '  </div>'
+      + (REQ ? (REQ.complete
+          ? '<div class="cp-hero-foot ok"><span>✅ Profile complete — you\'re ready for campaigns</span><button class="btn sm" id="cpGoCampaigns">Browse campaigns →</button></div>'
+          : '<div class="cp-hero-foot"><span>'+REQ.done+' of '+REQ.total+' details done · '+left.length+' left</span><div class="cp-req-list">'+left.slice(0,6).map(function(it){
+              return '<a href="#" class="cp-req-it" data-goto="'+esc(it.section)+'">○ '+esc(it.label)+'</a>'; }).join("")+'</div></div>') : '')
       + (REQ ? '' : (''
       + '  <div class="cp-progress"><div class="cp-bar"><span style="width:'+pct+'%"></span></div><b>'+pct+'% complete</b></div>'
       + '  <div class="cp-chips">'+chip("personal","Personal")+chip("contact","Contact")+chip("professional","Professional")

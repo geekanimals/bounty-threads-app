@@ -31,11 +31,29 @@
       "source": "/superadmin/",
       "destination": "/superadmin",
       "permanent": false
+    },
+    {
+      "source": "/agency/",
+      "destination": "/agency",
+      "permanent": false
+    },
+    {
+      "source": "/brand/",
+      "destination": "/brand",
+      "permanent": false
     }
   ],
   "rewrites": [
     {
       "source": "/superadmin",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/brand",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/agency",
       "destination": "/app.html"
     },
     {

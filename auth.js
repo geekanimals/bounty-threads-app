@@ -144,7 +144,8 @@ const Auth = {
     this.profile = null;
     this.user = null;
     // a Super Admin goes back to their own door, everyone else to the home page
-    location.href = (window.__isAdmin || /door=superadmin/.test(location.search)) ? '/app.html?door=superadmin' : 'index.html';
+    { const dm = (location.search.match(/door=(superadmin|agency|brand)/)||[])[1] || (/^\/(superadmin|agency|brand)\/?$/i.exec(location.pathname)||[])[1];
+      location.href = window.__isAdmin ? '/app.html?door=superadmin' : (dm ? '/app.html?door=' + dm.toLowerCase() : 'index.html'); }
   },
 
   isDemo() { return false; }

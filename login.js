@@ -6,10 +6,28 @@
 
 // The Super Admin door is NOT on the normal login screen — it opens only at <site>/superadmin
 // (/superadmin/index.html sends you to app.html?door=superadmin — works on any host, no server config). Everyone else sees Creator · Agency Owner · Brand.
-const ADMIN_DOOR = /^\/superadmin\/?$/i.test(location.pathname) || new URLSearchParams(location.search).get("door") === "superadmin";
-const LOGIN_ROLES = ADMIN_DOOR
-  ? [["admin","Super Admin","🛡️"]]
-  : [["creator","Creator","📸"], ["owner","Agency Owner","🏢"], ["brand","Brand","🛍️"]];
+// Each kind of account has its own door (its own link):
+//   <site>/            → Creator login (the only one on the normal screen)
+//   <site>/agency      → Agency login        (/agency/index.html → app.html?door=agency)
+//   <site>/brand       → Brand login         (/brand/index.html  → app.html?door=brand)
+//   <site>/superadmin  → Super Admin login
+const LOGIN_DOOR = (function(){
+  const q = (new URLSearchParams(location.search).get("door") || "").toLowerCase(), p = location.pathname.toLowerCase();
+  if(q === "superadmin" || /^\/superadmin\/?$/.test(p)) return "admin";
+  if(q === "agency" || /^\/agency\/?$/.test(p)) return "owner";
+  if(q === "brand" || /^\/brand\/?$/.test(p)) return "brand";
+  return "creator";
+})();
+const ADMIN_DOOR = LOGIN_DOOR === "admin";
+try{ localStorage.setItem("geek_door", LOGIN_DOOR); }catch(e){}
+const LOGIN_ROLES = [[LOGIN_DOOR, {creator:"Creator", owner:"Agency", brand:"Brand", admin:"Super Admin"}[LOGIN_DOOR], {creator:"📸", owner:"🏢", brand:"🛍️", admin:"🛡️"}[LOGIN_DOOR]]];
+// what each door's right-hand panel says
+const DOOR_SIDE = {
+  creator: { h:"Your Creator Journey.<br>One Platform.", items:["✨ Get Discovered by Brands","🤝 Find Paid & Barter Collabs","📸 Build Your Creator Portfolio","✅ Get Verified. Build Trust.","📋 Manage All Your Campaigns","💰 Track Your Payments","🏆 Earn Rewards. Unlock Opportunities."], foot:"Create. Collaborate. Grow." },
+  owner:   { h:"Run Your Agency.<br>One Platform.", items:["🔎 Discover & Vet Creators Fast","📦 Run Mass Barter & Paid Campaigns","📥 Bulk Upload Creators in Minutes","📜 Auto Contracts, Briefs & Reminders","🚚 Track Every Shipment & Post","📊 Live Reports, EMV & ROI","🤝 Manage Brands & Your Team"], foot:"Plan. Execute. Report." },
+  brand:   { h:"Your Brand. Real Creators.<br>One Platform.", items:["🎯 Find Creators That Fit Your Brand","✅ Approve Creators & Content","📦 Barter & Paid Campaigns, End to End","📈 Live Results From Every Post","🧾 Contracts & Usage Rights Built In","💬 Updates on WhatsApp & Email"], foot:"Discover. Approve. Grow." },
+  admin:   { h:"Geek Command Centre.", items:["🛡️ Every Workspace, One View","✅ Approve Accounts & Campaigns","📨 WhatsApp & Email Delivery","📈 Live Activity & Audit Log","🩺 System Health Checks"], foot:"Secure. Controlled. Live." }
+};
 
 // If the user arrived via a team-invite link, capture the token — signup passes it so the
 // server-side trigger lets them join the inviting org (email match alone is not enough).
@@ -33,6 +51,18 @@ async function paintCampaignInvite(){
   }catch(e){}
 }
 
+// WhatsApp number → code → signed in, all on this page (no popup)
+function otpFormHtml(isUp, role){
+  return `<form id="waDoorForm" class="auth-form">
+      ${isUp ? `<label>Your full name<input name="name" placeholder="Priya Agarwal" required></label>
+      <label>${role==="brand"?"Brand / company name":"Agency name"}<input name="org" placeholder="${role==="brand"?"Vaaree":"Geek Media"}" required></label>` : ``}
+      <label>WhatsApp number<input name="phone" id="waPhoneIn" placeholder="+91 98123 45678" required inputmode="tel" autocomplete="tel"></label>
+      <div id="waCodeRow" style="display:none"><label>6-digit code from WhatsApp<input name="code" id="waCodeIn" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code"></label>
+        <div class="auth-mini"><span id="waSentTo"></span> · <a href="#" id="waChange">Change number</a> · <a href="#" id="waResend">Resend code</a></div></div>
+      <div class="auth-err" id="authErr"></div>
+      <button class="btn auth-submit" id="waGo" type="submit">💬 Send OTP on WhatsApp →</button>
+    </form>`;
+}
 function loginView(role, mode){
   role = role || "creator";
   const isUp = mode === "signup";
@@ -52,9 +82,8 @@ function loginView(role, mode){
       <div class="muted" style="text-align:center;font-size:12px;margin-top:10px"><a href="#" id="backToWa">Already have an account? Sign in</a></div>`;
   } else if(role === "creator"){
     body = `<div id="cinvBanner"></div>
-      <div class="auth-note" style="margin-top:4px">Creators sign in with <b>WhatsApp</b> — no password. Next you'll connect Instagram and we build your media kit automatically.</div>
-      <button type="button" class="ig-btn wa-btn" id="waLoginBtn" style="margin-top:12px"><span class="ig-ic">💬</span> Continue with WhatsApp</button>
-      <div class="muted" style="text-align:center;font-size:12px;margin-top:10px">Signed in with Instagram before? Use WhatsApp — when you connect the same Instagram, your old account is moved over automatically.</div>`;
+      <div class="auth-note" style="margin-top:4px">Sign in with your <b>WhatsApp</b> number — no password. Next you connect Instagram and we build your media kit automatically.</div>
+      ${otpFormHtml(false)}`;
   } else if(role === "admin" || mode === "password"){
     body = `
       ${role==="admin" ? `<div class="auth-note">Super Admin sign-in. Only accounts approved as platform admins can enter.</div>`
@@ -74,13 +103,7 @@ function loginView(role, mode){
       </div>
       ${isUp ? `<div class="auth-note">Step 1: verify your WhatsApp · Step 2: verify your official email · then the Geek Super Admin approves your ${roleName} account.</div>`
              : `<div class="auth-note">${roleName} sign-in with your WhatsApp number — we send a one-time code.</div>`}
-      <form id="waDoorForm" class="auth-form">
-        ${isUp ? `<label>Your full name<input name="name" placeholder="Priya Agarwal" required></label>
-        <label>${role==="brand"?"Brand / company name":"Agency name"}<input name="org" placeholder="${role==="brand"?"Vaaree":"Geek Media"}" required></label>` : ``}
-        <label>WhatsApp number<input name="phone" placeholder="+91 98123 45678" required inputmode="tel" autocomplete="tel"></label>
-        <div class="auth-err" id="authErr"></div>
-        <button class="btn auth-submit" type="submit">Send WhatsApp code →</button>
-      </form>
+      ${otpFormHtml(isUp, role)}
       ${!isUp ? `<div class="muted" style="text-align:center;font-size:12px;margin-top:10px"><a href="#" id="usePassword">Older account? Sign in with email &amp; password</a></div>` : ``}`;
   }
 
@@ -92,29 +115,24 @@ function loginView(role, mode){
         <div><div class="brand-name">Geek Influencer OS</div>
         <div class="muted">Creators, agencies & brands — one platform</div></div>
       </div>
-      ${ADMIN_DOOR ? `<h3 style="margin:6px 0 2px">🛡️ Super Admin</h3>` : `<div class="auth-tabs auth-roles" style="flex-wrap:wrap">${tabs}</div>`}
+      <h3 class="auth-door">${(LOGIN_ROLES[0]||[])[2]||""} ${{creator:"Creator login", owner:"Agency login", brand:"Brand login", admin:"Super Admin"}[LOGIN_DOOR]}</h3>
       ${body}
     </div>
     <div class="auth-side">
       <div class="auth-quote">
-        <h2>Run every campaign,<br>creator & barter from one OS.</h2>
-        <ul>
-          <li>💬 Creators: WhatsApp login, Instagram media kit, live campaigns</li>
-          <li>📦 Mass Barter Engine — product to ROI, live</li>
-          <li>🤝 Brand & creator portals built in</li>
-          <li>📊 Auto EMV, ROI & savings reports</li>
-        </ul>
+        <h2>${DOOR_SIDE[LOGIN_DOOR].h}</h2>
+        <ul>${DOOR_SIDE[LOGIN_DOOR].items.map(x=>`<li>${x}</li>`).join("")}</ul>
+        <div class="auth-foot">${DOOR_SIDE[LOGIN_DOOR].foot}</div>
       </div>
     </div>
   </div>`;
 }
 
-let _loginRole = ADMIN_DOOR ? "admin" : (INVITE_TOKEN ? "owner" : "creator");
+let _loginRole = LOGIN_DOOR;
 
 function mountLogin(mode="login", role){
   if(role) _loginRole = role;
-  if(ADMIN_DOOR) _loginRole = "admin";
-  else if(_loginRole === "admin") _loginRole = "creator";   // the admin form never shows on the public login
+  _loginRole = LOGIN_DOOR;                 // one door per link — the page never switches to another account type
   const root = document.getElementById("authRoot");
   root.innerHTML = loginView(_loginRole, mode);
   root.classList.add("open");
@@ -123,20 +141,46 @@ function mountLogin(mode="login", role){
   root.querySelectorAll("[data-mode]").forEach(b=>{ b.onclick = ()=> mountLogin(b.dataset.mode); });
 
   paintCampaignInvite();
-  const wa = document.getElementById("waLoginBtn");
-  if(wa) wa.onclick = ()=>{ if(window.waLogin) window.waLogin.open(); else alert("WhatsApp login is loading — try again in a moment."); };
 
   const up = document.getElementById("usePassword"); if(up) up.onclick = e=>{ e.preventDefault(); mountLogin("password"); };
   const bw = document.getElementById("backToWa"); if(bw) bw.onclick = e=>{ e.preventDefault(); mountLogin("login"); };
   const waDoor = document.getElementById("waDoorForm");
-  if(waDoor) waDoor.onsubmit = e=>{
-    e.preventDefault();
-    const f = new FormData(waDoor), err = document.getElementById("authErr");
-    const phone = String(f.get("phone")||"").trim();
-    if(!/^\+?[0-9 \-]{8,}$/.test(phone)){ err.textContent = "Enter your WhatsApp number in international format, e.g. +91 98123 45678"; return; }
-    if(!window.waLogin){ err.textContent = "WhatsApp login is loading — try again in a moment."; return; }
-    window.waLogin.open({ door:_loginRole, phone, name: f.get("name")||"", org: f.get("org")||"" });
-  };
+  if(waDoor){
+    let sentTo = "";
+    const err = document.getElementById("authErr"), go = document.getElementById("waGo"), codeRow = document.getElementById("waCodeRow");
+    const phoneIn = document.getElementById("waPhoneIn"), codeIn = document.getElementById("waCodeIn");
+    const fnMsg = async r => r.error ? (typeof fnError==="function" ? await fnError(r.error) : (r.error.message||String(r.error))) : ((r.data||{}).error||"");
+    const send = async ()=>{
+      const phone = String(phoneIn.value||"").trim();
+      if(!/^\+?[0-9 \-]{8,}$/.test(phone)){ err.textContent = "Enter your WhatsApp number, e.g. +91 98123 45678"; return; }
+      err.textContent = ""; go.disabled = true; go.textContent = "Sending OTP…";
+      try{
+        const r = await sb.functions.invoke("wa-otp-start", { body:{ phone } }); const m = await fnMsg(r); if(m) throw new Error(m);
+        sentTo = phone; phoneIn.readOnly = true; codeRow.style.display = "";
+        document.getElementById("waSentTo").textContent = "Code sent to " + phone + " on WhatsApp";
+        go.textContent = "Verify & sign in →"; setTimeout(()=> codeIn.focus(), 50);
+      }catch(ex){ err.textContent = "Couldn't send the code: " + (ex.message||ex); go.textContent = "💬 Send OTP on WhatsApp →"; }
+      go.disabled = false;
+    };
+    const verify = async ()=>{
+      const code = String(codeIn.value||"").trim(), f = new FormData(waDoor);
+      if(!/^\d{6}$/.test(code)){ err.textContent = "Enter the 6-digit code from WhatsApp."; return; }
+      err.textContent = ""; go.disabled = true; go.textContent = "Signing in…";
+      try{
+        const r = await sb.functions.invoke("wa-otp-verify", { body:{ phone:sentTo, code, link:false, door:_loginRole, name:f.get("name")||"", org:f.get("org")||"" } });
+        const m = await fnMsg(r); if(m) throw new Error(m);
+        const v = await sb.auth.verifyOtp({ token_hash:(r.data||{}).token_hash, type:"magiclink" }); if(v.error) throw v.error;
+        if(window.Tracker) Tracker.security("login", { method:"whatsapp_otp", door:_loginRole });
+        if(window.Auth) await Auth.currentSession();
+        root.classList.remove("open"); root.innerHTML = "";
+        if(typeof bootOS==="function") bootOS(); else location.reload();
+      }catch(ex){ err.textContent = "Couldn't verify: " + (ex.message||ex); go.disabled = false; go.textContent = "Verify & sign in →"; }
+    };
+    waDoor.onsubmit = e=>{ e.preventDefault(); if(!sentTo) send(); else verify(); };
+    codeIn.oninput = ()=>{ if(/^\d{6}$/.test(codeIn.value.trim())) verify(); };
+    document.getElementById("waChange").onclick = e=>{ e.preventDefault(); sentTo = ""; phoneIn.readOnly = false; codeRow.style.display = "none"; codeIn.value = ""; go.textContent = "💬 Send OTP on WhatsApp →"; phoneIn.focus(); };
+    document.getElementById("waResend").onclick = e=>{ e.preventDefault(); sentTo = ""; send(); };
+  }
 
   const form = document.getElementById("authForm");
   if(!form) return;
