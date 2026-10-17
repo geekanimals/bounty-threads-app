@@ -1555,3 +1555,27 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 .cs-scout-sum{margin:12px 0 8px;font-size:13px;line-height:1.5}
 .cs-scout-sum .muted{display:block}
 @media (max-width:640px){.cs-scout-h .btn{width:100%}}
+/* Discover: Geek OS creators and Instagram creators in their own sections */
+.cs-sec{margin-bottom:22px}
+.cs-sec-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:4px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line,rgba(120,130,150,.18))}
+.cs-sec-t{font-size:16px;font-weight:700}
+.cs-sec-t b{display:inline-block;margin-left:4px;padding:1px 9px;border-radius:999px;background:rgba(108,92,231,.12);color:#6c5ce7;font-size:13px}
+.cs-sec-ig .cs-sec-t b{background:linear-gradient(135deg,rgba(253,29,29,.12),rgba(131,58,180,.14));color:#b5179e}
+.cs-sec-h .muted{font-size:12.5px}
+.cs-igwarn{margin:0 0 10px;padding:9px 12px;border-radius:10px;background:rgba(245,166,35,.12);color:#9a6400;font-size:13px}
+.cs-igc{position:relative;overflow:hidden}
+.cs-igc::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,#f58529,#dd2a7b,#8134af)}
+.cs-igwarn[hidden]{display:none}
+.cs-ring{flex:0 0 52px;width:52px;height:52px;border-radius:50%;padding:2px;background:linear-gradient(135deg,#f58529,#dd2a7b,#8134af);display:inline-flex}
+.cs-ring img,.cs-ring .avatar{width:48px!important;height:48px!important;flex:0 0 48px!important;border-radius:50%;border:2px solid var(--card,#fff);object-fit:cover}
+.cs-nm{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cs-src.ig{background:linear-gradient(135deg,rgba(245,133,41,.14),rgba(129,52,175,.14));color:#a1238f}
+.cs-stats4{grid-template-columns:repeat(4,1fr)}
+.cs-stats4 b{font-size:14px}
+.cs-shim{display:block;margin:2px auto 3px;width:38px;height:13px;border-radius:6px;background:linear-gradient(90deg,rgba(120,130,150,.12),rgba(120,130,150,.28),rgba(120,130,150,.12));background-size:200% 100%;animation:csShim 1.1s linear infinite}
+@keyframes csShim{from{background-position:200% 0}to{background-position:-200% 0}}
+.cs-fetching{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.cs-fetching .mk-spin{margin:0}
+.cs-nostat{font-size:11.5px;color:var(--muted);background:rgba(120,130,150,.08);border-radius:8px;padding:6px 8px}
+.inv-exsec{margin-top:16px}
+@media (max-width:640px){.cs-stats4{gap:4px}.cs-stats4 div{padding:6px 2px}.cs-stats4 b{font-size:13px}.cs-stats4 span{font-size:9.5px}}

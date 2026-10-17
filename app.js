@@ -2354,17 +2354,32 @@ function mountCreatorSearch(root, opts){
   const read = ()=>{ S.q = $i("Q").value.trim(); S.location = $i("Loc").value.trim(); S.tier = $i("Tier").value;
     S.min = $i("Min").value; S.max = $i("Max").value; S.min_engagement = $i("Eng").value; S.gender = $i("Gen").value; S.source = $i("Src").value; S.sort = $i("Sort").value; };
   const run = async (keepPage)=>{
-    read(); if(!keepPage) S.page = 1;
+    read(); if(!keepPage){ S.page = 1; S.pageP = 1; S.pageE = 1; }
     const t = CS_TIERS.find(x=>x[0]===S.tier), filters = { q:S.q, categories:S.categories, location:S.location, source:S.source, sort:S.sort, gender:S.gender, min_engagement:S.min_engagement };
     if(S.tier==="custom"){ filters.min_followers = S.min; filters.max_followers = S.max; } else if(t && t[2]!=null){ filters.min_followers = t[2]; if(t[3]!=null) filters.max_followers = t[3]; }
     Object.keys(filters).forEach(k=>{ if(filters[k]==="" || filters[k]==null) delete filters[k]; });
     $i("Res").innerHTML = skel("cards", 6); $i("Pager").innerHTML = "";
-    const { data, error } = await sb.schema("api").rpc("creator_search", { p_filters:filters, p_page:S.page, p_size:24, p_campaign: opts.campaign ? opts.campaign.id : null }).then(r=>r, e=>({error:e}));
+    const ask = (src, page, size)=> sb.schema("api").rpc("creator_search", { p_filters:Object.assign({}, filters, { source:src }), p_page:page, p_size:size, p_campaign: opts.campaign ? opts.campaign.id : null }).then(r=>r, e=>({error:e}));
+    const both = S.source==="all";
+    const [pr, er] = await Promise.all([
+      S.source!=="external" ? ask("platform", both ? (S.pageP||1) : S.page, both ? 12 : 24) : Promise.resolve({ data:null }),
+      S.source!=="platform" ? ask("external", both ? (S.pageE||1) : S.page, 24) : Promise.resolve({ data:null })]);
+    const error = pr.error || er.error;
     if(error){ $i("Res").innerHTML = `<div class="card"><div class="muted">${esc(error.message||error)}${/creator_search/.test(error.message||"")?" — run <code>supabase db push</code> first.":""}</div></div>`; return; }
-    const d = data||{}, rows = d.rows||[];
-    $i("Count").innerHTML = `<b>${fmtNum(d.total||0)}</b> creator${d.total===1?"":"s"}${S.categories.length?` · ${esc(S.categories.join(", "))}`:""}${S.location?` · ${esc(S.location)}`:""}`;
-    $i("Res").innerHTML = rows.length ? `<div class="cs-grid">${rows.map(c=>csCard(c, opts)).join("")}</div>`
-      : `<div class="card"><div class="muted">No creators match these filters. Try fewer filters${opts.campaign?"":", or <b>+ Add creators</b> to bring in more handles"}.</div></div>`;
+    const P = pr.data, E = er.data, rows = [...((P&&P.rows)||[]), ...((E&&E.rows)||[])];
+    const total = ((P&&P.total)||0) + ((E&&E.total)||0);
+    $i("Count").innerHTML = `<b>${fmtNum(total)}</b> creator${total===1?"":"s"}${S.categories.length?` · ${esc(S.categories.join(", "))}`:""}${S.location?` · ${esc(S.location)}`:""}`;
+    const sec = (d, kind)=>{
+      if(!d) return "";
+      const R = d.rows||[], ig = kind==="external", pk = both ? (ig?"E":"P") : "";
+      const head = ig ? `<div class="cs-sec-h"><span class="cs-sec-t">📸 From Instagram <b>${fmtNum(d.total||0)}</b></span><span class="muted">Not on Geek OS yet — followers & engagement fetched live from Instagram</span></div>`
+                      : `<div class="cs-sec-h"><span class="cs-sec-t">👥 On Geek OS <b>${fmtNum(d.total||0)}</b></span><span class="muted">Signed-up creators with connected Instagram — invite in-app</span></div>`;
+      const empty = ig ? `No Instagram creators match yet${opts.campaign?"":" — pick a city or category and tap <b>📡 Find on Instagram</b>, or <b>+ Add creators</b>"}.` : "No Geek OS creator matches these filters.";
+      return `<div class="cs-sec ${ig?"cs-sec-ig":""}">${head}<div class="cs-igwarn" hidden></div>
+        ${R.length ? `<div class="cs-grid">${R.map(c=> ig ? csIgCard(csIgSeed(c), opts) : csCard(c, opts)).join("")}</div>` : `<div class="card"><div class="muted">${empty}</div></div>`}
+        ${csPagerHtml(d, pk, both ? (ig?24:12) : 24)}</div>`;
+    };
+    $i("Res").innerHTML = sec(P, "platform") + sec(E, "external");
     // a handle typed in the search box → look it up live on Instagram (and add it to the pool)
     const h = (S.q||"").replace(/^https?:\/\/(www\.)?instagram\.com\//i,"").replace(/^@/,"").replace(/[/?].*$/,"").toLowerCase();
     if(/^[a-z0-9._]{2,30}$/.test(h) && !rows.some(r=> String(r.handle).toLowerCase()===h)){
@@ -2382,23 +2397,14 @@ function mountCreatorSearch(root, opts){
     const tag = /^#/.test(S.q||"") ? String(S.q).replace(/^#/,"").trim().toLowerCase() : "";
     if(tag && /^[\p{L}\p{N}_]{2,60}$/u.test(tag)) csHashtagPanel($i("Res"), tag, S, ()=>{ run(true); pool(); });
     // a city and/or a category picked → find more of them live on Instagram (full public profiles)
-    if((S.location || S.categories.length) && S.source!=="platform" && S.page===1) csScoutPanel($i("Res"), S, ()=>{ run(true); pool(); });
-    const pages = d.pages||1;
-    if(pages>1){
-      const nums = []; for(let p=Math.max(1,S.page-2); p<=Math.min(pages,S.page+2); p++) nums.push(p);
-      $i("Pager").innerHTML = `<div class="ci-pager mc-pager"><button class="btn sm ghost" data-cspg="${S.page-1}"${S.page<=1?" disabled":""}>‹ Prev</button>
-        ${nums[0]>1?`<button class="btn sm ghost" data-cspg="1">1</button>${nums[0]>2?'<span class="muted">…</span>':""}`:""}
-        ${nums.map(p=>`<button class="btn sm ${p===S.page?"":"ghost"}" data-cspg="${p}">${p}</button>`).join("")}
-        ${nums[nums.length-1]<pages?`${nums[nums.length-1]<pages-1?'<span class="muted">…</span>':""}<button class="btn sm ghost" data-cspg="${pages}">${pages}</button>`:""}
-        <button class="btn sm ghost" data-cspg="${S.page+1}"${S.page>=pages?" disabled":""}>Next ›</button>
-        <span class="muted">${(S.page-1)*24+1}–${Math.min(S.page*24,d.total)} of ${fmtNum(d.total)}</span></div>`;
-      $i("Pager").querySelectorAll("[data-cspg]").forEach(b=> b.onclick = ()=>{ S.page = +b.dataset.cspg; run(true); root.scrollIntoView({behavior:"smooth", block:"start"}); });
-    }
-    root.querySelectorAll("[data-csinv]").forEach(b=> b.onclick = ()=> csInvite(b, opts));
-    root.querySelectorAll("[data-cslive]").forEach(b=> b.onclick = async ()=>{ const h = b.dataset.cslive; b.disabled = true; b.textContent = "Checking Instagram…";
-      const { data:lk, error:le } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h } });
-      if(le || !lk || lk.error){ gateToast((lk && lk.error) || (le && await fnError(le)) || "Couldn't reach Instagram."); b.disabled = false; b.textContent = "🔄 Live stats"; return; }
-      gateToast(`@${h} — ${kfmtN((lk.profile||{}).followers||0)} followers · updated from Instagram`); run(true); pool(); });
+    if((S.location || S.categories.length) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csScoutPanel($i("Res"), S, ()=>{ run(true); pool(); });
+    root.querySelectorAll("[data-cspg]").forEach(b=> b.onclick = ()=>{ const k = b.dataset.cspk, n = +b.dataset.cspg;
+      if(k==="P") S.pageP = n; else if(k==="E") S.pageE = n; else S.page = n;
+      run(true); (k==="E" ? root.querySelector(".cs-sec-ig") || root : root).scrollIntoView({behavior:"smooth", block:"start"}); });
+    csWireCards(root, opts);
+    // Instagram cards without numbers → fetch them live, a few at a time, and update each card in place
+    const missing = ((E&&E.rows)||[]).filter(c=>{ const x = _csIgRows[c.handle]||c; return !x._done && (x.followers==null || x.engagement==null); }).map(c=> c.handle);
+    if(missing.length) igAutoFill(missing, (h, prof, err)=> csIgUpdate(root, h, prof, err, opts), root.querySelector(".cs-sec-ig .cs-igwarn"));
   };
   const pool = async ()=>{
     const { data:p } = await sb.schema("api").rpc("discovery_pool_status").then(r=>r, ()=>({data:null}));
@@ -2428,6 +2434,97 @@ function mountCreatorSearch(root, opts){
   };
   run(); pool();
   return S;
+}
+function csPagerHtml(d, pk, size){
+  const pages = d.pages||1, page = d.page||1; if(pages<=1) return "";
+  const nums = []; for(let p=Math.max(1,page-2); p<=Math.min(pages,page+2); p++) nums.push(p);
+  const b = (p, label, cls, dis)=> `<button class="btn sm ${cls||"ghost"}" data-cspg="${p}" data-cspk="${pk}"${dis?" disabled":""}>${label}</button>`;
+  return `<div class="ci-pager mc-pager">${b(page-1,"‹ Prev","ghost",page<=1)}
+    ${nums[0]>1?`${b(1,1)}${nums[0]>2?'<span class="muted">…</span>':""}`:""}
+    ${nums.map(p=> b(p, p, p===page?" ":"ghost")).join("")}
+    ${nums[nums.length-1]<pages?`${nums[nums.length-1]<pages-1?'<span class="muted">…</span>':""}${b(pages,pages)}`:""}
+    ${b(page+1,"Next ›","ghost",page>=pages)}
+    <span class="muted">${(page-1)*size+1}–${Math.min(page*size,d.total)} of ${fmtNum(d.total)}</span></div>`;
+}
+function csWireCards(scope, opts){
+  scope.querySelectorAll("[data-csinv]").forEach(b=> b.onclick = ()=> csInvite(b, opts));
+  scope.querySelectorAll("[data-cslive]").forEach(b=> b.onclick = async ()=>{ const h = b.dataset.cslive; b.disabled = true; b.textContent = "Fetching…";
+    const { data:lk, error:le } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h } }).then(r=>r, e=>({error:e}));
+    if(le || !lk || lk.error || !lk.profile){ gateToast((lk && lk.error) || (le && await fnError(le)) || "Couldn't reach Instagram."); b.disabled = false; b.textContent = "🔄 Refresh"; return; }
+    const root = b.closest(".cs-grid") || document; csIgUpdate(root, h, lk.profile, null, opts);
+    gateToast(`@${h} — ${kfmtN(lk.profile.followers||0)} followers · updated from Instagram`); });
+}
+// Instagram creator (not on Geek OS) — its own card: picture, followers, engagement, avg likes, posts, bio
+function csIgCard(c, opts){
+  const st = c.state_in_campaign, h = String(c.handle||"");
+  const inv = opts && opts.campaign && st==="invited" ? `<span class="tag warn">Invited</span>` : `<button class="btn sm" data-csinv="${esc(h)}" data-csmid="">🎯 Invite</button>`;
+  const loading = c.followers==null && !c._err && !c._done;
+  const v = (x, f)=> x!=null ? f(x) : (loading ? `<i class="cs-shim"></i>` : "—");
+  const ini = esc((h||"?").slice(0,2).toUpperCase());
+  return `<div class="card cs-card cs-igc${loading?" is-loading":""}" data-igcard="${esc(h)}">
+    <div class="cs-top"><span class="cs-ring">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${ini}'}))">`:`<span class="avatar">${ini}</span>`}</span>
+      <div class="cs-id"><a href="https://instagram.com/${encodeURIComponent(h)}" target="_blank" rel="noopener"><b>@${esc(h)}</b></a>
+        ${c.name?`<div class="cs-nm">${esc(c.name)}</div>`:""}
+        <div class="muted"><span class="cs-src ig">📸 Instagram</span>${c.city?` 📍 ${esc(c.city)}`:""}</div></div></div>
+    <div class="cs-stats cs-stats4"><div><b>${v(c.followers, kfmtN)}</b><span>Followers</span></div>
+      <div><b>${v(c.engagement, x=> (Math.round(x*10)/10)+"%")}</b><span>Engagement</span></div>
+      <div><b>${v(c.avg_likes, kfmtN)}</b><span>Avg likes</span></div>
+      <div><b>${v(c.posts, kfmtN)}</b><span>Posts</span></div></div>
+    ${loading?`<div class="cs-fetching"><span class="mk-spin sm"></span> Fetching from Instagram…</div>`:""}
+    ${c._err?`<div class="cs-nostat">${esc(c._err)}</div>`:""}
+    ${c.bio?`<div class="cs-bio">${esc(c.bio)}</div>`:""}
+    <div class="cs-tags">${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(String(x).replace(/\b\w/g,m=>m.toUpperCase()))}</span>`).join("")}</div>
+    <div class="cs-act">${inv}<a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(h)}" target="_blank" rel="noopener">💬 DM</a>
+      <button class="btn sm ghost" data-cslive="${esc(h)}" title="Fetch the latest followers, posts and bio from Instagram">🔄 Refresh</button></div></div>`;
+}
+const _csIgRows = {};   // last data per Instagram handle, so a card can be redrawn when its numbers arrive
+function csIgSeed(c){
+  const prev = _csIgRows[c.handle] || {}, out = Object.assign({}, prev);
+  Object.keys(c).forEach(k=>{ if(c[k]!=null && !(Array.isArray(c[k]) && !c[k].length && prev[k])) out[k] = c[k]; });
+  if(out.followers!=null) out._err = null;
+  return (_csIgRows[c.handle] = out);
+}
+function csIgMerge(c, prof, err){
+  const base = Object.assign({}, _csIgRows[c.handle] || {}, c);
+  if(prof){
+    const f = Number(prof.followers)||0, likes = prof.avg_likes!=null ? Number(prof.avg_likes) : null;
+    Object.assign(base, { followers: prof.followers ?? base.followers, posts: prof.media_count ?? base.posts, name: prof.name || base.name,
+      bio: prof.bio || base.bio, profile_picture_url: prof.profile_picture_url || base.profile_picture_url,
+      avg_likes: likes!=null ? Math.round(likes) : base.avg_likes,
+      engagement: f>0 && likes!=null ? Math.round(1000*(likes + (Number(prof.avg_comments)||0))/f)/10 : base.engagement, _err:null, _done:true });
+  } else { base._done = true; if(err) base._err = err; }
+  _csIgRows[c.handle] = base; return base;
+}
+function csIgUpdate(root, h, prof, err, opts){
+  const el = root.querySelector(`[data-igcard="${CSS.escape(h)}"]`); if(!el) return;
+  const c = csIgMerge(Object.assign({}, _csIgRows[h]||{}, { handle:h }), prof, err && !prof ? csIgWhy(err) : null);
+  const tmp = document.createElement("div"); tmp.innerHTML = csIgCard(c, opts); const nu = tmp.firstElementChild;
+  el.replaceWith(nu); csWireCards(nu, opts);
+}
+function csIgWhy(err){
+  return /isn't a public Business|doesn't exist|not a public/i.test(err||"") ? "Personal or private account — Instagram shares numbers only for Business / Creator accounts."
+    : /Super Admin|Connect with Facebook|needs_facebook/i.test(err||"") ? "Live numbers switch on once the Super Admin connects Facebook for Instagram search."
+    : String(err||"").slice(0,140);
+}
+// fetch live numbers for many handles: 3 at a time, max 12 per screen, each handle once per visit; stops when Meta says no
+const _igTried = new Set(); let _igBlocked = null;
+async function igAutoFill(handles, onOne, warnEl, max){
+  const showBlock = ()=>{ if(warnEl && _igBlocked){ warnEl.hidden = false; warnEl.innerHTML = `⚠️ ${esc(_igBlocked)}`; } };
+  if(_igBlocked){ showBlock(); handles.forEach(h=> onOne(h, null, _igBlocked)); return; }
+  const q = handles.filter(h=> !_igTried.has(h)).slice(0, max || 12); q.forEach(h=> _igTried.add(h));
+  handles.filter(h=> !q.includes(h)).forEach(h=> { const c = _csIgRows[h]; if(!c || c.followers==null) onOne(h, null, c && c._err || "No live numbers yet — tap 🔄 Refresh."); });
+  const work = async ()=>{
+    while(q.length){
+      const h = q.shift();
+      if(_igBlocked){ onOne(h, null, _igBlocked); continue; }
+      const { data } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h } }).then(r=>r, ()=>({ data:null }));
+      if(data && data.profile){ onOne(h, data.profile); continue; }
+      const e = (data && data.error) || "Couldn't reach Instagram.";
+      if(data && (data.needs_facebook || data.needs_permission)){ _igBlocked = csIgWhy(e) === e ? e : csIgWhy(e); showBlock(); }
+      onOne(h, null, e);
+    }
+  };
+  await Promise.all([work(), work(), work()]);
 }
 function csCard(c, opts){
   const st = c.state_in_campaign, onCamp = st && !["invited","dropped","rejected","ineligible","brand_declined"].includes(st);
@@ -5048,6 +5145,11 @@ async function loadInvitePanel(){
   ]);
   if(m.error){ body.innerHTML = `<div class="card"><div class="muted">${esc(m.error.message||m.error)}</div><button class="mini-btn ghost" onclick="window.__invClose&&window.__invClose()">Close</button></div>`; return; }
   _invMatches = m.data||[]; _invExternal = x.data||[]; _invDiscovered = (d.data||[]).filter(c=>!c.invited);
+  // the numbers we already have for the off-platform invites (picture, followers, engagement, bio)
+  if(_invExternal.length){
+    const { data:pp } = await sb.schema("api").rpc("external_profiles", { p_handles:_invExternal.map(i=> String(i.handle||"").toLowerCase()) }).then(r=>r, ()=>({ data:[] }));
+    (pp||[]).forEach(c=> csIgSeed(Object.assign({}, c, { _err: c.fetched ? null : (c.error ? csIgWhy(c.error) : null) })));
+  }
   paintInvitePanel();
 }
 function paintInvitePanel(){
@@ -5067,7 +5169,7 @@ function paintInvitePanel(){
     <div class="ac360-sec">${_invTab==="matches"?matchesHtml(L):externalHtml()}</div>`;
   body.querySelector("#invX").onclick = ()=> window.__invClose && window.__invClose();
   body.querySelectorAll("[data-invtab]").forEach(b=> b.onclick = ()=>{ _invTab = b.dataset.invtab; paintInvitePanel(); });
-  wireInvitePanel();
+  wireInvitePanel(); invExFill();
   const sr = document.getElementById("invSearch");
   if(sr) _invSearchState = mountCreatorSearch(sr, { campaign:_invCamp, state:_invSearchState && _invSearchState.__camp===_invCamp.id ? _invSearchState : Object.assign(csNew(), { __camp:_invCamp.id }) });
 }
@@ -5098,15 +5200,44 @@ function externalHtml(){
       <p class="muted" style="font-size:13px;margin:0 0 10px">Add their Instagram username. We keep the invite ready — when they sign up and connect Instagram, this campaign opens for them automatically and they get the invite in the app, on WhatsApp and by email.</p>
       <div class="cp-addrow"><input id="invHandle" placeholder="@username" maxlength="60"><input id="invNote" placeholder="Short note (optional)" maxlength="140"><button class="btn sm" id="invAddEx">+ Add invite</button></div>
       <div class="cp-hint" id="invExMsg"></div></div>
-    ${_invExternal.length?`<div class="cp-list" style="margin-top:12px">${_invExternal.map(i=>{
-      const s = st[i.dm_status]||[i.dm_status,'warn'];
-      return `<div class="cp-item inv-ex"><div style="min-width:0"><b><a href="https://instagram.com/${encodeURIComponent(i.handle)}" target="_blank" rel="noopener">@${esc(i.handle)}</a></b>
-          ${i.claimed_at?'<span class="tag good">Joined — invite sent ✓</span>':`<span class="tag ${s[1]}">${esc(s[0])}</span>`}
-          ${i.note?`<div class="muted" style="font-size:12px">“${esc(i.note)}”</div>`:""}
-          ${i.dm_error?`<div class="muted" style="font-size:11.5px">${esc(i.dm_error)}</div>`:""}</div>
-        <div class="cp-item-acts">${i.claimed_at?"":`<a class="btn sm" href="https://ig.me/m/${encodeURIComponent(i.handle)}" target="_blank" rel="noopener">Open DM</a>
-          <button class="btn sm ghost" data-invcopy="${esc(i.handle)}">Copy message</button>
-          <button class="btn sm ghost" data-invdel="${esc(i.invite_id)}">Remove</button>`}</div></div>`; }).join("")}</div>`:""}`;
+    ${_invExternal.length?`<div class="cs-sec cs-sec-ig inv-exsec"><div class="cs-sec-h"><span class="cs-sec-t">📸 Off-platform invites <b>${_invExternal.length}</b></span><span class="muted">Not on Geek OS yet — followers & engagement fetched live from Instagram</span></div>
+      <div class="cs-igwarn" id="invExWarn" hidden></div>
+      <div class="cs-grid" id="invExGrid">${_invExternal.map(i=> invExCard(i)).join("")}</div></div>`:""}`;
+}
+const INV_EX_ST = { pending:['⏳ Not sent yet','warn'], manual:['✉️ Send the DM yourself','warn'], sent:['✅ DM sent','good'],
+                    needs_permission:['✉️ Send the DM yourself','warn'], failed:['⚠️ Couldn\'t send','warn'] };
+function invExCard(i){
+  const h = String(i.handle||"").toLowerCase(), c = Object.assign({ handle:h }, _csIgRows[h]||{});
+  const s = INV_EX_ST[i.dm_status] || [i.dm_status||"Invited", 'warn'];
+  const loading = c.followers==null && !c._err && !c._done;
+  const v = (x, f)=> x!=null ? f(x) : (loading ? `<i class="cs-shim"></i>` : "—");
+  const ini = esc((h||"?").slice(0,2).toUpperCase());
+  return `<div class="card cs-card cs-igc${loading?" is-loading":""}" data-igcard="${esc(h)}" data-invexh="${esc(h)}">
+    <div class="cs-top"><span class="cs-ring">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${ini}'}))">`:`<span class="avatar">${ini}</span>`}</span>
+      <div class="cs-id"><a href="https://instagram.com/${encodeURIComponent(h)}" target="_blank" rel="noopener"><b>@${esc(h)}</b></a>
+        ${c.name?`<div class="cs-nm">${esc(c.name)}</div>`:""}
+        <div class="muted">${i.claimed_at?'<span class="tag good">Joined — invite sent ✓</span>':`<span class="tag ${s[1]}">${esc(s[0])}</span>`}${c.city?` 📍 ${esc(c.city)}`:""}</div></div></div>
+    <div class="cs-stats cs-stats4"><div><b>${v(c.followers, kfmtN)}</b><span>Followers</span></div>
+      <div><b>${v(c.engagement, x=> (Math.round(x*10)/10)+"%")}</b><span>Engagement</span></div>
+      <div><b>${v(c.avg_likes, kfmtN)}</b><span>Avg likes</span></div>
+      <div><b>${v(c.posts, kfmtN)}</b><span>Posts</span></div></div>
+    ${loading?`<div class="cs-fetching"><span class="mk-spin sm"></span> Fetching from Instagram…</div>`:""}
+    ${c._err?`<div class="cs-nostat">${esc(c._err)}</div>`:""}
+    ${c.bio?`<div class="cs-bio">${esc(c.bio)}</div>`:""}
+    ${i.note?`<div class="muted" style="font-size:12px">“${esc(i.note)}”</div>`:""}
+    <div class="cs-act">${i.claimed_at?"":`<a class="btn sm" href="https://ig.me/m/${encodeURIComponent(h)}" target="_blank" rel="noopener">Open DM</a>
+      <button class="btn sm ghost" data-invcopy="${esc(h)}">Copy message</button>
+      <button class="btn sm ghost" data-invdel="${esc(i.invite_id)}">Remove</button>`}</div></div>`;
+}
+function invExFill(){
+  const grid = document.getElementById("invExGrid"); if(!grid) return;
+  const missing = _invExternal.map(i=> String(i.handle||"").toLowerCase()).filter(h=> !(_csIgRows[h]||{}).followers && !(_csIgRows[h]||{})._done);
+  if(!missing.length) return;
+  igAutoFill(missing, (h, prof, err)=>{
+    csIgMerge(Object.assign({}, _csIgRows[h]||{}, { handle:h }), prof, err && !prof ? csIgWhy(err) : null);
+    const el = grid.querySelector(`[data-invexh="${CSS.escape(h)}"]`), i = _invExternal.find(x=> String(x.handle||"").toLowerCase()===h);
+    if(!el || !i) return; const tmp = document.createElement("div"); tmp.innerHTML = invExCard(i); el.replaceWith(tmp.firstElementChild); wireInvitePanel();
+  }, document.getElementById("invExWarn"), 60);
 }
 /* Auto-discovered from Instagram, scored against THIS campaign's ideal profile — one tap to invite by DM */
 function discoveredHtml(){
