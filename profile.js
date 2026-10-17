@@ -167,16 +167,19 @@
         + '<div><b>@'+esc(a.username||"account")+'</b> '+(a.active?'<span class="cp-badge cp-self">Active</span>':'')
         + (a.token_expired?' <span class="cp-badge">Login expired</span>':'')
         + '<div class="muted">'+esc([a.name||"", a.followers_count!=null?Number(a.followers_count).toLocaleString("en-IN")+" followers":""].filter(Boolean).join(" · "))+'</div></div></div>'
-        + (a.active?'<span class="muted" style="font-size:12px">In use</span>'
-            : '<div style="display:flex;gap:6px">'+(a.token_expired?'<button class="btn sm" data-igre="1">Reconnect</button>':'<button class="btn sm" data-igsw="'+esc(a.ig_user_id)+'">Switch to this</button>')
-              + '<button class="btn sm ghost" data-igrm="'+esc(a.ig_user_id)+'">Remove</button></div>')
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+        +   (a.active ? '<span class="muted" style="font-size:12px">In use</span>'
+                      : (a.token_expired?'<button class="btn sm" data-igre="1">Reconnect</button>':'<button class="btn sm" data-igsw="'+esc(a.ig_user_id)+'">Switch to this</button>'))
+        +   '<button class="btn sm ghost cp-disc" data-igrm="'+esc(a.ig_user_id)+'" data-iguser="'+esc(a.username||"")+'" data-igactive="'+(a.active?"1":"")+'">Disconnect</button></div>'
         + '</div>'; }).join("");
     box.querySelectorAll("[data-igsw]").forEach(function(b){ b.onclick=async function(){ b.disabled=true;
       try{ var r=await window.igSwitchTo(b.getAttribute("data-igsw")); if(window.gateToast) gateToast("Switched to @"+(r.username||"account")+" ✓"); load(); }
       catch(e){ alert(e.message||e); b.disabled=false; } }; });
     box.querySelectorAll("[data-igre]").forEach(function(b){ b.onclick=function(){ window.igAddAnother("profile"); }; });
-    box.querySelectorAll("[data-igrm]").forEach(function(b){ b.onclick=async function(){ if(!confirm("Remove this Instagram account from Geek OS? You can connect it again any time.")) return;
-      b.disabled=true; var r=await window.sb.rpc("ig_remove_account",{ p_ig_user_id:b.getAttribute("data-igrm") }); if(r.error){ alert(r.error.message); b.disabled=false; return; } paintIgAccounts(); }; });
+    box.querySelectorAll("[data-igrm]").forEach(function(b){ b.onclick=async function(){
+      if(!window.igDisconnect) return; b.disabled=true;
+      var r=await window.igDisconnect(b.getAttribute("data-igrm"), b.getAttribute("data-iguser"), !!b.getAttribute("data-igactive"), L.length);
+      if(!r){ b.disabled=false; return; } }; });
   }
 
   var REQ = null;

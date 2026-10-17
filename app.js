@@ -289,13 +289,15 @@ async function paintMeAccounts(){
   const box = document.getElementById("meAccts"); if(!box) return;
   const L = await igAccountsLoad(true); if(!box.isConnected) return;
   const others = L.filter(a=>!a.active);
-  box.innerHTML = `<div class="me-accts-h"><span>Your accounts${L.length>1?` · ${L.length}`:""}</span><button class="me-mini" id="meAddAcct">+ Add account</button></div>`
+  box.innerHTML = `<div class="me-accts-h"><span>Your accounts${L.length>1?` · ${L.length}`:""}</span><span style="display:flex;gap:6px"><button class="me-mini" id="meMgAcct" title="Switch or disconnect accounts">Manage</button><button class="me-mini" id="meAddAcct">+ Add account</button></span></div>`
     + (others.length ? others.map(a=>`<button class="me-acct" data-meacct="${esc(a.ig_user_id)}"${a.token_expired?' data-expired="1"':""}>
         ${a.profile_picture_url?`<img src="${esc(safeUrl(a.profile_picture_url))}" alt="" referrerpolicy="no-referrer">`:`<span class="me-acct-ph">📸</span>`}
         <span class="me-acct-n"><b>@${esc(a.username||"account")}</b><em>${a.token_expired?"Login expired — reconnect":(a.followers_count!=null?Number(a.followers_count).toLocaleString("en-IN")+" followers":"")}</em></span>
         <span class="me-acct-go">${a.token_expired?"Reconnect":"Switch"}</span></button>`).join("")
       : `<div class="me-accts-none">Run another page? Add it and switch between accounts here.</div>`);
   box.querySelector("#meAddAcct").onclick = ()=>{ closeMeCard(); igAddAnother(currentPage); };
+  box.querySelector("#meMgAcct").onclick = ()=>{ closeMeCard(); currentPage = "profile"; renderShell();
+    setTimeout(()=>{ const s = document.querySelector('[data-sec="pages"]'); if(s) s.scrollIntoView({ behavior:"smooth", block:"start" }); }, 900); };
   box.querySelectorAll("[data-meacct]").forEach(b=> b.onclick = async ()=>{
     if(b.dataset.expired){ closeMeCard(); igAddAnother(currentPage); return; }
     const to = L.find(x=>x.ig_user_id===b.dataset.meacct)||{};
@@ -6088,6 +6090,29 @@ async function igSwitchTo(igId){
   return data || {};
 }
 window.igSwitchTo = igSwitchTo;
+// disconnect ANY connected account (the open one too: we move to the next account first; the last one removes Instagram)
+async function igDisconnect(igId, username, isActive, total){
+  const h = "@"+(username||"this account");
+  const msg = total <= 1
+    ? `Disconnect ${h}?\n\nIt's your only Instagram on Geek OS — your Media Kit, posting and campaign tools need an Instagram, so you'll be asked to connect one again.`
+    : isActive ? `Disconnect ${h}?\n\nIt's the account open right now — Geek OS switches to your next account first. You can connect ${h} again any time.`
+               : `Disconnect ${h} from Geek OS?\n\nYou can connect it again any time.`;
+  if(!confirm(msg)) return null;
+  showBusy(`Disconnecting ${h}…`);
+  try{
+    const { data, error } = await sb.rpc("ig_disconnect_account", { p_ig_user_id: igId });
+    if(error) throw new Error(error.message||String(error));
+    _igAccts = null; _mkLastAcct = null; _igAvatarUrl = null;
+    if(data && data.none_left){ gateToast(`${h} disconnected`); setTimeout(()=> location.reload(), 600); return data; }
+    if(data && data.switched){ try{ await sb.functions.invoke("instagram-media-sync", { body:{ force:true } }); }catch(e){} }
+    gateToast(`${h} disconnected${data && data.switched && data.active ? ` · now using @${data.active}` : ""} ✓`);
+    if(typeof applyIgAvatar==="function") applyIgAvatar(true);
+    renderShell();
+    return data;
+  }catch(e){ gateToast(e.message||String(e)); return null; }
+  finally{ setTimeout(hideBusy, 300); }
+}
+window.igDisconnect = igDisconnect;
 // a small "Viewing / Posting as @x ▾ · + Add another" bar
 async function paintIgSwitcher(boxId, label){
   const box = document.getElementById(boxId); if(!box || !window.sb) return;
