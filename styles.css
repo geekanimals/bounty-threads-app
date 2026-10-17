@@ -1538,3 +1538,11 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 @media(max-width:600px){.bpp-stats{grid-template-columns:repeat(2,1fr)}.bpp-row{grid-template-columns:1fr;gap:2px}}
 .cp-disc{color:#b91c1c!important;border-color:rgba(239,68,68,.35)!important}
 .cp-disc:hover{background:rgba(239,68,68,.08)!important}
+
+/* Discovery: live #hashtag panel */
+.cs-tag{margin-bottom:14px}
+.cs-tag-h{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.cs-tag-sw{display:flex;gap:6px}
+.cs-tag-sub{font-size:13px;color:var(--muted);margin:4px 0 6px}
+.cs-tag-handles{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.cs-tag-grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}

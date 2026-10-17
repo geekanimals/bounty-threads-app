@@ -4,6 +4,8 @@
 //
 //   { action: "lookup",  username }   → one public profile (followers, posts, bio, recent posts)
 //   { action: "tagged" }              → the accounts that tagged / mentioned this Instagram, filed as candidates
+//   { action: "hashtag", tag, edge }  → top (or recent) public posts for a #hashtag (Instagram Public Content Access);
+//                                        the @accounts mentioned in those captions are filed as candidates
 //
 // Honest about Meta's limits: public lookup of an arbitrary handle is the Facebook Graph "business discovery"
 // edge, which needs a Facebook Page linked to the Instagram account plus App Review. When that isn't granted
@@ -109,6 +111,37 @@ Deno.serve(async (req) => {
         saved = Number(data) || 0;
       }
       return json({ ok: true, found: items.length, saved });
+    }
+
+    if (action === "hashtag") {
+      const tag = String(body?.tag || "").trim().replace(/^#/, "").toLowerCase();
+      const edge = body?.edge === "recent" ? "recent_media" : "top_media";
+      if (!/^[\p{L}\p{N}_]{2,60}$/u.test(tag)) return json({ error: "Enter a hashtag, e.g. #foodblogger" }, 400);
+      const { data: fbtRaw } = await admin.from("social_tokens").select("access_token, ig_user_id")
+        .eq("member_id", user.id).eq("platform", "facebook").maybeSingle();
+      let src = await openRow(fbtRaw);
+      if (!src?.access_token) { const { data: shared } = await admin.schema("api").rpc("ops_discovery_token"); if (shared?.platform === "facebook") src = await openRow(shared); }
+      if (!src?.access_token || !src?.ig_user_id) {
+        return json({ error: "Hashtag search switches on once the Geek Super Admin turns on Instagram search (Connect with Facebook, one time).", needs_facebook: true }, 200);
+      }
+      const igId = encodeURIComponent(String(src.ig_user_id)), FT = encodeURIComponent(String(src.access_token));
+      const hs = await (await fetch(`${FB_GRAPH}/ig_hashtag_search?user_id=${igId}&q=${encodeURIComponent(tag)}&access_token=${FT}`)).json().catch(() => ({}));
+      const hid = hs?.data?.[0]?.id;
+      if (!hid) {
+        const m = String(hs?.error?.message || "");
+        return json({ error: m ? `Instagram refused the hashtag search: ${m}` : `No public posts found for #${tag}.`, needs_permission: needsPermission(hs) }, 200);
+      }
+      const fields = "id,caption,media_type,media_url,permalink,like_count,comments_count,timestamp";
+      const mr = await (await fetch(`${FB_GRAPH}/${hid}/${edge}?user_id=${igId}&fields=${fields}&limit=40&access_token=${FT}`)).json().catch(() => ({}));
+      if (!Array.isArray(mr?.data)) return json({ error: mr?.error?.message || "Instagram couldn't return posts for that hashtag.", needs_permission: needsPermission(mr) }, 200);
+      const posts = mr.data.map((m: any) => ({ id: m.id, caption: String(m.caption || "").slice(0, 400), media_type: m.media_type, media_url: m.media_url ?? null,
+        permalink: m.permalink ?? null, like_count: m.like_count ?? null, comments_count: m.comments_count ?? null, timestamp: m.timestamp ?? null }));
+      // Instagram doesn't say who posted a hashtag post — but captions name accounts (@handle): those become candidates
+      const handles = [...new Set(posts.flatMap((p: any) => (p.caption.match(/@([A-Za-z0-9._]{2,30})/g) || []).map((x: string) => x.slice(1).toLowerCase().replace(/\.$/, ""))))].slice(0, 40);
+      if (handles.length) {
+        await admin.schema("api").rpc("save_external_candidates", { p_items: handles.map((h) => ({ handle: h, source: "hashtag", caption: `#${tag}` })) }).then(() => {}, () => {});
+      }
+      return json({ ok: true, tag, edge, posts, handles });
     }
 
     return json({ error: "Unknown action" }, 400);

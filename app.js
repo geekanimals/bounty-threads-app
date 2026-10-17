@@ -2375,7 +2375,12 @@ function mountCreatorSearch(root, opts){
         if(le || !lk || lk.error){ if(lm) lm.textContent = (lk && lk.error) || (le && await fnError(le)) || "Couldn't look it up."; b.disabled = false; b.textContent = `🔎 Look up @${h} on Instagram`;
           if(lk && (lk.added || lk.needs_facebook)) setTimeout(()=> run(true), 1500); return; }
         gateToast(`@${h} — ${kfmtN((lk.profile||{}).followers||0)} followers · added to search`); run(true); pool(); };
+      // typed as @handle or an instagram.com link → look it up straight away (plain words wait for the button)
+      if(/^@|instagram\.com\//i.test(S.q||"") && S._looked !== h){ S._looked = h; $i("Look").click(); }
     }
+    // a #hashtag → live public posts from Instagram (Instagram Public Content Access) + the accounts they mention
+    const tag = /^#/.test(S.q||"") ? String(S.q).replace(/^#/,"").trim().toLowerCase() : "";
+    if(tag && /^[\p{L}\p{N}_]{2,60}$/u.test(tag)) csHashtagPanel($i("Res"), tag, S, ()=>{ run(true); pool(); });
     const pages = d.pages||1;
     if(pages>1){
       const nums = []; for(let p=Math.max(1,S.page-2); p<=Math.min(pages,S.page+2); p++) nums.push(p);
@@ -2388,6 +2393,10 @@ function mountCreatorSearch(root, opts){
       $i("Pager").querySelectorAll("[data-cspg]").forEach(b=> b.onclick = ()=>{ S.page = +b.dataset.cspg; run(true); root.scrollIntoView({behavior:"smooth", block:"start"}); });
     }
     root.querySelectorAll("[data-csinv]").forEach(b=> b.onclick = ()=> csInvite(b, opts));
+    root.querySelectorAll("[data-cslive]").forEach(b=> b.onclick = async ()=>{ const h = b.dataset.cslive; b.disabled = true; b.textContent = "Checking Instagram…";
+      const { data:lk, error:le } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h } });
+      if(le || !lk || lk.error){ gateToast((lk && lk.error) || (le && await fnError(le)) || "Couldn't reach Instagram."); b.disabled = false; b.textContent = "🔄 Live stats"; return; }
+      gateToast(`@${h} — ${kfmtN((lk.profile||{}).followers||0)} followers · updated from Instagram`); run(true); pool(); });
   };
   const pool = async ()=>{
     const { data:p } = await sb.schema("api").rpc("discovery_pool_status").then(r=>r, ()=>({data:null}));
@@ -2435,7 +2444,7 @@ function csCard(c, opts){
       <div><b>${c.avg_likes!=null?kfmtN(c.avg_likes):"—"}</b><span>Avg likes</span></div></div>
     ${c.bio?`<div class="cs-bio">${esc(c.bio)}</div>`:""}
     <div class="cs-tags">${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(x.replace(/\b\w/g,m=>m.toUpperCase()))}</span>`).join("")}</div>
-    <div class="cs-act">${btn}${c.kind!=="platform"?`<a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">💬 DM</a>`:""}</div></div>`;
+    <div class="cs-act">${btn}${c.kind!=="platform"?`<button class="btn sm ghost" data-cslive="${esc(c.handle)}" title="Fetch this account's live followers, posts and bio from Instagram">🔄 Live stats</button><a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">💬 DM</a>`:""}</div></div>`;
 }
 // every Instagram account one Geek OS creator has connected (Discovery, campaign invite, Super Admin)
 async function openIgAccountsModal(memberId, name){
@@ -2463,6 +2472,29 @@ document.addEventListener("click", e=>{
   const b = e.target && e.target.closest && e.target.closest("[data-igaccts]"); if(!b) return;
   e.preventDefault(); e.stopPropagation(); openIgAccountsModal(b.dataset.igaccts, b.dataset.igname);
 }, true);
+// #hashtag in Discovery: top / recent public posts straight from Instagram, and the accounts their captions mention
+async function csHashtagPanel(res, tag, S, refresh){
+  const edge = S._tagEdge || "top";
+  res.insertAdjacentHTML("afterbegin", `<div class="card cs-tag" id="csTagBox"><div class="cs-tag-h"><b>📸 #${esc(tag)} on Instagram</b>
+      <span class="cs-tag-sw"><button class="btn sm ${edge==="top"?"":"ghost"}" data-tagedge="top">Top posts</button><button class="btn sm ${edge==="recent"?"":"ghost"}" data-tagedge="recent">Recent</button></span></div>
+    <div id="csTagBody">${skel("list",1)}</div></div>`);
+  const box = document.getElementById("csTagBox");
+  box.querySelectorAll("[data-tagedge]").forEach(b=> b.onclick = ()=>{ S._tagEdge = b.dataset.tagedge; box.remove(); csHashtagPanel(res, tag, S, refresh); });
+  const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"hashtag", tag, edge: edge==="recent" ? "recent" : "top" } }).then(r=>r, e=>({error:e}));
+  const body = document.getElementById("csTagBody"); if(!body) return;
+  if(error || !data || data.error){ body.innerHTML = `<div class="muted">${esc((data && data.error) || (error && error.message) || "Couldn't reach Instagram.")}</div>`; return; }
+  const P = data.posts||[], H = data.handles||[];
+  body.innerHTML = (H.length ? `<div class="cs-tag-sub">Accounts mentioned in these posts — added to your search:</div><div class="cs-tag-handles">${H.map(h=>`<button class="cs-chip" data-taglook="${esc(h)}">@${esc(h)}</button>`).join("")}</div>` : "")
+    + (P.length ? `<div class="mk-grid cs-tag-grid">${P.slice(0,18).map(m=>`<a class="mk-post" href="${esc(safeUrl(m.permalink||"#"))}" target="_blank" rel="noopener">
+          ${m.media_url && m.media_type!=="VIDEO" ? `<img src="${esc(safeUrl(m.media_url))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : `<div class="mk-post-noimg">${m.media_type==="VIDEO"?"▶ Reel":"Post"}</div>`}
+          <span class="mk-meta">❤ ${fmtNum(m.like_count||0)} · 💬 ${fmtNum(m.comments_count||0)}</span></a>`).join("")}</div>
+        <div class="muted" style="font-size:12px;margin-top:6px">Instagram shows hashtag posts without the poster's name — open a post to see who made it, then look them up above.</div>`
+      : `<div class="muted">No public posts for #${esc(tag)} right now.</div>`);
+  body.querySelectorAll("[data-taglook]").forEach(b=> b.onclick = async ()=>{ const h = b.dataset.taglook; b.disabled = true; b.textContent = "@"+h+" …";
+    const { data:lk } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h } }).then(r=>r, ()=>({data:null}));
+    b.textContent = lk && lk.profile ? `@${h} · ${kfmtN(lk.profile.followers||0)}` : "@"+h; gateToast(lk && lk.profile ? `@${h} added with live numbers` : ((lk && lk.error) || `@${h} added`)); });
+  if(H.length && refresh) setTimeout(refresh, 400);
+}
 function kfmtN(n){ n = Number(n)||0; return n>=1e7 ? (n/1e6).toFixed(0)+"M" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e4 ? Math.round(n/1e3)+"K" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(Math.round(n)); }
 async function csInvite(b, opts){
   const handle = b.dataset.csinv, mid = b.dataset.csmid || null;
