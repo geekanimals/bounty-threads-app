@@ -2332,7 +2332,7 @@ function mountCreatorSearch(root, opts){
   const key = opts.campaign ? "inv" : "dc";
   const id = s => key + s;
   root.innerHTML = `<div class="card cs-panel">
-      <div class="cs-searchrow"><input id="${id("Q")}" type="search" placeholder="🔎 Search name, @handle, bio or #hashtag" value="${esc(S.q)}">
+      <div class="cs-searchrow"><input id="${id("Q")}" type="search" placeholder="🔎 Search @username, name, a word from their posts, or #hashtag" value="${esc(S.q)}">
         <button class="btn" id="${id("Go")}">Search</button></div>
       <div class="cs-cats" id="${id("Cats")}">${CS_CATS.map(c=>`<button type="button" class="cs-chip${S.categories.includes(c)?" on":""}" data-cscat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
       <div class="cs-filters">
@@ -2391,13 +2391,15 @@ function mountCreatorSearch(root, opts){
           if(lk && (lk.added || lk.needs_facebook)) setTimeout(()=> run(true), 1500); return; }
         gateToast(`@${h} — ${kfmtN((lk.profile||{}).followers||0)} followers · added to search`); run(true); pool(); };
       // typed as @handle or an instagram.com link → look it up straight away (plain words wait for the button)
-      if(/^@|instagram\.com\//i.test(S.q||"") && S._looked !== h){ S._looked = h; $i("Look").click(); }
+      // @handle, an instagram.com link, or a username-looking word (has . _ or a digit) → look it up straight away
+      if((/^@|instagram\.com\//i.test(S.q||"") || /[._0-9]/.test(h)) && S._looked !== h){ S._looked = h; $i("Look").click(); }
     }
     // a #hashtag → live public posts from Instagram (Instagram Public Content Access) + the accounts they mention
     const tag = /^#/.test(S.q||"") ? String(S.q).replace(/^#/,"").trim().toLowerCase() : "";
     if(tag && /^[\p{L}\p{N}_]{2,60}$/u.test(tag)) csHashtagPanel($i("Res"), tag, S, ()=>{ run(true); pool(); });
     // a city and/or a category picked → find more of them live on Instagram (full public profiles)
-    if((S.location || S.categories.length) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csScoutPanel($i("Res"), S, ()=>{ run(true); pool(); });
+    const kw = csKeyword(S.q);
+    if((kw || S.location || S.categories.length) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csScoutPanel($i("Res"), S, ()=>{ run(true); pool(); });
     root.querySelectorAll("[data-cspg]").forEach(b=> b.onclick = ()=>{ const k = b.dataset.cspk, n = +b.dataset.cspg;
       if(k==="P") S.pageP = n; else if(k==="E") S.pageE = n; else S.page = n;
       run(true); (k==="E" ? root.querySelector(".cs-sec-ig") || root : root).scrollIntoView({behavior:"smooth", block:"start"}); });
@@ -2473,6 +2475,7 @@ function csIgCard(c, opts){
     ${loading?`<div class="cs-fetching"><span class="mk-spin sm"></span> Fetching from Instagram…</div>`:""}
     ${c._err?`<div class="cs-nostat">${esc(c._err)}</div>`:""}
     ${c.bio?`<div class="cs-bio">${esc(c.bio)}</div>`:""}
+    ${c.matched_post?`<div class="cs-match">📝 In their post: “${esc(c.matched_post)}…”</div>`:""}
     <div class="cs-tags">${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(String(x).replace(/\b\w/g,m=>m.toUpperCase()))}</span>`).join("")}</div>
     <div class="cs-act">${inv}<a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(h)}" target="_blank" rel="noopener">💬 DM</a>
       <button class="btn sm ghost" data-cslive="${esc(h)}" title="Fetch the latest followers, posts and bio from Instagram">🔄 Refresh</button></div></div>`;
@@ -2542,6 +2545,7 @@ function csCard(c, opts){
       <div><b>${c.engagement!=null?(Math.round(c.engagement*10)/10)+"%":"—"}</b><span>Engagement</span></div>
       <div><b>${c.avg_likes!=null?kfmtN(c.avg_likes):"—"}</b><span>Avg likes</span></div></div>
     ${c.bio?`<div class="cs-bio">${esc(c.bio)}</div>`:""}
+    ${c.matched_post?`<div class="cs-match">📝 In their post: “${esc(c.matched_post)}…”</div>`:""}
     <div class="cs-tags">${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(x.replace(/\b\w/g,m=>m.toUpperCase()))}</span>`).join("")}</div>
     <div class="cs-act">${btn}${c.kind!=="platform"?`<button class="btn sm ghost" data-cslive="${esc(c.handle)}" title="Fetch this account's live followers, posts and bio from Instagram">🔄 Live stats</button><a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">💬 DM</a>`:""}</div></div>`;
 }
@@ -2595,10 +2599,17 @@ async function csHashtagPanel(res, tag, S, refresh){
   if(H.length && refresh) setTimeout(refresh, 400);
 }
 // City / category → live Instagram: hashtags of that city + category, the creators those posts name, each with full profile
+// a plain search word (not @handle, #hashtag, a link or a username) = what creators post about
+function csKeyword(q){
+  q = String(q||"").trim();
+  if(!q || /^[@#]|instagram\.com|https?:/i.test(q) || q.length > 40) return "";
+  if(!/\s/.test(q) && /[._0-9]/.test(q)) return "";   // looks like a username → looked up directly instead
+  return /^[\p{L}\p{N} &'-]{2,40}$/u.test(q) ? q : "";
+}
 function csScoutPanel(res, S, refresh){
-  const city = S.location || "", cat = S.categories[0] || "";
-  const key = (city+"|"+cat).toLowerCase(), done = (S._scout||{})[key];
-  const what = `${cat?`<b>${esc(cat)}</b> creators`:"creators"}${city?` in <b>${esc(city)}</b>`:""}`;
+  const city = S.location || "", cat = S.categories[0] || "", keyword = csKeyword(S.q);
+  const key = (keyword+"|"+city+"|"+cat).toLowerCase(), done = (S._scout||{})[key];
+  const what = `${cat?`<b>${esc(cat)}</b> creators`:"creators"}${keyword?` posting about <b>“${esc(keyword)}”</b>`:""}${city?` in <b>${esc(city)}</b>`:""}`;
   res.insertAdjacentHTML("afterbegin", `<div class="card cs-scout" id="csScoutBox"><div class="cs-scout-h"><div><b>📡 Find more ${what} live on Instagram</b>
       <div class="muted">We read the hashtags they post with, find the creators, and bring in each one's full profile — followers, bio, posts, engagement.</div></div>
       <button class="btn sm" id="csScoutGo">${done?"🔄 Search again":"📡 Find on Instagram"}</button></div><div id="csScoutMsg">${done?csScoutSummary(done):""}</div></div>`);
@@ -2607,7 +2618,7 @@ function csScoutPanel(res, S, refresh){
     go.disabled = true; go.textContent = "Searching Instagram…";
     const msg = document.getElementById("csScoutMsg");
     msg.innerHTML = `<div class="cs-scout-run"><span class="mk-spin sm"></span> Reading Instagram posts and pulling profiles — about 20–40 seconds…</div>`;
-    const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"scout", city, category:cat } }).then(r=>r, e=>({error:e}));
+    const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"scout", city, category:cat, keyword } }).then(r=>r, e=>({error:e}));
     go.disabled = false; go.textContent = "🔄 Search again";
     if(error || !data || data.error){ msg.innerHTML = `<div class="muted">${esc((data && data.error) || (error && error.message) || "Couldn't reach Instagram.")}</div>`; return; }
     S._scout = Object.assign({}, S._scout, { [key]: data });

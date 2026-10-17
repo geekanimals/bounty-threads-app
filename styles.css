@@ -1579,3 +1579,4 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 .cs-nostat{font-size:11.5px;color:var(--muted);background:rgba(120,130,150,.08);border-radius:8px;padding:6px 8px}
 .inv-exsec{margin-top:16px}
 @media (max-width:640px){.cs-stats4{gap:4px}.cs-stats4 div{padding:6px 2px}.cs-stats4 b{font-size:13px}.cs-stats4 span{font-size:9.5px}}
+.cs-match{font-size:12px;line-height:1.45;color:var(--text);background:rgba(0,178,225,.07);border-left:3px solid #00b2e1;border-radius:6px;padding:6px 8px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}

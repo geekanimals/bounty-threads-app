@@ -152,7 +152,8 @@ Deno.serve(async (req) => {
     if (action === "scout") {
       const city = String(body?.city || "").trim().slice(0, 40);
       const category = String(body?.category || "").trim().slice(0, 40);
-      if (!city && !category) return json({ error: "Pick a city or a category first." }, 400);
+      const keyword = String(body?.keyword || "").trim().replace(/^#/, "").slice(0, 40);
+      if (!city && !category && !keyword) return json({ error: "Type a keyword, or pick a city or a category first." }, 400);
       const { data: fbtRaw } = await admin.from("social_tokens").select("access_token, ig_user_id")
         .eq("member_id", user.id).eq("platform", "facebook").maybeSingle();
       let src = await openRow(fbtRaw);
@@ -161,7 +162,7 @@ Deno.serve(async (req) => {
         return json({ error: "Live city / category search switches on once the Geek Super Admin turns on Instagram search (Connect with Facebook, one time).", needs_facebook: true }, 200);
       }
       const igId = encodeURIComponent(String(src.ig_user_id)), FT = encodeURIComponent(String(src.access_token));
-      const tags = scoutTags(city, category);
+      const tags = scoutTags(city, category, keyword);
       const count = new Map<string, number>(), seenIn = new Map<string, string>();
       const used: string[] = []; let lastErr = "", permErr = false;
       for (const tag of tags) {
@@ -257,12 +258,15 @@ function cityFor(bio: string, city: string): string | null {
   const same = CITY_WORDS.some((w) => b.includes(w) && mine(w));
   return other && !same ? null : city;
 }
-function scoutTags(city: string, category: string): string[] {
+function scoutTags(city: string, category: string, keyword = ""): string[] {
   const slug = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, "");
   const c0 = city.toLowerCase().trim(); const c = slug(CITY_TAG[c0] || c0.split(/[\s,]+/)[0] || "");
   const k = category ? (CAT_TAGS[category.toLowerCase().trim()] || [slug(category) + "blogger", slug(category)]) : [];
+  const w = slug(keyword);
   let t: string[];
-  if (c && k.length) t = [c + k[0], c + k[1], k[0] + c, c + (k[2] || "blogger")];
+  // a keyword (what they post about) leads; city / category narrow it
+  if (w) t = [w, c ? c + w : w + "india", c ? w + c : (k[0] ? w + k[0] : w + "review"), k[0] ? (c ? c + k[0] : k[0]) : (c ? c + "blogger" : w + "s")];
+  else if (c && k.length) t = [c + k[0], c + k[1], k[0] + c, c + (k[2] || "blogger")];
   else if (c) t = [c + "blogger", c + "influencer", c + "creator", c + "diaries"];
   else t = [k[0], k[0] + "india", k[1], k[2] || k[0] + "s"];
   return [...new Set(t.filter((x) => x && /^[a-z0-9_]{2,60}$/.test(x)))].slice(0, 4);
