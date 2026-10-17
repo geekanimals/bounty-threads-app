@@ -134,6 +134,7 @@ function mountLogin(mode="login", role){
   if(role) _loginRole = role;
   _loginRole = LOGIN_DOOR;                 // one door per link — the page never switches to another account type
   const root = document.getElementById("authRoot");
+  if(window.hideBootSplash) hideBootSplash();
   root.innerHTML = loginView(_loginRole, mode);
   root.classList.add("open");
 
@@ -173,6 +174,7 @@ function mountLogin(mode="login", role){
         if(window.Tracker) Tracker.security("login", { method:"whatsapp_otp", door:_loginRole });
         if(window.Auth) await Auth.currentSession();
         root.classList.remove("open"); root.innerHTML = "";
+        if(window.paintEarlyShell) paintEarlyShell();
         if(typeof bootOS==="function") bootOS(); else location.reload();
       }catch(ex){ err.textContent = "Couldn't verify: " + (ex.message||ex); go.disabled = false; go.textContent = "Verify & sign in →"; }
     };

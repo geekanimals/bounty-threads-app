@@ -1446,3 +1446,11 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
   .kpi-row,.mk-tiles{grid-template-columns:1fr 1fr}
   .topbar-right .icon-btn#themeBtn{display:none}
 }
+
+/* ---------- first-paint loader (never a blank screen) ---------- */
+.boot-splash{position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;background:var(--bg,#f6f7fb)}
+.boot-box{display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--muted,#6b7190);font-weight:600}
+.boot-logo{width:56px;height:56px;border-radius:14px}
+.mk-loadbar{display:flex;align-items:center;gap:10px;padding:12px 16px;margin-bottom:12px;border-radius:14px;background:var(--panel,#fff);border:1px solid var(--line,#e6e8f2);color:var(--muted,#6b7190);font-weight:600;font-size:14px}
+.mk-spin.sm{width:18px;height:18px;border-width:2px}
+.mk-loadbar .mk-spin{margin:0;flex:none}

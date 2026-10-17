@@ -2972,7 +2972,7 @@ function renderRoster(){
 function renderMediaKit(){
   let html = pageHead("Media Kit","Your reach, audience and best work — auto-built from Instagram and shareable with brands.");
   html += mkGateBanner();
-  html += `<div id="mkBody">${skel("kit")}</div>`;
+  html += `<div id="mkBody">${mkLoadingHtml()}${skel("kit")}</div>`;
   return html;
 }
 // While the mandatory profile is incomplete, the Media Kit shows a clear "finish your profile" bar on top
@@ -3390,6 +3390,9 @@ async function mkFetchAcct(){
   const { data, error } = await sb.from("social_accounts").select("*").eq("platform","instagram").eq("member_id", memberId)
     .order("updated_at",{ascending:false}).limit(1);
   return error ? null : ((data && data[0]) || null);
+}
+function mkLoadingHtml(){
+  return `<div class="mk-loadbar"><div class="mk-spin sm"></div><span>Loading your media kit…</span></div>`;
 }
 function mkBuildingHtml(){
   return `<div class="card mk-building"><div class="mk-spin"></div><h3 style="margin:10px 0 4px">Building your media kit…</h3>
@@ -5925,7 +5928,11 @@ async function paintIgSwitcher(boxId, label){
 
 // Called after Instagram redirects back with ?code — hands it to the Edge Function.
 async function finishInstagram(code, ticket){
-  showBusy("Connecting your Instagram and building your media kit…");
+  const signedInCreator = !!(window.Auth && Auth.profile && Auth.profile.role === "creator");
+  if(signedInCreator){
+    paintEarlyShell(pageHead("Media Kit","Your reach, audience and best work — auto-built from Instagram and shareable with brands.")
+      + `<div class="card mk-building"><div class="mk-spin"></div><h3 style="margin:10px 0 4px">Connecting your Instagram…</h3><div class="muted">Building your media kit from your profile, posts and audience. This takes a few seconds.</div></div>`);
+  } else showBusy("Connecting your Instagram and building your media kit…");
   setTimeout(hideBusy, 45000);          // never stuck
   try{
     if(!(window.sb && window.sb.functions)) throw new Error("Edge Functions not available.");
@@ -5963,6 +5970,7 @@ async function finishInstagram(code, ticket){
         const authRoot = document.getElementById("authRoot");
         if(authRoot){ authRoot.classList.remove("open"); authRoot.innerHTML = ""; }
         if(window.Auth) await Auth.currentSession();
+        hideBusy(); paintEarlyShell();
         currentPage = "mediakit";
         if(typeof bootOS==="function") await bootOS();
         setTimeout(hideBusy, 400);
@@ -5985,6 +5993,7 @@ async function finishInstagram(code, ticket){
     const authRoot = document.getElementById("authRoot");
     if(authRoot){ authRoot.classList.remove("open"); authRoot.innerHTML = ""; }
     if(window.Auth) await Auth.currentSession();
+    hideBusy(); paintEarlyShell();
     // Remember this device so returning creators get a one-tap "welcome back" (no re-typing).
     try{ localStorage.setItem("geekos_last_name", (Auth.profile && Auth.profile.name) || ""); }catch(e){}
     currentPage = "mediakit";
@@ -6344,6 +6353,7 @@ function renderShell(){
   if(currentPage==="alerts"){ currentPage = window.__isAdmin ? "admin" : "dashboard"; setTimeout(()=>{ try{ openNotif(); }catch(e){} }, 300); }
   if(window.__profileGate && !GATE_OPEN_PAGES.includes(currentPage)) currentPage = "mediakit";
   if(window.Tracker) Tracker.page(currentPage);
+  if(window.hideBootSplash) hideBootSplash();
   renderNav(); renderMe(); renderContent();
 }
 
@@ -6491,6 +6501,7 @@ function applyTheme(t){
 
 /* ---------- Boot (called after auth) ---------- */
 function showPending(){
+  if(window.hideBootSplash) hideBootSplash();
   const root = document.getElementById("authRoot");
   if(!root) return;
   root.classList.add("open");
@@ -6514,6 +6525,7 @@ async function creatorHasInstagram(){
   }catch(e){ return true; }
 }
 function showInstagramGate(){
+  if(window.hideBootSplash) hideBootSplash();
   const root = document.getElementById("authRoot"); if(!root) return;
   root.classList.add("open");
   root.innerHTML = `<div class="auth-wrap"><div class="auth-card" style="max-width:460px;margin:auto">
@@ -6534,6 +6546,7 @@ function showInstagramGate(){
 
 // Agency / Brand onboarding, step 2 of 2 (first time only): verify the official email over SMTP OTP.
 function showEmailGate(){
+  if(window.hideBootSplash) hideBootSplash();
   const root = document.getElementById("authRoot"); if(!root) return;
   root.classList.add("open");
   const P = Auth.profile || {};
@@ -6633,6 +6646,24 @@ async function creatorProfileGate(){
   }catch(e){}
 }
 
+// Paint the app frame (sidebar, top bar) straight away while the rest loads in the background, so a new login
+// or a fresh Instagram connect never shows a blank screen — only the page area shows its own loader.
+function paintEarlyShell(html){
+  try{
+    if(window.Auth && Auth.profile && ROLES[Auth.profile.role]) currentRole = Auth.profile.role;
+    if(currentRole==="creator" && !new URLSearchParams(location.search).get("go")) currentPage = "mediakit";
+    initRoles(); renderNav(); renderMe(); wireSignOut();
+    const c = document.getElementById("content");
+    if(c) c.innerHTML = html || (currentRole==="creator"
+      ? pageHead("Media Kit","Your reach, audience and best work — auto-built from Instagram and shareable with brands.") + mkLoadingHtml() + skel("kit")
+      : skel("dash"));
+    const mb = document.getElementById("menuBtn"); if(mb && !mb.onclick) mb.onclick = ()=> document.getElementById("sidebar").classList.toggle("open");
+    window.__earlyShell = true;
+    if(window.hideBootSplash) hideBootSplash();
+  }catch(e){}
+}
+window.paintEarlyShell = paintEarlyShell;
+
 async function bootOS(){
   // Agency/brand accounts created through WhatsApp verify their official email first (one time)
   if(window.Auth && Auth.profile && ["owner","brand"].includes(Auth.profile.role) && Auth.profile.created_via === "whatsapp-login" && !Auth.profile.email_verified_at){
@@ -6640,6 +6671,7 @@ async function bootOS(){
   }
   // Gate: agency-side accounts awaiting platform approval don't enter the OS.
   if(window.Auth && Auth.profile && Auth.profile.status === "pending"){ showPending(); return; }
+  if(!window.__osBooted) paintEarlyShell();
   if(window.Auth && Auth.profile && Auth.profile.role === "creator"){
     await claimCreatorInvites();
     if(!(await creatorHasInstagram())){ showInstagramGate(); return; }
@@ -6655,7 +6687,7 @@ async function bootOS(){
   // Load the feature flags + profile checklist first, so the sidebar is complete on the very first paint
   // (no half sidebar that only fixes itself after a refresh).
   const content = document.getElementById("content");
-  if(content && !window.__osBooted) content.innerHTML = skel(currentRole==="creator" ? "kit" : "dash");
+  if(content && !window.__osBooted && !window.__earlyShell) content.innerHTML = skel(currentRole==="creator" ? "kit" : "dash");
   const within = (p, ms)=> Promise.race([Promise.resolve(p).catch(()=>{}), new Promise(r=>setTimeout(r, ms))]);
   await Promise.all([
     window.ciProfile && within(window.ciProfile.boot(), 5000),
