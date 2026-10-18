@@ -162,3 +162,11 @@ begin
   return v_n;
 end $$;
 revoke all on function intel.ci_send_bulk_invite(uuid) from public, anon, authenticated;
+
+-- 3) catch up: creators who already finished their setup but are still waiting outside their campaign join now
+--    (same rules — only when Instagram + the profile are really done; one step message, never a second)
+do $$ declare m uuid; begin
+  for m in select distinct reserved_by from intel.ci_campaign_invite where claimed_at is null and reserved_by is not null loop
+    perform intel.ci_rejoin_waiting(m);
+  end loop;
+end $$;
