@@ -886,7 +886,8 @@
 
   // ---- creator: read the whole contract, accept ASCI + the non-delivery terms, sign ----
   async function openContractModal(part){
-    opsModal('<div class="ci-mh"><h3>Your contract</h3><button class="wa-x" id="opsMx">×</button></div><div id="opsCtBody"><div class="muted">Loading…</div></div>');
+    var ctOv = opsModal('<div class="ci-mh"><h3>Your contract</h3><button class="wa-x" id="opsMx">×</button></div><div id="opsCtBody"><div class="muted">Loading…</div></div>');
+    var ctBox = ctOv.querySelector(".cp-ob-modal"); if(ctBox) ctBox.classList.add("ct-modal");
     document.getElementById("opsMx").onclick=closeModal;
     try{
       var r=await api("get_my_contract",{p_participation:part}); if(r.error) throw r.error; var k=r.data;
@@ -909,14 +910,16 @@
                 + '<div class="ci-hint" id="opsSigHint">Only the name on your Geek OS profile can sign this contract.</div>'
               : '<div class="ci-err-inline" style="margin-top:10px">Add your <b>first and last name</b> in Creator Profile first — the contract is signed with that name.</div>'
                 + '<div class="cp-ob-actions" style="justify-content:flex-start"><button class="btn sm ghost" id="opsGoProfile">Open Creator Profile</button></div>')
-        +   '<div class="cp-ob-actions"><button class="btn sm" id="opsCtSign"'+(k.sign_as?'':' disabled')+'>Sign contract</button></div>'
-        + '</div>'
-        + '<div class="ci-hint cp-err-inline" id="opsCtErr"></div>';
+        +   '<div class="ci-hint cp-err-inline" id="opsCtErr"></div>'
+        +   '<div class="ct-signbar"><button class="btn" id="opsCtSign"'+(k.sign_as?'':' disabled')+'>✍️ Sign contract</button></div>'
+        + '</div>';
       (function(){ var sc=document.getElementById("opsCtScroll"), gate=document.getElementById("opsCtGate"), acc=document.getElementById("opsCtAccept");
-        var open=function(){ gate.style.display="none"; acc.style.display=""; };
+        var open=function(){ if(acc.style.display!=="none") return; gate.style.display="none"; acc.style.display="";
+          // bring the ticks + Sign button into view
+          setTimeout(function(){ try{ acc.scrollIntoView({behavior:"smooth", block:"end"}); }catch(e){} }, 60); };
         if(!sc || sc.scrollHeight <= sc.clientHeight + 4){ open(); return; }
         sc.addEventListener("scroll", function(){ if(sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 8) open(); });
-        gate.onclick=function(){ sc.scrollBy({top:sc.clientHeight*0.8, behavior:"smooth"}); }; })();
+        gate.onclick=function(){ if(sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 8){ open(); return; } sc.scrollBy({top:sc.clientHeight*0.8, behavior:"smooth"}); }; })();
       // the signature must match the profile name (checked again on the server)
       var normName=function(x){ return String(x||"").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu," ").replace(/\s+/g," ").trim(); };
       var sigIn=document.getElementById("opsSig"), sigHint=document.getElementById("opsSigHint");
@@ -938,7 +941,7 @@
         var btn=this; btn.disabled=true; btn.textContent="Signing…";
         if(window.Tracker) Tracker.security("contract_sign", { participation_id: part });
         api("sign_contract_v2",{p_participation:part,p_signature_name:sig,p_asci_ack:true,p_terms_ack:terms}).then(function(r2){
-          if(r2.error){ err.textContent=r2.error.message||r2.error; btn.disabled=false; btn.textContent="Sign contract"; return; }
+          if(r2.error){ err.textContent=r2.error.message||r2.error; btn.disabled=false; btn.textContent="✍️ Sign contract"; return; }
           closeModal(); loadMyCampaigns(); updateAlertsBadge();
         });
       };
@@ -1138,7 +1141,7 @@
   }
 
   window.ciOps={ boot:boot, loadAgencyOps:loadAgencyOps, loadMyCampaigns:loadMyCampaigns, loadOpenCampaigns:loadOpenCampaigns, loadOnboarding:loadOnboarding, loadBrandSetup:loadBrandSetup,
-    loadAlerts:loadAlerts, updateAlertsBadge:updateAlertsBadge, openCampaignDetail:openCampaignDetail };
+    loadAlerts:loadAlerts, updateAlertsBadge:updateAlertsBadge, openCampaignDetail:openCampaignDetail, openContractModal:openContractModal };
 
   var tries=0, t=setInterval(function(){ tries++;
     if(window.sb && window.Auth && Auth.profile){ clearInterval(t); boot(); }

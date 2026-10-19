@@ -1332,9 +1332,11 @@ async function fetchOrgCampaigns(){
 function wireCampaignGrid(grid, all){
   grid.querySelectorAll("[data-editcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.editcamp); if(c) openCampaignModal(c); });
   grid.querySelectorAll("[data-opencamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.opencamp); if(c) openCampaignWorkspace(c.id); });
-  grid.querySelectorAll("[data-invcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.invcamp); if(c) openInvitePanel(c.id, c.name); });
-  grid.querySelectorAll("[data-bpcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.bpcamp); if(c) openBarterProcess(c.id, c.name); });
-  grid.querySelectorAll("[data-bkcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.bkcamp); if(c) openBarterProcess(c.id, c.name, null, "bulk"); });
+  // Process / Bulk upload / Invite open the campaign's page with that section right there (one screen)
+  const onPage = (c, fn)=> openCampaignWorkspace(c.id).then(fn);
+  grid.querySelectorAll("[data-invcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.invcamp); if(c) onPage(c, ()=> openInvitePanel(c.id, c.name)); });
+  grid.querySelectorAll("[data-bpcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.bpcamp); if(c) onPage(c, ()=> openBarterProcess(c.id, c.name)); });
+  grid.querySelectorAll("[data-bkcamp]").forEach(b=>b.onclick=()=>{ const c=all.find(x=>x.id===b.dataset.bkcamp); if(c) onPage(c, ()=> openBarterProcess(c.id, c.name, null, "bulk")); });
 }
 // Mass Barter / Celebrity Stories pages: their campaigns on top, with a pre-set "New campaign" button
 function campaignSectionHtml(bucket){
@@ -1440,9 +1442,9 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
     <div style="margin-bottom:14px"><button class="btn ghost" id="wsBack">← Campaigns</button></div>
     <div class="page-head"><div><h1>${esc(c.name)} <span class="tag ${st}">${esc(c.status)||"Draft"}</span></h1>
       <p>${[c.brand,c.type,c.objective].filter(Boolean).map(esc).join(" · ")||"Campaign workspace"}</p></div>
-      <button class="btn" id="wsProcess">🔁 Barter process</button>
+      <button class="btn" id="wsProcess" data-wspanel="bpPanel">🔁 Barter process</button>
       <button class="btn ghost" id="wsBulk">📥 Bulk upload creators</button>
-      <button class="btn ghost" id="wsInvite">🎯 Invite creators</button>
+      <button class="btn ghost" id="wsInvite" data-wspanel="invPanel">🎯 Invite creators</button>
       <button class="btn ghost" id="wsEdit">Edit campaign</button>
       <button class="btn ghost cdel-btn" id="wsDel">${window.__isAdmin?"🗑 Delete campaign":"🗑 Request delete"}</button></div>
     <div id="wsDelNote"></div>
@@ -1454,6 +1456,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
       <div class="ws-stat"><b>${c.budget?fmtMoney(c.budget):"—"}</b><span>Budget</span></div>
     </div>
 
+    <div id="wsHost" class="ws-host" hidden></div>
     <div class="card hub-card"><div class="hub-card-h"><h3 style="margin:0">👥 Everyone on this campaign</h3><span class="muted">Tap a creator — profile, every step, WhatsApp history and the next message, all here</span></div>
       <div id="wsPeople">${skel("list",3)}</div></div>
     <div class="grid two">
@@ -1602,7 +1605,14 @@ function openCampaignModal(existing, preset){
       <label>Gender<select name="ip_gender">${kv([["","Any"],["female","Female"],["male","Male"],["other","Other"]], ip.gender||"")}</select></label></div>
       <div class="mf-row"><label>Category<input name="ip_cat" value="${esc(list(ip.categories))}" placeholder="Beauty, Lifestyle"></label>
       <label>Avg engagement (min %)<input name="ip_eng" type="number" min="0" max="100" step="0.1" value="${esc(ip.min_engagement??'')}" placeholder="2.5"></label></div>
+      <div class="mf-row"><label>Creator age from<input name="ip_age_min" type="number" min="13" max="90" value="${esc(ip.age_min??'')}" placeholder="18"></label>
+      <label>Creator age to<input name="ip_age_max" type="number" min="13" max="90" value="${esc(ip.age_max??'')}" placeholder="35"></label></div>
+      <div class="mf-row"><label>Pet<select name="ip_pet">${kv([["","Any"],["yes","Must have a pet"],["no","No pet"]], ip.pet||"")}</select></label>
+      <label>Pet type<input name="ip_pet_type" value="${esc(ip.pet_type||'')}" placeholder="e.g. dog, cat"></label></div>
+      <div class="mf-row"><label>Married / unmarried<select name="ip_marital">${kv([["","Any"],["married","Married"],["single","Unmarried"]], ip.marital||"")}</select></label>
+      <label>Open to barter<select name="ip_barter">${kv([["","Any"],["yes","Must be open to barter"]], ip.barter||"")}</select></label></div>
       <label>Audience data<input name="ip_aud" value="${esc(ip.audience_notes||'')}" placeholder="e.g. 18–34, 60% female, metro India"></label>
+      <div class="muted" style="font-size:12px;margin-top:-2px">Matching creators must meet <b>every</b> field you fill in here — leave a field empty to allow anyone.</div>
       <div class="auth-err" id="cmErr"></div>
       <button class="btn" type="submit">${existing?'Save changes':'Launch Campaign'}</button>
     </form></div>`;
@@ -1658,6 +1668,12 @@ function openCampaignModal(existing, preset){
     if(f.get("ip_gender")) ideal.gender = f.get("ip_gender");
     if(csv(f.get("ip_cat")).length) ideal.categories = csv(f.get("ip_cat"));
     if(num(f.get("ip_eng"))!=null) ideal.min_engagement = num(f.get("ip_eng"));
+    if(num(f.get("ip_age_min"))!=null) ideal.age_min = num(f.get("ip_age_min"));
+    if(num(f.get("ip_age_max"))!=null) ideal.age_max = num(f.get("ip_age_max"));
+    if(f.get("ip_pet")) ideal.pet = f.get("ip_pet");
+    if(String(f.get("ip_pet_type")||"").trim()) ideal.pet_type = String(f.get("ip_pet_type")).trim().slice(0,40);
+    if(f.get("ip_marital")) ideal.marital = f.get("ip_marital");
+    if(f.get("ip_barter")) ideal.barter = f.get("ip_barter");
     if(String(f.get("ip_aud")||"").trim()) ideal.audience_notes = String(f.get("ip_aud")).trim().slice(0,500);
     btn.disabled=true; btn.textContent="Saving…";
     try{
@@ -2040,7 +2056,6 @@ async function loadApprovals(silent){
     const { error } = await sb.schema("api").rpc("bp_review_video", { p_participation:b.dataset.apvok, p_approve:true, p_reason:null });
     if(error){ alert(error.message); b.disabled=false; b.textContent="✅ Approve video"; return; } again(); });
   body.querySelectorAll("[data-apvdel]").forEach(b=> b.onclick = async ()=>{
-    if(!confirm("Mark the parcel as delivered? The video brief goes to the creator right away.")) return;
     b.disabled = true; b.textContent = "…";
     const { error } = await sb.schema("api").rpc("bp_mark_delivered", { p_participation:b.dataset.apvdel });
     if(error){ alert(error.message); b.disabled=false; b.textContent="📦 Mark delivered"; return; } again(); });
@@ -2248,7 +2263,11 @@ function idealProfileHtml(ip){
   const rows = [
     ["Followers", (ip.min_followers!=null||ip.max_followers!=null) ? `${ip.min_followers!=null?fmtNum(ip.min_followers):"any"} – ${ip.max_followers!=null?fmtNum(ip.max_followers):"any"}` : ""],
     ["Location", (ip.locations||[]).join(", ")], ["Gender", ip.gender||""], ["Category", (ip.categories||[]).join(", ")],
-    ["Min engagement", ip.min_engagement!=null?ip.min_engagement+"%":""], ["Audience", ip.audience_notes||""]].filter(r=>r[1]);
+    ["Min engagement", ip.min_engagement!=null?ip.min_engagement+"%":""],
+    ["Age", (ip.age_min!=null||ip.age_max!=null) ? `${ip.age_min??"any"} – ${ip.age_max??"any"}` : ""],
+    ["Pet", ip.pet==="yes" ? "Must have a pet"+(ip.pet_type?` (${ip.pet_type})`:"") : ip.pet==="no" ? "No pet" : ""],
+    ["Marital status", ip.marital==="married" ? "Married" : ip.marital==="single" ? "Unmarried" : ""],
+    ["Barter", ip.barter==="yes" ? "Must be open to barter" : ""], ["Audience", ip.audience_notes||""]].filter(r=>r[1]);
   return `<div class="cd-block"><div class="cd-l">Ideal influencer</div><div class="cd-body">${rows.map(r=>`<div><b>${esc(r[0])}:</b> ${esc(r[1])}</div>`).join("")}
     ${ip.min_followers!=null||(ip.locations||[]).length||(ip.categories||[]).length?`<button class="mini-btn" style="margin-top:8px" id="wsFindCreators">🔎 Find matching creators</button>`:""}</div></div>`;
 }
@@ -4449,6 +4468,8 @@ async function loadBulkList(){
 function bkStatusChip(p, r){
   if(!p) return '<span class="muted">…</span>';
   if(p.no_contact) return '<span class="tag warn">⚠ no WhatsApp / email / Instagram</span>';
+  if(p.duplicate) return '<span class="tag warn">Duplicate — same person as a row above · skipped</span>';
+  if(p.already) return '<span class="tag">Already uploaded on this step · skipped (no second message)</span>';
   const st = (r && r.status) || "registered";
   const bad = (p.phone_bad?" · number looks wrong":"") + (p.email_bad?" · email looks wrong":"");
   const warn = [bad.slice(3), r && r._addrMissing ? "add the address" : ""].filter(Boolean).join(" · ");
@@ -4469,9 +4490,11 @@ function bkStatusSelect(attr, val, extra){
 }
 function bulkHtml(){
   const rows = _bk.rows||[], pv = Array.isArray(_bk.preview) ? _bk.preview : null;
-  const valid = pv ? pv.filter(p=>!p.no_contact).length : rows.length;
+  const skipRow = p => p && (p.no_contact || p.duplicate || p.already);
+  const valid = pv ? pv.filter(p=>!skipRow(p)).length : rows.length;
+  const nDup = pv ? pv.filter(p=> p && !p.no_contact && (p.duplicate || p.already)).length : 0;
   rows.forEach(r=>{ const d = bkRowData(r); r._addrMissing = bkNeedsAddr(r.status) && !d.address; });
-  const live = rows.filter((r,i)=> !(pv && pv[i] && pv[i].no_contact));
+  const live = rows.filter((r,i)=> !(pv && skipRow(pv[i])));
   const byStatus = BK_STATUSES.map(([k,l])=>[l, live.filter(r=>(r.status||"registered")===k).length]).filter(x=>x[1]);
   const noAddr = live.filter(r=>r._addrMissing).length;
   return `<div class="card bk-card">
@@ -4499,7 +4522,7 @@ function bulkHtml(){
           const raw = _bk.map.status!=null ? String(r.cells[_bk.map.status]||"").trim() : "";
           const unread = raw && !bkStatus(raw);
           const ship = [d.address, [d.state, d.pincode].filter(Boolean).join(" "), [d.courier, d.tracking].filter(Boolean).join(" · ")].filter(Boolean).join(" · ");
-          return `<tr class="${p&&p.no_contact?"bk-bad":""}"><td>${bkStatusSelect(`data-bkst="${i}"`, r.status||"registered", p&&p.no_contact?" disabled":"")}${unread?`<div class="muted bk-raw" title="Couldn't read this status — pick it">“${bkEsc(raw.slice(0,24))}”?</div>`:""}</td>
+          return `<tr class="${p&&p.no_contact?"bk-bad":p&&(p.duplicate||p.already)?"bk-dup":""}"><td>${bkStatusSelect(`data-bkst="${i}"`, r.status||"registered", p&&p.no_contact?" disabled":"")}${unread?`<div class="muted bk-raw" title="Couldn't read this status — pick it">“${bkEsc(raw.slice(0,24))}”?</div>`:""}</td>
             <td>${bkEsc(d.name)||'<span class="muted">—</span>'}</td><td>${p&&p.handle?"@"+bkEsc(p.handle):bkEsc(d.handle)}</td>
             <td>${p&&p.phone?bkEsc(p.phone):bkEsc(d.phone)}</td><td>${bkEsc(p&&p.email||d.email)}</td><td>${bkEsc(d.city)}</td>
             <td class="bk-ship">${ship?bkEsc(ship):'<span class="muted">—</span>'}</td>
@@ -4508,7 +4531,7 @@ function bulkHtml(){
       ${_bk.preview && _bk.preview.error ? `<div class="auth-err">${bkEsc(_bk.preview.error)}</div>` : ""}
       <label class="bk-note"><span>Message to the creators (optional — goes with the invite)</span><input id="bkNote" maxlength="200" value="${bkEsc(_bk.note)}" placeholder="e.g. Diwali drop — we loved your recent reels!"></label>
       <div class="bk-go"><button class="btn" id="bkUpload"${_bk.busy||!valid?" disabled":""}>${_bk.busy?"Uploading…":`Upload &amp; invite ${valid} creator${valid===1?"":"s"}`}</button>
-        <span class="muted">${byStatus.map(([l,n])=>`${n} ${bkEsc(l.toLowerCase())}`).join(" · ")}${noAddr?` · <b style="color:#b45309">${noAddr} without an address</b> (they add it in their profile)`:""}</span>
+        <span class="muted">${byStatus.map(([l,n])=>`${n} ${bkEsc(l.toLowerCase())}`).join(" · ")}${noAddr?` · <b style="color:#b45309">${noAddr} without an address</b> (they add it in their profile)`:""}${nDup?` · <b>${nDup} duplicate${nDup>1?"s":""} skipped</b>`:""}</span>
         <button class="btn sm ghost" id="bkClear">Clear</button></div>
       <div id="bkResult"></div>` : ""}
     </div>
@@ -4635,7 +4658,7 @@ function wireBulk(){
   const cl = $b("bkClear"); if(cl) cl.onclick = ()=>{ _bk.rows = null; _bk.preview = null; paintBulk(); };
   const up = $b("bkUpload"); if(up) up.onclick = async ()=>{
     const pv = Array.isArray(_bk.preview) ? _bk.preview : [];
-    const rows = _bk.rows.map(bkRowData).filter((d,i)=> !(pv[i] && pv[i].no_contact));
+    const rows = _bk.rows.map(bkRowData).filter((d,i)=> !(pv[i] && (pv[i].no_contact || pv[i].duplicate || pv[i].already)));
     if(!rows.length) return;
     _bk.busy = true; paintBulk();
     const { data, error } = await sb.schema("api").rpc("bulk_import_creators", { p_campaign:_bpCamp.id, p_rows: rows, p_note: _bk.note||null }).then(r=>r, e=>({error:e}));
@@ -4643,7 +4666,7 @@ function wireBulk(){
     if(error){ paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = error.message||String(error); return; }
     const d = data||{};
     _bk.rows = null; _bk.preview = null; paintBulk();
-    gateToast(`✓ ${d.added||0} put on their step now · ${d.invited||0} invited on WhatsApp/email (each got their step's message; they join on their step once profile + Instagram are done)${d.waiting_profile?` · ${d.waiting_profile} on Geek OS, finishing their profile`:""}${d.skipped?` · ${d.skipped} skipped (no contact)`:""}`);
+    gateToast(`✓ ${d.added||0} put on their step now · ${d.invited||0} invited on WhatsApp/email (each got their step's message; they join on their step once profile + Instagram are done)${d.waiting_profile?` · ${d.waiting_profile} on Geek OS, finishing their profile`:""}${d.skipped?` · ${d.skipped} skipped (no contact)`:""}${d.duplicates?` · ${d.duplicates} duplicate${d.duplicates>1?"s":""} skipped`:""}`);
     loadBulkList(); loadBarterProcess(true);
   };
   wireBulkList();
@@ -4692,17 +4715,37 @@ const BP_NEXT = {
   completed:"Done ✓"
 };
 let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null, _bpAnalytics = null;
+// On a campaign's own page, Barter process / Bulk upload / Invite open right on that page (same screen);
+// anywhere else they open as the side panel.
+function wsPanelHost(campaignId){
+  const host = document.getElementById("wsHost");
+  return host && _wsCampaign && String(_wsCampaign.id) === String(campaignId) ? host : null;
+}
+function mountCampaignPanel(panelId, bodyId, campaignId, title, onClose){
+  document.getElementById("bpPanel")?.remove(); document.getElementById("invPanel")?.remove();
+  const host = wsPanelHost(campaignId);
+  if(host){
+    const box = el("div","ws-panel"); box.id = panelId;
+    box.innerHTML = `<div class="ac360-body" id="${bodyId}">${skel("list",5)}</div>`;
+    host.innerHTML = ""; host.appendChild(box); host.hidden = false;
+    document.querySelectorAll("[data-wspanel]").forEach(b=> b.classList.toggle("on", b.dataset.wspanel===panelId));
+    setTimeout(()=>{ try{ host.scrollIntoView({ behavior:"smooth", block:"start" }); }catch(e){} }, 30);
+    const close = ()=>{ box.remove(); host.hidden = true; document.querySelectorAll("[data-wspanel]").forEach(b=> b.classList.remove("on")); onClose && onClose(); };
+    return { el: box, close };
+  }
+  const ov = el("div","ac360"); ov.id = panelId;
+  ov.innerHTML = `<div class="ac360-box"><div class="ac360-body" id="${bodyId}">${skel("list",5)}</div></div>`;
+  document.body.appendChild(ov); document.body.style.overflow = "hidden";
+  const k = e=>{ if(e.key==="Escape" && !document.querySelector(".modal-overlay.open")) close(); };
+  const close = ()=>{ ov.remove(); document.body.style.overflow=""; document.removeEventListener("keydown", k); onClose && onClose(); };
+  document.addEventListener("keydown", k); ov.onclick = e=>{ if(e.target===ov) close(); };
+  return { el: ov, close };
+}
 function openBarterProcess(campaignId, campaignName, focusParticipation, tab){
   _bpCamp = { id: campaignId, name: campaignName || "this campaign" }; _bpTab = tab || "tracker"; _bpOpen = focusParticipation || null; _bpAnalytics = null;
   _bk = { rows:null, head:null, map:null, preview:null, list:null, src:"", busy:false, note:"" };
-  document.getElementById("bpPanel")?.remove();
-  const ov = el("div","ac360"); ov.id = "bpPanel";
-  ov.innerHTML = `<div class="ac360-box"><div class="ac360-body" id="bpBody">${skel("list",5)}</div></div>`;
-  document.body.appendChild(ov); document.body.style.overflow = "hidden";
-  const close = ()=>{ clearInterval(_bpTimer); ov.remove(); document.body.style.overflow=""; document.removeEventListener("keydown", k); };
-  const k = e=>{ if(e.key==="Escape" && !document.querySelector(".modal-overlay.open")) close(); };
-  document.addEventListener("keydown", k); ov.onclick = e=>{ if(e.target===ov) close(); };
-  window.__bpClose = close;
+  const P = mountCampaignPanel("bpPanel", "bpBody", campaignId, "Barter process", ()=> clearInterval(_bpTimer));
+  window.__bpClose = P.close;
   loadBarterProcess();
   clearInterval(_bpTimer);
   _bpTimer = setInterval(()=>{
@@ -4910,8 +4953,8 @@ function paintCampaignPeople(){
 
 // one creator on one campaign: profile %, contact, every step, every message (and send the next one)
 let _hubC = { pid:null, data:null, tab:"overview" };
-async function openCreatorHub(pid, tab){
-  _hubC = { pid, data:null, tab: tab || "overview" };
+async function openCreatorHub(pid, tab, focusStep){
+  _hubC = { pid, data:null, tab: tab || "overview", focusStep: !!focusStep };
   let m = document.getElementById("hubModal"); if(m) m.remove();
   m = el("div","modal-overlay open"); m.id = "hubModal";
   m.innerHTML = `<div class="modal modal-lg hub-modal"><div class="modal-head"><strong>Creator on this campaign</strong><button class="icon-btn" id="hubX" aria-label="Close">✕</button></div>
@@ -4946,6 +4989,7 @@ function paintCreatorHub(){
       ${d.reason ? row("Note", esc(d.reason)) : ""}
       <div class="bpp-sec">Profile ${pct!=null?`· ${pct}% complete`:""} <span class="muted" style="font-weight:400">(optional for the creator)</span></div>
       ${pr ? `<div class="cp-bar" style="margin:4px 0 8px"><span style="width:${pct||0}%"></span></div>${(pr.missing||[]).length?`<div class="muted" style="font-size:12.5px">Not filled yet: ${esc(pr.missing.join(", "))}</div>`:`<div class="muted" style="font-size:12.5px">Everything filled in ✓</div>`}` : `<div class="muted">No profile yet.</div>`}
+      ${hubSetStepHtml(d)}
       <div id="hubPro"></div>
       <div class="hub-foot"><button class="btn ghost sm" data-hubbp>🔁 Open in Barter process</button>${h?`<a class="btn ghost sm" href="/p.html?u=${encodeURIComponent(h)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}<button class="btn sm" data-hubtab2="whatsapp">💬 WhatsApp chat</button></div>`;
   } else if(_hubC.tab==="timeline"){
@@ -4979,12 +5023,18 @@ function paintCreatorHub(){
       </div>`;
   } else {
     const M = OTH, A = d.alerts||[];
-    sec = (M.length ? `<div class="bpp-sec">Emails & automatic messages</div><div class="hub-tl">${M.map(x=>`<div class="hub-tl-it"><span class="hub-tl-dot"></span><div>
+    sec = `<div class="hub-mail"><div class="bpp-sec" style="margin-top:0">✉️ Send an email</div>
+        ${d.email ? `<div class="muted" style="font-size:12.5px;margin-bottom:6px">To <b>${esc(d.email)}</b></div>
+        <input id="hubMailSub" maxlength="160" placeholder="Subject" value="${esc(d.campaign||"")}">
+        <textarea id="hubMailBody" rows="4" maxlength="6000" placeholder="Write your email…"></textarea>
+        <div class="hub-mail-go"><button class="btn sm" id="hubMailGo" type="button">Send email</button><span class="muted">Shows up below once it's sent.</span></div>`
+        : `<div class="muted">No email address for this creator yet.</div>`}</div>` + (M.length ? `<div class="bpp-sec">Emails & automatic messages</div><div class="hub-tl">${M.map(x=>`<div class="hub-tl-it"><span class="hub-tl-dot"></span><div>
           <b>${x.channel==="email"?"✉️ Email":"📨 "+esc(x.channel)} · ${esc(String(x.key||"").replace(/_/g," "))}</b>
           <div class="muted">${esc(fmtDateTime(x.at))} · ${x.status==="failed"?"❌ failed":x.status==="queued"?"⏳ queued":"✓ "+esc(x.status||"sent")}${x.error?` · ${esc(String(x.error).slice(0,90))}`:""}</div>
           ${x.text?`<div class="hub-otxt">${esc(String(x.text).slice(0,300))}</div>`:""}</div></div>`).join("")}</div>` : "")
       + (A.length ? `<div class="bpp-sec">Alerts in the app</div><div class="hub-tl">${A.slice(0,40).map(n=>`<div class="hub-tl-it"><span class="hub-tl-dot ${n.read?"me":""}"></span><div><b>${esc(n.title)}</b><div class="muted">${esc(fmtDateTime(n.at))} · ${n.read?"read":"not read yet"}</div></div></div>`).join("")}</div>` : "")
-      || `<div class="muted">No emails or app alerts yet.</div>`;
+      || "";
+    if(!M.length && !A.length) sec += `<div class="muted" style="margin-top:10px">No emails or app alerts yet.</div>`;
   }
   body.innerHTML = `<div class="bpp-top">${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((h||"?").slice(0,2).toUpperCase())}</span>`}
       <div style="min-width:0;flex:1"><div class="bpp-name">${esc(d.name||cr.name||h||"Creator")}</div>
@@ -5011,6 +5061,15 @@ function paintCreatorHub(){
         + row("On Geek OS since", P.joined_at ? fmtDate(P.joined_at) : "");
     }, ()=>{});
   }
+  if(_hubC.tab==="overview") wireHubSetStep(d);
+  const mg = document.getElementById("hubMailGo");
+  if(mg) mg.onclick = async ()=>{ const sub = document.getElementById("hubMailSub").value.trim(), txt = document.getElementById("hubMailBody").value.trim();
+    if(!txt){ gateToast("Write the email first."); return; }
+    mg.disabled = true; mg.textContent = "Sending…";
+    const { data:r, error } = await sb.schema("api").rpc("team_send_email", { p_participation: d.participation_id, p_subject: sub, p_body: txt }).then(x=>x, e=>({error:e}));
+    mg.disabled = false; mg.textContent = "Send email";
+    if(error){ gateToast(error.message||String(error)); return; }
+    gateToast(`Email sent to ${(r&&r.to)||"the creator"} ✓`); hubReload(); };
   if(_hubC.tab==="whatsapp"){
     const ch = document.getElementById("hubChat"); if(ch) ch.scrollTop = ch.scrollHeight;
     body.querySelectorAll(".wa-more").forEach(b=> b.onclick = ()=>{ const t = b.previousElementSibling; t.classList.toggle("clamp"); b.textContent = t.classList.contains("clamp") ? "Read more" : "Show less"; });
@@ -5041,6 +5100,56 @@ function paintCreatorHub(){
       if(msg){ gateToast(/24-hour|template/i.test(msg) ? "Outside WhatsApp's 24-hour window — send a step message instead (pre-approved template)." : msg); return; }
       document.getElementById("hubText").value = ""; gateToast("WhatsApp message sent ✓"); hubReload(); };
   }
+}
+
+// the team puts a creator on any later step by hand (offline contract, courier, video link, Instagram post) — synced everywhere
+const HUB_FROM_STAGE = Object.assign({}, typeof BK_FROM_STAGE!=="undefined" ? BK_FROM_STAGE : {}, { product_delivered:"courier_delivered" });
+function hubSetStepHtml(d){
+  if(["rejected","dropped","ineligible","brand_declined","completed"].includes(d.stage)) return "";
+  const cur = HUB_FROM_STAGE[d.stage] || "registered", r0 = bkStRank(cur);
+  const opts = BK_STATUSES.filter(s=> bkStRank(s[0]) >= r0);
+  return `<div class="bpp-sec">⚙️ Update their step by hand</div>
+    <div class="hub-set" id="hubSet">
+      <div class="muted" style="font-size:12.5px">For anything done outside the app — contract signed on paper, courier you booked, a video or post they sent you. Earlier steps are filled in for them; they see it in My Campaigns${d.member_id?"":" once they register"}.</div>
+      <label>Step<select id="hsStep">${opts.map(s=>`<option value="${s[0]}"${s[0]===cur?" selected":""}>${bkStRank(s[0])}. ${esc(s[1])}</option>`).join("")}</select></label>
+      <div class="hs-x" data-hs="ship"><label>Courier<input id="hsCourier" maxlength="60" placeholder="e.g. DTDC"></label><label>Tracking ID / link<input id="hsTrack" maxlength="300" placeholder="e.g. D1234567 or https://…"></label></div>
+      <div class="hs-x" data-hs="video"><label>Video link<input id="hsVideo" type="url" maxlength="500" placeholder="https://drive.google.com/… or any link to the cut"></label></div>
+      <div class="hs-x" data-hs="post"><label>Instagram post / reel link<input id="hsPost" type="url" maxlength="500" placeholder="https://www.instagram.com/reel/…"></label></div>
+      <label class="hs-notify"><input type="checkbox" id="hsNotify" checked> Send them the message for this step (WhatsApp + email + app)</label>
+      <div class="auth-err" id="hsErr"></div>
+      <button class="btn sm" id="hsGo" type="button">Save step</button>
+    </div>`;
+}
+function wireHubSetStep(d){
+  const sel = document.getElementById("hsStep"); if(!sel) return;
+  const show = ()=>{ const r = bkStRank(sel.value);
+    document.querySelectorAll("#hubSet [data-hs]").forEach(x=>{ const k = x.dataset.hs;
+      x.hidden = !(k==="ship" ? (r>=8 && r<=9) : k==="video" ? r>=11 : r>=13); }); };
+  sel.onchange = show; show();
+  if(_hubC.focusStep){ _hubC.focusStep = false; setTimeout(()=> document.getElementById("hubSet")?.scrollIntoView({ block:"center", behavior:"smooth" }), 60); }
+  const go = document.getElementById("hsGo"), err = document.getElementById("hsErr");
+  go.onclick = async ()=>{
+    err.textContent = "";
+    const v = id => (document.getElementById(id)||{}).value ? document.getElementById(id).value.trim() : "";
+    const r = bkStRank(sel.value), video = r>=11 ? v("hsVideo") : "", post = r>=13 ? v("hsPost") : "";
+    const track = r>=8 && r<=9 ? v("hsTrack") : "", courier = r>=8 && r<=9 ? v("hsCourier") : "";
+    if(video && !/^https?:\/\//i.test(video)){ err.textContent = "The video link must start with https://"; return; }
+    if(post && !/instagram\.com\//i.test(post)){ err.textContent = "Paste the Instagram post or reel link (instagram.com/…)."; return; }
+    if(r>=13 && !post && !confirm("No Instagram link — mark it Posted anyway? (Numbers can't load without the link.)")) return;
+    const lbl = bkStLabel(sel.value);
+    if(!await confirmChange(`Put ${d.name||"this creator"} on “${lbl}”`, [video&&"video link saved as their submission", post&&"Instagram post recorded — the campaign completes", courier||track ? "courier + tracking saved" : "", document.getElementById("hsNotify").checked ? "they get this step's message" : "no message is sent"].filter(Boolean).join(" · "))) return;
+    const payload = { notify: document.getElementById("hsNotify").checked };
+    if(video) payload.video_url = video; if(post) payload.post_url = post; if(courier) payload.courier = courier;
+    if(track){ if(/^https?:\/\//i.test(track)) payload.tracking_url = track; else payload.tracking = track; }
+    go.disabled = true; go.textContent = "Saving…";
+    const { data:res, error } = await sb.schema("api").rpc("team_set_step", { p_participation: d.participation_id, p_status: sel.value, p_payload: payload }).then(x=>x, e=>({error:e}));
+    go.disabled = false; go.textContent = "Save step";
+    if(error){ err.textContent = error.message||String(error); return; }
+    gateToast(`✓ Now on ${hubStepLabel((res&&res.stage)||"")} — updated everywhere`);
+    await hubReload();
+    if(typeof loadBarterProcess==="function" && document.getElementById("bpBody")) loadBarterProcess(true);
+    if(_hub && _hub.camp && document.getElementById("wsPeople")) loadCampaignPeople(_hub.camp);
+  };
 }
 
 function bpStageBanner(list){
@@ -5110,6 +5219,7 @@ function bpTrackerHtml(list){
           ${posts.map(p=>`<div>📲 ${esc(p.media_type)} posted ${esc(fmtDate(p.posted_at))}${p.permalink?` · <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener">open ↗</a>`:""}<div class="bp-metrics">${bpMetricLine(p.stats)}</div></div>`).join("")}
         </div>
         <div class="bp-acts">
+          ${!fail(x.stage)&&x.stage!=="completed"?`<button class="btn sm ghost" data-bpsetstep="${esc(P)}" title="Put them on any later step — contract, courier, video link, Instagram post…">⚙️ Set step by hand</button>`:""}
           ${x.stage==="applied"?`<button class="btn sm" data-bpscreen="${esc(P)}">✓ Meets the brief</button><button class="btn sm ghost" data-bpreject="${esc(P)}">Not a fit</button>`:""}
           ${x.stage==="eligible"?`<button class="btn sm" data-bpsend="${esc(P)}">📋 Add to the brand's list</button>`:""}
           ${x.stage==="sent_to_brand"?`<button class="btn sm" data-bpbrand="${esc(P)}">✅ Brand confirmed</button><button class="btn sm ghost" data-bpbrandno="${esc(P)}">Brand passed</button>`:""}
@@ -5281,8 +5391,8 @@ function wireBarterProcess(){
   body.querySelectorAll("[data-bpcontract]").forEach(b=> b.onclick = ()=> call("bp_send_contract", { p_participation:b.dataset.bpcontract }, b, b.innerHTML));
   body.querySelectorAll("[data-bpclauses]").forEach(a=> a.onclick = e=>{ e.preventDefault(); openBpClauses(a.dataset.bpclauses); });
   body.querySelectorAll("[data-bpship]").forEach(b=> b.onclick = ()=> openBpShipment(b.dataset.bpship));
+  body.querySelectorAll("[data-bpsetstep]").forEach(b=> b.onclick = ()=> openCreatorHub(b.dataset.bpsetstep, "overview", true));
   body.querySelectorAll("[data-bpdeliv]").forEach(b=> b.onclick = ()=>{
-    if(!confirm("Mark the parcel as delivered? The video brief goes to the creator right away.")) return;
     call("bp_mark_delivered", { p_participation:b.dataset.bpdeliv }, b, b.innerHTML); });
   body.querySelectorAll("[data-bpapprove]").forEach(b=> b.onclick = ()=> call("bp_review_video", { p_participation:b.dataset.bpapprove, p_approve:true, p_reason:null }, b, b.innerHTML));
   body.querySelectorAll("[data-bpchanges]").forEach(b=> b.onclick = ()=> openBpChanges(b.dataset.bpchanges));
@@ -5515,14 +5625,8 @@ async function openBpReassign(part){
 let _invCamp = null, _invTab = "matches", _invMatches = [], _invExternal = [], _invDiscovered = [], _invBusy = false;
 function openInvitePanel(campaignId, campaignName){
   _invCamp = { id: campaignId, name: campaignName || "this campaign" }; _invTab = "matches";
-  document.getElementById("invPanel")?.remove();
-  const ov = el("div","ac360"); ov.id = "invPanel";
-  ov.innerHTML = `<div class="ac360-box"><div class="ac360-body" id="invBody">${skel("cards",6)}</div></div>`;
-  document.body.appendChild(ov); document.body.style.overflow = "hidden";
-  const close = ()=>{ ov.remove(); document.body.style.overflow=""; document.removeEventListener("keydown", k); };
-  const k = e=>{ if(e.key==="Escape" && !document.querySelector(".modal-overlay.open")) close(); };
-  document.addEventListener("keydown", k); ov.onclick = e=>{ if(e.target===ov) close(); };
-  window.__invClose = close;
+  const P = mountCampaignPanel("invPanel", "invBody", campaignId, "Invite creators");
+  window.__invClose = P.close;
   loadInvitePanel();
 }
 async function loadInvitePanel(){
@@ -7424,6 +7528,54 @@ function gateToast(msg){
   t.onclick = kill;
   setTimeout(kill, bad ? 6000 : 3600);
 }
+// "Are you sure you want this change?" — asked ONCE before the team changes any status, anywhere
+function confirmChange(what, detail){
+  return new Promise(res=>{
+    document.getElementById("ccOv")?.remove();
+    const ov = el("div","cc-ov"); ov.id = "ccOv";
+    ov.innerHTML = `<div class="cc-box" role="alertdialog" aria-modal="true" aria-labelledby="ccT"><div class="cc-ic">⚠️</div>
+      <div class="cc-t" id="ccT">Are you sure you want this change?</div>
+      ${what?`<div class="cc-what">${esc(what)}</div>`:""}${detail?`<div class="cc-d">${esc(detail)}</div>`:""}
+      <div class="cc-acts"><button class="btn ghost" data-cc="0">Cancel</button><button class="btn" data-cc="1">Yes, change it</button></div></div>`;
+    document.body.appendChild(ov);
+    const done = v=>{ ov.remove(); document.removeEventListener("keydown", key, true); res(v); };
+    const key = e=>{ if(e.key==="Escape"){ e.stopPropagation(); done(false); } };
+    document.addEventListener("keydown", key, true);
+    ov.onclick = e=>{ if(e.target===ov) done(false); const b = e.target.closest("[data-cc]"); if(b) done(b.dataset.cc==="1"); };
+    setTimeout(()=> ov.querySelector('[data-cc="1"]')?.focus(), 30);
+  });
+}
+// every status button / step dropdown the team uses goes through the question first (creators never see it)
+const CC_CLICK = { "data-apvsign":"Approve this signup", "data-apvsignno":"Decline this signup", "data-apvcamp":"Approve this campaign",
+  "data-apvcampno":"Send this campaign back as a draft", "data-apvok":"Approve this video", "data-apvdel":"Mark the parcel as delivered — the video brief goes out right away",
+  "data-apvmk":"Approve this application", "data-apvmkno":"Decline this application", "data-papprove":"Approve this creator", "data-pdecline":"Decline this creator",
+  "data-bpscreen":"Mark as meets the brief", "data-bpreject":"Mark as not a fit", "data-bpsend":"Add to the brand's list", "data-bpbrand":"Brand confirmed",
+  "data-bpbrandno":"Brand passed", "data-bpcontract":"Send the contract", "data-bpdeliv":"Mark the parcel as delivered — the video brief goes out right away",
+  "data-bpapprove":"Approve this video", "data-acgo":"Put this campaign Live", "data-deliver":"Mark the shipment as delivered" };
+const CC_CHANGE = { "data-bkset":"Move this creator to", "data-hubset":"Move this creator to", "data-acstatus":"Change the campaign status to" };
+function ccIsTeam(){ const r = window.Auth && Auth.profile && Auth.profile.role; return !!r && r!=="creator"; }
+document.addEventListener("click", async e=>{
+  if(!ccIsTeam()) return;
+  const t = e.target.closest && e.target.closest(Object.keys(CC_CLICK).map(a=>`[${a}]`).join(","));
+  if(!t || t.disabled) return;
+  if(t.__ccOk){ t.__ccOk = false; return; }
+  e.preventDefault(); e.stopImmediatePropagation();
+  const a = Object.keys(CC_CLICK).find(k=> t.hasAttribute(k));
+  if(await confirmChange(CC_CLICK[a])){ t.__ccOk = true; t.click(); }
+}, true);
+document.addEventListener("change", async e=>{
+  if(!ccIsTeam()) return;
+  const t = e.target; if(!t || t.tagName!=="SELECT") return;
+  const a = Object.keys(CC_CHANGE).find(k=> t.hasAttribute(k)); if(!a) return;
+  if(t.__ccOk){ t.__ccOk = false; return; }
+  e.stopImmediatePropagation();
+  const lbl = (t.options[t.selectedIndex]||{}).text || t.value;
+  const back = [...t.options].find(o=> o.defaultSelected);
+  if(await confirmChange(`${CC_CHANGE[a]} “${String(lbl).replace(/^\d+\.\s*/,"")}”`, a==="acstatus" ? "" : "Every step in between is filled in for them, and they get one message for this step.")){
+    t.__ccOk = true; t.dispatchEvent(new Event("change", { bubbles:true }));
+  } else if(back) t.value = back.value;
+}, true);
+
 // called by profile.js every time the mandatory checklist is re-computed
 window.onProfileRequirements = function(req){
   if(!window.Auth || !Auth.profile || Auth.profile.role!=="creator" || !req) return;
