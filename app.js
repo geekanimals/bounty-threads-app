@@ -7281,7 +7281,7 @@ function markSuperAdmin(){
   if(!window.__adminLanded && !deep && (currentPage==="dashboard" || !currentPage)){ window.__adminLanded = true; _adminTab = "overview"; currentPage = "admin"; renderShell(); }
   else renderNav();
 }
-// every message the app shows (saved, errors, live alerts, reminders) is one toast stack, bottom-left
+// every message the app shows (saved, errors, live alerts, reminders) is one toast stack, top-right
 // (the browser's blocking alert() boxes become toasts too — confirm / prompt stay as they are)
 try{ window.alert = msg => gateToast(String(msg==null ? "" : msg)); }catch(e){}
 function toastStack(){

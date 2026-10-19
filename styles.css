@@ -1733,3 +1733,9 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 [data-theme="dark"] .wa-compose textarea,[data-theme="dark"] .wa-tplrow select{background:#2a3942;color:#e9edef;border-color:#2a3942}
 [data-theme="dark"] .wa-day span{background:#182229;color:#8696a0}
 @media (max-width:640px){.wa-chat{height:58vh}.wa-bub{max-width:88%}.wa-open{padding:6px 8px;font-size:11.5px}}
+/* toasts: top-right corner, under the top bar (overrides the bottom-left stack above) */
+#alertToasts{top:76px!important;right:16px!important;left:auto!important;bottom:auto!important}
+#alertToasts .alert-toast{animation:atInR .28s ease}
+#alertToasts .alert-toast.out{transform:translateX(24px)}
+@keyframes atInR{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+@media(max-width:760px){#alertToasts{top:calc(64px + env(safe-area-inset-top,0px))!important;left:12px!important;right:12px!important;bottom:auto!important;width:auto}}
