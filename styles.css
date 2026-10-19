@@ -1794,3 +1794,32 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
   .igt-prof-acts{width:100%}.igt-prof-acts .btn{flex:1}
   .igt-form .btn{padding:0 12px}
 }
+/* Super Admin → Creators: card / list switch */
+.acr-view{display:inline-flex;gap:2px;padding:3px;border-radius:11px;background:var(--chip,rgba(120,130,150,.12))}
+.acr-view button{border:0;background:none;padding:6px 11px;border-radius:8px;font:inherit;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap}
+.acr-view button.act{background:var(--panel,#fff);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.acr-list{display:flex;flex-direction:column;border:1px solid var(--line,rgba(120,130,150,.2));border-radius:14px;overflow:hidden}
+.acr-lh,.acr-lr{display:grid;grid-template-columns:minmax(220px,2.4fr) .9fr .9fr .8fr .9fr 1.3fr 1.1fr .8fr;gap:12px;align-items:center;padding:10px 14px}
+.acr-lh{background:rgba(120,130,150,.07);font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.acr-lr{border-top:1px solid var(--line,rgba(120,130,150,.15));cursor:pointer;font-size:13.5px;background:var(--panel)}
+.acr-lr:hover{background:rgba(108,92,231,.04)}
+.acr-lc-who{display:flex;align-items:center;gap:10px;min-width:0}
+.acr-lc-who img,.acr-lc-who .avatar{width:38px;height:38px;border-radius:50%;object-fit:cover;flex:0 0 38px}
+.acr-lc-who>span{display:flex;flex-direction:column;min-width:0}
+.acr-lc-who b,.acr-lc-who .muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acr-lc-who .muted{font-size:12px}
+.acr-lc-loc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acr-lc-pct{display:flex;align-items:center;gap:8px}
+.acr-lc-pct .acr-bar2{flex:1;margin:0}
+.acr-lc-pct small{font-weight:700;font-size:11.5px;min-width:34px}
+.acr-kpis{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))!important}
+@media (max-width:900px){
+  .acr-lh{display:none}
+  .acr-lr{grid-template-columns:1fr 1fr 1fr;gap:6px 10px;padding:12px}
+  .acr-lr .acr-lc-who{grid-column:1/-1}
+  .acr-lr>span[data-l]::before{content:attr(data-l);display:block;font-size:10.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  .acr-lr .acr-lc-pct{display:block}.acr-lr .acr-lc-pct .acr-bar2{display:block;margin-top:4px}
+  .acr-tools input{min-width:0;flex:1 1 100%}
+}
+.acr-kpis>div{font-size:12.5px;line-height:1.3;color:var(--muted)}
+.acr-kpis b{color:var(--ink);font-size:22px;margin-bottom:2px}

@@ -5796,6 +5796,8 @@ async function adminUsers(body, silent){
 }
 // Super Admin → Creators: live directory of every creator + Creator 360 (profile, Instagram, campaigns, activity)
 let _acrQ = "", _acrF = "all", _acrSort = "new", _acrTimer = null, _acrSig = "", _acrData = [], _acrPage = 0;
+// card view (default) or list view — remembered on this device
+let _acrView = (()=>{ try{ return localStorage.getItem("geek_acr_view") === "list" ? "list" : "card"; }catch(e){ return "card"; } })();
 const ACR_PAGE = 24;
 const agoTxt = t=>{ if(!t) return "—"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
 const kNum = n=> n==null ? "—" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(n);
@@ -5817,6 +5819,7 @@ async function adminCreators(body, silent){
         <select id="acrF">${[["all","All creators"],["ig","Instagram connected"],["noig","Instagram not connected"],["complete","Profile complete"],["incomplete","Profile incomplete"],["barter","Open to barter"],["rate","Reel rate added"],["applied","Applied to campaigns"],["pending","Waiting for approval"],["approved","Approved in campaigns"],["travel","Travelling now"],["multi","2+ Instagram accounts"],["pages","Manages other pages"]]
           .map(([k,l])=>`<option value="${k}"${_acrF===k?" selected":""}>${l}</option>`).join("")}</select>
         <select id="acrSort">${[["new","Newest first"],["followers","Most followers"],["eng","Best engagement"],["seen","Recently active"],["applied","Most applications"]].map(([k,l])=>`<option value="${k}"${_acrSort===k?" selected":""}>${l}</option>`).join("")}</select>
+        <span class="acr-view" role="group" aria-label="View"><button type="button" data-acrview="card" class="${_acrView==="card"?"act":""}" title="Card view">▦ Cards</button><button type="button" data-acrview="list" class="${_acrView==="list"?"act":""}" title="List view">☰ List</button></span>
         <button class="mini-btn ghost" id="acrCsv">⬇ CSV</button></div></div>
       <div id="acrGrid"></div></div>`;
   paintCreators();
@@ -5824,6 +5827,8 @@ async function adminCreators(body, silent){
   qi.oninput = ()=>{ clearTimeout(tq); tq = setTimeout(()=>{ _acrQ = qi.value; _acrPage = 0; paintCreators(); }, 200); };
   document.getElementById("acrF").onchange = e=>{ _acrF = e.target.value; _acrPage = 0; adminCreators(body); };
   document.getElementById("acrSort").onchange = e=>{ _acrSort = e.target.value; paintCreators(); };
+  body.querySelectorAll("[data-acrview]").forEach(b=> b.onclick = ()=>{ _acrView = b.dataset.acrview; try{ localStorage.setItem("geek_acr_view", _acrView); }catch(e){}
+    body.querySelectorAll("[data-acrview]").forEach(x=> x.classList.toggle("act", x.dataset.acrview===_acrView)); paintCreators(); });
   body.querySelectorAll("[data-acrf]").forEach(d=> d.onclick = ()=>{ _acrF = d.dataset.acrf; _acrPage = 0; _acrSig=""; adminCreators(body); });
   document.getElementById("acrCsv").onclick = ()=>{
     const cols = ["name","ig_username","followers","engagement","whatsapp","email","city","state","categories","gender","accepts_barter","reel_rate","done","total","applied","approved","completed","joined_at","last_seen"];
@@ -5850,6 +5855,26 @@ function paintCreators(){
   const g = document.getElementById("acrGrid"); if(!g) return;
   const list = filteredCreators(), pages = Math.max(1, Math.ceil(list.length/ACR_PAGE)); _acrPage = Math.min(_acrPage, pages-1);
   const shown = list.slice(_acrPage*ACR_PAGE, (_acrPage+1)*ACR_PAGE);
+  const pager = pages>1 ? `<div class="acr-pager"><button class="mini-btn ghost" data-acrp="-1"${_acrPage?"":" disabled"}>← Prev</button><span class="muted">Page ${_acrPage+1} of ${pages} · ${list.length} creators</span><button class="mini-btn ghost" data-acrp="1"${_acrPage<pages-1?"":" disabled"}>Next →</button></div>` : `<div class="acr-pager"><span class="muted">${list.length} creator${list.length===1?"":"s"}</span></div>`;
+  if(_acrView==="list"){
+    g.innerHTML = list.length ? `<div class="acr-list"><div class="acr-lh"><span>Creator</span><span>Followers</span><span>Engagement</span><span>Per Reel</span><span>Applied / ✓</span><span>Location</span><span>Profile</span><span>Active</span></div>
+      ${shown.map(c=>{ const pct = c.total ? Math.round(100*(c.done||0)/c.total) : 0;
+        const pic = c.pic ? `<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${esc(String(c.name||"?").slice(0,2).toUpperCase())}'}))">`
+                          : `<span class="avatar">${esc(String(c.name||"?").slice(0,2).toUpperCase())}</span>`;
+        return `<div class="acr-lr" data-acr="${esc(c.member_id)}" tabindex="0">
+          <span class="acr-lc-who">${pic}<span><b>${esc(c.name)}</b><span class="muted">${c.ig_username?"@"+esc(c.ig_username):"Instagram not connected"}${(c.ig_accounts||[]).length>1?` · ${(c.ig_accounts||[]).length} accounts`:""}</span></span></span>
+          <span data-l="Followers"><b>${kNum(c.followers)}</b></span>
+          <span data-l="Engagement">${c.engagement!=null?c.engagement+"%":"—"}</span>
+          <span data-l="Per Reel">${c.reel_rate?"₹"+kNum(Number(c.reel_rate)):"—"}</span>
+          <span data-l="Applied / ✓">${c.applied||0} / ${c.approved||0}</span>
+          <span data-l="Location" class="acr-lc-loc">${c.city?esc([c.city,c.state].filter(Boolean).join(", ")):'<span class="muted">—</span>'}</span>
+          <span data-l="Profile" class="acr-lc-pct"><span class="acr-bar2"><span style="width:${pct}%"></span></span><small>${c.complete?"Ready":pct+"%"}</small></span>
+          <span data-l="Active" class="muted">${agoTxt(c.last_seen)}</span></div>`; }).join("")}</div>${pager}`
+      : `<div class="muted" style="padding:14px">No creators in this view.</div>`;
+    g.querySelectorAll("[data-acr]").forEach(el=>{ const open = ()=> adminCreatorProfile(el.dataset.acr, _acrData.find(c=>c.member_id===el.dataset.acr)); el.onclick = open; el.onkeydown = e=>{ if(e.key==="Enter") open(); }; });
+    g.querySelectorAll("[data-acrp]").forEach(b=> b.onclick = ()=>{ _acrPage += Number(b.dataset.acrp); paintCreators(); document.getElementById("acrGrid").scrollIntoView({behavior:"smooth",block:"start"}); });
+    return;
+  }
   g.innerHTML = list.length ? `<div class="acr-grid">${shown.map(c=>{
       const pct = c.total ? Math.round(100*(c.done||0)/c.total) : 0;
       const pic = c.pic ? `<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${esc(String(c.name||"?").slice(0,2).toUpperCase())}'}))">`
