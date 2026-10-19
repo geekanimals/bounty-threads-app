@@ -22,7 +22,9 @@ const APP_SECRET = (Deno.env.get("FB_APP_SECRET") || "").trim();
 const CONFIG_ID = (Deno.env.get("FB_LOGIN_CONFIG_ID") || "").trim();
 const VER = Deno.env.get("FB_GRAPH_VER") || "v23.0";
 const GRAPH = `https://graph.facebook.com/${VER}`;
-const SCOPES = "instagram_basic,pages_show_list,pages_read_engagement,business_management,instagram_manage_insights";
+// Business discovery + hashtag search only need these. (instagram_manage_insights isn't needed and the app doesn't have it.)
+// Override with the FB_SCOPES secret if Meta ever asks for a different set.
+const SCOPES = (Deno.env.get("FB_SCOPES") || "instagram_basic,pages_show_list,pages_read_engagement,business_management").trim();
 const err = (j: any) => j?.error?.error_user_msg || j?.error?.message || null;
 
 Deno.serve(async (req) => {
