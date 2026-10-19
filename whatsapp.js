@@ -56,7 +56,7 @@
     try{
       var r=await fn("wa-otp-verify",{ phone:_phone, code:code, link:_linkMode, door:_door, name:_details.name, org:_details.org }); var d=r.data||{};
       var em=await fnErr(r); if(em) throw new Error(em);
-      if(_linkMode){ msg.textContent="Linked ✓"; closeOverlay(); renderStatus(); return; }
+      if(_linkMode){ msg.textContent="Linked ✓"; closeOverlay(); renderStatus(); try{ window.dispatchEvent(new Event("geek:wa-linked")); }catch(e){} return; }
       var v=await sbc().auth.verifyOtp({ token_hash:d.token_hash, type:"magiclink" });
       if(v.error) throw v.error;
       msg.textContent="Signed in ✓";

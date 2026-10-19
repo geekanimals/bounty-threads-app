@@ -65,7 +65,7 @@ function initRoles(){
 }
 
 /* ---------- Sidebar ---------- */
-const GATE_OPEN_PAGES = ["mediakit","profile"];     // pages a creator can use before the profile is complete
+const GATE_OPEN_PAGES = ["mediakit","profile","messages"];   // pages a creator can use before Instagram + WhatsApp are connected
 function creatorNavKeys(){
   let keys = ROLES.creator.nav.slice();
   if(!window.__ciProfileEnabled) keys = keys.filter(k=>k!=="profile");
@@ -149,9 +149,9 @@ function renderNavKeys(nav, keys){
     a.setAttribute("data-page", key);
     if(key===currentPage) a.classList.add("active");
     const locked = window.__profileGate && !GATE_OPEN_PAGES.includes(key);
-    if(locked){ a.style.opacity = ".45"; a.title = "Complete your profile to unlock"; a.querySelector(".ic").textContent = "🔒"; }
+    if(locked){ a.style.opacity = ".45"; a.title = "Connect Instagram (media kit) and WhatsApp to unlock"; a.querySelector(".ic").textContent = "🔒"; }
     a.onclick = ()=>{
-      if(locked){ gateToast("Complete your profile first — "+((window.__profileReq&&window.__profileReq.total)-(window.__profileReq&&window.__profileReq.done)||"a few")+" items left."); return; }
+      if(locked){ gateToast(joinNeedsText()); return; }
       currentPage=key; renderShell(); if(window.innerWidth<=760) $("#sidebar").classList.remove("open"); };
     nav.appendChild(a);
   });
@@ -274,7 +274,7 @@ async function paintMeCard(){
   c.querySelector("#meX").onclick = closeMeCard;
   paintMePrefs(); if(isCreator && handle) paintMeAccounts();
   c.querySelectorAll("[data-mego]").forEach(b=> b.onclick = ()=>{ const pg = b.dataset.mego; closeMeCard();
-    if(window.__profileGate && typeof GATE_OPEN_PAGES!=="undefined" && !GATE_OPEN_PAGES.includes(pg)){ gateToast("Complete your profile first"); currentPage = "profile"; } else currentPage = pg; renderShell(); });
+    if(window.__profileGate && typeof GATE_OPEN_PAGES!=="undefined" && !GATE_OPEN_PAGES.includes(pg)){ gateToast(joinNeedsText()); currentPage = "mediakit"; } else currentPage = pg; renderShell(); });
   c.querySelector("#meOut").onclick = ()=>{ if(window.Tracker) Tracker.security("sign_out"); setTimeout(()=> window.Auth && Auth.signOut(), 150); };
   const sy = c.querySelector("#meSync");
   if(sy) sy.onclick = async ()=>{ sy.disabled = true; sy.textContent = "Syncing…";
@@ -555,10 +555,11 @@ async function loadCreatorDashboard(silent){
       <div class="card cd-acct"><div id="cdAcctSwitch"></div></div>
       ${window.ciAvailability ? `<div class="card cd-avail"><div class="cd-avail-l"><b>Your availability</b><span class="muted">Brands see this before inviting you</span></div>${window.ciAvailability.picker("dash")}</div>` : ""}
     </div>
-    ${req && !req.complete ? `<div class="card" style="margin-bottom:14px;border:1px solid rgba(108,92,231,.35);background:rgba(108,92,231,.06);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
-        <div><b>🔒 Finish your profile to apply for campaigns</b><div class="muted" style="font-size:13px">${req.done}/${req.total} done · next: ${esc((req.missing||[])[0]||"")}</div></div><button class="btn" data-cdgo="profile">Complete profile →</button></div>`
-      : req ? `<div class="card" style="margin-bottom:14px;border:1px solid rgba(16,185,129,.4);background:rgba(16,185,129,.07);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
-        <div><b>✅ You're ready for campaigns</b><div class="muted" style="font-size:13px">${O.filter(c=>!c.my_stage).length} campaigns open for you right now</div></div><button class="btn" data-cdgo="opencampaigns">Browse campaigns →</button></div>` : ""}
+    ${joinGateCard()}
+    ${!window.__profileGate && req && !req.complete ? `<div class="card cd-prof" data-cdgo="profile"><div><b>📝 Your profile is ${Math.round(100*req.done/Math.max(req.total,1))}% complete</b><div class="muted" style="font-size:13px">Optional — complete profiles get picked by brands first · next: ${esc((req.missing||[])[0]||"")}</div>
+        <div class="cp-bar" style="margin-top:8px"><span style="width:${Math.round(100*req.done/Math.max(req.total,1))}%"></span></div></div><button class="btn sm">Complete profile →</button></div>`
+      : !window.__profileGate ? `<div class="card" style="margin-bottom:14px;border:1px solid rgba(16,185,129,.4);background:rgba(16,185,129,.07);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+        <div><b>✅ You're ready for campaigns</b><div class="muted" style="font-size:13px">${O.filter(c=>!c.my_stage).length} campaigns open for you right now</div></div><button class="btn" data-cdgo="mycampaigns">My campaigns →</button></div>` : ""}
     <div class="ci-sub">📸 Instagram ${a.username?`<span class="muted" style="font-weight:400">@${esc(a.username)} · synced ${a.updated_at?esc(fmtDateTime(a.updated_at)):"—"}</span>`:""}</div>
     <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
       ${stat(fmtNum(a.followers_count||0),"Followers","mediakit")}${stat(fmtNum(a.media_count||0),"Posts","mediakit")}
@@ -579,9 +580,10 @@ async function loadCreatorDashboard(silent){
           : `<div class="muted" style="padding:6px">Nothing running yet — apply from Campaigns.</div>`}</div></div>
     `;   // (top posts live in the Media Kit only — it always shows the account that is open there)
   paintIgSwitcher("cdAcctSwitch", "Dashboard of");
+  if(!silent) profilePopupOnce();
   box.querySelectorAll("[data-cdgo]").forEach(el=> el.onclick = ()=>{
     let go = el.dataset.cdgo; go = ({onboarding:"profile", alerts:"dashboard", growth:"mycampaigns", marketplace:"opencampaigns", barter:"opencampaigns"})[go] || go;
-    if(window.__profileGate && !GATE_OPEN_PAGES.includes(go)){ gateToast("Complete your profile first."); currentPage="profile"; renderShell(); return; }
+    if(window.__profileGate && !GATE_OPEN_PAGES.includes(go)){ gateToast(joinNeedsText()); currentPage="mediakit"; renderShell(); return; }
     currentPage = go; renderShell(); });
   if(_cdTimer) clearInterval(_cdTimer);
   _cdTimer = setInterval(()=>{
@@ -1452,6 +1454,8 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
       <div class="ws-stat"><b>${c.budget?fmtMoney(c.budget):"—"}</b><span>Budget</span></div>
     </div>
 
+    <div class="card hub-card"><div class="hub-card-h"><h3 style="margin:0">👥 Everyone on this campaign</h3><span class="muted">Tap a creator — profile, every step, WhatsApp history and the next message, all here</span></div>
+      <div id="wsPeople">${skel("list",3)}</div></div>
     <div class="grid two">
       <div class="grid" style="gap:16px">
         <div class="card"><h3>Applicants ${applied.length?`<span class="tag warn">${applied.length} new</span>`:""}</h3>
@@ -1482,6 +1486,9 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
   content.querySelectorAll("[data-wsapprove]").forEach(b=>b.onclick=()=>updateStatus("applications", b.dataset.wsapprove, {status:"Approved"}, reload));
   content.querySelectorAll("[data-wsdecline]").forEach(b=>b.onclick=()=>declineLegacyApplication(b.dataset.wsdecline, reload));
   wireApplicantButtons(content, reload);
+  loadCampaignPeople(c);
+  // an applicant row opens that creator's full story
+  content.querySelectorAll("#wsApps .row").forEach(r=>{ const b = r.querySelector("[data-papprove],[data-pdecline]"); const pid = r.dataset.pid; if(pid && !b){ r.style.cursor = "pointer"; r.onclick = e=>{ if(e.target.closest("a,button")) return; openCreatorHub(pid); }; } });
   content.querySelectorAll("[data-deliv]").forEach(cb=> cb.onchange = ()=>{
     const span = cb.parentNode.querySelector("span");
     if(span){ span.style.textDecoration = cb.checked ? "line-through" : ""; span.style.opacity = cb.checked ? ".6" : ""; }
@@ -1945,6 +1952,7 @@ function apvProcessHtml(list){
         ${x.phone?`<a class="mini-btn ghost" href="tel:${esc(x.phone)}">📞 ${esc(x.phone)}</a>`:""}
         <button class="mini-btn ghost" data-apvopen="${esc(camp)}" data-apvname="${esc(x.campaign_name||"")}" data-apvpart="${esc(x.participation_id)}">Open</button></span></div>`; }).join("")}</div></div>`;
 }
+let _apvCamp = "";
 async function loadApprovals(silent){
   const body = document.getElementById("apvBody"); if(!body || !window.sb) return;
   const [ar, pr] = await Promise.all([
@@ -1953,8 +1961,15 @@ async function loadApprovals(silent){
   const { data, error } = ar;
   if(error){ if(!silent) body.innerHTML = `<div class="card"><div class="muted">${esc(error.message||error)}</div></div>`; return; }
   const d = data||{}, proc = pr.data||[], sig = JSON.stringify([d, proc]); if(silent && sig===_apvSig) return; _apvSig = sig;
-  const signups = d.signups||[], camps = d.campaigns||[], apps = d.applicants||[], mk = d.marketplace||[];
-  const total = signups.length + camps.length + apps.length + mk.length + proc.length;
+  const signups = d.signups||[], camps = d.campaigns||[];
+  // filter creators + barter steps by campaign
+  const cname = x => String(x.campaign_name||x.campaign||"").trim();
+  const allC = [...new Set([...(d.applicants||[]), ...(d.marketplace||[]), ...(pr.data||[])].map(cname).filter(Boolean))].sort((a,b)=> a.localeCompare(b));
+  if(_apvCamp && !allC.includes(_apvCamp)) _apvCamp = "";
+  const inC = x => !_apvCamp || cname(x) === _apvCamp;
+  const apps = (d.applicants||[]).filter(inC), mk = (d.marketplace||[]).filter(inC), procF = proc.filter(inC);
+  const cnt = n => [...(d.applicants||[]), ...(d.marketplace||[]), ...proc].filter(x=> cname(x)===n).length;
+  const total = signups.length + camps.length + apps.length + mk.length + procF.length;
   pollNavCounts();
   const ago = t=>{ if(!t) return ""; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
   const roleName = r=>({owner:"Agency Owner",brand:"Brand",manager:"Manager",corporate:"Corporate"}[r]||r);
@@ -1962,10 +1977,12 @@ async function loadApprovals(silent){
       ${d.is_admin?`<div><b>${signups.length}</b>Account signups</div>`:""}
       <div><b>${camps.length}</b>Campaigns to approve</div>
       <div><b>${apps.length+mk.length}</b>Creators to decide</div>
-      <div><b>${proc.length}</b>Barter steps on you</div>
+      <div><b>${procF.length}</b>Barter steps on you</div>
       <div><b>${total}</b>Total waiting</div></div>
-    ${total? "" : `<div class="card"><div class="muted" style="padding:8px">All clear — nothing waiting on you right now ✅</div></div>`}
-    ${proc.length ? apvProcessHtml(proc) : ""}
+    ${allC.length ? `<div class="apv-filter"><label>Campaign <select id="apvCamp"><option value="">All campaigns (${(d.applicants||[]).length+(d.marketplace||[]).length+proc.length})</option>${allC.map(n=>`<option value="${esc(n)}"${_apvCamp===n?" selected":""}>${esc(n)} (${cnt(n)})</option>`).join("")}</select></label>
+      ${_apvCamp?`<button class="mini-btn ghost" id="apvCampX">✕ Clear</button>`:""}</div>` : ""}
+    ${total? "" : `<div class="card"><div class="muted" style="padding:8px">${_apvCamp ? "Nothing waiting on this campaign ✅" : "All clear — nothing waiting on you right now ✅"}</div></div>`}
+    ${procF.length ? apvProcessHtml(procF) : ""}
     ${d.is_admin && signups.length ? `<div class="card"><h3 style="margin-top:0">🏢 Agency & brand signups</h3><div class="list">
       ${signups.map(x=>`<div class="row"><div class="r-main">
         <div class="r-title">${esc(x.name||x.email||"—")} <span class="tag">${esc(roleName(x.role))}</span>${x.org_name?` · ${esc(x.org_name)}`:""}</div>
@@ -1988,6 +2005,8 @@ async function loadApprovals(silent){
       </div></div>` : ""}
     <div class="muted" style="font-size:12px;margin-top:12px">Live — refreshes every 20s. Everyone you approve or decline is told in the app, on WhatsApp and by email.</div>`;
   const again = ()=>{ _apvSig = ""; loadApprovals(true); };
+  const cs = body.querySelector("#apvCamp"); if(cs) cs.onchange = ()=>{ _apvCamp = cs.value; again(); };
+  const cx = body.querySelector("#apvCampX"); if(cx) cx.onclick = ()=>{ _apvCamp = ""; again(); };
   // signups (Super Admin)
   body.querySelectorAll("[data-apvsign]").forEach(b=> b.onclick = async ()=>{
     b.disabled = true; b.textContent = "…";
@@ -2078,8 +2097,8 @@ function applicantRowHtml(p, showCampaign){
   const cr = p.creator || {}, [lbl, cls] = APPLICANT_STAGE[p.stage] || [String(p.stage||"").replace(/_/g," "), "good"];
   const pic = cr.profile_picture_url ? `<img class="ap-pic" src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`
                                      : `<span class="avatar">${esc((cr.username||"?").slice(0,2).toUpperCase())}</span>`;
-  const bits = [cr.followers!=null?fmtNum(cr.followers)+" followers":"", cr.engagement!=null?cr.engagement+"% eng.":"", cr.city||"", (cr.categories||[]).slice(0,2).join(", ")].filter(Boolean).join(" · ");
-  return `<div class="row">${pic}
+  const bits = [cr.followers!=null?fmtNum(cr.followers)+" followers":"", cr.engagement!=null?cr.engagement+"% eng.":"", cr.city||"", (cr.categories||[]).slice(0,2).join(", "), cr.profile_pct!=null?"📝 profile "+cr.profile_pct+"%":""].filter(Boolean).join(" · ");
+  return `<div class="row" data-pid="${esc(p.participation_id||"")}">${pic}
     <div class="r-main"><div class="r-title">${cr.username?`<a href="https://instagram.com/${encodeURIComponent(cr.username)}" target="_blank" rel="noopener">@${esc(cr.username)}</a>`:esc(cr.name||"Creator")}
       ${p.applied_profile && String(p.applied_profile).toLowerCase()!==String(cr.username||"").toLowerCase()?` <span class="tag" title="Applied with this profile">via <a href="https://instagram.com/${encodeURIComponent(p.applied_profile)}" target="_blank" rel="noopener">@${esc(p.applied_profile)}</a></span>`:""}
       ${showCampaign?`<span class="muted" style="font-weight:400"> → ${esc(p.campaign_name||"")}${p.org_name?` · ${esc(p.org_name)}`:""}</span>`:""} ${typeTag(p.campaign_type)}</div>
@@ -2595,6 +2614,7 @@ function csCard(c, opts){
       <div class="cs-id"><a href="https://instagram.com/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener"><b>@${esc(c.handle)}</b></a>
         <div class="muted"><span class="cs-src ${c.kind==="platform"?"on":""}">${c.kind==="platform"?"On Geek OS":"Not on Geek OS"}</span>${c.city?` 📍 ${esc(c.city)}`:""}</div>
         ${c.name?`<div class="muted">${esc(c.name)}</div>`:""}</div></div>
+    ${c.kind==="platform" && c.profile_pct!=null ? `<div class="cs-ppct" title="Creator profile complete"><span style="width:${c.profile_pct}%"></span><b>📝 Profile ${c.profile_pct}%</b></div>` : ""}
     ${c.kind==="platform" && c.member_id && Number(c.accounts)>1 ? `<button type="button" class="cs-accts" data-igaccts="${esc(c.member_id)}" data-igname="${esc(c.name||c.handle)}">📸 ${Number(c.accounts)} accounts · same creator →</button>` : ""}
     <div class="cs-stats"><div><b>${c.followers!=null?kfmtN(c.followers):"—"}</b><span>Followers</span></div>
       <div><b>${c.engagement!=null?(Math.round(c.engagement*10)/10)+"%":"—"}</b><span>Engagement</span></div>
@@ -3237,16 +3257,10 @@ function renderMediaKit(){
   html += `<div id="mkBody">${mkLoadingHtml()}${skel("kit")}</div>`;
   return html;
 }
-// While the mandatory profile is incomplete, the Media Kit shows a clear "finish your profile" bar on top
+// Until Instagram + WhatsApp are connected, the Media Kit shows what's left on top
 function mkGateBanner(){
-  const r = window.__profileReq;
-  if(currentRole!=="creator" || !window.__profileGate || !r) return `<div id="mkGateBanner"></div>`;
-  return `<div id="mkGateBanner" class="card" style="margin-bottom:14px;border:1px solid rgba(108,92,231,.35);background:rgba(108,92,231,.06)">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-      <div><b>🔒 Complete your profile to unlock campaigns, Instagram tools & more</b>
-        <div class="muted" style="font-size:13px">${r.done} of ${r.total} done · next: ${esc((r.missing||[])[0]||"")}</div></div>
-      <button class="btn" id="mkGoProfile">Complete profile →</button></div>
-    <div class="cp-bar" style="margin-top:10px;height:6px;border-radius:6px;background:rgba(0,0,0,.08);overflow:hidden"><span style="display:block;height:100%;width:${Math.round(100*r.done/Math.max(r.total,1))}%;background:var(--brand,#6c5ce7)"></span></div></div>`;
+  if(currentRole!=="creator" || !window.__profileGate) return `<div id="mkGateBanner"></div>`;
+  return joinGateCard("mkGateBanner");
 }
 document.addEventListener("click", e=>{ if(e.target && e.target.id==="mkGoProfile"){ currentPage="profile"; renderShell(); } });
 
@@ -3674,7 +3688,7 @@ function wireMkHead(acct){
   if(share) share.onclick = ()=> openKitShare(acct);
   const cta = document.getElementById("mkComposeCta");
   if(cta) cta.onclick = ()=>{
-    if(window.__profileGate){ gateToast("Complete your profile first to post from Geek OS."); return; }
+    if(window.__profileGate){ gateToast(joinNeedsText()); return; }
     const c=document.getElementById("mkComposer"); if(c){ c.scrollIntoView({behavior:"smooth"}); return; }
     currentPage = "instagram"; renderShell(); };
   document.querySelectorAll("#mkHeadWrap [data-mkedit]").forEach(b=> b.onclick = ()=> openMkEdit(b.dataset.mkedit, acct));
@@ -4347,7 +4361,8 @@ function bkStatusChip(p, r){
     ? (p.stage ? `<span class="tag">already in · ${bkEsc(String(p.stage).replace(/_/g," "))}${land}</span>`
                : `<span class="tag good">On Geek OS${p.who?` · ${bkEsc(p.who)}`:""} — added now${land}</span>`)
     : `<span class="tag">New — joins on ${bkEsc(bkStLabel(st))} after sign-up</span>`;
-  const msg = bkStMsg(st), via = [p.phone?"WhatsApp":null, p.email?"email":null].filter(Boolean).join(" + ");
+  // a new person on an approved-or-later step with no message of its own still gets the register invite
+  const msg = (bkStMsg(st)==="no message" && !p.on_platform && bkStRank(st) >= 4) ? "Invite (geek_campaign_access)" : bkStMsg(st), via = [p.phone?"WhatsApp":null, p.email?"email":null].filter(Boolean).join(" + ");
   const msgTag = msg==="no message" ? `<div class="muted bk-ig">✉️ no message for this step</div>` : `<div class="muted bk-ig">✉️ sends: <b>${bkEsc(msg)}</b>${via?` on ${via}`:""}</div>`;
   return main + (warn?`<span class="tag warn">${bkEsc(warn)}</span>`:"") + msgTag + ig;
 }
@@ -4458,12 +4473,12 @@ function bkListHtml(){
   if(!L.length) return `<div class="muted">Nobody uploaded yet.</div>`;
   const n = s => L.filter(x=>x.status===s).length;
   const ch = o => !o ? "" : o.status==="sent" ? "✓" : o.status==="failed" ? "✗" : o.status==="skipped" ? "⏸" : "…";
-  return `<div class="bk-sum"><span><b>${n("joined")}</b> in the campaign</span><span><b>${n("registered")}</b> registered · setting up profile</span><span><b>${n("invited")}</b> invited · not registered yet</span></div>
+  return `<div class="bk-sum"><span><b>${n("joined")}</b> in the campaign</span><span><b>${n("registered")}</b> registered · still to connect</span><span><b>${n("invited")}</b> invited · not registered yet</span></div>
     ${L.map(x=>{
       const who = x.instagram || (x.handle?"@"+x.handle:"") || x.name || x.phone || x.email;
       const miss = Array.isArray(x.missing) ? x.missing : [];
       const st = x.status==="joined" ? `<span class="tag good">✓ ${bkEsc(String(x.stage||"").replace(/_/g," "))}</span>`
-               : x.status==="registered" ? `<span class="tag warn">Registered · setting up profile</span>`
+               : x.status==="registered" ? `<span class="tag warn">Registered · ${miss.length?"connecting":"joining"}</span>`
                : `<span class="tag">Invited · not registered</span>`;
       const ig = x.ig ? (x.ig.followers || x.ig.name ? `<span class="muted bk-ch">📸 ${x.ig.name?bkEsc(x.ig.name)+" · ":""}${x.ig.followers?Number(x.ig.followers).toLocaleString("en-IN")+" followers":""}</span>`
                                                      : `<span class="muted bk-ch">📸 ${x.ig.error?"Instagram: "+bkEsc(String(x.ig.error).slice(0,60)):"fetching Instagram…"}</span>`) : "";
@@ -4473,7 +4488,8 @@ function bkListHtml(){
         <div class="bk-who"><b>${bkEsc(who)}</b>${x.name&&who!==x.name?` <span class="muted">${bkEsc(x.name)}</span>`:""}
           <div class="muted" style="font-size:12px">${[x.phone,x.email,x.city].filter(Boolean).map(bkEsc).join(" · ")}</div></div>
         <div class="bk-st">${st} ${msgs} ${ig}
-          ${miss.length && x.status!=="invited" ? `<div class="muted" style="font-size:12px">Still to do: ${miss.slice(0,3).map(bkEsc).join(", ")}${miss.length>3?` +${miss.length-3} more`:""}</div>`:""}
+          ${miss.length && x.status!=="invited" ? `<div class="muted" style="font-size:12px">Still to connect: ${miss.map(bkEsc).join(" + ")} · or pick a status to move them in now</div>`:""}
+          ${x.profile_pct!=null && x.status!=="invited" ? `<span class="bk-pct" title="Creator profile (optional)">📝 Profile ${x.profile_pct}%</span>`:""}
           ${err?`<div class="muted" style="font-size:12px;color:#b45309">${bkEsc(String(err).slice(0,140))}</div>`:""}</div>
         <div class="bk-act">
           ${x.participation_id?`<button class="mini-btn" data-bkopen="${bkEsc(x.participation_id)}">Open</button>`:""}
@@ -4494,7 +4510,7 @@ function wireBulkList(){
     gateToast(data && data.status==="joined" ? "They're on Geek OS — added to the campaign ✓" : "Invite sent again ✓"); });
   box.querySelectorAll("[data-bkset]").forEach(sel=> sel.onchange = async ()=>{ sel.disabled = true;
     try{ const { data, error } = await sb.schema("api").rpc("bulk_set_status", { p_invite:sel.dataset.bkset, p_status:sel.value }); if(error) throw error;
-      gateToast(`Status → ${bkStLabel(sel.value)} ✓${data && data.stage ? " · now: "+String(data.stage).replace(/_/g," ") : " · applies when they join"}`); }
+      gateToast(`Status → ${bkStLabel(sel.value)} ✓${data && data.stage ? " · on the campaign now: "+String(data.stage).replace(/_/g," ") : " · their step's message is sent; it applies when they register"}`); }
     catch(e){ gateToast(e.message||String(e)); }
     sel.disabled = false; loadBulkList(); });
   act("[data-bkdel]", async b=>{ if(!confirm("Remove this creator from the upload? (No message is sent.)")) return; const { error } = await sb.schema("api").rpc("bulk_delete_invite", { p_invite:b.dataset.bkdel }); if(error) throw error; });
@@ -4672,7 +4688,8 @@ async function bpCreatorProfile(pid){
           <div class="bpp-cats">${(cr.categories||[]).slice(0,4).map(c=>`<span>${esc(c)}</span>`).join("")}${cr.city?`<span>📍 ${esc(cr.city)}</span>`:""}</div></div>
         ${handle?`<a class="btn sm" href="/p.html?u=${encodeURIComponent(handle)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}</div>
       <div class="bpp-stats"><div><b>${cr.followers!=null?fmtNum(cr.followers):"—"}</b><span>Followers</span></div><div><b>${cr.engagement!=null?cr.engagement+"%":"—"}</b><span>Engagement</span></div>
-        <div><b>${cr.avg_reach?fmtNum(Math.round(cr.avg_reach)):"—"}</b><span>Avg reach</span></div><div><b>${esc(((BARTER_STEPS[idx]||[])[1]||"—").replace(/^\d+\.\s*/,""))}</b><span>Step now</span></div></div>
+        <div><b>${cr.avg_reach?fmtNum(Math.round(cr.avg_reach)):"—"}</b><span>Avg reach</span></div><div><b>${esc(((BARTER_STEPS[idx]||[])[1]||"—").replace(/^\d+\.\s*/,""))}</b><span>Step now</span></div>
+        ${cr.profile_pct!=null?`<div><b>${cr.profile_pct}%</b><span>Profile</span></div>`:""}</div>
       <div id="bppPro"></div>
       <div class="bpp-sec">Contact</div>
       ${row("WhatsApp", x.phone||to.phone ? esc(x.phone||to.phone) : "")}
@@ -4687,9 +4704,11 @@ async function bpCreatorProfile(pid){
       ${row("Posts", (x.posts||[]).length ? (x.posts||[]).map(p=>`<a href="${esc(safeUrl(p.permalink||p.url||"#"))}" target="_blank" rel="noopener">${esc(p.media_type||"post")} ↗</a>`).join(" · ") : "")}
       ${x.blacklisted?row("Note","⛔ Blacklisted"):""}
       <div class="bpp-sec">All Instagram accounts</div><div id="bppAccts">${skel("list",1)}</div>
+      <div class="hub-foot"><button class="btn sm" data-bpphub="${esc(pid)}">💬 Messages & full history</button></div>
     </div></div>`;
   document.body.appendChild(m); m.classList.add("open");
   document.getElementById("bpProfX").onclick = ()=> m.remove(); m.onclick = e=>{ if(e.target.id==="bpProf") m.remove(); };
+  const hb = m.querySelector("[data-bpphub]"); if(hb) hb.onclick = ()=>{ m.remove(); openCreatorHub(pid, "messages"); };
   const box = document.getElementById("bppAccts");
   if(!cr.member_id){ box.innerHTML = `<div class="muted">Not on Geek OS yet.</div>`; return; }
   sb.schema("api").rpc("creator_profile_card", { p_member: cr.member_id }).then(({ data:P })=>{
@@ -4719,6 +4738,181 @@ async function bpCreatorProfile(pid){
         <div class="muted" style="font-size:12.5px">${esc([a.followers!=null?kfmtN(a.followers)+" followers":"", a.posts!=null?a.posts+" posts":""].filter(Boolean).join(" · "))}</div></div></div>`).join("")}</div>`
     : `<div class="muted">${error ? esc(error.message||String(error)) : "No Instagram connected."}</div>`;
 }
+/* ================= CAMPAIGN A → Z: everyone on one campaign, and each creator's full story ================= */
+// step label for any stage (the 15 Barter steps, plus the invite / decline words)
+function hubStepLabel(stage){
+  const s = BP_ALIAS[stage] || stage;
+  const b = BARTER_STEPS.find(x=> x[0]===s);
+  if(b) return b[1];
+  return ({ ineligible:"Declined", brand_declined:"Declined by brand", dropped:"Dropped", rejected:"Rejected" })[stage] || String(stage||"").replace(/_/g," ");
+}
+function hubStepIdx(stage){ const s = BP_ALIAS[stage] || stage; const i = BARTER_STEPS.findIndex(x=> x[0]===s); return i < 0 ? 99 : i; }
+const HUB_DECL = ["ineligible","brand_declined","dropped","rejected"];
+let _hub = { camp:null, data:null, tab:"in", q:"", step:"" };
+async function loadCampaignPeople(c){
+  const box = document.getElementById("wsPeople"); if(!box) return;
+  _hub.camp = c;
+  const { data, error } = await sb.schema("api").rpc("campaign_people", { p_campaign: c.id }).then(r=>r, e=>({error:e}));
+  if(!box.isConnected) return;
+  if(error){ box.innerHTML = `<div class="muted">${esc(error.message||String(error))}${/campaign_people/.test(error.message||"")?" — run <code>supabase db push</code> first.":""}</div>`; return; }
+  _hub.data = data || { participants:[], invites:[] };
+  paintCampaignPeople();
+}
+function paintCampaignPeople(){
+  const box = document.getElementById("wsPeople"); if(!box || !_hub.data) return;
+  const P = _hub.data.participants||[], I = _hub.data.invites||[];
+  const q = _hub.q.toLowerCase();
+  const match = (...v)=> !q || v.some(x=> String(x||"").toLowerCase().includes(q));
+  const steps = [...new Set(P.map(p=> p.stage))].sort((a,b)=> hubStepIdx(a)-hubStepIdx(b));
+  let rows = "";
+  if(_hub.tab==="in"){
+    const L = P.filter(p=> (!_hub.step || p.stage===_hub.step) && match(p.creator&&p.creator.username, p.creator&&p.creator.name, p.applied_profile, p.phone, p.creator&&p.creator.city))
+               .sort((a,b)=> hubStepIdx(a.stage)-hubStepIdx(b.stage));
+    rows = L.length ? L.map(p=>{ const cr = p.creator||{}, h = p.applied_profile || cr.username || "";
+        const wa = p.last_wa ? `<span class="hub-wa ${p.last_wa.status==="sent"?"ok":p.last_wa.status==="failed"?"bad":""}" title="${esc(p.last_wa.error||"")}">💬 ${esc(String(p.last_wa.key||"message").replace(/_/g," "))} · ${p.last_wa.status==="sent"?"sent":p.last_wa.status==="failed"?"failed":"queued"} ${esc(fmtDate(p.last_wa.at))}</span>` : "";
+        return `<button class="hub-row" data-hubp="${esc(p.participation_id)}">
+          ${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((h||"?").slice(0,2).toUpperCase())}</span>`}
+          <span class="hub-who"><b>${h?"@"+esc(h):esc(cr.name||"Creator")}</b><span class="muted">${esc([cr.followers!=null?fmtNum(cr.followers)+" followers":"", cr.city, p.phone].filter(Boolean).join(" · "))}</span>${wa}</span>
+          <span class="hub-meta"><span class="tag ${HUB_DECL.includes(p.stage)?"":"good"}">${esc(hubStepLabel(p.stage))}</span>
+            ${p.profile_pct!=null?`<span class="hub-pct" title="Creator profile (optional)">📝 ${p.profile_pct}%</span>`:""}
+            ${(p.needs||[]).length?`<span class="hub-need" title="${esc(p.needs.join(", "))}">⚠️ ${esc(p.needs.map(x=>/whatsapp/i.test(x)?"no WhatsApp":"no Instagram").join(" · "))}</span>`:""}</span>
+          <span class="hub-go">›</span></button>`; }).join("")
+      : `<div class="muted" style="padding:10px">${P.length ? "Nobody matches." : "No creators on this campaign yet — invite or bulk upload them."}</div>`;
+  } else {
+    const L = I.filter(i=> match(i.name, i.handle, i.phone, i.email, i.city));
+    rows = L.length ? L.map(i=> `<div class="hub-row is-inv">
+          <span class="avatar">${esc(((i.handle||i.name||"?")).slice(0,2).toUpperCase())}</span>
+          <span class="hub-who"><b>${i.handle?"@"+esc(i.handle):esc(i.name||i.phone||i.email||"Invite")}</b><span class="muted">${esc([i.name&&i.handle?i.name:"", i.phone, i.email, i.city].filter(Boolean).join(" · "))}</span>
+            ${i.last_wa?`<span class="hub-wa ${i.last_wa.status==="sent"?"ok":i.last_wa.status==="failed"?"bad":""}" title="${esc(i.last_wa.error||"")}">💬 invite ${i.last_wa.status==="sent"?"sent":i.last_wa.status==="failed"?"failed":"queued"} ${esc(fmtDate(i.last_wa.at))}${i.invites_sent>1?` · ${i.invites_sent}×`:""}</span>`:""}</span>
+          <span class="hub-meta"><span class="tag warn">${esc(bkStLabel ? bkStLabel(i.status) : i.status)}</span>
+            <span class="tag">${i.registered ? ((i.needs||[]).length ? "Registered · "+esc(i.needs.map(x=>/whatsapp/i.test(x)?"connect WhatsApp":"connect Instagram").join(" + ")) : "Registered · joining") : "Not registered yet"}</span>
+            ${i.profile_pct!=null?`<span class="hub-pct">📝 ${i.profile_pct}%</span>`:""}</span>
+          <span class="hub-acts"><label class="bk-chg" title="Put them on this step now">${bkStatusSelect(`data-hubset="${esc(i.invite_id)}"`, i.status==="invited"?"registered":i.status, "")}</label>
+            <button class="mini-btn ghost" data-hubre="${esc(i.invite_id)}">Resend</button></span></div>`).join("")
+      : `<div class="muted" style="padding:10px">${I.length ? "Nobody matches." : "Everyone invited has joined."}</div>`;
+  }
+  box.innerHTML = `<div class="hub-bar">
+      <div class="hub-tabs"><button class="${_hub.tab==="in"?"act":""}" data-hubtab="in">In the campaign <b>${P.length}</b></button><button class="${_hub.tab==="inv"?"act":""}" data-hubtab="inv">Invited · not joined <b>${I.length}</b></button></div>
+      <input id="hubQ" type="search" placeholder="🔎 Name, @handle, phone, city…" value="${esc(_hub.q)}">
+      ${_hub.tab==="in"?`<select id="hubStep"><option value="">Every step</option>${steps.map(s=>`<option value="${esc(s)}"${_hub.step===s?" selected":""}>${esc(hubStepLabel(s))} (${P.filter(p=>p.stage===s).length})</option>`).join("")}</select>`:""}
+    </div><div class="hub-list">${rows}</div>`;
+  box.querySelectorAll("[data-hubtab]").forEach(b=> b.onclick = ()=>{ _hub.tab = b.dataset.hubtab; paintCampaignPeople(); });
+  const qi = box.querySelector("#hubQ"); if(qi) qi.oninput = ()=>{ _hub.q = qi.value; const pos = qi.selectionStart; paintCampaignPeople(); const n = document.getElementById("hubQ"); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } };
+  const st = box.querySelector("#hubStep"); if(st) st.onchange = ()=>{ _hub.step = st.value; paintCampaignPeople(); };
+  box.querySelectorAll("[data-hubp]").forEach(b=> b.onclick = ()=> openCreatorHub(b.dataset.hubp));
+  box.querySelectorAll("[data-hubset]").forEach(sel=> sel.onchange = async ()=>{ sel.disabled = true;
+    const { data, error } = await sb.schema("api").rpc("bulk_set_status", { p_invite: sel.dataset.hubset, p_status: sel.value }).then(r=>r, e=>({error:e}));
+    if(error) gateToast(error.message||String(error));
+    else gateToast(`Status → ${bkStLabel(sel.value)} ✓${data && data.stage ? " · on the campaign now: "+hubStepLabel(data.stage) : " · their step's message is sent"}`);
+    loadCampaignPeople(_hub.camp); });
+  box.querySelectorAll("[data-hubre]").forEach(b=> b.onclick = async ()=>{ b.disabled = true;
+    const { data, error } = await sb.schema("api").rpc("bulk_resend_invite", { p_invite: b.dataset.hubre }).then(r=>r, e=>({error:e}));
+    gateToast(error ? (error.message||String(error)) : data && data.status==="joined" ? "They're on Geek OS — added to the campaign ✓" : "Invite sent again ✓");
+    loadCampaignPeople(_hub.camp); });
+}
+
+// one creator on one campaign: profile %, contact, every step, every message (and send the next one)
+let _hubC = { pid:null, data:null, tab:"overview" };
+async function openCreatorHub(pid, tab){
+  _hubC = { pid, data:null, tab: tab || "overview" };
+  let m = document.getElementById("hubModal"); if(m) m.remove();
+  m = el("div","modal-overlay open"); m.id = "hubModal";
+  m.innerHTML = `<div class="modal modal-lg hub-modal"><div class="modal-head"><strong>Creator on this campaign</strong><button class="icon-btn" id="hubX" aria-label="Close">✕</button></div>
+    <div class="modal-form" id="hubBody">${skel("list",4)}</div></div>`;
+  document.body.appendChild(m);
+  const close = ()=> m.remove();
+  document.getElementById("hubX").onclick = close; m.onclick = e=>{ if(e.target.id==="hubModal") close(); };
+  await hubReload();
+}
+async function hubReload(){
+  const { data, error } = await sb.schema("api").rpc("campaign_creator_hub", { p_participation: _hubC.pid }).then(r=>r, e=>({error:e}));
+  const body = document.getElementById("hubBody"); if(!body) return;
+  if(error){ body.innerHTML = `<div class="ci-err-inline">${esc(error.message||String(error))}</div>`; return; }
+  _hubC.data = data; paintCreatorHub();
+}
+function paintCreatorHub(){
+  const body = document.getElementById("hubBody"); const d = _hubC.data; if(!body || !d) return;
+  const cr = d.creator||{}, h = d.applied_profile || cr.username || "", pr = d.profile, pct = pr && pr.pct!=null ? pr.pct : null;
+  const tabs = [["overview","Overview"],["timeline",`What they did (${(d.timeline||[]).length})`],["messages",`Messages (${(d.messages||[]).length})`]];
+  let sec = "";
+  if(_hubC.tab==="overview"){
+    const row = (k,v)=> v ? `<div class="bpp-row"><span>${esc(k)}</span><div>${v}</div></div>` : "";
+    sec = `<div class="hub-steps">${BARTER_STEPS.filter(s=> s[0]!=="changes_requested").map((s,i)=>{ const cur = hubStepIdx(d.stage), me = hubStepIdx(s[0]);
+          return `<span class="${me<cur?"done":me===cur?"now":""}" title="${esc(s[2])}">${me<cur?"✓":me===cur?"●":"○"} ${esc(s[1].replace(/^\d+\.\s*/,""))}</span>`; }).join("")}</div>
+      ${(d.needs||[]).length?`<div class="hub-warn">⚠️ Still to connect: ${esc(d.needs.join(" + "))}</div>`:""}
+      <div class="bpp-sec">Contact</div>
+      ${row("WhatsApp", d.phone ? esc(d.phone) + (d.wa_linked ? ' <span class="tag good">linked</span>' : ' <span class="tag warn">not linked</span>') + (d.wa_opted_out ? ' <span class="tag">updates paused</span>' : "") : "—")}
+      ${row("Applied with", h ? `<a href="https://instagram.com/${encodeURIComponent(h)}" target="_blank" rel="noopener">@${esc(h)} ↗</a>` : "")}
+      ${row("On the campaign since", d.applied_at ? esc(fmtDate(d.applied_at)) : "")}
+      ${d.reason ? row("Note", esc(d.reason)) : ""}
+      <div class="bpp-sec">Profile ${pct!=null?`· ${pct}% complete`:""} <span class="muted" style="font-weight:400">(optional for the creator)</span></div>
+      ${pr ? `<div class="cp-bar" style="margin:4px 0 8px"><span style="width:${pct||0}%"></span></div>${(pr.missing||[]).length?`<div class="muted" style="font-size:12.5px">Not filled yet: ${esc(pr.missing.join(", "))}</div>`:`<div class="muted" style="font-size:12.5px">Everything filled in ✓</div>`}` : `<div class="muted">No profile yet.</div>`}
+      <div id="hubPro"></div>
+      <div class="hub-foot"><button class="btn ghost sm" data-hubbp>🔁 Open in Barter process</button>${h?`<a class="btn ghost sm" href="/p.html?u=${encodeURIComponent(h)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}<button class="btn sm" data-hubtab2="messages">💬 Message them</button></div>`;
+  } else if(_hubC.tab==="timeline"){
+    const T = d.timeline||[], A = d.alerts||[];
+    const nice = x=> String(x||"").replace(/_/g," ");
+    sec = T.length ? `<div class="hub-tl">${T.map(e=>`<div class="hub-tl-it"><span class="hub-tl-dot ${e.by_creator?"me":""}"></span><div>
+          <b>${esc(e.entity==="participation" ? hubStepLabel(e.to) : nice(e.entity)+" · "+nice(e.to))}</b>
+          <div class="muted">${esc(fmtDateTime(e.at))}${e.by?` · by ${esc(e.by)}${e.by_creator?" (creator)":""}`:" · automatic"}${e.reason?` · ${esc(e.reason)}`:""}</div></div></div>`).join("")}</div>`
+      : `<div class="muted">Nothing recorded yet.</div>`;
+    if(A.length) sec += `<div class="bpp-sec">Alerts the creator got in the app</div><div class="hub-tl">${A.slice(0,30).map(n=>`<div class="hub-tl-it"><span class="hub-tl-dot ${n.read?"me":""}"></span><div><b>${esc(n.title)}</b><div class="muted">${esc(fmtDateTime(n.at))} · ${n.read?"read":"not read yet"}</div></div></div>`).join("")}</div>`;
+  } else {
+    const M = (d.messages||[]).slice().reverse();
+    sec = `<div class="hub-chat" id="hubChat">${M.length ? M.map(x=>`<div class="hub-msg ${x.dir==="in"?"in":"out"} ${x.auto?"auto":""}">
+          <div class="hub-msg-b">${x.auto?`<span class="hub-msg-k">${x.channel==="email"?"✉️ Email":"🤖 WhatsApp"} · ${esc(String(x.key||"").replace(/_/g," "))}${x.template?` <code>${esc(x.template)}</code>`:""}</span>`:""}${esc(x.text||"").replace(/\n/g,"<br>")}</div>
+          <div class="hub-msg-m">${esc(fmtDateTime(x.at))}${x.by?" · "+esc(x.by):""}${x.dir==="out"?` · ${x.status==="failed"?"❌ failed":x.status==="queued"?"⏳ queued":x.status==="skipped"?"⏸ skipped":"✓ "+esc(x.status||"sent")}`:""}${x.error?` · <span title="${esc(x.error)}">${esc(String(x.error).slice(0,80))}</span>`:""}</div></div>`).join("")
+        : `<div class="muted" style="padding:10px">No messages with this creator yet.</div>`}</div>
+      <div class="hub-send">
+        <div class="hub-send-row"><select id="hubStepKey"><option value="">📨 Send a step message (WhatsApp + app + email)…</option>${(d.step_messages||[]).map(s=>`<option value="${esc(s.key)}">${esc(s.title||s.key)}</option>`).join("")}</select><button class="btn sm" id="hubStepGo">Send</button></div>
+        <div class="hub-send-row"><textarea id="hubText" rows="2" placeholder="${d.phone?"Type a WhatsApp message…":"No WhatsApp number for this creator"}"${d.phone?"":" disabled"}></textarea><button class="btn sm" id="hubTextGo"${d.phone?"":" disabled"}>Send</button></div>
+        <div class="muted" style="font-size:12px">${d.session_open ? "✅ They messaged in the last 24 h — free text goes straight to WhatsApp." : "WhatsApp allows free text only within 24 h of the creator's last message — otherwise send a step message (pre-approved template)."}</div></div>`;
+  }
+  body.innerHTML = `<div class="bpp-top">${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((h||"?").slice(0,2).toUpperCase())}</span>`}
+      <div style="min-width:0;flex:1"><div class="bpp-name">${esc(d.name||cr.name||h||"Creator")}</div>
+        ${h?`<a href="https://instagram.com/${encodeURIComponent(h)}" target="_blank" rel="noopener">@${esc(h)} ↗</a>`:""}
+        <div class="bpp-cats"><span class="hub-now">${esc(hubStepLabel(d.stage))}</span>${(cr.categories||[]).slice(0,3).map(c=>`<span>${esc(c)}</span>`).join("")}${cr.city?`<span>📍 ${esc(cr.city)}</span>`:""}</div></div>
+      ${pct!=null?`<div class="prof-pop-ring hub-ring" style="--p:${pct}" title="Profile complete"><span>${pct}%</span></div>`:""}</div>
+    <div class="bpp-stats"><div><b>${cr.followers!=null?fmtNum(cr.followers):"—"}</b><span>Followers</span></div><div><b>${cr.engagement!=null?cr.engagement+"%":"—"}</b><span>Engagement</span></div>
+      <div><b>${cr.avg_reach?fmtNum(Math.round(cr.avg_reach)):"—"}</b><span>Avg reach</span></div><div><b>${(d.messages||[]).length}</b><span>Messages</span></div></div>
+    <div class="admin-tabs hub-ctabs">${tabs.map(t=>`<button class="${_hubC.tab===t[0]?"act":""}" data-hubtab2="${t[0]}">${esc(t[1])}</button>`).join("")}</div>
+    <div class="hub-sec">${sec}</div>`;
+  body.querySelectorAll("[data-hubtab2]").forEach(b=> b.onclick = ()=>{ _hubC.tab = b.dataset.hubtab2; paintCreatorHub(); });
+  const bp = body.querySelector("[data-hubbp]"); if(bp) bp.onclick = ()=>{ document.getElementById("hubModal")?.remove(); const c = _hub.camp || {}; openBarterProcess(c.id || d.campaign_id, c.name || d.campaign, d.participation_id); };
+  if(_hubC.tab==="overview" && d.member_id){
+    sb.schema("api").rpc("creator_profile_card", { p_member: d.member_id }).then(({ data:P })=>{
+      const pb = document.getElementById("hubPro"); if(!pb || !P) return;
+      const nice = v => String(v||"").replace(/_/g," ").replace(/\b\w/g, c=>c.toUpperCase());
+      const list = a => (a||[]).map(nice).join(", ");
+      const row = (k,v)=> v ? `<div class="bpp-row"><span>${esc(k)}</span><div>${esc(v)}</div></div>` : "";
+      const AV = { available:"🟢 Available", limited:"🟡 Limited", unavailable:"🔴 Unavailable" };
+      pb.innerHTML = row("Display name", P.display_name) + row("Availability", P.availability ? (AV[P.availability]||P.availability) + (P.availability_limit?" — "+P.availability_limit:"") : "")
+        + row("Content types", list(P.content_formats)) + row("Categories", list(P.categories)) + row("Location", [P.city,P.state].filter(Boolean).join(", "))
+        + row("Travel", P.travel_willingness ? nice(P.travel_willingness) : "") + row("Management", P.management ? nice(P.management) : "")
+        + row("Skills", list(P.skills)) + row("Equipment", list(P.resources)) + row("Campaigns done", P.campaigns_done ? String(P.campaigns_done) : "")
+        + row("On Geek OS since", P.joined_at ? fmtDate(P.joined_at) : "");
+    }, ()=>{});
+  }
+  if(_hubC.tab==="messages"){
+    const ch = document.getElementById("hubChat"); if(ch) ch.scrollTop = ch.scrollHeight;
+    const go = document.getElementById("hubStepGo");
+    if(go) go.onclick = async ()=>{ const k = document.getElementById("hubStepKey").value; if(!k){ gateToast("Pick a step message first."); return; }
+      go.disabled = true; go.textContent = "Sending…";
+      const { error } = await sb.schema("api").rpc("team_send_step", { p_participation: d.participation_id, p_key: k }).then(r=>r, e=>({error:e}));
+      go.disabled = false; go.textContent = "Send";
+      if(error){ gateToast(error.message||String(error)); return; }
+      gateToast("Step message sent ✓ — WhatsApp, app and email"); setTimeout(hubReload, 1200); };
+    const tg = document.getElementById("hubTextGo");
+    if(tg) tg.onclick = async ()=>{ const t = document.getElementById("hubText").value.trim(); if(!t){ gateToast("Type a message first."); return; }
+      tg.disabled = true; tg.textContent = "Sending…";
+      const { data:r, error } = await sb.functions.invoke("wa-send", { body:{ to_phone: d.phone, text: t, subject: d.campaign || null } }).then(x=>x, e=>({error:e}));
+      tg.disabled = false; tg.textContent = "Send";
+      const msg = (r && r.error) || (error && (typeof fnError==="function" ? await fnError(error) : error.message));
+      if(msg){ gateToast(/24-hour|template/i.test(msg) ? "Outside WhatsApp's 24-hour window — send a step message instead (pre-approved template)." : msg); return; }
+      document.getElementById("hubText").value = ""; gateToast("WhatsApp message sent ✓"); hubReload(); };
+  }
+}
+
 function bpStageBanner(list){
   if(!_bpStage) return "";
   const at = bpStageIndex(_bpStage), L = bpStageList(list), here = L.filter(x=> bpEffectiveIndex(x)===at).length;
@@ -7054,23 +7248,38 @@ function markSuperAdmin(){
   if(!window.__adminLanded && !deep && (currentPage==="dashboard" || !currentPage)){ window.__adminLanded = true; _adminTab = "overview"; currentPage = "admin"; renderShell(); }
   else renderNav();
 }
+// every message the app shows (saved, errors, live alerts, reminders) is one toast stack, bottom-left
+// (the browser's blocking alert() boxes become toasts too — confirm / prompt stay as they are)
+try{ window.alert = msg => gateToast(String(msg==null ? "" : msg)); }catch(e){}
+function toastStack(){
+  let wrap = document.getElementById("alertToasts");
+  if(!wrap){ wrap = el("div",""); wrap.id = "alertToasts"; wrap.setAttribute("aria-live","polite"); document.body.appendChild(wrap); }
+  return wrap;
+}
 function gateToast(msg){
-  let t = document.getElementById("gateToast");
-  if(!t){ t = el("div",""); t.id="gateToast"; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;font-size:14px;max-width:90vw;box-shadow:0 6px 24px rgba(0,0,0,.25)"; document.body.appendChild(t); }
-  t.textContent = msg; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(()=>{ t.style.display="none"; }, 3200);
+  const wrap = toastStack();
+  const same = [...wrap.querySelectorAll(".alert-toast.at-msg")].find(x=> x.dataset.msg === String(msg));
+  if(same) same.remove();
+  while(wrap.children.length >= 4) wrap.firstElementChild.remove();
+  const ok = /✓|✅|🎉/.test(msg), bad = /couldn|failed|error|not allowed|refused|⚠️/i.test(msg);
+  const t = el("div",`alert-toast at-msg ${ok?"at-ok":bad?"at-bad":""}`, `<div class="at-ic">${ok?"✅":bad?"⚠️":"💬"}</div><div class="at-b"><span class="at-t">${esc(msg)}</span></div><button class="at-x" aria-label="Dismiss">✕</button>`);
+  t.dataset.msg = String(msg);
+  wrap.appendChild(t);
+  const kill = ()=>{ t.classList.add("out"); setTimeout(()=>t.remove(), 250); };
+  t.onclick = kill;
+  setTimeout(kill, bad ? 6000 : 3600);
 }
 // called by profile.js every time the mandatory checklist is re-computed
 window.onProfileRequirements = function(req){
   if(!window.Auth || !Auth.profile || Auth.profile.role!=="creator" || !req) return;
-  const wasGated = !!window.__profileGate;
-  window.__profileGate = !req.complete;
-  if(wasGated && req.complete){
+  const wasDone = !!(window.__profileReqPrev && window.__profileReqPrev.complete);
+  window.__profileReqPrev = req; window.__profileReq = req;
+  if(!wasDone && req.complete && window.__profileReqSeen){
     if(window.Tracker) Tracker.security("profile_completed");
-    // a campaign held for them (bulk upload / invite) opens now, right at their step
-    claimCreatorInvites().then(()=>{ if(window.__inviteGo){ currentPage = "mycampaigns"; renderShell(); } });
-    gateToast("🎉 Profile complete — you're ready for campaigns! Everything is unlocked.");
+    gateToast("🎉 Profile complete — brands will see your full profile.");
     renderNav();
-  } else if(wasGated !== !!window.__profileGate){ renderNav(); }
+  }
+  window.__profileReqSeen = true;
   if(currentPage==="mediakit"){ const gb=document.getElementById("mkGateBanner"); if(gb) gb.outerHTML = mkGateBanner(); }
 };
 // Cookie choice is required once per account (server-recorded so the Super Admin sees it on every device)
@@ -7093,13 +7302,68 @@ async function claimCreatorInvites(){
     if(tok || (data && (data.joined || data.waiting))) window.__inviteGo = data || {};
   }catch(e){}
 }
+// The creator's only hard gate: Instagram (media kit) + WhatsApp connected. The profile is optional (popup + %).
 async function creatorProfileGate(){
   try{
-    const { data, error } = await sb.schema("api").rpc("get_profile_requirements");
-    if(error || !data) return;                    // fail open: never lock someone out on a network error
-    window.__profileReq = data;
-    window.__profileGate = !data.complete;
-  }catch(e){}
+    const [rq, js] = await Promise.all([
+      sb.schema("api").rpc("get_profile_requirements").then(r=>r, e=>({error:e})),
+      sb.schema("api").rpc("my_join_status").then(r=>r, e=>({error:e}))]);
+    if(!rq.error && rq.data){
+      const d = rq.data, its = (d.items||[]).filter(it=> !["reel_rate","barter"].includes(it.key) && !["rate","barter"].includes(it.section));
+      const dn = its.filter(it=> it.done).length;
+      window.__profileReq = Object.assign({}, d, { items:its, total:its.length, done:dn, complete: dn===its.length,
+        missing: its.filter(it=> !it.done).map(it=> it.label) });
+    }
+    if(!js.error && js.data){ window.__joinNeeds = js.data.needs || []; window.__profileGate = window.__joinNeeds.length > 0; }
+    else { window.__joinNeeds = []; window.__profileGate = false; }     // fail open: never lock someone out on a network error
+  }catch(e){ window.__profileGate = false; }
+}
+function joinNeedsText(){
+  const n = window.__joinNeeds || [];
+  return n.length ? `First: ${n.join(" + ")} — then every campaign opens for you.` : "Connect Instagram (media kit) and WhatsApp first.";
+}
+// the setup card: what is still to connect (Instagram media kit / WhatsApp), each one button
+function joinGateCard(id){
+  if(currentRole!=="creator" || !window.__profileGate) return id ? `<div id="${id}"></div>` : "";
+  const n = window.__joinNeeds || [], ig = n.some(x=>/instagram/i.test(x)), wa = n.some(x=>/whatsapp/i.test(x));
+  return `<div ${id?`id="${id}" `:""}class="card cd-gate"><div><b>🔒 Two quick connections and you're in</b>
+      <div class="muted" style="font-size:13px">Campaigns open as soon as both are connected. Your creator profile is optional.</div>
+      <div class="cd-gate-steps"><span class="${ig?"":"done"}">${ig?"○":"✓"} Instagram (media kit)</span><span class="${wa?"":"done"}">${wa?"○":"✓"} WhatsApp</span></div></div>
+    <div class="cd-gate-acts">${ig?`<button class="btn" data-gateig>📸 Connect Instagram</button>`:""}${wa?`<button class="btn ${ig?"ghost":""}" data-gatewa>💬 Connect WhatsApp</button>`:""}</div></div>`;
+}
+document.addEventListener("click", e=>{
+  const t = e.target && e.target.closest ? e.target : null; if(!t) return;
+  if(t.closest("[data-gateig]")){ e.preventDefault(); try{ localStorage.setItem("geekos_after_ig","mediakit"); }catch(x){} connectInstagram(); }
+  else if(t.closest("[data-gatewa]")){ e.preventDefault(); if(window.waLogin && waLogin.link) waLogin.link(); }
+});
+// WhatsApp just linked → the gate re-checks and the app opens up (campaigns waiting for them join on the server)
+window.addEventListener("geek:wa-linked", async ()=>{
+  const was = !!window.__profileGate;
+  await creatorProfileGate();
+  if(was && !window.__profileGate){
+    gateToast("🎉 All connected — campaigns are open for you!");
+    claimCreatorInvites().then(()=>{ if(window.__inviteGo){ currentPage = "mycampaigns"; } renderShell(); });
+  } else renderShell();
+});
+// "Please complete your profile" — once per visit (closing it keeps it closed until the next reload)
+function profilePopupOnce(){
+  const r = window.__profileReq;
+  if(currentRole!=="creator" || window.__profilePopShown || !r || r.complete || window.__profileGate) return;
+  window.__profilePopShown = true;
+  const pct = Math.round(100*r.done/Math.max(r.total,1));
+  const m = el("div","modal-overlay open"); m.id = "profPop";
+  m.innerHTML = `<div class="modal prof-pop" role="dialog" aria-label="Complete your profile">
+      <button class="icon-btn prof-pop-x" aria-label="Close">✕</button>
+      <button class="prof-pop-body" type="button">
+        <div class="prof-pop-ring" style="--p:${pct}"><span>${pct}%</span></div>
+        <h3>Please complete your profile</h3>
+        <p class="muted">${r.done} of ${r.total} done. Brands pick complete profiles first — it takes a couple of minutes.</p>
+        <span class="btn">Complete my profile →</span></button></div>`;
+  document.body.appendChild(m);
+  const close = ()=> m.remove();
+  m.querySelector(".prof-pop-x").onclick = close;
+  m.onclick = e=>{ if(e.target === m) close(); };
+  m.querySelector(".prof-pop-body").onclick = ()=>{ close(); currentPage = "profile"; renderShell(); };
 }
 
 // Paint the app frame (sidebar, top bar) straight away while the rest loads in the background, so a new login
@@ -7178,9 +7442,14 @@ async function pollAlerts(){
     if(bell){ bell.textContent = list.length > 9 ? "9+" : list.length; bell.style.display = list.length ? "" : "none";
       if(grew && _alertSeen){ bell.classList.remove("pulse"); void bell.offsetWidth; bell.classList.add("pulse");
         const bb = document.getElementById("bellBtn"); if(bb){ bb.classList.remove("ring"); void bb.offsetWidth; bb.classList.add("ring"); } } }
+    // first look after opening the app: the latest unread alerts / reminders of the last 2 days, once per visit
+    const shown = window.__alertsToasted || (window.__alertsToasted = new Set());
+    const recent = n => !n.created_at || (Date.now() - new Date(n.created_at).getTime()) < 2*86400000;
+    const fresh = (_alertSeen ? list.filter(n => !_alertSeen.has(n.notification_id)) : list.filter(recent))
+                    .filter(n => !shown.has(n.notification_id)).slice(0, 3);
+    fresh.forEach(n=> shown.add(n.notification_id));
+    fresh.slice().reverse().forEach((n, i)=> setTimeout(()=> showAlertToast(n), i*350));
     if(_alertSeen){
-      const fresh = list.filter(n => !_alertSeen.has(n.notification_id)).slice(0, 2);
-      fresh.reverse().forEach(showAlertToast);
       const drawerOpen = document.getElementById("notifOverlay") && document.getElementById("notifOverlay").classList.contains("open");
       if(fresh.length && drawerOpen && window.ciOps) window.ciOps.loadAlerts(document.getElementById("notifBody"));
     }
@@ -7188,15 +7457,17 @@ async function pollAlerts(){
   }catch(e){}
 }
 function showAlertToast(n){
-  anchorToBell();
-  let wrap = document.getElementById("alertToasts");
-  if(!wrap){ wrap = el("div",""); wrap.id = "alertToasts"; document.body.appendChild(wrap); }
-  while(wrap.children.length >= 2) wrap.firstElementChild.remove();      // max two pop-ups at a time
-  const t = el("div","alert-toast", `<div class="at-ic">${n.kind==="action_required"?"⚡":"🔔"}</div><div class="at-b"><b>${esc(n.title)}</b><span>${esc(n.body||"")}</span></div><button class="at-x" aria-label="Dismiss">✕</button>`);
+  const wrap = toastStack();
+  while(wrap.children.length >= 4) wrap.firstElementChild.remove();
+  const rem = /remind/i.test(String(n.kind||"") + " " + String(n.template_key||"") + " " + String(n.title||""));
+  const act = n.kind==="action_required";
+  const t = el("div",`alert-toast ${act?"at-act":rem?"at-rem":""}`, `<div class="at-ic">${act?"⚡":rem?"⏰":"🔔"}</div><div class="at-b"><b>${esc(n.title)}</b><span>${esc(n.body||"")}</span>${n.action_label?`<em>${esc(n.action_label)} →</em>`:""}</div><button class="at-x" aria-label="Dismiss">✕</button>`);
   wrap.appendChild(t);
   const kill = ()=>{ t.classList.add("out"); setTimeout(()=>t.remove(), 250); };
-  t.onclick = e=>{ if(e.target.closest(".at-x")){ kill(); return; } kill(); openNotif(); };
-  setTimeout(kill, 8000);
+  t.onclick = e=>{ if(e.target.closest(".at-x")){ kill(); return; } kill();
+    const r = n.action_route && String(n.action_route).replace(/^\/?app\.html\?go=/,"").replace(/^#/,"");
+    if(r && PAGES[r] && !(window.__profileGate && !GATE_OPEN_PAGES.includes(r))){ currentPage = r; renderShell(); } else openNotif(); };
+  setTimeout(kill, 9000);
 }
 
 function init(){

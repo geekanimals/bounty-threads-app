@@ -196,8 +196,8 @@
   function reqBanner(){
     if(!REQ) return "";
     if(REQ.complete) return '<div class="cp-req cp-ready"><div><b>✅ You\'re ready for campaigns</b> <span class="muted">— all '+REQ.total+' required details added. Keep them up to date.</span></div>'
-      + '<button class="btn sm" id="cpGoCampaigns">Browse campaigns →</button></div>';
-    return '<div class="cp-req"><div class="cp-req-h"><b>🔒 Complete your profile to unlock Geek OS</b><span>'+REQ.done+' / '+REQ.total+' done</span></div>'
+      + '<button class="btn sm" id="cpGoCampaigns">My campaigns →</button></div>';
+    return '<div class="cp-req"><div class="cp-req-h"><b>Complete your profile <span class="muted" style="font-weight:500">(optional — brands pick complete profiles first)</span></b><span>'+REQ.done+' / '+REQ.total+' done</span></div>'
       + '<div class="cp-bar"><span style="width:'+Math.round(100*REQ.done/Math.max(REQ.total,1))+'%"></span></div>'
       + '<div class="cp-req-list">'+(REQ.items||[]).map(function(it){
           return '<a href="#" class="cp-req-it '+(it.done?"done":"")+'" data-goto="'+esc(it.section)+'">'+(it.done?"✓":"○")+' '+esc(it.label)+'</a>'; }).join("")+'</div></div>';
@@ -222,8 +222,8 @@
       + '    '+ring
       + '  </div>'
       + (REQ ? (REQ.complete
-          ? '<div class="cp-hero-foot ok"><span>✅ Profile complete — you\'re ready for campaigns</span><button class="btn sm" id="cpGoCampaigns">Browse campaigns →</button></div>'
-          : '<div class="cp-hero-foot"><span>'+REQ.done+' of '+REQ.total+' details done · '+left.length+' left</span><div class="cp-req-list">'+left.slice(0,6).map(function(it){
+          ? '<div class="cp-hero-foot ok"><span>✅ Profile complete — you\'re ready for campaigns</span><button class="btn sm" id="cpGoCampaigns">My campaigns →</button></div>'
+          : '<div class="cp-hero-foot"><span>'+REQ.done+' of '+REQ.total+' details done · '+left.length+' left <span class="muted">(optional)</span></span><button class="btn sm ghost" id="cpGoCampaigns">My campaigns →</button><div class="cp-req-list">'+left.slice(0,6).map(function(it){
               return '<a href="#" class="cp-req-it" data-goto="'+esc(it.section)+'">○ '+esc(it.label)+'</a>'; }).join("")+'</div></div>') : '')
       + (REQ ? '' : (''
       + '  <div class="cp-progress"><div class="cp-bar"><span style="width:'+pct+'%"></span></div><b>'+pct+'% complete</b></div>'
@@ -679,7 +679,7 @@
 
   async function refreshCompletion(){ try{ var c=await api("get_profile_completion"); if(c&&!c.error){ COMP=c.data; } await loadReq(); var h=document.getElementById("cpHead"); if(h){ h.outerHTML=header(); wireReq(); } }catch(e){} }
   function wireReq(){
-    var gc=document.getElementById("cpGoCampaigns"); if(gc) gc.onclick=function(){ currentPage = window.__ciOpsEnabled ? "opencampaigns" : "marketplace"; renderShell(); };
+    document.querySelectorAll("#cpGoCampaigns").forEach(function(gc){ gc.onclick=function(){ currentPage = window.__ciOpsEnabled ? "mycampaigns" : "marketplace"; renderShell(); }; });
     document.querySelectorAll("[data-goto]").forEach(function(a){ a.onclick=function(e){ e.preventDefault();
       var sec=document.querySelector('.cp-sec[data-sec="'+a.getAttribute("data-goto")+'"]'); if(sec){ sec.scrollIntoView({behavior:"smooth",block:"start"}); sec.classList.add("cp-flash"); setTimeout(function(){ sec.classList.remove("cp-flash"); },1600); } }; });
   }
