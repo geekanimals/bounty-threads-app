@@ -4708,7 +4708,7 @@ async function bpCreatorProfile(pid){
     </div></div>`;
   document.body.appendChild(m); m.classList.add("open");
   document.getElementById("bpProfX").onclick = ()=> m.remove(); m.onclick = e=>{ if(e.target.id==="bpProf") m.remove(); };
-  const hb = m.querySelector("[data-bpphub]"); if(hb) hb.onclick = ()=>{ m.remove(); openCreatorHub(pid, "messages"); };
+  const hb = m.querySelector("[data-bpphub]"); if(hb) hb.onclick = ()=>{ m.remove(); openCreatorHub(pid, "whatsapp"); };
   const box = document.getElementById("bppAccts");
   if(!cr.member_id){ box.innerHTML = `<div class="muted">Not on Geek OS yet.</div>`; return; }
   sb.schema("api").rpc("creator_profile_card", { p_member: cr.member_id }).then(({ data:P })=>{
@@ -4833,7 +4833,9 @@ async function hubReload(){
 function paintCreatorHub(){
   const body = document.getElementById("hubBody"); const d = _hubC.data; if(!body || !d) return;
   const cr = d.creator||{}, h = d.applied_profile || cr.username || "", pr = d.profile, pct = pr && pr.pct!=null ? pr.pct : null;
-  const tabs = [["overview","Overview"],["timeline",`What they did (${(d.timeline||[]).length})`],["messages",`Messages (${(d.messages||[]).length})`]];
+  const WA = (d.messages||[]).filter(x=> x.channel==="whatsapp"), OTH = (d.messages||[]).filter(x=> x.channel!=="whatsapp");
+  if(_hubC.tab==="messages") _hubC.tab = "whatsapp";
+  const tabs = [["overview","Overview"],["timeline",`What they did (${(d.timeline||[]).length})`],["whatsapp",`💬 WhatsApp (${WA.length})`],["other",`✉️ Email & app (${OTH.length + (d.alerts||[]).length})`]];
   let sec = "";
   if(_hubC.tab==="overview"){
     const row = (k,v)=> v ? `<div class="bpp-row"><span>${esc(k)}</span><div>${v}</div></div>` : "";
@@ -4848,7 +4850,7 @@ function paintCreatorHub(){
       <div class="bpp-sec">Profile ${pct!=null?`· ${pct}% complete`:""} <span class="muted" style="font-weight:400">(optional for the creator)</span></div>
       ${pr ? `<div class="cp-bar" style="margin:4px 0 8px"><span style="width:${pct||0}%"></span></div>${(pr.missing||[]).length?`<div class="muted" style="font-size:12.5px">Not filled yet: ${esc(pr.missing.join(", "))}</div>`:`<div class="muted" style="font-size:12.5px">Everything filled in ✓</div>`}` : `<div class="muted">No profile yet.</div>`}
       <div id="hubPro"></div>
-      <div class="hub-foot"><button class="btn ghost sm" data-hubbp>🔁 Open in Barter process</button>${h?`<a class="btn ghost sm" href="/p.html?u=${encodeURIComponent(h)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}<button class="btn sm" data-hubtab2="messages">💬 Message them</button></div>`;
+      <div class="hub-foot"><button class="btn ghost sm" data-hubbp>🔁 Open in Barter process</button>${h?`<a class="btn ghost sm" href="/p.html?u=${encodeURIComponent(h)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}<button class="btn sm" data-hubtab2="whatsapp">💬 WhatsApp chat</button></div>`;
   } else if(_hubC.tab==="timeline"){
     const T = d.timeline||[], A = d.alerts||[];
     const nice = x=> String(x||"").replace(/_/g," ");
@@ -4857,16 +4859,35 @@ function paintCreatorHub(){
           <div class="muted">${esc(fmtDateTime(e.at))}${e.by?` · by ${esc(e.by)}${e.by_creator?" (creator)":""}`:" · automatic"}${e.reason?` · ${esc(e.reason)}`:""}</div></div></div>`).join("")}</div>`
       : `<div class="muted">Nothing recorded yet.</div>`;
     if(A.length) sec += `<div class="bpp-sec">Alerts the creator got in the app</div><div class="hub-tl">${A.slice(0,30).map(n=>`<div class="hub-tl-it"><span class="hub-tl-dot ${n.read?"me":""}"></span><div><b>${esc(n.title)}</b><div class="muted">${esc(fmtDateTime(n.at))} · ${n.read?"read":"not read yet"}</div></div></div>`).join("")}</div>`;
+  } else if(_hubC.tab==="whatsapp"){
+    const M = WA.slice().reverse(), tick = x=> x.status==="failed" ? `<span class="wa-fail" title="${esc(x.error||"")}">❗ not delivered</span>` : x.status==="queued" ? "🕓" : x.status==="skipped" ? "⏸" : x.status==="read" ? `<span class="wa-read">✓✓</span>` : x.status==="delivered" ? "✓✓" : "✓";
+    let day = "";
+    const bubbles = M.map(x=>{
+      const dd = new Date(x.at).toDateString(), sep = dd!==day ? `<div class="wa-day"><span>${esc(fmtDate(x.at))}</span></div>` : ""; day = dd;
+      const long = String(x.text||"").length > 260 || (String(x.text||"").match(/\n/g)||[]).length > 5;
+      return sep + `<div class="wa-msg ${x.dir==="in"?"in":"out"}${x.auto?" tpl":""}"><div class="wa-bub">
+          ${x.auto?`<span class="wa-tag">🤖 ${esc(String(x.key||"update").replace(/_/g," "))}</span>`:x.dir==="out"&&x.by?`<span class="wa-tag">${esc(x.by)}</span>`:""}
+          <div class="wa-txt${long?" clamp":""}">${esc(x.text||"").replace(/\n/g,"<br>")}</div>${long?`<button class="wa-more" type="button">Read more</button>`:""}
+          <span class="wa-time">${esc(new Date(x.at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}))} ${x.dir==="out"?tick(x):""}</span></div></div>`; }).join("");
+    const digits = String(d.phone||"").replace(/\D/g,"");
+    sec = `<div class="wa-box">
+        <div class="wa-head">${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((h||"?").slice(0,2).toUpperCase())}</span>`}
+          <div class="wa-head-id"><b>${esc(d.name||cr.name||h||"Creator")}</b><span>${d.phone?esc(d.phone):"no WhatsApp number"}${d.session_open?" · chat open":""}</span></div>
+          ${digits?`<a class="wa-open" href="https://wa.me/${digits}" target="_blank" rel="noopener" title="Open this chat in WhatsApp">Open in WhatsApp ↗</a>`:""}</div>
+        <div class="wa-chat" id="hubChat">${bubbles || `<div class="wa-empty">No WhatsApp messages with this creator yet.</div>`}</div>
+        <div class="wa-tplrow"><select id="hubStepKey"><option value="">📨 Send a step template…</option>${(d.step_messages||[]).map(s2=>`<option value="${esc(s2.key)}">${esc(s2.title||s2.key)}</option>`).join("")}</select><button class="wa-tplgo" id="hubStepGo" type="button">Send</button></div>
+        <div class="wa-compose"><textarea id="hubText" rows="1" placeholder="${d.phone?(d.session_open?"Type a message":"Type a message (works within 24 h of their last reply)"):"No WhatsApp number for this creator"}"${d.phone?"":" disabled"}></textarea>
+          <button class="wa-send" id="hubTextGo" type="button" aria-label="Send"${d.phone?"":" disabled"}>➤</button></div>
+        <div class="wa-note">${d.session_open ? "✅ They replied in the last 24 h — your message goes straight to their WhatsApp." : "WhatsApp lets you type freely only within 24 h of the creator's last message. Otherwise send a step template, or tap “Open in WhatsApp”."}</div>
+      </div>`;
   } else {
-    const M = (d.messages||[]).slice().reverse();
-    sec = `<div class="hub-chat" id="hubChat">${M.length ? M.map(x=>`<div class="hub-msg ${x.dir==="in"?"in":"out"} ${x.auto?"auto":""}">
-          <div class="hub-msg-b">${x.auto?`<span class="hub-msg-k">${x.channel==="email"?"✉️ Email":"🤖 WhatsApp"} · ${esc(String(x.key||"").replace(/_/g," "))}${x.template?` <code>${esc(x.template)}</code>`:""}</span>`:""}${esc(x.text||"").replace(/\n/g,"<br>")}</div>
-          <div class="hub-msg-m">${esc(fmtDateTime(x.at))}${x.by?" · "+esc(x.by):""}${x.dir==="out"?` · ${x.status==="failed"?"❌ failed":x.status==="queued"?"⏳ queued":x.status==="skipped"?"⏸ skipped":"✓ "+esc(x.status||"sent")}`:""}${x.error?` · <span title="${esc(x.error)}">${esc(String(x.error).slice(0,80))}</span>`:""}</div></div>`).join("")
-        : `<div class="muted" style="padding:10px">No messages with this creator yet.</div>`}</div>
-      <div class="hub-send">
-        <div class="hub-send-row"><select id="hubStepKey"><option value="">📨 Send a step message (WhatsApp + app + email)…</option>${(d.step_messages||[]).map(s=>`<option value="${esc(s.key)}">${esc(s.title||s.key)}</option>`).join("")}</select><button class="btn sm" id="hubStepGo">Send</button></div>
-        <div class="hub-send-row"><textarea id="hubText" rows="2" placeholder="${d.phone?"Type a WhatsApp message…":"No WhatsApp number for this creator"}"${d.phone?"":" disabled"}></textarea><button class="btn sm" id="hubTextGo"${d.phone?"":" disabled"}>Send</button></div>
-        <div class="muted" style="font-size:12px">${d.session_open ? "✅ They messaged in the last 24 h — free text goes straight to WhatsApp." : "WhatsApp allows free text only within 24 h of the creator's last message — otherwise send a step message (pre-approved template)."}</div></div>`;
+    const M = OTH, A = d.alerts||[];
+    sec = (M.length ? `<div class="bpp-sec">Emails & automatic messages</div><div class="hub-tl">${M.map(x=>`<div class="hub-tl-it"><span class="hub-tl-dot"></span><div>
+          <b>${x.channel==="email"?"✉️ Email":"📨 "+esc(x.channel)} · ${esc(String(x.key||"").replace(/_/g," "))}</b>
+          <div class="muted">${esc(fmtDateTime(x.at))} · ${x.status==="failed"?"❌ failed":x.status==="queued"?"⏳ queued":"✓ "+esc(x.status||"sent")}${x.error?` · ${esc(String(x.error).slice(0,90))}`:""}</div>
+          ${x.text?`<div class="hub-otxt">${esc(String(x.text).slice(0,300))}</div>`:""}</div></div>`).join("")}</div>` : "")
+      + (A.length ? `<div class="bpp-sec">Alerts in the app</div><div class="hub-tl">${A.slice(0,40).map(n=>`<div class="hub-tl-it"><span class="hub-tl-dot ${n.read?"me":""}"></span><div><b>${esc(n.title)}</b><div class="muted">${esc(fmtDateTime(n.at))} · ${n.read?"read":"not read yet"}</div></div></div>`).join("")}</div>` : "")
+      || `<div class="muted">No emails or app alerts yet.</div>`;
   }
   body.innerHTML = `<div class="bpp-top">${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((h||"?").slice(0,2).toUpperCase())}</span>`}
       <div style="min-width:0;flex:1"><div class="bpp-name">${esc(d.name||cr.name||h||"Creator")}</div>
@@ -4893,8 +4914,20 @@ function paintCreatorHub(){
         + row("On Geek OS since", P.joined_at ? fmtDate(P.joined_at) : "");
     }, ()=>{});
   }
-  if(_hubC.tab==="messages"){
+  if(_hubC.tab==="whatsapp"){
     const ch = document.getElementById("hubChat"); if(ch) ch.scrollTop = ch.scrollHeight;
+    body.querySelectorAll(".wa-more").forEach(b=> b.onclick = ()=>{ const t = b.previousElementSibling; t.classList.toggle("clamp"); b.textContent = t.classList.contains("clamp") ? "Read more" : "Show less"; });
+    const ta = document.getElementById("hubText");
+    if(ta){ ta.oninput = ()=>{ ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; };
+      ta.onkeydown = e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); document.getElementById("hubTextGo").click(); } }; }
+    // new replies show up on their own while the chat is open
+    clearInterval(_hubC.timer);
+    _hubC.timer = setInterval(async ()=>{
+      if(!document.getElementById("hubChat") || _hubC.tab!=="whatsapp"){ clearInterval(_hubC.timer); return; }
+      if(document.activeElement && document.activeElement.id==="hubText" && document.activeElement.value) return;
+      const { data:nd } = await sb.schema("api").rpc("campaign_creator_hub", { p_participation: _hubC.pid }).then(r=>r, ()=>({data:null}));
+      if(nd && JSON.stringify(nd.messages) !== JSON.stringify(_hubC.data.messages)){ _hubC.data = nd; paintCreatorHub(); }
+    }, 12000);
     const go = document.getElementById("hubStepGo");
     if(go) go.onclick = async ()=>{ const k = document.getElementById("hubStepKey").value; if(!k){ gateToast("Pick a step message first."); return; }
       go.disabled = true; go.textContent = "Sending…";

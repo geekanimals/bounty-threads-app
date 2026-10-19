@@ -1690,3 +1690,46 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 .hub-ctabs::-webkit-scrollbar{display:none}
 .hub-ctabs button{white-space:nowrap;flex:0 0 auto}
 .hub-bar input,.hub-bar select,.hub-send-row select,.apv-filter select{padding:8px 11px;border-radius:10px;border:1px solid var(--line);background:var(--panel,#fff);color:var(--ink);font:inherit;font-size:13.5px}
+/* creator hub: WhatsApp chat, looks and works like WhatsApp */
+.wa-box{border-radius:14px;overflow:hidden;border:1px solid var(--line);display:flex;flex-direction:column;background:#efeae2}
+.wa-head{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#075e54;color:#fff}
+.wa-head img,.wa-head .avatar{width:38px;height:38px;border-radius:50%;object-fit:cover;flex:0 0 38px}
+.wa-head-id{flex:1;min-width:0;display:flex;flex-direction:column}
+.wa-head-id b{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wa-head-id span{font-size:12px;opacity:.85}
+.wa-open{color:#fff;font-size:12.5px;font-weight:700;text-decoration:none;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.16);white-space:nowrap}
+.wa-open:hover{background:rgba(255,255,255,.26)}
+.wa-chat{display:flex;flex-direction:column;gap:4px;padding:12px 10px;height:min(52vh,460px);overflow:auto;
+  background-color:#efeae2;background-image:radial-gradient(rgba(0,0,0,.035) 1px,transparent 1px);background-size:18px 18px}
+.wa-day{text-align:center;margin:8px 0}
+.wa-day span{display:inline-block;font-size:11.5px;padding:4px 10px;border-radius:8px;background:#e1f2fb;color:#4a5a63;box-shadow:0 1px .5px rgba(0,0,0,.1)}
+.wa-msg{display:flex;margin:1px 0}
+.wa-msg.out{justify-content:flex-end}
+.wa-bub{position:relative;max-width:78%;padding:6px 9px 18px;border-radius:8px;font-size:13.5px;line-height:1.42;color:#111b21;box-shadow:0 1px .5px rgba(0,0,0,.13);word-break:break-word;min-width:90px}
+.wa-msg.in .wa-bub{background:#fff;border-top-left-radius:0}
+.wa-msg.out .wa-bub{background:#d9fdd3;border-top-right-radius:0}
+.wa-msg.out.tpl .wa-bub{background:#d9fdd3}
+.wa-tag{display:block;font-size:11px;font-weight:700;color:#027eb5;margin-bottom:2px;text-transform:capitalize}
+.wa-txt.clamp{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.wa-more{border:0;background:none;padding:2px 0 0;color:#027eb5;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.wa-time{position:absolute;right:8px;bottom:3px;font-size:10.5px;color:#667781;white-space:nowrap}
+.wa-read{color:#53bdeb}
+.wa-fail{color:#dc2626;font-weight:600}
+.wa-empty{margin:auto;text-align:center;font-size:13px;color:#54656f;background:#fff8c5;padding:8px 12px;border-radius:8px}
+.wa-tplrow{display:flex;gap:6px;padding:8px 10px 0;background:#f0f2f5}
+.wa-tplrow select{flex:1;min-width:0;padding:8px 10px;border-radius:10px;border:1px solid #d1d7db;background:#fff;color:#111b21;font:inherit;font-size:13px}
+.wa-tplgo{border:0;border-radius:10px;padding:0 14px;background:#00a884;color:#fff;font-weight:700;cursor:pointer;font:inherit;font-size:13px}
+.wa-compose{display:flex;gap:8px;align-items:flex-end;padding:8px 10px;background:#f0f2f5}
+.wa-compose textarea{flex:1;min-width:0;resize:none;border:0;border-radius:10px;padding:10px 12px;font:inherit;font-size:14px;background:#fff;color:#111b21;max-height:120px;outline:none}
+.wa-send{width:42px;height:42px;flex:0 0 42px;border-radius:50%;border:0;background:#00a884;color:#fff;font-size:17px;cursor:pointer}
+.wa-send:disabled,.wa-tplgo:disabled{opacity:.5;cursor:default}
+.wa-note{padding:0 12px 10px;background:#f0f2f5;font-size:11.5px;color:#54656f}
+.hub-otxt{font-size:12.5px;margin-top:4px;padding:6px 8px;border-radius:8px;background:rgba(120,130,150,.08);white-space:pre-wrap}
+[data-theme="dark"] .wa-box,[data-theme="dark"] .wa-chat{background-color:#0b141a}
+[data-theme="dark"] .wa-msg.in .wa-bub{background:#202c33;color:#e9edef}
+[data-theme="dark"] .wa-msg.out .wa-bub{background:#005c4b;color:#e9edef}
+[data-theme="dark"] .wa-time{color:#8696a0}
+[data-theme="dark"] .wa-tplrow,[data-theme="dark"] .wa-compose,[data-theme="dark"] .wa-note{background:#202c33;color:#8696a0}
+[data-theme="dark"] .wa-compose textarea,[data-theme="dark"] .wa-tplrow select{background:#2a3942;color:#e9edef;border-color:#2a3942}
+[data-theme="dark"] .wa-day span{background:#182229;color:#8696a0}
+@media (max-width:640px){.wa-chat{height:58vh}.wa-bub{max-width:88%}.wa-open{padding:6px 8px;font-size:11.5px}}
