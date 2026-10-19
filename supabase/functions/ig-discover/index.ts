@@ -72,8 +72,14 @@ Deno.serve(async (req) => {
       const igId = String(src.ig_user_id);
       const FT = encodeURIComponent(String(src.access_token));
 
-      const fields = `business_discovery.username(${encodeURIComponent(username)}){username,name,biography,followers_count,media_count,profile_picture_url,media.limit(12){caption,permalink,like_count,comments_count,media_type}}`;
-      const r = await fetch(`${FB_GRAPH}/${encodeURIComponent(igId)}?fields=${fields}&access_token=${FT}`);
+      const want = Math.min(Math.max(Number(body?.media_limit) || 12, 6), 30);
+      const fields = `business_discovery.username(${encodeURIComponent(username)}){username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url,media.limit(${want}){id,caption,permalink,like_count,comments_count,media_type,media_url,thumbnail_url,timestamp}}`;
+      let r = await fetch(`${FB_GRAPH}/${encodeURIComponent(igId)}?fields=${fields}&access_token=${FT}`);
+      if (!r.ok) {   // some accounts refuse a field (thumbnail_url / website) — ask again with the basic set
+        const basic = `business_discovery.username(${encodeURIComponent(username)}){username,name,biography,followers_count,follows_count,media_count,profile_picture_url,media.limit(${want}){id,caption,permalink,like_count,comments_count,media_type,media_url,timestamp}}`;
+        const r2 = await fetch(`${FB_GRAPH}/${encodeURIComponent(igId)}?fields=${basic}&access_token=${FT}`);
+        if (r2.ok) r = r2;
+      }
       const j = await r.json().catch(() => ({}));
       const bd = j?.business_discovery;
       if (!r.ok || !bd) {
@@ -98,7 +104,12 @@ Deno.serve(async (req) => {
         avg_likes: avg("like_count"), avg_comments: avg("comments_count"), mentions,
       };
       await userClient.schema("api").rpc("save_external_candidates", { p_items: [profile] }).then(() => {}, () => {});
-      return json({ ok: true, profile });
+      // what the app shows (not saved): the full public profile + their latest posts
+      const posts = media.map((m: any) => ({ id: m.id ?? null, caption: String(m.caption || "").slice(0, 600), permalink: m.permalink ?? null,
+        like_count: m.like_count ?? null, comments_count: m.comments_count ?? null, media_type: m.media_type ?? null,
+        media_url: m.media_url ?? null, thumbnail_url: m.thumbnail_url ?? null, timestamp: m.timestamp ?? null }));
+      return json({ ok: true, profile: { ...profile, bio: String(bd.biography ?? ""), website: bd.website ?? null, follows: bd.follows_count ?? null,
+        username: bd.username ?? me }, posts });
     }
 
     if (action === "tagged") {
@@ -135,17 +146,31 @@ Deno.serve(async (req) => {
         const m = String(hs?.error?.message || "");
         return json({ error: m ? `Instagram refused the hashtag search: ${m}` : `No public posts found for #${tag}.`, needs_permission: needsPermission(hs) }, 200);
       }
-      const fields = "id,caption,media_type,media_url,permalink,like_count,comments_count,timestamp";
-      const mr = await (await fetch(`${FB_GRAPH}/${hid}/${edge}?user_id=${igId}&fields=${fields}&limit=40&access_token=${FT}`)).json().catch(() => ({}));
+      const fields = "id,caption,media_type,media_url,permalink,like_count,comments_count,timestamp,children{media_url,media_type}";
+      const pull = async (e: string) => {
+        let mr = await (await fetch(`${FB_GRAPH}/${hid}/${e}?user_id=${igId}&fields=${fields}&limit=40&access_token=${FT}`)).json().catch(() => ({}));
+        if (!Array.isArray(mr?.data)) {      // children isn't allowed on every app → without it
+          mr = await (await fetch(`${FB_GRAPH}/${hid}/${e}?user_id=${igId}&fields=${fields.replace(",children{media_url,media_type}", "")}&limit=40&access_token=${FT}`)).json().catch(() => ({}));
+        }
+        return mr;
+      };
+      const shape = (m: any) => {
+        const kid = (m?.children?.data ?? []).find((c: any) => c?.media_url);
+        return { id: m.id, caption: String(m.caption || "").slice(0, 400), media_type: m.media_type,
+          media_url: m.media_url ?? kid?.media_url ?? null, kid_type: kid?.media_type ?? null,
+          permalink: m.permalink ?? null, like_count: m.like_count ?? null, comments_count: m.comments_count ?? null, timestamp: m.timestamp ?? null };
+      };
+      const both = body?.edge === "both";
+      const [mr, mr2] = await Promise.all([pull(both ? "top_media" : edge), both ? pull("recent_media") : Promise.resolve(null)]);
       if (!Array.isArray(mr?.data)) return json({ error: mr?.error?.message || "Instagram couldn't return posts for that hashtag.", needs_permission: needsPermission(mr) }, 200);
-      const posts = mr.data.map((m: any) => ({ id: m.id, caption: String(m.caption || "").slice(0, 400), media_type: m.media_type, media_url: m.media_url ?? null,
-        permalink: m.permalink ?? null, like_count: m.like_count ?? null, comments_count: m.comments_count ?? null, timestamp: m.timestamp ?? null }));
+      const posts = mr.data.map(shape);
+      const recent = Array.isArray(mr2?.data) ? mr2.data.map(shape) : null;
       // Instagram doesn't say who posted a hashtag post — but captions name accounts (@handle): those become candidates
-      const handles = [...new Set(posts.flatMap((p: any) => (p.caption.match(/@([A-Za-z0-9._]{2,30})/g) || []).map((x: string) => x.slice(1).toLowerCase().replace(/\.$/, ""))))].slice(0, 40);
+      const handles = [...new Set([...posts, ...(recent || [])].flatMap((p: any) => (p.caption.match(/@([A-Za-z0-9._]{2,30})/g) || []).map((x: string) => x.slice(1).toLowerCase().replace(/\.$/, ""))))].slice(0, 40);
       if (handles.length) {
         await userClient.schema("api").rpc("save_external_candidates", { p_items: handles.map((h) => ({ handle: h, source: "hashtag", caption: `#${tag}` })) }).then(() => {}, () => {});
       }
-      return json({ ok: true, tag, edge, posts, handles });
+      return json({ ok: true, tag, edge: both ? "both" : edge, posts, recent, handles });
     }
 
 

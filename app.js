@@ -2267,8 +2267,104 @@ let _discoverPreset = null;
 let _dcTab = "platform";
 function renderDiscover(){
   return pageHead("Creator search","Every creator we know — on Geek OS and on Instagram. Filter by category, location, size and engagement, then invite.")
-    + `<div id="dxIg" style="margin-bottom:12px"></div><div id="csRoot"></div>`;
+    + `<div class="dx-tools" id="dxTools"></div><div id="dxIg" style="margin-bottom:12px"></div><div id="csRoot"></div><div id="dxToolBody" style="display:none"></div>`;
 }
+/* ================= Discovery → Instagram tools (official Meta APIs, through the Facebook-connected Instagram) =================
+ *   #️⃣ Hashtag search   — top + recent public posts for any hashtag / keyword: image or video, caption, likes, comments, link
+ *   🔎 Business discovery — any public Business / Creator account by username: photo, bio, followers, following, posts, and
+ *                           their latest posts with likes, comments, captions, video and link                                   */
+let _dxTool = "search", _dxHash = { q:"", data:null, busy:false }, _dxBiz = { q:"", data:null, busy:false }, _dxConn = null;
+async function dxConnLine(){
+  if(_dxConn === null){
+    const { data } = await sb.rpc("my_discovery_connection").then(r=>r, ()=>({ data:null }));
+    _dxConn = data || {};
+  }
+  const fb = _dxConn.facebook;
+  return fb && fb.ig_username ? `<span class="igt-acct">📸 Searching with <b>@${esc(fb.ig_username)}</b>${fb.page_name?` · Page: ${esc(fb.page_name)}`:""}${fb.discovery_ok?' <span class="tag good">on</span>':' <span class="tag warn">not working yet</span>'}</span>`
+    : _dxConn.shared ? `<span class="igt-acct">📸 Searching with the Geek team's Instagram</span>` : `<span class="igt-acct off">📸 Instagram search isn't switched on yet</span>`;
+}
+function igtMediaCard(m){
+  const vid = m.media_type==="VIDEO" || m.kid_type==="VIDEO";
+  const src = m.media_url ? safeUrl(m.media_url) : "", thumb = m.thumbnail_url ? safeUrl(m.thumbnail_url) : "";
+  const when = m.timestamp ? (()=>{ const d = Math.round((Date.now()-new Date(m.timestamp).getTime())/86400000); return d<1?"today":d<7?d+"d ago":d<60?Math.round(d/7)+"w ago":Math.round(d/30)+"mo ago"; })() : "";
+  const media = !src && !thumb ? `<div class="igt-noimg">${vid?"▶ Reel":"📷 Post"}<span>preview not shared by Instagram</span></div>`
+    : vid ? `<video src="${esc(src)}"${thumb?` poster="${esc(thumb)}"`:""} controls preload="metadata" playsinline muted></video>`
+          : `<img src="${esc(src||thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'igt-noimg',textContent:'📷 Post'}))">`;
+  return `<div class="igt-card"><div class="igt-media">${media}
+      ${m.caption?`<div class="igt-cap">${esc(String(m.caption).slice(0,140))}</div>`:""}${vid?`<span class="igt-kind">▶ Reel</span>`:m.media_type==="CAROUSEL_ALBUM"?`<span class="igt-kind">▦ Album</span>`:""}</div>
+    <div class="igt-stats"><span title="Likes">❤ ${m.like_count!=null?fmtNum(m.like_count):"—"}</span><span title="Comments">💬 ${m.comments_count!=null?fmtNum(m.comments_count):"—"}</span>
+      ${m.permalink?`<a href="${esc(safeUrl(m.permalink))}" target="_blank" rel="noopener" title="Open on Instagram">${esc(when)||"Open"} ↗</a>`:""}</div></div>`;
+}
+function igtNeedsFb(msg){
+  const fb = /Facebook|switches on|Super Admin/i.test(msg||"");
+  return `<div class="igt-msg">${esc(msg||"Couldn't reach Instagram.")}${fb && window.__isAdmin ? `<div style="margin-top:8px"><button class="btn sm" data-fbsearch2>🔎 Connect Facebook now</button></div>` : ""}</div>`;
+}
+async function renderDxTools(){
+  const bar = document.getElementById("dxTools"); if(!bar) return;
+  bar.innerHTML = [["search","🔎 Creator search"],["hashtag","#️⃣ Hashtag search"],["business","📇 Business discovery"]]
+    .map(([k,l])=>`<button class="${_dxTool===k?"act":""}" data-dxtool="${k}">${l}</button>`).join("");
+  bar.querySelectorAll("[data-dxtool]").forEach(b=> b.onclick = ()=>{ _dxTool = b.dataset.dxtool; renderDxTools(); });
+  const cs = document.getElementById("csRoot"), ig = document.getElementById("dxIg"), tb = document.getElementById("dxToolBody");
+  if(cs) cs.style.display = _dxTool==="search" ? "" : "none";
+  if(ig) ig.style.display = _dxTool==="search" ? "" : "none";
+  if(!tb) return;
+  tb.style.display = _dxTool==="search" ? "none" : "";
+  if(_dxTool==="search") return;
+  const conn = await dxConnLine();
+  if(_dxTool==="hashtag"){
+    const d = _dxHash.data;
+    tb.innerHTML = `<div class="card igt-head"><div class="igt-title"><h3>#️⃣ Hashtag search</h3>${conn}</div>
+        <p class="muted">Type a hashtag or keyword — see the <b>top</b> and <b>most recent</b> public posts using it on Instagram, with likes, comments and the post itself.</p>
+        <form class="igt-form" id="igtHashForm"><span class="igt-pre">#</span><input id="igtHashQ" placeholder="e.g. ipl, delhifoodblogger, skincare" value="${esc(_dxHash.q)}" autocomplete="off"><button class="btn" type="submit"${_dxHash.busy?" disabled":""}>${_dxHash.busy?"Searching…":"🔎 Search"}</button></form>
+        <div class="igt-note muted">Meta allows 30 different hashtags per 7 days for one Instagram account — searching the same hashtag again is free.</div></div>
+      <div id="igtHashOut">${_dxHash.busy ? skel("cards",4) : !d ? "" : d.error ? igtNeedsFb(d.error) : `
+        <div class="igt-band">#${esc(d.tag)}</div>
+        ${(d.handles||[]).length?`<div class="card igt-handles"><b>Accounts tagged in these posts</b><div>${d.handles.slice(0,30).map(h=>`<button class="cs-chip" data-igtbiz="${esc(h)}">@${esc(h)}</button>`).join("")}</div></div>`:""}
+        <div class="igt-sec"><span class="igt-bar"></span>Top media <span class="muted">${(d.posts||[]).length}</span></div>
+        <div class="igt-grid">${(d.posts||[]).map(igtMediaCard).join("") || `<div class="muted">No top posts.</div>`}</div>
+        ${d.recent ? `<div class="igt-sec"><span class="igt-bar"></span>Recent media <span class="muted">${d.recent.length}</span></div>
+        <div class="igt-grid">${d.recent.map(igtMediaCard).join("") || `<div class="muted">No recent posts.</div>`}</div>` : ""}
+        <div class="muted igt-foot">Instagram doesn't say who posted a hashtag post — open a post to see the creator, or tap an @account above to see their full profile.</div>`}</div>`;
+    const f = document.getElementById("igtHashForm");
+    f.onsubmit = async e=>{ e.preventDefault(); const q = document.getElementById("igtHashQ").value.trim().replace(/^#/,"").replace(/\s+/g,"").toLowerCase();
+      if(!/^[\p{L}\p{N}_]{2,60}$/u.test(q)){ gateToast("Type a hashtag — letters, numbers or _ only."); return; }
+      _dxHash = { q, data:null, busy:true }; renderDxTools();
+      const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"hashtag", tag:q, edge:"both" } }).then(r=>r, e=>({error:e}));
+      _dxHash.busy = false;
+      _dxHash.data = (data && !data.error) ? data : { error: (data && data.error) || (error && (typeof fnError==="function" ? await fnError(error) : error.message)) || "Couldn't reach Instagram." };
+      if(_dxTool==="hashtag") renderDxTools(); };
+    tb.querySelectorAll("[data-igtbiz]").forEach(b=> b.onclick = ()=>{ _dxTool = "business"; _dxBiz.q = b.dataset.igtbiz; renderDxTools().then(()=>{ const ff = document.getElementById("igtBizForm"); if(ff) ff.requestSubmit(); }); });
+  } else {
+    const d = _dxBiz.data, P = d && d.profile, posts = (d && d.posts) || [];
+    const eng = P && P.followers ? Math.round(1000*((Number(P.avg_likes)||0)+(Number(P.avg_comments)||0))/P.followers)/10 : null;
+    tb.innerHTML = `<div class="card igt-head"><div class="igt-title"><h3>📇 Instagram Business Discovery</h3>${conn}</div>
+        <p class="muted">Type any public <b>Business or Creator</b> account's username — see their photo, bio, followers, following, posts and their latest posts.</p>
+        <form class="igt-form" id="igtBizForm"><span class="igt-pre">@</span><input id="igtBizQ" placeholder="e.g. virat.kohli" value="${esc(_dxBiz.q)}" autocomplete="off"><button class="btn" type="submit"${_dxBiz.busy?" disabled":""}>${_dxBiz.busy?"Looking up…":"🔎 Search"}</button></form></div>
+      <div id="igtBizOut">${_dxBiz.busy ? skel("cards",4) : !d ? "" : d.error ? igtNeedsFb(d.error) : `
+        <div class="card igt-prof"><div class="igt-prof-band"></div>
+          <div class="igt-prof-top"><span class="cs-ring igt-prof-pic">${P.profile_picture_url?`<img src="${esc(safeUrl(P.profile_picture_url))}" alt="" referrerpolicy="no-referrer">`:`<span class="avatar">${esc(String(P.username||P.handle||"?").slice(0,2).toUpperCase())}</span>`}</span>
+            <div class="igt-prof-id"><h3>${esc(P.name||P.username||P.handle)}</h3><a href="https://instagram.com/${encodeURIComponent(P.username||P.handle)}" target="_blank" rel="noopener">@${esc(P.username||P.handle)} ↗</a>
+              ${P.bio?`<div class="igt-bio">${esc(P.bio).replace(/\n/g,"<br>")}</div>`:""}${P.website?`<a class="igt-web" href="${esc(safeUrl(P.website))}" target="_blank" rel="noopener">🔗 ${esc(String(P.website).replace(/^https?:\/\//,""))}</a>`:""}</div>
+            <div class="igt-prof-acts"><button class="btn sm" data-igtinv="${esc(P.username||P.handle)}">🎯 Invite to a campaign</button><a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(P.username||P.handle)}" target="_blank" rel="noopener">💬 DM</a></div></div>
+          <div class="igt-prof-stats"><div><b>${P.followers!=null?fmtNum(P.followers):"—"}</b><span>Followers</span></div><div><b>${P.follows!=null?fmtNum(P.follows):"—"}</b><span>Following</span></div>
+            <div><b>${P.media_count!=null?fmtNum(P.media_count):"—"}</b><span>Posts</span></div><div><b>${P.avg_likes!=null?fmtNum(Math.round(P.avg_likes)):"—"}</b><span>Avg likes</span></div>
+            <div><b>${P.avg_comments!=null?fmtNum(Math.round(P.avg_comments)):"—"}</b><span>Avg comments</span></div><div><b>${eng!=null?eng+"%":"—"}</b><span>Engagement</span></div></div>
+          <div class="muted igt-saved">✓ Saved to your creator search with these numbers.</div></div>
+        <div class="igt-sec"><span class="igt-bar"></span>Media <span class="muted">latest ${posts.length}</span></div>
+        <div class="igt-grid">${posts.map(igtMediaCard).join("") || `<div class="muted">No posts shared.</div>`}</div>`}</div>`;
+    const f = document.getElementById("igtBizForm");
+    f.onsubmit = async e=>{ e.preventDefault(); const q = document.getElementById("igtBizQ").value.trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i,"").replace(/^@/,"").replace(/[/?].*$/,"").toLowerCase();
+      if(!/^[a-z0-9._]{2,30}$/.test(q)){ gateToast("Type an Instagram username, e.g. virat.kohli"); return; }
+      _dxBiz = { q, data:null, busy:true }; renderDxTools();
+      const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:q, media_limit:24 } }).then(r=>r, e=>({error:e}));
+      _dxBiz.busy = false;
+      _dxBiz.data = (data && data.profile) ? data : { error: (data && data.error) || (error && (typeof fnError==="function" ? await fnError(error) : error.message)) || "Couldn't reach Instagram." };
+      if(_dxTool==="business") renderDxTools(); };
+    tb.querySelectorAll("[data-igtinv]").forEach(b=> b.onclick = ()=> inviteFromDiscovery(b.dataset.igtinv));
+  }
+  tb.querySelectorAll("[data-fbsearch2]").forEach(b=> b.onclick = ()=>{ try{ localStorage.setItem("geekos_after_ig","discover"); }catch(e){} connectFacebookSearch(); });
+}
+
 // which Instagram this workspace discovers and DMs from
 async function igConnectStrip(){
   const box = document.getElementById("dxIg"); if(!box) return;
@@ -2333,6 +2429,7 @@ async function loadDiscover(){
     const e = Number(p.min_engagement); if(e>0) state.min_engagement = String([1,2,3,5,8].filter(x=>x<=e).pop()||1);
   }
   _csMain = mountCreatorSearch(root, { state });
+  renderDxTools();
 }
 
 /* ================= CREATOR SEARCH (Qoruz-style) — every creator we know, one search =================
