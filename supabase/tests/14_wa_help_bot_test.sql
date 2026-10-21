@@ -37,7 +37,8 @@ select ok( exists(select 1 from private.wa_bot_pause where phone_e164 = '+919812
 -- ===== template / OTP statuses are not a team reply =====
 select api.ops_bot_outbound('wamid.tpl', '919800000000', 'utility');
 select api.ops_bot_outbound('wamid.otp', '919800000000', 'authentication');
-select is( intel.ci_bot_team_replied_at('+919800000000', now() - interval '1 hour'), null, 'templates and OTPs do not silence the bot');
+select api.ops_bot_outbound('wamid.receipt', '919800000000', null);
+select is( intel.ci_bot_team_replied_at('+919800000000', now() - interval '1 hour'), null, 'templates, OTPs and read receipts do not silence the bot');
 
 -- ===== unknown number gets a context with no campaigns =====
 select is( intel.ci_bot_context('9800000000')->>'registered', 'false', 'unknown number is not registered');
