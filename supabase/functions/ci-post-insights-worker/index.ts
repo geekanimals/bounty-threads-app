@@ -10,7 +10,8 @@
 //      then every 12 h for 30 days (stories only while they are live, 24 h);
 //   3) during the contract's ad-rights months checks twice a day that reels / posts are still live. Gone (deleted or
 //      archived) → the database reminds the creator to restore it and tells the team; back → tells the team.
-// Creators without a working Instagram connection are skipped (nothing is guessed).
+// Creators without a working Instagram connection (or only on the bulk sheet): public numbers via business discovery (step 4).
+//   4) followers + likes / comments (+ views when shared) of their campaign posts from their public profile.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { workerGuard } from "../_shared/worker_auth.ts";
 import { openRow } from "../_shared/token_crypto.ts";
@@ -146,6 +147,46 @@ Deno.serve(async (req) => {
       failed++; console.error("ci-post-insights-worker:", t.post_id, (e as Error).message);
     }
   }
-  return new Response(JSON.stringify({ ok: true, detected, posts: targets.length, resolved, numbers, live, gone, skipped, failed }),
+  // 2) creators without Instagram connected / only on the bulk sheet: their public numbers through business discovery
+  //    (followers + likes + comments of the campaign post, views when Instagram shares them) — read with the
+  //    Super Admin's connected Instagram. Only public Business / Creator accounts can be read.
+  let publicRead = 0, publicPosts = 0, publicFailed = 0;
+  try {
+    const { data: tokRaw } = await api.rpc("ops_discovery_token");
+    const dt = await openRow(tokRaw);
+    const { data: pl } = await api.rpc("ops_public_post_targets", { p_limit: 40 });
+    const jobs = (pl ?? []) as { handle: string; codes: string[] }[];
+    // business discovery works only with a Facebook Login (Page) token — "Connect Facebook (one time)" as Super Admin
+    if (dt?.access_token && dt?.ig_user_id && dt?.platform === "facebook" && jobs.length) {
+      const FB = "https://graph.facebook.com/v23.0";
+      const read = async (h: string, withViews: boolean) => {
+        const mf = withViews ? "id,permalink,like_count,comments_count,media_type,media_product_type,timestamp,view_count"
+                             : "id,permalink,like_count,comments_count,media_type,media_product_type,timestamp";
+        const fields = `business_discovery.username(${encodeURIComponent(h)}){username,name,followers_count,media_count,profile_picture_url,media.limit(50){${mf}}}`;
+        const r = await fetch(`${FB}/${encodeURIComponent(String(dt.ig_user_id))}?fields=${fields}&access_token=${encodeURIComponent(String(dt.access_token))}`);
+        return { ok: r.ok, j: await r.json().catch(() => ({})) as any };
+      };
+      for (const job of jobs) {
+        try {
+          let r = await read(job.handle, true);
+          if (!r.ok && Number(r.j?.error?.code) === 100 && /view_count|nonexisting field|Tried accessing/i.test(String(r.j?.error?.message || ""))) r = await read(job.handle, false);
+          if (!r.ok || !r.j?.business_discovery) {
+            const msg = String(r.j?.error?.message || "profile not readable (private or personal account)").slice(0, 200);
+            await api.rpc("ops_public_post_save", { p_handle: job.handle, p_profile: null, p_codes: job.codes, p_items: [], p_error: msg });
+            publicFailed++;
+            if ([4, 17, 32, 613].includes(Number(r.j?.error?.code))) break;      // rate limit → next run
+            continue;
+          }
+          const bd = r.j.business_discovery;
+          const { data: n } = await api.rpc("ops_public_post_save", { p_handle: job.handle,
+            p_profile: { name: bd.name ?? null, followers_count: bd.followers_count ?? null, media_count: bd.media_count ?? null, profile_picture_url: bd.profile_picture_url ?? null },
+            p_codes: job.codes, p_items: bd.media?.data ?? [], p_error: null });
+          publicRead++; publicPosts += Number(n || 0);
+        } catch (e) { publicFailed++; console.error("ci-post-insights-worker public:", job.handle, (e as Error).message); }
+      }
+    }
+  } catch (e) { console.error("ci-post-insights-worker public phase:", (e as Error).message); }
+
+  return new Response(JSON.stringify({ ok: true, detected, posts: targets.length, resolved, numbers, live, gone, skipped, failed, publicRead, publicPosts, publicFailed }),
     { headers: { "Content-Type": "application/json" } });
 });

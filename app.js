@@ -5694,11 +5694,17 @@ function bpAnalyticsHtml(){
       ${tile(t.creators_live,"Creators live")}${tile(t.posts,"Posts")}${tile(t.views,"Views")}${tile(t.reach,"Reach")}
       ${tile(t.likes,"Likes")}${tile(t.comments,"Comments")}${tile(t.shares,"Shares")}${tile(t.saves,"Saves")}
       <div class="ws-stat"><b>${er}</b><span>Engagement on followers</span></div>${tile(t.followers,"Combined followers")}</div></div>
+    ${t.not_connected?`<div class="card" style="padding:10px 14px"><div style="font-size:13px"><b>${esc(t.not_connected)} creator${t.not_connected>1?"s":""} haven't connected Instagram</b> (or are only on the bulk sheet) — so their views / reach can't come from Instagram insights.</div>
+      <div class="muted" style="font-size:12.5px;margin-top:4px">${t.public_ready
+        ? `Their followers, likes and comments are read from their public profile every hour (public Business / Creator accounts only, post must be in their latest 50).${t.waiting_numbers?` <b>${esc(t.waiting_numbers)}</b> post${t.waiting_numbers>1?"s":""} still waiting.`:""}`
+        : `To show their followers, likes and comments too, connect Facebook once as Super Admin (Instagram reads public profiles only through a Facebook Page).`}
+        For full numbers (views, reach, shares, saves) ask them to connect Instagram in the app.</div>
+      ${!t.public_ready && window.__isAdmin ? `<button class="btn sm" id="bpRepFb" style="margin-top:8px">Connect Facebook (one time)</button>` : ""}</div>`:""}
     ${rows.length?`<div class="card"><h4 style="margin-top:0">Per creator</h4><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Creator</th><th>Followers</th><th>Posts</th><th>Views</th><th>Reach</th><th>Likes</th><th>Comments</th><th>Shares</th><th>Saves</th><th>Status</th></tr></thead><tbody>
       ${rows.map(r=>{ const c=r.creator||{}, s=r.totals||{}, n=v=>v==null?"—":fmtNum(v);
-        return `<tr><td><b>@${esc(c.username||"")}</b>${(r.posts||[]).map(p=>p.permalink?` <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener" title="${esc(p.media_type)}">↗</a>`:"").join("")}</td>
+        return `<tr><td><b>${c.username?"@"+esc(c.username):esc(c.name||"—")}</b>${c.username&&c.name?`<div class="muted" style="font-size:11px">${esc(c.name)}</div>`:""}${(r.posts||[]).map(p=>p.permalink?` <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener" title="${esc(p.media_type)}">↗</a>`:"").join("")}</td>
           <td>${n(c.followers)}</td><td>${(r.posts||[]).length}</td><td>${n(s.views)}</td><td>${n(s.reach)}</td><td>${n(s.likes)}</td><td>${n(s.comments)}</td><td>${n(s.shares)}</td><td>${n(s.saves)}</td>
-          <td>${r.stage==="completed"?'<span class="tag good">Done</span>':r.stage==="published"?'<span class="tag warn">Live</span>':'<span class="tag">Approved — not posted</span>'}</td></tr>`; }).join("")}
+          <td>${r.on_sheet?'<span class="tag good">Done</span> <span class="muted" style="font-size:11px">· bulk sheet, not registered</span>':r.stage==="completed"?'<span class="tag good">Done</span>':r.stage==="published"?'<span class="tag warn">Live</span>':'<span class="tag">Approved — not posted</span>'}${(r.posts||[]).length && (r.posts||[]).every(p=>!p.stats||!Object.keys(p.stats).filter(k=>!["at","source"].includes(k)).length)?'<div class="muted" style="font-size:11px">numbers coming</div>':(r.posts||[]).some(p=>p.stats&&p.stats.source==="public")?'<div class="muted" style="font-size:11px">public numbers</div>':""}</td></tr>`; }).join("")}
     </tbody></table></div></div>`:`<div class="card"><div class="muted">No posts yet — creators show up here as soon as their reel goes live.</div></div>`}`;
 }
 function bpDownloadReport(){
@@ -5806,6 +5812,7 @@ function wireBarterProcess(){
     call("blacklist_creator", { p_participation:b.dataset.bpblack, p_reason:r }, b, "⛔ Blacklist"); });
   body.querySelectorAll("[data-bpreassign]").forEach(b=> b.onclick = ()=> openBpReassign(b.dataset.bpreassign));
   const rep = body.querySelector("#bpRepCsv"); if(rep) rep.onclick = ()=> bpDownloadReport();
+  const rfb = body.querySelector("#bpRepFb"); if(rfb) rfb.onclick = ()=> connectFacebookSearch();
   btAutoGrow(body);
   const terms = body.querySelector("#bpSaveTerms");
   if(terms) terms.onclick = async ()=>{
