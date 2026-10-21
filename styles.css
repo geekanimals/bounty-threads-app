@@ -1991,3 +1991,7 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 .hs-req{color:#dc2626;font-style:normal}
 .hub-set textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line,#e5e7eb);border-radius:9px;font:inherit;font-weight:400;background:var(--card,#fff);color:inherit;resize:vertical}
 @media (max-width:700px){.cc-head{align-items:stretch}.cc-status{min-width:0;width:100%}.cc-flow{grid-template-columns:repeat(3,1fr)}.cc-tile{min-height:64px;padding:8px}.cc-tile b{font-size:18px}.cc-tile i{display:none}}
+
+/* WhatsApp bot — reply preview bubble */
+.bot-bubble{margin-top:8px;max-width:520px;background:#dcf8c6;color:#111b21;border-radius:10px 10px 10px 2px;padding:10px 12px;font-size:13.5px;line-height:1.45;box-shadow:0 1px 1px rgba(0,0,0,.08);word-break:break-word}
+[data-theme="dark"] .bot-bubble{background:#005c4b;color:#e9edef}

@@ -6219,7 +6219,7 @@ async function inviteFromDiscovery(username, memberId){
 
 /* ================= ADMIN (platform team — approve agency signups) ================= */
 /* ================= SUPER ADMIN CONSOLE ================= */
-const ADMIN_TABS = [["overview","🏠 Overview"],["creators","🎨 Creators"],["users","👥 All users"],["approvals","✅ Account approvals"],["campaigns","📣 All campaigns"],["applications","📝 Applications"],["delivery","📨 WhatsApp & email"],["activity","📈 Activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["admins","Super admins"]];
+const ADMIN_TABS = [["overview","🏠 Overview"],["creators","🎨 Creators"],["users","👥 All users"],["approvals","✅ Account approvals"],["campaigns","📣 All campaigns"],["applications","📝 Applications"],["delivery","📨 WhatsApp & email"],["bot","🤖 WhatsApp bot"],["activity","📈 Activity"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["check","System check"],["admins","Super admins"]];
 const ADMIN_TABLES = [
   ["members","Members (all accounts)"],["creators","Agency creator rosters"],["campaigns","Campaigns"],["barter_items","Barter items"],
   ["applications","Applications"],["invites","Invites"],["irm_contacts","IRM contacts"],
@@ -6609,6 +6609,11 @@ async function adminWaTemplates(){
   box.querySelectorAll("[data-tplretry]").forEach(b=> b.onclick = ()=> set(b.dataset.tplretry, "queued"));
   adminStepTemplates(box);
 }
+// Super Admin → 🤖 WhatsApp bot (its own page in the sidebar)
+async function adminBotPage(body){
+  body.innerHTML = `<div class="card" id="dlvBot"></div>`;
+  await adminWaBot();
+}
 // 🤖 WhatsApp help bot — replies to creators on the snapto number when the team hasn't, from their live data
 async function adminWaBot(){
   const box = document.getElementById("dlvBot"); if(!box) return;
@@ -6619,11 +6624,10 @@ async function adminWaBot(){
   const st = j=> j.handoff ? '<span class="tag warn">🙋 team needed</span>' : ({sent:'<span class="tag good">replied</span>', skipped:'<span class="tag">quiet</span>', failed:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">failed</span>', queued:'<span class="tag warn">waiting</span>', working:'<span class="tag warn">replying…</span>'})[j.status]||esc(j.status);
   const opt = (v, list, unit)=> list.map(x=>`<option value="${x}" ${Number(v)===x?"selected":""}>${x} ${unit}</option>`).join("");
   box.innerHTML = `<h3 style="margin-top:0">🤖 WhatsApp help bot <span class="tag ${S.enabled?"good":""}" style="margin-left:6px">${S.enabled?"ON":"OFF"}</span></h3>
-    <p class="muted" style="font-size:12.5px;margin:0 0 10px">${S.mode==="snapto"?"The snapto chatbot <b>Geek Creator Help Bot</b> asks Bounty Threads on every creator message and sends the answer. ":""}Answers creators on your snapto number when nobody from the team has replied — from their <b>live</b> data: registered or not, what's missing (Instagram / WhatsApp), every campaign they're in (step, what's stuck, next step, deadline, courier, posts left), and step-by-step register help with screenshots. If someone from the team replied to that number in the last few hours, the bot stays quiet. “TEAM”, complaints or anything it can't answer → it tells them the team will reply and alerts you.</p>
+    <p class="muted" style="font-size:12.5px;margin:0 0 10px">Answers creators on your snapto number when nobody from the team has replied — from their <b>live</b> data: registered or not, what's missing (Instagram / WhatsApp), every campaign they're in (step, what's stuck, next step, deadline, courier, posts left), and step-by-step register help with screenshots. If someone from the team replied to that number in the last few hours, the bot stays quiet. “TEAM”, complaints or anything it can't answer → it tells them the team will reply and alerts you.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <button class="btn sm ${S.enabled?"ghost":""}" id="botToggle">${S.enabled?"Turn bot off":"Turn bot on"}</button>
-      <label class="muted" style="font-size:12.5px">Replies sent by <select id="botMode"><option value="direct" ${S.mode!=="snapto"?"selected":""}>Bounty Threads (on the snapto number)</option><option value="snapto" ${S.mode==="snapto"?"selected":""}>snapto chatbot “Geek Creator Help Bot” (needs snapto Advanced Chatbot plan)</option></select></label>
-      <label class="muted" style="font-size:12.5px" ${S.mode==="snapto"?'title="The snapto chatbot replies right away"':""}>Reply after <select id="botDelay" ${S.mode==="snapto"?"disabled":""}>${opt(S.reply_delay_min,[0,1,2,3,5,10,15,30],"min")}</select></label>
+      <label class="muted" style="font-size:12.5px">Reply after <select id="botDelay">${opt(S.reply_delay_min,[0,1,2,3,5,10,15,30],"min")}</select></label>
       <label class="muted" style="font-size:12.5px">Quiet after a team reply <select id="botPause">${opt(S.team_pause_hours,[1,2,4,6,8,12,24,48],"h")}</select></label>
       <label class="muted" style="font-size:12.5px"><input type="checkbox" id="botAi" ${S.use_ai?"checked":""}> Natural replies (AI rewrites in the creator's words — facts stay from the app)</label></div>
     <div class="rp-kpis" style="margin-top:12px"><div><b>${esc(T.sent||0)}</b>Replied · 24h</div><div><b>${esc(T.handoff||0)}</b>Sent to team</div><div><b>${esc(T.skipped||0)}</b>Stayed quiet</div><div><b>${esc(T.failed||0)}</b>Failed</div><div><b>${esc(T.waiting||0)}</b>Waiting</div></div>
@@ -6633,6 +6637,12 @@ async function adminWaBot(){
       <button class="mini-btn ghost" id="botHold">Pause bot for this number (24 h)</button>
       <span class="muted" id="botMsg" style="font-size:12px"></span></div>
     <div id="botSee"></div>
+    <div class="wa-auto" style="margin-top:12px"><b>🧪 Try the bot</b> <span class="muted" style="font-size:12px">— see the exact reply it would send to that number. Nothing is sent on WhatsApp.</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <input id="botTryQ" placeholder="Question, e.g. mera parcel kab aayega?" style="flex:1;min-width:200px;padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit">
+        <button class="mini-btn" id="botTry">Show reply</button></div>
+      <div class="muted" style="font-size:12px;margin-top:4px">Uses the number typed above.</div>
+      <div id="botTryOut"></div></div>
     ${P.length?`<div style="margin-top:12px"><b style="font-size:13px">Quiet for these numbers</b><div class="list">${P.map(p=>`<div class="row"><div class="r-main"><div class="r-title">${esc(p.name||p.phone)} <span class="muted" style="font-size:12px">${esc(p.phone)}</span></div>
         <div class="r-sub">${esc({team_reply:"the team replied",handoff:"waiting for the team",manual:"paused by you"}[p.reason]||p.reason)} · till ${esc(fmtDateTime(p.until))}</div></div>
         <button class="mini-btn ghost" data-botfree="${esc(p.phone)}">Let the bot reply</button></div>`).join("")}</div></div>`:""}
@@ -6647,15 +6657,24 @@ async function adminWaBot(){
     if(e){ gateToast(e.message); return; } gateToast(msg||"Saved ✓"); adminWaBot(); };
   document.getElementById("botToggle").onclick = async ()=>{
     if(!S.enabled && !await confirmChange("Turn the WhatsApp bot on?", "It will auto-reply to creators who message your snapto number, when the team hasn't replied.")) return;
+    if(!S.enabled && S.mode==="snapto") await sb.rpc("admin_bot_mode", { p_mode:"direct" });
     save({ p_enabled: !S.enabled }, S.enabled ? "Bot off" : "Bot on ✓"); };
   document.getElementById("botDelay").onchange = e=> save({ p_delay: Number(e.target.value) });
-  document.getElementById("botMode").onchange = async e=>{ const { error:er } = await sb.rpc("admin_bot_mode", { p_mode: e.target.value }); if(er){ gateToast(er.message); return; }
-    gateToast(e.target.value==="snapto" ? "The snapto chatbot sends the replies ✓" : "Bounty Threads sends the replies ✓ — turn the snapto chatbot off"); adminWaBot(); };
   document.getElementById("botPause").onchange = e=> save({ p_pause_hours: Number(e.target.value) });
   document.getElementById("botAi").onchange = e=> save({ p_use_ai: e.target.checked });
   const num = ()=> document.getElementById("botNum").value.trim();
   document.getElementById("botHold").onclick = async ()=>{ if(!num()) return; const { error:e } = await sb.rpc("admin_bot_pause", { p_phone:num(), p_hours:24 }); if(e){ gateToast(e.message); return; } gateToast("Paused for 24 h ✓"); adminWaBot(); };
   box.querySelectorAll("[data-botfree]").forEach(b=> b.onclick = async ()=>{ const { error:e } = await sb.rpc("admin_bot_pause", { p_phone:b.dataset.botfree, p_hours:0 }); if(e){ gateToast(e.message); return; } adminWaBot(); });
+  document.getElementById("botTry").onclick = async ()=>{
+    const out = document.getElementById("botTryOut"), q = document.getElementById("botTryQ").value.trim();
+    if(!num() || !q){ out.innerHTML = `<div class="muted" style="margin-top:8px">Type a WhatsApp number above and a question.</div>`; return; }
+    out.innerHTML = `<div class="muted" style="margin-top:8px">Building the reply from live data…</div>`;
+    const { data:r, error:e } = await sb.functions.invoke("wa-bot-preview", { body:{ phone:num(), question:q } }).then(x=>x, x=>({error:x}));
+    if(e || !r || r.error){ out.innerHTML = `<div class="muted" style="margin-top:8px">${esc((r&&r.error)||(e&&e.message)||"Couldn't build the reply")} — deploy <code>wa-bot-preview</code> if this is new.</div>`; return; }
+    const wa = s=> esc(s).replace(/\*([^*\n]+)\*/g,"<b>$1</b>").replace(/_([^_\n]+)_/g,"<i>$1</i>").replace(/\n/g,"<br>");
+    out.innerHTML = `<div class="bot-bubble">${wa(r.reply)}</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">${r.registered?"Registered number":"Not registered on this number"}${r.steps?` · + ${r.steps==="register"?"4":"1"} screenshot(s) after this`:""}${r.handoff?" · 🙋 the team gets an alert":""} · ${r.ai?"natural (AI) wording":r.ai_available?"standard wording":"standard wording (no AI key)"}</div>`;
+  };
   document.getElementById("botCheck").onclick = async ()=>{
     const see = document.getElementById("botSee"); if(!num()){ see.innerHTML = ""; return; }
     see.innerHTML = `<div class="muted" style="margin-top:8px">Checking…</div>`;
@@ -6716,7 +6735,6 @@ async function adminDelivery(body, silent){
       <div><b>${n("whatsapp:queued")+n("email:queued")+n("whatsapp:sending")+n("email:sending")}</b>In queue</div></div>
     <div class="card wa-set" id="dlvWaSet"></div>
     <div class="card" id="dlvDoctor" style="margin-top:12px"></div>
-    <div class="card" id="dlvBot" style="margin-top:12px"></div>
     <div class="card"><h3 style="margin-top:0">Health</h3><div class="list">${checks.map(([ok,t,s])=>`<div class="row"><span class="dot ${ok?"good":"warn"}"></span>
         <div class="r-main"><div class="r-title">${ok?"✅":"⚠️"} ${esc(t)}</div><div class="r-sub">${esc(s)}</div></div></div>`).join("")}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
@@ -6733,7 +6751,7 @@ async function adminDelivery(body, silent){
         <td style="font-size:12px;max-width:260px" class="muted">${esc(r.error||(r.sent_at?"Sent "+ago(r.sent_at):""))}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">No messages yet.</td></tr>`}
       </tbody></table></div></div>
     <div class="card" style="margin-top:14px" id="dlvTpl"></div>`;
-  adminWaTemplates(); adminWaSettingsCard(); adminDeliveryDoctor(); adminWaBot();
+  adminWaTemplates(); adminWaSettingsCard(); adminDeliveryDoctor();
   document.getElementById("dlvRetry").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_retry", { p_channel: null });
     document.getElementById("dlvMsg").textContent = e ? e.message : `${k||0} message(s) re-queued`; setTimeout(()=>adminDelivery(body,true), 3000); };
   document.getElementById("dlvTest").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_test", { p_phone: document.getElementById("dlvPhone").value.trim()||null, p_email: document.getElementById("dlvEmail").value.trim()||null });
@@ -6788,7 +6806,7 @@ function loadAdmin(){
   document.querySelectorAll("[data-atab]").forEach(b=> b.onclick = ()=>{ _adminTab = b.dataset.atab; currentPage="admin"; renderShell(); });
   const body = document.getElementById("adminBody");
   if(!body || !window.sb) return;
-  ({ overview:adminOverview, creators:adminCreators, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, delivery:adminDelivery, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+  ({ overview:adminOverview, creators:adminCreators, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, delivery:adminDelivery, bot:adminBotPage, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
 }
 
 /* System check — live-verifies the deployed database matches the code (tables, columns, RPCs).
