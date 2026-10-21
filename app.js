@@ -6609,6 +6609,63 @@ async function adminWaTemplates(){
   box.querySelectorAll("[data-tplretry]").forEach(b=> b.onclick = ()=> set(b.dataset.tplretry, "queued"));
   adminStepTemplates(box);
 }
+// 🤖 WhatsApp help bot — replies to creators on the snapto number when the team hasn't, from their live data
+async function adminWaBot(){
+  const box = document.getElementById("dlvBot"); if(!box) return;
+  const { data, error } = await sb.rpc("admin_bot_overview", { p_limit: 40 }).then(r=>r, e=>({error:e}));
+  if(error){ box.innerHTML = `<h3 style="margin-top:0">🤖 WhatsApp help bot</h3><div class="muted">${esc(error.message||error)} — run <code>supabase db push</code>.</div>`; return; }
+  const d = data||{}, S = d.settings||{}, T = d.today||{}, P = d.paused||[], L = d.log||[];
+  const ago = t=>{ if(!t) return ""; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
+  const st = j=> j.handoff ? '<span class="tag warn">🙋 team needed</span>' : ({sent:'<span class="tag good">replied</span>', skipped:'<span class="tag">quiet</span>', failed:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">failed</span>', queued:'<span class="tag warn">waiting</span>', working:'<span class="tag warn">replying…</span>'})[j.status]||esc(j.status);
+  const opt = (v, list, unit)=> list.map(x=>`<option value="${x}" ${Number(v)===x?"selected":""}>${x} ${unit}</option>`).join("");
+  box.innerHTML = `<h3 style="margin-top:0">🤖 WhatsApp help bot <span class="tag ${S.enabled?"good":""}" style="margin-left:6px">${S.enabled?"ON":"OFF"}</span></h3>
+    <p class="muted" style="font-size:12.5px;margin:0 0 10px">Answers creators on your snapto number when nobody from the team has replied — from their <b>live</b> data: registered or not, what's missing (Instagram / WhatsApp), every campaign they're in (step, what's stuck, next step, deadline, courier, posts left), and step-by-step register help with screenshots. If someone from the team replied to that number in the last few hours, the bot stays quiet. “TEAM”, complaints or anything it can't answer → it tells them the team will reply and alerts you.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn sm ${S.enabled?"ghost":""}" id="botToggle">${S.enabled?"Turn bot off":"Turn bot on"}</button>
+      <label class="muted" style="font-size:12.5px">Reply after <select id="botDelay">${opt(S.reply_delay_min,[0,1,2,3,5,10,15,30],"min")}</select></label>
+      <label class="muted" style="font-size:12.5px">Quiet after a team reply <select id="botPause">${opt(S.team_pause_hours,[1,2,4,6,8,12,24,48],"h")}</select></label>
+      <label class="muted" style="font-size:12.5px"><input type="checkbox" id="botAi" ${S.use_ai?"checked":""}> Natural replies (AI rewrites in the creator's words — facts stay from the app)</label></div>
+    <div class="rp-kpis" style="margin-top:12px"><div><b>${esc(T.sent||0)}</b>Replied · 24h</div><div><b>${esc(T.handoff||0)}</b>Sent to team</div><div><b>${esc(T.skipped||0)}</b>Stayed quiet</div><div><b>${esc(T.failed||0)}</b>Failed</div><div><b>${esc(T.waiting||0)}</b>Waiting</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">
+      <input id="botNum" placeholder="+91… creator's WhatsApp" style="padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;min-width:180px">
+      <button class="mini-btn" id="botCheck">What the bot sees</button>
+      <button class="mini-btn ghost" id="botHold">Pause bot for this number (24 h)</button>
+      <span class="muted" id="botMsg" style="font-size:12px"></span></div>
+    <div id="botSee"></div>
+    ${P.length?`<div style="margin-top:12px"><b style="font-size:13px">Quiet for these numbers</b><div class="list">${P.map(p=>`<div class="row"><div class="r-main"><div class="r-title">${esc(p.name||p.phone)} <span class="muted" style="font-size:12px">${esc(p.phone)}</span></div>
+        <div class="r-sub">${esc({team_reply:"the team replied",handoff:"waiting for the team",manual:"paused by you"}[p.reason]||p.reason)} · till ${esc(fmtDateTime(p.until))}</div></div>
+        <button class="mini-btn ghost" data-botfree="${esc(p.phone)}">Let the bot reply</button></div>`).join("")}</div></div>`:""}
+    <div style="overflow-x:auto;margin-top:12px"><table class="tbl"><thead><tr><th>When</th><th>Creator</th><th>Asked</th><th>Bot</th></tr></thead><tbody>
+      ${L.map(j=>`<tr><td style="white-space:nowrap;font-size:12px">${esc(ago(j.at))}</td>
+        <td style="font-size:12px"><b>${esc(j.name||"—")}</b><div class="muted">${esc(j.phone)}</div>${j.campaign?`<div class="muted">${esc(j.campaign)}</div>`:""}</td>
+        <td style="font-size:12px;max-width:240px;white-space:pre-wrap">${esc(j.question||"")}</td>
+        <td style="font-size:12px;max-width:380px">${st(j)}${j.images?` <span class="muted">+${esc(j.images)} screenshots</span>`:""}${j.reason?`<div class="muted">${esc(j.reason)}</div>`:""}
+          ${j.reply?`<details><summary class="muted" style="cursor:pointer">Reply</summary><div class="wa-tpltext">${esc(j.reply).replace(/\n/g,"<br>")}</div></details>`:""}</td></tr>`).join("")||`<tr><td colspan="4" class="muted">No messages yet.</td></tr>`}
+    </tbody></table></div>`;
+  const save = async (patch, msg)=>{ const { error:e } = await sb.rpc("admin_bot_settings", Object.assign({ p_enabled:null, p_delay:null, p_pause_hours:null, p_use_ai:null }, patch));
+    if(e){ gateToast(e.message); return; } gateToast(msg||"Saved ✓"); adminWaBot(); };
+  document.getElementById("botToggle").onclick = async ()=>{
+    if(!S.enabled && !await confirmChange("Turn the WhatsApp bot on?", "It will auto-reply to creators who message your snapto number, when the team hasn't replied.")) return;
+    save({ p_enabled: !S.enabled }, S.enabled ? "Bot off" : "Bot on ✓"); };
+  document.getElementById("botDelay").onchange = e=> save({ p_delay: Number(e.target.value) });
+  document.getElementById("botPause").onchange = e=> save({ p_pause_hours: Number(e.target.value) });
+  document.getElementById("botAi").onchange = e=> save({ p_use_ai: e.target.checked });
+  const num = ()=> document.getElementById("botNum").value.trim();
+  document.getElementById("botHold").onclick = async ()=>{ if(!num()) return; const { error:e } = await sb.rpc("admin_bot_pause", { p_phone:num(), p_hours:24 }); if(e){ gateToast(e.message); return; } gateToast("Paused for 24 h ✓"); adminWaBot(); };
+  box.querySelectorAll("[data-botfree]").forEach(b=> b.onclick = async ()=>{ const { error:e } = await sb.rpc("admin_bot_pause", { p_phone:b.dataset.botfree, p_hours:0 }); if(e){ gateToast(e.message); return; } adminWaBot(); });
+  document.getElementById("botCheck").onclick = async ()=>{
+    const see = document.getElementById("botSee"); if(!num()){ see.innerHTML = ""; return; }
+    see.innerHTML = `<div class="muted" style="margin-top:8px">Checking…</div>`;
+    const { data:c, error:e } = await sb.rpc("admin_bot_preview", { p_phone:num() });
+    if(e){ see.innerHTML = `<div class="muted" style="margin-top:8px">${esc(e.message)}</div>`; return; }
+    const camps = c.campaigns||[], inv = c.invites||[], ex = c.extra||{};
+    see.innerHTML = `<div class="wa-auto ${c.registered?"ok":"warn"}" style="margin-top:10px">
+      <b>${esc(c.name||c.phone)}</b> · ${c.registered?"registered ✓":"not registered on this number"}${(c.needs||[]).length?` · still to connect: <b>${esc(c.needs.join(", "))}</b>`:""}
+      ${camps.length?`<ul style="margin:6px 0 0 18px">${camps.slice(0,8).map(x=>`<li><b>${esc(x.campaign)}</b> (${esc(x.brand||"")}) — ${esc(String(x.stage||"").replace(/_/g," "))}${ex[x.participation_id]&&ex[x.participation_id].pending?` · <i>to do: ${esc(ex[x.participation_id].pending)}</i>`:""}</li>`).join("")}</ul>`:""}
+      ${inv.length?`<div style="margin-top:6px">Bulk sheet (not joined yet): ${inv.map(i=>`<b>${esc(i.campaign)}</b> — ${esc(String(i.status||"").replace(/_/g," "))}`).join(" · ")}</div>`:""}
+      ${!camps.length&&!inv.length?`<div style="margin-top:6px" class="muted">No campaign on this number — the bot sends the register steps.</div>`:""}</div>`;
+  };
+}
 // the fixed-text step templates (geek_step_*) — all UTILITY; created at Meta on their own once Meta is connected
 async function adminStepTemplates(box){
   let w = document.getElementById("waStepTpl"); if(!w){ w = el("div",""); w.id = "waStepTpl"; w.style.marginTop = "18px"; box.appendChild(w); }
@@ -6656,6 +6713,7 @@ async function adminDelivery(body, silent){
       <div><b>${n("whatsapp:queued")+n("email:queued")+n("whatsapp:sending")+n("email:sending")}</b>In queue</div></div>
     <div class="card wa-set" id="dlvWaSet"></div>
     <div class="card" id="dlvDoctor" style="margin-top:12px"></div>
+    <div class="card" id="dlvBot" style="margin-top:12px"></div>
     <div class="card"><h3 style="margin-top:0">Health</h3><div class="list">${checks.map(([ok,t,s])=>`<div class="row"><span class="dot ${ok?"good":"warn"}"></span>
         <div class="r-main"><div class="r-title">${ok?"✅":"⚠️"} ${esc(t)}</div><div class="r-sub">${esc(s)}</div></div></div>`).join("")}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
@@ -6672,7 +6730,7 @@ async function adminDelivery(body, silent){
         <td style="font-size:12px;max-width:260px" class="muted">${esc(r.error||(r.sent_at?"Sent "+ago(r.sent_at):""))}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">No messages yet.</td></tr>`}
       </tbody></table></div></div>
     <div class="card" style="margin-top:14px" id="dlvTpl"></div>`;
-  adminWaTemplates(); adminWaSettingsCard(); adminDeliveryDoctor();
+  adminWaTemplates(); adminWaSettingsCard(); adminDeliveryDoctor(); adminWaBot();
   document.getElementById("dlvRetry").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_retry", { p_channel: null });
     document.getElementById("dlvMsg").textContent = e ? e.message : `${k||0} message(s) re-queued`; setTimeout(()=>adminDelivery(body,true), 3000); };
   document.getElementById("dlvTest").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_test", { p_phone: document.getElementById("dlvPhone").value.trim()||null, p_email: document.getElementById("dlvEmail").value.trim()||null });

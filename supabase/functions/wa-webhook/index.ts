@@ -1,6 +1,7 @@
 // Edge Function: wa-webhook  (verify_jwt = false — Meta calls this; the signature + verify-token are the boundary)
 // GET  = Meta subscription handshake (hub.challenge).  POST = inbound messages + delivery statuses.
-// Inbound replies land back in the app conversation (matched by phone), opening the 24h session window.
+// Inbound replies land back in the app conversation (matched by phone), opening the 24h session window,
+// and are queued for the help bot (wa-bot-worker). Outbound statuses tell the bot when a person from the team replied.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyChallenge, validateSignature } from "../_shared/webhook.ts";
 import { constantTimeEqual } from "../_shared/worker_auth.ts";
@@ -64,9 +65,22 @@ Deno.serve(async (req) => {
             { onConflict: "wa_message_id", ignoreDuplicates: true },
           );
           await admin.from("wa_conversations").update({ last_message_at: new Date().toISOString(), session_expires_at: sessionExpiry }).eq("id", conv!.id);
+          // help bot: queue a reply (the database decides: bot on, no team reply, not paused, waits a few minutes)
+          try {
+            await admin.schema("api").rpc("ops_bot_inbound", { p_phone: fromE164, p_wamid: m.id ?? null,
+              p_text: m?.text?.body ?? m?.button?.text ?? m?.interactive?.button_reply?.title ?? m?.interactive?.list_reply?.title ?? m?.image?.caption ?? "",
+              p_type: String(m?.type || "text") });
+          } catch (_e) { /* never blocks the webhook */ }
         }
         // delivery/read/failed statuses
         for (const s of v?.statuses ?? []) {
+          // every message that went OUT from our number — the bot uses this to see when a person from the team replied
+          if (s.status === "sent" || s.status === "delivered" || s.status === "read") {
+            try {
+              await admin.schema("api").rpc("ops_bot_outbound", { p_wamid: String(s.id || ""), p_phone: String(s.recipient_id || ""),
+                p_category: s?.pricing?.category ?? s?.conversation?.origin?.type ?? null });
+            } catch (_e) { /* never blocks the webhook */ }
+          }
           const patch: Record<string, unknown> = { status: s.status };
           if (s.status === "delivered") patch.delivered_at = new Date().toISOString();
           if (s.status === "read") patch.read_at = new Date().toISOString();

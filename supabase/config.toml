@@ -113,3 +113,6 @@ verify_jwt = true
 # delivery-address helper: PIN code → city/state, landmark suggestions, map check (signed-in users)
 [functions.geo-lookup]
 verify_jwt = true
+
+[functions.wa-bot-worker]
+verify_jwt = false
