@@ -1995,3 +1995,18 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 /* WhatsApp bot — reply preview bubble */
 .bot-bubble{margin-top:8px;max-width:520px;background:#dcf8c6;color:#111b21;border-radius:10px 10px 10px 2px;padding:10px 12px;font-size:13.5px;line-height:1.45;box-shadow:0 1px 1px rgba(0,0,0,.08);word-break:break-word}
 [data-theme="dark"] .bot-bubble{background:#005c4b;color:#e9edef}
+
+/* All alerts page — campaign filter */
+.al-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding:12px 14px}
+.al-f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:180px}
+.al-f.al-grow{flex:1;min-width:200px}
+.al-f select,.al-f input{padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--text,inherit);font-size:13.5px}
+.al-chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}
+.al-chip{border:1px solid var(--line);background:var(--panel);color:inherit;border-radius:999px;padding:5px 11px;font-size:12.5px;cursor:pointer}
+.al-chip b{background:#6c5ce7;color:#fff;border-radius:999px;padding:0 6px;margin-left:4px;font-size:11px}
+.al-chip.on{border-color:#6c5ce7;background:rgba(108,92,231,.12);color:#6c5ce7;font-weight:600}
+.al-chip.ghost{border-style:dashed}
+.al-day{font-size:12px;font-weight:700;color:var(--muted);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.03em}
+.al-day:first-child{margin-top:0}
+.al-camp{display:inline-block;font-size:12px;color:#6c5ce7;background:rgba(108,92,231,.1);border-radius:6px;padding:1px 7px;margin:3px 0;cursor:pointer}
+@media (max-width:600px){ .al-f{min-width:100%} }

@@ -7733,11 +7733,10 @@ function renderContent(){
 
 function renderShell(){
   if(currentRole==="creator"){
-    const MOVED = { alerts:"dashboard", onboarding:"profile", growth:"mycampaigns", marketplace: window.__ciOpsEnabled ? "opencampaigns" : "marketplace" };
+    const MOVED = { onboarding:"profile", growth:"mycampaigns", marketplace: window.__ciOpsEnabled ? "opencampaigns" : "marketplace" };
     if(MOVED[currentPage]) currentPage = MOVED[currentPage];
   }
-  // the old Alerts page is now the bell dropdown, for every role
-  if(currentPage==="alerts"){ currentPage = window.__isAdmin ? "admin" : "dashboard"; setTimeout(()=>{ try{ openNotif(); }catch(e){} }, 300); }
+  // "View all alerts" (from the 🔔 drawer) opens the full Alerts page with the campaign filter
   if(window.__profileGate && !GATE_OPEN_PAGES.includes(currentPage)) currentPage = "mediakit";
   if(window.Tracker) Tracker.page(currentPage);
   if(window.hideBootSplash) hideBootSplash();

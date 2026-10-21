@@ -91,13 +91,91 @@
 
   window.renderAlerts=function(){
     if(!enabled) return '<div class="card"><h3>Alerts</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
-    return '<div id="opsAlerts" class="ci"><div class="card ci-intro"><h3>Alerts</h3><div class="muted">Everything that needs you — the same updates we send on WhatsApp and email, with a link straight to the action.</div></div>'
+    return '<div id="opsAlerts" class="ci"><div class="card ci-intro"><h3>🔔 All alerts</h3><div class="muted">Everything that needs you — the same updates we send on WhatsApp and email. Pick a campaign to see only its alerts.</div></div>'
+      + '<div class="card al-filters">'
+      +   '<label class="al-f"><span>Campaign</span><select id="alCamp"><option value="">All campaigns</option></select></label>'
+      +   '<label class="al-f"><span>Show</span><select id="alStatus"><option value="all">All alerts</option><option value="unread">Unread</option><option value="action">Needs action</option></select></label>'
+      +   '<label class="al-f al-grow"><span>Search</span><input id="alSearch" placeholder="Creator, step, campaign…"></label>'
+      + '</div>'
+      + '<div id="alCampChips" class="al-chips"></div>'
       + '<div id="opsAlertsBody">'+(window.skel?skel("list",4):'<div class="card"><div class="muted">Loading…</div></div>')+'</div></div>';
   };
+  var _al = { camp:"", status:"all", q:"", items:[], timer:null };
   async function loadAlerts(target){
-    var body=target||document.getElementById("opsAlertsBody"); if(!body) return;
-    try{ var r=await api("get_my_notifications",{p_only_unread:false}); if(r.error) throw r.error; renderAlertsList(r.data||[], body); }
-    catch(e){ body.innerHTML='<div class="card ci-err-inline">Couldn\'t load alerts: '+esc(e.message||e)+'</div>'; }
+    // the 🔔 drawer: latest alerts + a button to the full page
+    if(target){
+      try{ var r=await api("get_my_notifications",{p_only_unread:false}); if(r.error) throw r.error; renderAlertsList(r.data||[], target); }
+      catch(e){ target.innerHTML='<div class="card ci-err-inline">Couldn\'t load alerts: '+esc(e.message||e)+'</div>'; }
+      var head=document.querySelector("#notifDrawer .drawer-head > div");
+      if(head && !document.getElementById("notifAll")){
+        var b=document.createElement("button"); b.id="notifAll"; b.className="mini-btn"; b.style.marginTop="6px"; b.textContent="View all alerts →";
+        b.onclick=function(){ var ov=document.getElementById("notifOverlay"); if(ov) ov.classList.remove("open"); currentPage="alerts"; if(typeof renderShell==="function") renderShell(); window.scrollTo(0,0); };
+        head.appendChild(b);
+      }
+      return;
+    }
+    return loadAlertsPage(false);
+  }
+  async function loadAlertsPage(more){
+    var body=document.getElementById("opsAlertsBody"); if(!body) return;
+    var cs=document.getElementById("alCamp"), ss=document.getElementById("alStatus"), qs=document.getElementById("alSearch");
+    if(cs && !cs.__w){ cs.__w=1; cs.value=_al.camp; cs.onchange=function(){ _al.camp=cs.value; loadAlertsPage(false); }; }
+    if(ss && !ss.__w){ ss.__w=1; ss.value=_al.status; ss.onchange=function(){ _al.status=ss.value; loadAlertsPage(false); }; }
+    if(qs && !qs.__w){ qs.__w=1; qs.value=_al.q; qs.oninput=function(){ clearTimeout(_al.timer); _al.timer=setTimeout(function(){ _al.q=qs.value.trim(); loadAlertsPage(false); }, 350); }; }
+    var last = more && _al.items.length ? _al.items[_al.items.length-1].created_at : null;
+    try{
+      var r=await api("get_my_alerts_page",{ p_campaign:_al.camp||null, p_status:_al.status, p_search:_al.q||null, p_limit:100, p_before:last });
+      if(r.error) throw r.error;
+      var d=r.data||{};
+      _al.items = more ? _al.items.concat(d.items||[]) : (d.items||[]);
+      paintAlertCampaigns(d.campaigns||[]);
+      paintAlertsPage(body, d);
+    }catch(e){
+      // older database (before the alerts page) → the simple list
+      try{ var r2=await api("get_my_notifications",{p_only_unread:false}); if(r2.error) throw r2.error; renderAlertsList(r2.data||[], body); }
+      catch(e2){ body.innerHTML='<div class="card ci-err-inline">Couldn\'t load alerts: '+esc(e.message||e)+'</div>'; }
+    }
+  }
+  function paintAlertCampaigns(list){
+    var cs=document.getElementById("alCamp"), chips=document.getElementById("alCampChips"); if(!cs) return;
+    cs.innerHTML='<option value="">All campaigns ('+list.reduce(function(a,c){return a+Number(c.count||0);},0)+')</option>'
+      + list.map(function(c){ return '<option value="'+esc(c.campaign_id)+'">'+esc(c.campaign)+(c.brand?' · '+esc(c.brand):'')+' ('+esc(c.count)+(Number(c.unread)?', '+esc(c.unread)+' new':'')+')</option>'; }).join("");
+    cs.value=_al.camp;
+    if(chips) chips.innerHTML=list.slice(0,12).map(function(c){
+      return '<button class="al-chip'+(_al.camp===c.campaign_id?' on':'')+'" data-alc="'+esc(c.campaign_id)+'">'+esc(c.campaign)+(Number(c.unread)?' <b>'+esc(c.unread)+'</b>':'')+'</button>'; }).join("")
+      + (_al.camp?'<button class="al-chip ghost" data-alc="">✕ All campaigns</button>':'');
+    if(chips) chips.querySelectorAll("[data-alc]").forEach(function(b){ b.onclick=function(){ _al.camp = _al.camp===b.getAttribute("data-alc") ? "" : b.getAttribute("data-alc"); loadAlertsPage(false); }; });
+  }
+  function paintAlertsPage(body, d){
+    var list=_al.items;
+    if(!list.length){ body.innerHTML='<div class="card"><div class="muted">'+(_al.camp||_al.status!=="all"||_al.q?'No alerts match this filter.':'No alerts yet. When something needs you, it\'ll show here.')+'</div></div>'; return; }
+    var day=function(t){ try{ return new Date(t).toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short",year:"numeric"}); }catch(e){ return ""; } };
+    var html='', cur='';
+    list.forEach(function(n){
+      var dd=day(n.created_at); if(dd!==cur){ if(cur) html+='</div>'; cur=dd; html+='<div class="al-day">'+esc(dd)+'</div><div class="ops-alist">'; }
+      var cls="ops-alert"+(n.read?"":" unread")+(n.kind==="action_required"&&!n.acted?" act":"");
+      html+='<div class="'+cls+'" data-nid="'+esc(n.notification_id)+'">'
+        + '<div class="ops-alert-h"><b>'+esc(n.title)+'</b><span class="ci-hint">'+fmtDT(n.created_at)+'</span></div>'
+        + (n.campaign?'<div><span class="al-camp" data-alc="'+esc(n.campaign_id)+'">📣 '+esc(n.campaign)+(n.brand?' · '+esc(n.brand):'')+'</span>'+(n.kind==="action_required"?(n.acted?' <span class="ci-pill">done</span>':' <span class="ci-pill ci-warn">needs action</span>'):'')+'</div>':'')
+        + '<div class="ci-hint">'+esc(n.body)+'</div>'
+        + (n.action_route?'<div class="ci-evrow"><button class="btn sm" data-act="'+esc(n.notification_id)+'">'+esc(n.action_label||"Open")+'</button></div>':'')
+        + '</div>';
+    });
+    if(cur) html+='</div>';
+    body.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 8px;gap:8px;flex-wrap:wrap"><span class="muted">'+esc(d.total||list.length)+' alert'+(Number(d.total)===1?'':'s')+(Number(d.unread)?' · '+esc(d.unread)+' unread':'')+'</span>'
+      + (Number(d.unread)?'<button class="mini-btn ghost" id="alMarkAll">Mark '+(_al.camp?'this campaign':'all')+' read</button>':'')+'</div>'
+      + '<div class="card">'+html+'</div>'
+      + (d.more?'<div style="text-align:center;margin-top:10px"><button class="btn ghost sm" id="alMore">Load older alerts</button></div>':'');
+    var ma=body.querySelector("#alMarkAll"); if(ma) ma.onclick=function(){ api("mark_alerts_read",{p_campaign:_al.camp||null}).then(function(){ updateAlertsBadge(); loadAlertsPage(false); }); };
+    var mo=body.querySelector("#alMore"); if(mo) mo.onclick=function(){ mo.disabled=true; mo.textContent="Loading…"; loadAlertsPage(true); };
+    body.querySelectorAll(".al-camp[data-alc]").forEach(function(c){ c.onclick=function(e){ e.stopPropagation(); _al.camp=c.getAttribute("data-alc"); loadAlertsPage(false); window.scrollTo(0,0); }; });
+    body.querySelectorAll("[data-act]").forEach(function(btn){ btn.onclick=function(e){ e.stopPropagation();
+      var n=findNotif(list, btn.getAttribute("data-act")); if(!n) return;
+      api("mark_notification_acted",{p_id:n.notification_id}).then(function(){ updateAlertsBadge(); routeNotification(n); });
+    }; });
+    body.querySelectorAll(".ops-alert").forEach(function(row){ row.onclick=function(){
+      var id=row.getAttribute("data-nid"); if(row.classList.contains("unread")){ api("mark_notification_read",{p_id:id}).then(function(){ row.classList.remove("unread"); updateAlertsBadge(); }); }
+    }; });
   }
   function renderAlertsList(list, target){
     var body=target||document.getElementById("opsAlertsBody");
