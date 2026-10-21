@@ -5309,6 +5309,55 @@ function bpStageList(list){
   const fail = s => ["dropped","rejected","ineligible","brand_declined"].includes(s), at = bpStageIndex(_bpStage);
   return list.filter(x=> !fail(x.stage) && bpEffectiveIndex(x) >= at).sort((a,b)=> (bpEffectiveIndex(a)===at?0:1) - (bpEffectiveIndex(b)===at?0:1));
 }
+// every detail of the creator (contact, all addresses, personal, work + preferences, other campaigns)
+async function bppFillFull(pid, x, row){
+  const { data:F, error } = await sb.schema("api").rpc("admin_creator_full", { p_participation: pid }).then(r=>r, e=>({error:e}));
+  const $ = id => document.getElementById(id);
+  if(!$("bppContact")) return;
+  if(error || !F){ ["bppPersonal"].forEach(id=>{ if($(id)) $(id).innerHTML = `<div class="muted" style="font-size:13px">${esc((error&&error.message)||"Not on Geek OS yet.")}</div>`; });
+    if($("bppAddr") && /Loading/.test($("bppAddr").textContent)) $("bppAddr").innerHTML = `<div class="muted" style="font-size:13px">No address yet.</div>`; return; }
+  const nice = v => String(v||"").replace(/_/g," ").replace(/\b\w/g, c=>c.toUpperCase());
+  const ct = F.contact||{}, wa = F.whatsapp||{}, pe = F.personal||{};
+  const tel = ph => ph ? `<a href="tel:${esc(ph)}">${esc(ph)}</a> · <a href="https://wa.me/${esc(String(ph).replace(/\D/g,""))}" target="_blank" rel="noopener">WhatsApp ↗</a>` : "";
+  $("bppContact").innerHTML =
+      row("WhatsApp", (wa.phone||ct.whatsapp_e164||x.phone) ? tel(wa.phone||ct.whatsapp_e164||x.phone) + (wa.verified||ct.whatsapp_verified_at ? ' <span class="tag good">verified</span>' : ' <span class="tag warn">not verified</span>') + (wa.opted_out?' <span class="tag">updates paused</span>':"") : "—")
+    + row("Email", [ct.email, F.login_email].filter((v,i,a)=> v && a.indexOf(v)===i).map(e=>`<a href="mailto:${esc(e)}">${esc(e)}</a>`).join(" · ") + (ct.email_verified_at?' <span class="tag good">verified</span>':""))
+    + row("Prefers", ct.preferred_contact_method ? esc(nice(ct.preferred_contact_method)) : "")
+    + row("Applied with", x.applied_profile ? "@"+esc(x.applied_profile) : "")
+    + row("Applied on", x.applied_at ? esc(fmtDate(x.applied_at)) : "");
+  const A = F.addresses||[];
+  $("bppAddr").innerHTML = A.length ? A.map(a=>{
+      const full = [a.line1, a.line2, a.landmark, a.city, a.state, a.postal_code].filter(Boolean).join(", ");
+      const q = a.lat!=null && a.lng!=null ? `${a.lat},${a.lng}` : encodeURIComponent(full);
+      return `<div class="bpp-addr${a.address_id===F.campaign_address_id?" on":""}"><div class="bpp-addr-h"><b>${esc(a.label||"Address")}</b>
+          ${a.address_id===F.campaign_address_id?'<span class="tag good">Shipping here for this campaign</span>':""}${a.is_default?'<span class="tag">Default</span>':""}${a.geo_verified_at?'<span class="tag">📍 map-checked</span>':""}</div>
+        ${a.recipient_name||a.recipient_phone?`<div>${esc(a.recipient_name||"")}${a.recipient_phone?` · ${tel(a.recipient_phone)}`:""}</div>`:""}
+        <div>${esc(full)}</div>
+        ${a.delivery_instructions?`<div class="muted">📝 ${esc(a.delivery_instructions)}</div>`:""}
+        <div class="bpp-addr-a"><button type="button" class="mini-btn ghost" data-copy="${esc([a.recipient_name, a.recipient_phone, full].filter(Boolean).join(", "))}">📋 Copy</button>
+          <a class="mini-btn ghost" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener">🗺 Map ↗</a></div></div>`; }).join("")
+    : `<div class="muted" style="font-size:13px">No address saved yet — they add it when the contract is signed.</div>`;
+  $("bppAddr").querySelectorAll("[data-copy]").forEach(b=> b.onclick = ()=>{ try{ navigator.clipboard.writeText(b.dataset.copy); gateToast("Address copied ✓"); }catch(e){} });
+  const age = pe.date_of_birth ? Math.floor((Date.now() - new Date(pe.date_of_birth)) / 31557600000) : null;
+  $("bppPersonal").innerHTML = (
+      row("Name", esc([pe.first_name, pe.last_name].filter(Boolean).join(" ") || F.name || ""))
+    + row("Gender", pe.gender ? esc(nice(pe.gender)) : "")
+    + row("Birthday", pe.date_of_birth ? esc(fmtDate(pe.date_of_birth)) + (age!=null?` · ${age} yrs`:"") : pe.age_band ? esc(pe.age_band) : "")
+    + row("Marital status", pe.marital_status ? esc(nice(pe.marital_status)) + (pe.marriage_anniversary?` · anniversary ${esc(fmtDate(pe.marriage_anniversary))}`:"") : "")
+    + row("Pet", pe.has_pet ? esc([pe.pet_name, pe.pet_type && "("+nice(pe.pet_type)+")"].filter(Boolean).join(" ") || "Yes") : pe.has_pet===false ? "No" : "")
+    + row("Travelling now", F.travelling ? esc([F.travelling.city, F.travelling.state].filter(Boolean).join(", ") + (F.travelling.until?" · till "+fmtDate(F.travelling.until):"")) : "")
+  ) || `<div class="muted" style="font-size:13px">Not filled in yet.</div>`;
+  const cm = F.commercial||{}, rt = F.rates||[], bw = F.brands_worked||[], db = F.dream_brands||[], cp = (F.campaigns||[]).filter(c=> !c.this);
+  const more = row("Barter", cm.accepts_barter===true ? "✓ accepts barter" + (cm.min_product_value?` · min product ₹${esc(fmtNum(cm.min_product_value))}`:"") + (cm.barter_preference?` · ${esc(nice(cm.barter_preference))}`:"") : cm.accepts_barter===false ? "No barter" : "")
+    + row("Likes", (cm.preferred_categories||[]).length ? esc(cm.preferred_categories.map(nice).join(", ")) : "")
+    + row("Won't do", (cm.excluded_categories||[]).length ? esc(cm.excluded_categories.map(nice).join(", ")) : "")
+    + row("Rates", rt.length ? rt.map(r=>`${esc(nice(r.type))} ₹${esc(fmtNum(r.amount))}`).join(" · ") + (rt.some(r=>r.negotiable)?' <span class="muted">(negotiable)</span>':"") : "")
+    + row("Brands worked", bw.length ? esc(bw.map(b=> b.brand).filter(Boolean).join(", ")) : "")
+    + row("Dream brands", db.length ? esc(db.filter(Boolean).join(", ")) : "")
+    + row("Other campaigns", cp.length ? cp.map(c=>`${esc(c.campaign||"")} <span class="muted">(${esc(hubStepLabel(c.stage).replace(/^\d+\.\s*/,""))})</span>`).join(" · ") : "")
+    + (cm.notes ? row("Notes", esc(cm.notes)) : "");
+  if(more){ $("bppMore").innerHTML = more; $("bppMoreCard").hidden = false; }
+}
 // full creator card from the barter process: who they are, every Instagram account, contact, address, this campaign
 async function bpCreatorProfile(pid){
   const x = ((_bpData||{}).creators||[]).find(c=> c.participation_id===pid); if(!x) return;
@@ -5339,12 +5388,15 @@ async function bpCreatorProfile(pid){
         ${row("Posts", posts.length ? posts.map(p=> (p.permalink?`<a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener">${esc(p.media_type||"post")} ↗</a>`:esc(p.media_type||"post")) + (p.stats&&p.stats.views!=null?` <span class="muted">${esc(fmtNum(p.stats.views))} views</span>`:"")).join(" · ") : "")}
         ${x.blacklisted?row("Note","⛔ Blacklisted"):""}
         ${!con.issued_at && !addr && !ship.status && !x.submission && !posts.length ? `<div class="muted" style="font-size:13px">Nothing yet — contract, courier, video and posts show here as they happen.</div>` : ""}</div>
-      <div class="bpp-card"><div class="bpp-sec">📱 Contact</div>
+      <div class="bpp-card"><div class="bpp-sec">📱 Contact</div><div id="bppContact">
         ${row("WhatsApp", x.phone||to.phone ? esc(x.phone||to.phone) : "")}
         ${row("Applied with", x.applied_profile ? "@"+esc(x.applied_profile) : "")}
-        ${row("Applied on", x.applied_at ? esc(fmtDate(x.applied_at)) : "")}</div>
+        ${row("Applied on", x.applied_at ? esc(fmtDate(x.applied_at)) : "")}</div></div>
+      <div class="bpp-card"><div class="bpp-sec">🏠 Delivery addresses</div><div id="bppAddr">${addr?row("Ship to", esc(addr)):`<div class="muted" style="font-size:13px">Loading…</div>`}</div></div>
+      <div class="bpp-card"><div class="bpp-sec">🙋 Personal</div><div id="bppPersonal"><div class="muted" style="font-size:13px">Loading…</div></div></div>
+      <div class="bpp-card"><div class="bpp-sec">🧬 Profile, skills &amp; equipment</div><div id="bppPro"><div class="muted">Loading…</div></div></div>
+      <div class="bpp-card" id="bppMoreCard" hidden><div class="bpp-sec">💼 Work &amp; preferences</div><div id="bppMore"></div></div>
       <div class="bpp-card"><div class="bpp-sec">📸 Instagram accounts</div><div id="bppAccts">${skel("list",1)}</div></div>
-      <details class="bpp-card bpp-more"><summary class="bpp-sec">🧬 Profile details</summary><div id="bppPro"><div class="muted">Loading…</div></div></details>
       <div class="hub-foot"><button class="btn sm ghost" data-bpphub2="${esc(pid)}">🗂 Full history &amp; emails</button>${window.__isAdmin?`<button class="btn sm ghost bp-del" data-bpremove="${esc(pid)}">🗑 Delete from campaign</button>`:""}</div>
     </div></div>`;
   document.body.appendChild(m); m.classList.add("open");
@@ -5353,6 +5405,7 @@ async function bpCreatorProfile(pid){
   const hb2 = m.querySelector("[data-bpphub2]"); if(hb2) hb2.onclick = ()=>{ m.remove(); openCreatorHub(pid, "timeline"); };
   wireBpActions(m, ()=>{ m.remove(); loadBarterProcess(true); });
   m.querySelectorAll("[data-bpchat]").forEach(b=> b.onclick = ()=>{ m.remove(); openCreatorHub(pid, "whatsapp"); });
+  bppFillFull(pid, x, row);
   const box = document.getElementById("bppAccts");
   if(!cr.member_id){ box.innerHTML = `<div class="muted">Not on Geek OS yet.</div>`; const pp = document.getElementById("bppPro"); if(pp) pp.innerHTML = `<div class="muted">Not on Geek OS yet.</div>`; return; }
   sb.schema("api").rpc("creator_profile_card", { p_member: cr.member_id }).then(({ data:P })=>{

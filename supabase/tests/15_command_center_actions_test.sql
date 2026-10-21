@@ -82,6 +82,17 @@ select ok( (api.invite_add_post((select v::uuid from _v where k='inv'), '{"media
 select is( (select (e->'totals'->>'views')::int from jsonb_array_elements(api.campaign_analytics((select v::uuid from _v where k='camp'))->'creators') e where e->>'invite_id' = (select v from _v where k='inv')), 800,
   'the report shows the invited creator''s screenshot numbers');
 
+-- ===== full creator card =====
+set local request.jwt.claims = '';
+insert into private.creator_address(identity_id,line1,line2,landmark,city,state,postal_code,country,label,is_default)
+values ((select v::uuid from _v where k='id1'),'B-2','MG Road','Near the mall','Siliguri','West Bengal','734001','India','Home',true);
+set local request.jwt.claims = '{"sub":"0d000000-0000-0000-0000-00000000000d","role":"authenticated"}';
+select is( api.admin_creator_full((select v::uuid from _v where k='part'))->'addresses'->0->>'city', 'Siliguri', 'the team sees the creator''s delivery addresses');
+select is( jsonb_array_length(api.admin_creator_full((select v::uuid from _v where k='part'))->'campaigns'), 1, 'and their campaigns');
+set local request.jwt.claims = '{"sub":"e5000000-0000-0000-0000-0000000000e5","role":"authenticated"}';
+select throws_ok( format($$ select api.admin_creator_full(%L::uuid) $$, (select v from _v where k='part')), '42501', null, 'another brand cannot read their details');
+set local request.jwt.claims = '{"sub":"0d000000-0000-0000-0000-00000000000d","role":"authenticated"}';
+
 -- ===== delete =====
 select throws_ok( format($$ select api.admin_remove_from_campaign(%L::uuid, null) $$, (select v from _v where k='part')), '42501', null, 'only the Super Admin can delete');
 set local request.jwt.claims = '{"sub":"5a000000-0000-0000-0000-0000000000a5","role":"authenticated"}';
