@@ -4578,17 +4578,36 @@ function bkSetRows(rows, src){
   _bk.rows = body.map(r=> ({ cells: r, status: _bk.map.status!=null ? (bkStatus(r[_bk.map.status])||"registered") : "registered" }));
   _bk.src = src; _bk.preview = null;
 }
+// links typed without https:// (www.instagram.com/…, drive.google.com/…) → full links, so they are read correctly
+const bkLink = v => String(v||"").split(/[\s,;|]+/).filter(Boolean).map(x=> /^https?:\/\//i.test(x) ? x : /^(www\.|m\.)?(instagram\.com|instagr\.am|drive\.google\.com|docs\.google\.com|youtu|[a-z0-9-]+\.[a-z]{2,}\/)/i.test(x) ? "https://"+x : x).join(" ");
 function bkRowData(r){
-  const g = k => _bk.map[k]!=null ? String(r.cells[_bk.map[k]]||"").trim() : "";
+  const g0 = k => _bk.map[k]!=null ? String(r.cells[_bk.map[k]]||"").trim() : "";
+  const g = k => (k==="post_link"||k==="video_link"||k==="handle") ? bkLink(g0(k)) : g0(k);
   return { name:g("name"), handle:g("handle"), phone:g("phone"), email:g("email"), city:g("city"), followers:g("followers"),
            status: r.status||"registered", approved: bkStRank(r.status||"registered")>=4,
            address:g("address"), state:g("state"), pincode:g("pincode"), courier:g("courier"), tracking:g("tracking"),
            post_link:g("post_link"), video_link:g("video_link") };
 }
+// the same person on several rows: keep the first row, take the furthest step and every link / missing detail
+function bkSamePerson(a, b){ return !!a && !!b && ((a.phone && a.phone===b.phone) || (a.email && a.email===b.email) || (a.handle && a.handle===b.handle)); }
+function bkMergeRepeats(all, pv){
+  pv.forEach((p,i)=>{
+    if(!p || !p.duplicate) return;
+    let j = pv.findIndex((q,k)=> k<i && q && !q.duplicate && bkSamePerson(q,p));
+    if(j<0) return;
+    p._dupOf = j;
+    const a = all[j], b = all[i];
+    if(bkStRank(b.status) > bkStRank(a.status)){ a.status = b.status; a.approved = b.approved; }
+    a.post_link = [...new Set([a.post_link, b.post_link].join(" ").split(/\s+/).filter(Boolean))].join(" ");
+    ["video_link","courier","tracking","address","state","pincode","city","email","phone","handle","name"].forEach(k=>{ if(!a[k] && b[k]) a[k] = b[k]; });
+    a._merged = true;
+  });
+}
 async function bkCheck(){
   if(!_bk.rows) return;
   const { data, error } = await sb.schema("api").rpc("bulk_preview", { p_campaign:_bpCamp.id, p_rows: _bk.rows.map(bkRowData) }).then(r=>r, e=>({error:e}));
   _bk.preview = error ? { error: error.message||String(error) } : (data||[]);
+  if(Array.isArray(_bk.preview)) bkMergeRepeats(_bk.rows.map(bkRowData), _bk.preview);
   paintBulk();
 }
 async function loadBulkList(){
@@ -4599,7 +4618,7 @@ async function loadBulkList(){
 function bkStatusChip(p, r){
   if(!p) return '<span class="muted">…</span>';
   if(p.no_contact) return '<span class="tag warn">⚠ no WhatsApp / email / Instagram</span>';
-  if(p.duplicate) return '<span class="tag warn">Duplicate — same person as a row above · skipped</span>';
+  if(p.duplicate) return `<span class="tag">Same person as row ${bkEsc((p._dupOf!=null?p._dupOf:0)+1)} — merged into it (furthest step + all links kept)</span>`;
   if(p.already) return `<span class="tag">Already in${p.live_stage?` · ${bkEsc(String(p.live_stage).replace(/_/g," "))}`:""} — nothing new in this row · skipped</span>`;
   if(p.lands_on && p.lands_on !== ((r && r.status) || "registered") && bkStRank(p.lands_on) < bkStRank((r && r.status) || "registered")){
     const miss = [p.needs_post_link?"Post link":"", p.needs_video?"Video link":"", p.needs_courier?"Courier + Tracking":""].filter(Boolean).join(" + ") || "the details for this step";
@@ -4666,7 +4685,7 @@ function bulkHtml(){
       ${_bk.preview && _bk.preview.error ? `<div class="auth-err">${bkEsc(_bk.preview.error)}</div>` : ""}
       <label class="bk-note"><span>Message to the creators (optional — goes with the invite)</span><input id="bkNote" maxlength="200" value="${bkEsc(_bk.note)}" placeholder="e.g. Diwali drop — we loved your recent reels!"></label>
       <div class="bk-go"><button class="btn" id="bkUpload"${_bk.busy||!valid?" disabled":""}>${_bk.busy?"Uploading…":`Upload &amp; invite ${valid} creator${valid===1?"":"s"}`}</button>
-        <span class="muted">${byStatus.map(([l,n])=>`${n} ${bkEsc(l.toLowerCase())}`).join(" · ")}${noAddr?` · <b style="color:#b45309">${noAddr} without an address</b> (they add it in their profile)`:""}${nDup?` · <b>${nDup} duplicate${nDup>1?"s":""} skipped</b>`:""}</span>
+        <span class="muted">${byStatus.map(([l,n])=>`${n} ${bkEsc(l.toLowerCase())}`).join(" · ")}${noAddr?` · <b style="color:#b45309">${noAddr} without an address</b> (they add it in their profile)`:""}${nDup?` · <b>${nDup} repeat${nDup>1?"s":""}</b> (merged into the first row / already up to date)`:""}</span>
         <button class="btn sm ghost" id="bkClear">Clear</button></div>
       <div id="bkResult"></div>` : ""}
     </div>
@@ -4794,7 +4813,9 @@ function wireBulk(){
   const cl = $b("bkClear"); if(cl) cl.onclick = ()=>{ _bk.rows = null; _bk.preview = null; paintBulk(); };
   const up = $b("bkUpload"); if(up) up.onclick = async ()=>{
     const pv = Array.isArray(_bk.preview) ? _bk.preview : [];
-    const rows = _bk.rows.map(bkRowData).filter((d,i)=> !(pv[i] && (pv[i].no_contact || pv[i].duplicate || pv[i].already)));
+    const all = _bk.rows.map(bkRowData);
+    bkMergeRepeats(all, pv);
+    const rows = all.filter((d,i)=> !(pv[i] && (pv[i].no_contact || pv[i].duplicate || pv[i].already && !d._merged)));
     if(!rows.length) return;
     _bk.busy = true; paintBulk();
     const { data, error } = await sb.schema("api").rpc("bulk_import_creators", { p_campaign:_bpCamp.id, p_rows: rows, p_note: _bk.note||null }).then(r=>r, e=>({error:e}));
