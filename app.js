@@ -6672,7 +6672,7 @@ async function adminWaBot(){
     const { data:r, error:e } = await sb.functions.invoke("wa-bot-preview", { body:{ phone:num(), question:q } }).then(x=>x, x=>({error:x}));
     if(e || !r || r.error){ out.innerHTML = `<div class="muted" style="margin-top:8px">${esc((r&&r.error)||(e&&e.message)||"Couldn't build the reply")} — deploy <code>wa-bot-preview</code> if this is new.</div>`; return; }
     const wa = s=> esc(s).replace(/\*([^*\n]+)\*/g,"<b>$1</b>").replace(/_([^_\n]+)_/g,"<i>$1</i>").replace(/\n/g,"<br>");
-    out.innerHTML = `<div class="bot-bubble">${wa(r.reply)}</div>
+    out.innerHTML = `${r.quiet?`<div class="wa-auto warn" style="margin-top:8px">⏸ ${esc(r.quiet)} <span class="muted">— this is what it would send otherwise:</span></div>`:""}${r.ack?`<div class="muted" style="font-size:12px;margin-top:8px">Short “team will reply” message: ${esc(r.ack)}</div>`:""}<div class="bot-bubble">${wa(r.reply)}</div>
       <div class="muted" style="font-size:12px;margin-top:4px">${r.registered?"Registered number":"Not registered on this number"}${r.steps?` · + ${r.steps==="register"?"4":"1"} screenshot(s) after this`:""}${r.handoff?" · 🙋 the team gets an alert":""} · ${r.ai?"natural (AI) wording":r.ai_available?"standard wording":"standard wording (no AI key)"}</div>`;
   };
   document.getElementById("botCheck").onclick = async ()=>{

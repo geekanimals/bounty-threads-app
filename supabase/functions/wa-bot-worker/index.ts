@@ -10,7 +10,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { workerGuard } from "../_shared/worker_auth.ts";
 import { getProvider } from "../_shared/wa_provider.ts";
-import { aiPrompt, buildDraft, isHi, parseAi, STEP_IMAGES, type BotDraft } from "../_shared/wa_bot_core.ts";
+import { aiPrompt, buildAck, buildDraft, isHi, parseAi, STEP_IMAGES, type BotDraft } from "../_shared/wa_bot_core.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -67,8 +67,8 @@ Deno.serve(async (req) => {
       const ctx = job.ctx || {};
       ctx.app_url = ENV_APP_URL || ctx.app_url || null;
       const q = String(job.question || "");
-      let d = buildDraft(q, ctx);
-      if (job.use_ai !== false && d.intent !== "human" && d.intent !== "thanks") {
+      let d = job.ack ? buildAck(q, ctx, String(job.ack)) : buildDraft(q, ctx);
+      if (!job.ack && job.use_ai !== false && d.intent !== "human" && d.intent !== "thanks") {
         const better = await aiRewrite(q, d, job.history || []);
         if (better) d = better;
       }

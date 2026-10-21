@@ -53,6 +53,7 @@ export function detectBotIntent(question: string): "human" | "register" | "insta
   const words = q.trim().split(" ").filter(Boolean);
   if (words.length <= 4 && words.some((w) => /^(thanks|thank|thanku|thankyou|ty|ok|okay|okk|done|theek|thik|accha|acha|achha|shukriya|dhanyavad)$/.test(w))
       && words.every((w) => /^(thanks|thank|you|thanku|thankyou|ty|ok|okay|okk|done|theek|thik|hai|accha|acha|achha|shukriya|dhanyavad|bhai|sir|ji|mam|so|much)$/.test(w))) return "thanks";
+  if (words.length <= 2 && words.some((w) => /^(status|update|updates)$/.test(w))) return "greet";
   if (words.length <= 3 && words.every((w) => GREET_WORDS.includes(w) || /^(bhai|sir|mam|ma'am|ji|please|pls)$/.test(w))) return "greet";
   return "campaign";
 }
@@ -275,6 +276,30 @@ function stageWord(stage: string, hi: boolean): string {
     published: ["post live hai 📈", "post is live 📈"], completed: ["complete 🏁", "complete 🏁"],
   };
   const x = m[stage]; return x ? (hi ? x[0] : x[1]) : stage;
+}
+
+// broadcast replies / numbers not in the app: a short "got it — the team will reply here" (+ how to join the app)
+export function buildAck(question: string, ctx: BotCtx, reason: string): BotDraft {
+  const hi = isHi(question);
+  const T = (h: string, e: string) => (hi ? h : e);
+  const first = String(ctx.name || "").trim().split(/\s+/)[0] || "";
+  const hey = first ? `Hi *${first}* 👋` : "Hi 👋";
+  const link = appLink(ctx);
+  const camps = (ctx.campaigns || []).filter((c) => !["completed", "rejected", "ineligible", "brand_declined", "dropped"].includes(String(c.stage)));
+  const lines = [
+    hey,
+    T("Thank you for your message! 🙏 Geek team ko aapka message mil gaya hai — woh jaldi isi chat pe reply karenge.",
+      "Thank you for your message! 🙏 The Geek team has it and will reply right here soon."),
+  ];
+  if (camps.length) {
+    lines.push(T(`Bounty Threads app pe aapke ${camps.length} campaign chal rahe hain — unka status jaanna ho to *status* likho.`,
+                 `You have ${camps.length} campaign(s) running on the Bounty Threads app — type *status* to see where each one is.`));
+  } else if (!ctx.registered && !(ctx.invites || []).length) {
+    lines.push(T(`Creator ho? Bounty Threads app pe register karke barter & paid campaigns paao${link ? `: ${link}` : ""} (steps chahiye to *register* likho).`,
+                 `Are you a creator? Register on the Bounty Threads app for barter & paid campaigns${link ? `: ${link}` : ""} (type *register* for the steps).`));
+  }
+  const reply = waFormat(lines.join("\n\n")) + (hi ? "\n\n_🤖 Geek auto-reply_" : "\n\n_🤖 Geek auto-reply_");
+  return { reply, steps: null, handoff: false, intent: "ack", campaign_id: null, facts: reason };
 }
 
 // ---- AI rewrite (optional) ------------------------------------------------------------------------

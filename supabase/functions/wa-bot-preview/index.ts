@@ -3,7 +3,7 @@
 // built from the same live data (admin_bot_preview is Super Admin–gated in the database). Nothing is sent.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { aiPrompt, buildDraft, parseAi } from "../_shared/wa_bot_core.ts";
+import { aiPrompt, buildAck, buildDraft, parseAi } from "../_shared/wa_bot_core.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -19,13 +19,17 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const phone = String(body.phone || "").trim(), question = String(body.question || "").trim().slice(0, 1500);
     if (!phone || !question) return json({ error: "Number and question are needed" }, 400);
-    const { data: ctx, error } = await client.rpc("admin_bot_preview", { p_phone: phone });
+    const { data: chk, error } = await client.rpc("admin_bot_check", { p_phone: phone, p_question: question });
     if (error) return json({ error: error.message }, error.code === "42501" ? 403 : 400);
-    const c: any = ctx || {};
+    const c: any = chk?.ctx || {};
     c.app_url = ENV_APP_URL || c.app_url || null;
-    let d = buildDraft(question, c);
+    // the same rules the live bot follows
+    const quiet = !chk?.enabled ? "The bot is OFF — turn it on to reply on WhatsApp."
+      : chk?.paused_until ? `Quiet for this number till ${new Date(chk.paused_until).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} (${chk.paused_reason === "team_reply" ? "the team replied" : chk.paused_reason === "handoff" ? "waiting for the team" : "paused by you"}).`
+      : chk?.team_replied_at ? "Quiet: someone from the team replied to this number in the last few hours." : null;
+    let d = chk?.ack ? buildAck(question, c, String(chk.ack)) : buildDraft(question, c);
     let ai = false;
-    if (body.use_ai !== false && AI_KEY && d.intent !== "human" && d.intent !== "thanks") {
+    if (!chk?.ack && body.use_ai !== false && AI_KEY && d.intent !== "human" && d.intent !== "thanks") {
       const { system, user } = aiPrompt(question, d, []);
       try {
         const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -40,7 +44,7 @@ Deno.serve(async (req) => {
         }
       } catch (_e) { /* rule-based reply stays */ }
     }
-    return json({ ok: true, reply: d.reply, steps: d.steps, handoff: d.handoff, intent: d.intent, ai, ai_available: !!AI_KEY,
+    return json({ ok: true, reply: d.reply, steps: d.steps, handoff: d.handoff, intent: d.intent, ai, ai_available: !!AI_KEY, quiet, ack: chk?.ack || null,
                   registered: !!c.registered, name: c.name || null });
   } catch (e) {
     console.error("wa-bot-preview", (e as Error).message);
