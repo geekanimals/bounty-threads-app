@@ -109,5 +109,33 @@ Deno.serve(async (req) => {
       await set(t, "failed", null, null, ((e as Error).message || "template create failed").slice(0, 300));
     }
   }
-  return new Response(JSON.stringify({ ok: true, processed: (rows ?? []).length, ...done }), { headers: { "Content-Type": "application/json" } });
+  // the fixed-text step templates (geek_step_*): created once as UTILITY, then followed until Meta approves them
+  const steps: Record<string, number> = {};
+  try {
+    const { data: st } = await api.rpc("ops_step_templates_claim");
+    for (const t of ((st ?? []) as { wa_template: string; status: string; body: string }[])) {
+      const setS = async (status: string, err: string | null) => {
+        await api.rpc("ops_step_template_set", { p_name: t.wa_template, p_status: status, p_error: err }); steps[status] = (steps[status] || 0) + 1; };
+      try {
+        if (mode === "meta") {
+          const row = { campaign_id: "", template_name: t.wa_template, language: "en", body: t.body, footer: "Reply STOP to stop WhatsApp updates", status: t.status, provider: "meta" } as Row;
+          if (t.status === "submitted") { const s2 = await metaStatus(row); await setS(s2.status, s2.error); }
+          else {
+            const r = await fetch(`https://graph.facebook.com/${META_VER}/${WABA_ID}/message_templates`, {
+              method: "POST", headers: { Authorization: `Bearer ${META_TOKEN}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ name: t.wa_template, language: "en", category: "UTILITY", components: [
+                { type: "BODY", text: t.body, example: { body_text: [["Asha", "Diwali Glow", "Vaaree", `${APP_URL}/app.html`]] } },
+                { type: "FOOTER", text: "Reply STOP to stop WhatsApp updates" }] }),
+            });
+            const raw: any = await r.json().catch(() => ({}));
+            if (!r.ok && !/already exists|duplicate/i.test(raw?.error?.error_user_msg || raw?.error?.message || "")) throw new Error(raw?.error?.error_user_msg || raw?.error?.message || "Meta template create failed");
+            await setS(r.ok ? mapStatus(raw?.status) : "submitted", null);
+          }
+        } else if (t.status !== "manual") {
+          await setS("manual", "Create this template in snapto / WhatsApp Manager — category Utility, language English, the exact text shown, footer “Reply STOP to stop WhatsApp updates” — then press Mark approved.");
+        }
+      } catch (e) { await setS("failed", ((e as Error).message || "template create failed").slice(0, 300)); }
+    }
+  } catch (_e) { /* step templates are optional for this run */ }
+  return new Response(JSON.stringify({ ok: true, processed: (rows ?? []).length, ...done, steps }), { headers: { "Content-Type": "application/json" } });
 });

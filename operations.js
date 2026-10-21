@@ -184,6 +184,8 @@
   }
 
   function toggleNewCampaign(){
+    // one campaign form everywhere (deliverables, hashtags, mentions, contract, brief, ideal profile)
+    if(typeof window.openCampaignModal==="function"){ window.openCampaignModal(null); return; }
     var box=document.getElementById("opsNewCampForm");
     if(box.innerHTML){ box.innerHTML=""; return; }
     box.innerHTML=campaignForm("opsCreateBtn");
@@ -670,12 +672,14 @@
           (rv&&rv.reason?'<div class="mc-note" style="border-color:rgba(247,144,9,.6)">“'+esc(rv.reason)+'”</div>':'')+(due?'<div style="margin-top:4px">Due <b>'+fmtDate(due)+'</b></div>':''),
           '<button class="btn sm" data-video="'+P+'">🎬 Submit again</button>'+readBrief,'act');
       case 'content_submitted': return box('👀','Your video is with the brand',(sb2?'<a href="'+esc(safeLink(sb2.url))+'" target="_blank" rel="noopener">Your link ↗</a> · sent '+fmtDT(sb2.submitted_at)+'. ':'')+'We\'ll tell you the moment it\'s approved. Don\'t post yet.');
-      case 'content_approved': return box('✅','Approved — let\'s post!','Tap <b>Let\'s post</b> — your post opens right here in the app with the format, caption, @mentions, #hashtags and collaborator filled in from the campaign. Pick your approved video and publish.',
-          '<button class="btn sm" data-letspost="'+P+'">🚀 Let\'s post</button>','act');
+      case 'content_approved': return box('✅','Approved — let\'s post!','Tap <b>Let\'s post</b> — your post opens right here in the app with the format, caption, @mentions, #hashtags and collaborator filled in from the campaign. Pick your approved video and publish.'
+            + postProgressHtml(c),
+          '<button class="btn sm" data-letspost="'+P+'">🚀 Let\'s post</button><button class="btn sm ghost" data-post="'+P+'">🔗 Posted already? Add the link</button>','act');
       case 'published':
         var left=pendingFormats(c);
-        if(left.length) return box('📲','Next: post your '+esc(left.join(' + ')),'Your first post is live ✓. The rest is filled in the same way — tap below.',
-          '<button class="btn sm" data-letspost="'+P+'">🚀 Post my '+esc(left[0])+'</button>','act');
+        if(left.length) return box('📲','Next: post your '+esc(left.join(' + ')),'Your first post is live ✓. The campaign completes when <b>every</b> post is up — post the rest from the app, or posted it already? Add its link.'
+            + postProgressHtml(c),
+          '<button class="btn sm" data-letspost="'+P+'">🚀 Post my '+esc(left[0])+'</button><button class="btn sm ghost" data-post="'+P+'" data-postkind="'+esc(left[0].toLowerCase()==="post"?"post":left[0].toLowerCase())+'">🔗 Add a post link</button>','act');
         return box('📈','You\'re live!','Your post is recorded on the campaign. The brand wraps up once the numbers are in.');
       case 'completed':
         var left2=pendingFormats(c);
@@ -793,7 +797,7 @@
       b.disabled=true; b.textContent="…";
       api("creator_mark_received",{p_participation:b.getAttribute("data-received")}).then(function(r){ if(r.error){ alert(r.error.message||r.error); b.disabled=false; b.textContent="📦 I received it"; return; } loadMyCampaigns(); updateAlertsBadge(); }); }; });
     document.querySelectorAll("#opsMine [data-address]").forEach(function(b){ b.onclick=function(){ openAddressModal(b.getAttribute("data-address")); }; });
-    document.querySelectorAll("#opsMine [data-post]").forEach(function(b){ b.onclick=function(){ openPostModal(b.getAttribute("data-post")); }; });
+    document.querySelectorAll("#opsMine [data-post]").forEach(function(b){ b.onclick=function(){ openPostModal(b.getAttribute("data-post"), b.getAttribute("data-postkind")); }; });
   }
 
   // ---- creator: approved → Let's post = straight to the in-app composer (Instagram → Post) with the campaign picked
@@ -805,6 +809,16 @@
     if(typeof renderShell==="function") renderShell();
     window.scrollTo(0,0);
   }
+  // "Reel 1/1 ✓ · Story 0/2" — what the campaign needs vs what is up
+  function postProgressHtml(c){
+    var kindOf=function(f){ f=String(f||"").toLowerCase(); return f==="reel"?"reel":f==="story"?"story":(f==="static_post"||f==="carousel"||f==="post")?"feed":null; };
+    var need={}, done={}, label={reel:"Reel",story:"Story",feed:"Post"};
+    (c.deliverables||[]).forEach(function(d){ var k=kindOf(d.format); if(k) need[k]=(need[k]||0)+Math.max(1,d.quantity||1); });
+    (c.posts||[]).forEach(function(p){ var k=kindOf(p.media_type); if(k) done[k]=(done[k]||0)+1; });
+    var ks=Object.keys(need); if(!ks.length) return '';
+    return '<div class="mc-pp">'+ks.map(function(k){ var d=Math.min(done[k]||0,need[k]), ok=d>=need[k];
+      return '<span class="mc-ppc'+(ok?' ok':'')+'">'+(ok?'✓ ':'')+label[k]+' <b>'+d+'/'+need[k]+'</b></span>'; }).join('')+'</div>';
+  }
   // formats still to post (from the deliverables vs what's already up)
   function pendingFormats(c){
     var kindOf=function(f){ f=String(f||"").toLowerCase(); return f==="reel"?"reel":f==="story"?"story":(f==="static_post"||f==="carousel"||f==="post")?"feed":null; };
@@ -815,10 +829,10 @@
   }
 
   // ---- creator: record the reel/story posted (runs the caption/tag check + marks published) ----
-  function openPostModal(part){
+  function openPostModal(part, kind){
     opsModal('<div class="ci-mh"><h3>Post your content</h3><button class="wa-x" id="opsMx">×</button></div>'
       + '<div class="ci-hint">Publish from your Media Kit, then record it here so we can check your caption against the brief and start tracking its performance.</div>'
-      + '<label class="wa-f"><span>What did you post?</span><select id="opsPoMt"><option value="reel">Reel</option><option value="story">Story</option><option value="post">Feed post</option></select></label>'
+      + '<label class="wa-f"><span>What did you post?</span><select id="opsPoMt"><option value="reel"'+(kind==="reel"?' selected':'')+'>Reel</option><option value="story"'+(kind==="story"?' selected':'')+'>Story</option><option value="post"'+(kind==="post"?' selected':'')+'>Feed post</option></select></label>'
       + '<label class="wa-f"><span>Link to the post (permalink)</span><input id="opsPoLink" placeholder="https://instagram.com/p/…"></label>'
       + '<label class="wa-f"><span>Caption you used</span><textarea id="opsPoCap" rows="3" placeholder="Paste your caption incl. #hashtags and @mentions"></textarea></label>'
       + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsPoMk">Open Media Kit</button><button class="btn sm" id="opsPoSave">Record post</button></div>'
@@ -828,6 +842,7 @@
     document.getElementById("opsPoSave").onclick=function(){
       var err=document.getElementById("opsPoErr"); err.textContent="";
       var payload={ media_type:document.getElementById("opsPoMt").value, permalink:(document.getElementById("opsPoLink").value||"").trim(), caption:(document.getElementById("opsPoCap").value||"").trim() };
+      if(!/^https?:\/\/(www\.|m\.)?instagram\.com\/(reel|reels|p|tv|stories)\//i.test(payload.permalink)){ err.textContent="Paste the Instagram link of the post (instagram.com/reel/… , /p/… or /stories/…)."; return; }
       var btn=this; btn.disabled=true; btn.textContent="Recording…";
       api("record_campaign_post",{p_participation:part,p_payload:payload}).then(function(r){
         if(r.error){ err.textContent=r.error.message||r.error; btn.disabled=false; btn.textContent="Record post"; return; }
@@ -904,7 +919,7 @@
         + '<div class="ct-gate" id="opsCtGate">↓ Read the whole contract — scroll to the end to accept and sign</div>'
         + '<div id="opsCtAccept" style="display:none">'
         +   '<label class="cp-check" style="margin-top:12px"><input type="checkbox" id="opsAsci"> <span>I have read the whole contract, I will follow the <b>ASCI</b> guidelines, and I will <b>post only after the brand approves my video</b> in the app.</span></label>'
-        +   (risky?'<label class="cp-check"><input type="checkbox" id="opsTerms"> <span>I understand that if I receive the product and don\'t submit my video within 7 days, <b>my account is blocked</b> and I <b>must send the product to another creator at my own cost</b>.</span></label>':'')
+        +   (risky?'<label class="cp-check"><input type="checkbox" id="opsTerms"> <span>I understand that if I receive the product and don\'t submit my video within '+esc(k.content_days||7)+' days, <b>my account is blocked</b> and I <b>must send the product to another creator at my own cost</b>.</span></label>':'')
         +   (k.sign_as
               ? '<label class="wa-f"><span>Type your name exactly as on your profile: <b>'+esc(k.sign_as)+'</b></span><input id="opsSig" autocomplete="off" placeholder="'+esc(k.sign_as)+'"></label>'
                 + '<div class="ci-hint" id="opsSigHint">Only the name on your Geek OS profile can sign this contract.</div>'
@@ -1110,6 +1125,11 @@
   };
   function loadBrandSetup(){
     var box=document.getElementById("opsBrandForm"); if(!box) return;
+    if(typeof window.openCampaignModal==="function"){
+      box.innerHTML='<div class="card"><h4>New campaign brief</h4><div class="muted" style="margin-bottom:10px">The same campaign form as everywhere else — deliverables, hashtags, mentions, contract and video brief.</div><button class="btn" id="opsBrandOpen">＋ New campaign</button></div>';
+      document.getElementById("opsBrandOpen").onclick=function(){ window.openCampaignModal(null); };
+      return;
+    }
     box.innerHTML='<div class="card"><h4>Company &amp; contact</h4><div class="ci-grid">'
       + f("Company","cfBrand","e.g. PetCo India") + f("Category","cfCategory","e.g. pets")
       + f("Website","cfSite","https://…") + f("Contact person","cfContact","name / email")

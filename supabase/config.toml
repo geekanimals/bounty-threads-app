@@ -69,6 +69,9 @@ verify_jwt = false
 verify_jwt = false
 [functions.ops-post-metrics-worker]
 verify_jwt = false
+# campaign posts: numbers from each creator's own Instagram + the ad-rights "still live?" check (CI_WORKER_SECRET)
+[functions.ci-post-insights-worker]
+verify_jwt = false
 
 # Media Kit live refresh (60 s) — signed-in creator syncs only their own posts/stories; server-throttled.
 [functions.instagram-media-sync]

@@ -1874,3 +1874,42 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 .hub-mail-go{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px}
 .bk-table tr.bk-dup td{opacity:.55}
 @media (max-width:600px){.cc-acts .btn{min-width:0;flex:1}}
+
+/* ---- campaign form: platform, deliverables, hashtags & mentions ---- */
+.cm-plat-msg{display:block;margin-top:6px;padding:8px 10px;border-radius:9px;background:rgba(239,68,68,.1);color:#b91c1c;font-size:12.5px;font-weight:600;text-transform:none;letter-spacing:0}
+.cm-plat-msg[hidden]{display:none}
+.cm-dlabel{font-size:12.5px;font-weight:700;margin:4px 0 6px}
+.cm-deliv{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin-bottom:6px}
+.cm-dl{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;border:1.5px solid var(--line,#e5e7eb);border-radius:12px;background:var(--card,#fff);transition:border-color .15s,background .15s}
+.cm-dl.on{border-color:var(--brand,#7c3aed);background:rgba(124,58,237,.06)}
+.cm-dl-ck{display:flex!important;flex-direction:row!important;align-items:center;gap:7px;margin:0!important;font-weight:700;font-size:14px;text-transform:none!important;letter-spacing:0!important;cursor:pointer}
+.cm-dl-ck input{width:18px;height:18px;margin:0}
+.cm-dl-ic{font-size:17px}
+.cm-qty{display:inline-flex;align-items:center;border:1px solid var(--line,#e5e7eb);border-radius:9px;overflow:hidden;flex:0 0 auto}
+.cm-qty button{width:28px;height:30px;border:0;background:transparent;font-size:16px;cursor:pointer;color:inherit}
+.cm-qty button:hover{background:rgba(124,58,237,.08)}
+.cm-qty input{width:38px!important;height:30px;border:0!important;border-left:1px solid var(--line,#e5e7eb)!important;border-right:1px solid var(--line,#e5e7eb)!important;border-radius:0!important;text-align:center;padding:0!important;margin:0!important;-moz-appearance:textfield;background:transparent}
+.cm-qty input::-webkit-outer-spin-button,.cm-qty input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.cm-dl:not(.on) .cm-qty{opacity:.45}
+.cm-dsum{font-size:12.5px;margin:2px 0 10px;color:var(--muted,#6b7280)}
+.cm-dsum b{color:var(--ink,#111)}
+.cm-tagbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:7px 8px;border:1px solid var(--line,#e5e7eb);border-radius:11px;background:var(--card,#fff);min-height:44px;cursor:text;margin-bottom:6px}
+.cm-tagbox:focus-within{border-color:var(--brand,#7c3aed);box-shadow:0 0 0 3px rgba(124,58,237,.12)}
+.cm-tagbox input{flex:1 1 160px;min-width:120px;border:0!important;outline:0;padding:4px 2px!important;margin:0!important;background:transparent;box-shadow:none!important;font:inherit}
+.cm-tag{display:inline-flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;border-radius:999px;background:rgba(124,58,237,.1);color:var(--brand,#6d28d9);font-weight:600;font-size:13px}
+#cmMents .cm-tag{background:rgba(14,165,233,.12);color:#0369a1}
+.cm-tag button{border:0;background:transparent;cursor:pointer;font-size:11px;line-height:1;padding:2px 4px;border-radius:999px;color:inherit;opacity:.7}
+.cm-tag button:hover{opacity:1;background:rgba(0,0,0,.08)}
+.cm-hint{display:block;font-size:11.5px;font-weight:400;text-transform:none;letter-spacing:0;margin-top:4px}
+.cm-ctprev{font-size:12.5px;line-height:1.5;padding:10px 12px;border-radius:11px;background:rgba(124,58,237,.06);border:1px dashed rgba(124,58,237,.35);margin:4px 0 10px}
+[data-theme="dark"] .cm-dl,[data-theme="dark"] .cm-tagbox{background:transparent;border-color:var(--line)}
+/* campaign page + barter rows + creator card: posts up vs needed */
+.ws-dchips{display:flex;flex-wrap:wrap;gap:6px}
+.ws-dchip{padding:5px 10px;border-radius:999px;background:rgba(124,58,237,.08);font-weight:600;font-size:13px}
+.ws-dprog{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--ink,#111)}
+.ws-dprog .bad{color:#dc2626}
+.bp-pp,.mc-pp{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}
+.bp-ppc,.mc-ppc{padding:3px 9px;border-radius:999px;font-size:12px;background:rgba(247,144,9,.12);color:#b45309;font-weight:600}
+.bp-ppc.ok,.mc-ppc.ok{background:rgba(18,183,106,.12);color:#067647}
+.wa-tpltext{font-size:12px;line-height:1.45;max-width:420px;max-height:120px;overflow:auto;margin-bottom:4px;white-space:normal}
+@media (max-width:600px){.cm-deliv{grid-template-columns:1fr}}

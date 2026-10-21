@@ -1418,6 +1418,28 @@ async function openCampaignWorkspace(id){
   renderCampaignWorkspace(c, apps, barter, pipe);
 }
 
+// campaign page: what each creator posts + who has posted everything (live from the posts on the campaign)
+function wsDelivHead(c){
+  const d = parseDeliverablesText(c.deliverables), n = Object.values(d.counts).reduce((a,b)=>a+b,0);
+  const chips = DELIV_KINDS.filter(([k])=>d.counts[k]).map(([k,l,ic,pl])=>`<span class="ws-dchip">${ic} ${d.counts[k]} ${esc(d.counts[k]>1?pl:l)}</span>`).join("");
+  const tg = splitTags(c.hashtags);
+  return n ? `<div class="ws-dchips">${chips}${d.other.map(o=>`<span class="ws-dchip">📎 ${esc(o)}</span>`).join("")}</div>
+      <div class="muted" style="font-size:12.5px;margin:4px 0 8px">${n} post link${n>1?"s":""} per creator — a creator's campaign completes only when all are up.${tg.tags.length||tg.ments.length?` Must use ${esc([...tg.tags,...tg.ments].join(" "))}.`:""}</div>`
+    : `<div class="muted" style="padding:6px">No deliverables set — add them via Edit.</div>`;
+}
+async function loadWsDeliverables(c){
+  const box = () => document.getElementById("wsDelivProg");
+  const { data, error } = await sb.schema("api").rpc("campaign_deliverable_progress", { p_campaign: c.id }).then(r=>r, e=>({error:e}));
+  const b = box(); if(!b) return;
+  if(error){ b.textContent = ""; return; }
+  const L = Object.entries(data||{});
+  if(!L.length){ b.innerHTML = "Nobody has reached posting yet."; return; }
+  const all = L.filter(([,v])=> v && v.all_done).length, gone = L.reduce((a,[,v])=> a + (v.posts||[]).filter(x=>x.missing_since).length, 0);
+  const tot = L.reduce((a,[,v])=>a+(v.need||0),0), up = L.reduce((a,[,v])=>a+(v.done||0),0);
+  b.innerHTML = `<div class="ws-dprog"><div><b>${all}</b> of ${L.length} posted everything</div><div><b>${up}</b> of ${tot} links up</div>${gone?`<div class="bad">⚠️ <b>${gone}</b> post${gone>1?"s":""} taken down</div>`:""}</div>
+    <div class="cp-bar" style="margin-top:6px"><span style="width:${tot?Math.round(100*up/tot):0}%"></span></div>`;
+}
+
 function renderCampaignWorkspace(c, apps, barter, pipe){
   pipe = pipe || [];
   const content = document.querySelector("#content, .content");
@@ -1467,7 +1489,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
           <div class="list" id="wsBarter">${barter.length?barter.map(barterRow).join(""):`<div class="muted" style="padding:8px">No barter items linked. Create one in Mass Barter with campaign “${esc(c.name)}”.</div>`}</div></div>
       </div>
       <div class="grid" style="gap:16px">
-        <div class="card"><h3>Deliverables</h3><div id="wsChecklist">${checklist}</div></div>
+        <div class="card"><h3>Deliverables</h3><div id="wsChecklist">${wsDelivHead(c)}<div id="wsDelivProg" class="muted" style="font-size:12.5px">Loading who has posted…</div></div></div>
         <div class="card"><h3>Details</h3>
           ${info("Type", c.campaign_type?campTypeLabel(c.campaign_type,c.barter_subtype):c.type)}${info("Creators needed", c.creators?String(c.creators):"")}
           ${c.product_link||c.product_value?`<div class="cd-row"><span class="cd-l">Barter product</span><span class="cd-v">${c.product_link?`<a href="${esc(safeUrl(c.product_link))}" target="_blank" rel="noopener">Open ↗</a>`:""}${c.product_value?` · ${fmtMoney(c.product_value)}`:""}</span></div>`:""}
@@ -1490,6 +1512,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
   content.querySelectorAll("[data-wsdecline]").forEach(b=>b.onclick=()=>declineLegacyApplication(b.dataset.wsdecline, reload));
   wireApplicantButtons(content, reload);
   loadCampaignPeople(c);
+  loadWsDeliverables(c);
   // an applicant row opens that creator's full story
   content.querySelectorAll("#wsApps .row").forEach(r=>{ const b = r.querySelector("[data-papprove],[data-pdecline]"); const pid = r.dataset.pid; if(pid && !b){ r.style.cursor = "pointer"; r.onclick = e=>{ if(e.target.closest("a,button")) return; openCreatorHub(pid); }; } });
   content.querySelectorAll("[data-deliv]").forEach(cb=> cb.onchange = ()=>{
@@ -1541,6 +1564,44 @@ function campStatusOptions(cur, endDate){
   const sel = list.some(x=>x[0]===pick) ? pick : (ended ? "Completed" : "Live");
   return list.map(([v,l])=>`<option value="${v}"${v===sel?" selected":""}>${esc(l)}</option>`).join("");
 }
+// deliverables: "1 Reel + 2 Stories + 1 Post" ⇄ { reel:1, story:2, post:1 } (+ free text for anything else)
+const DELIV_KINDS = [["reel","Reel","🎬","Reels"],["story","Story","⭕","Stories"],["post","Post","🖼️","Posts"],["carousel","Carousel","🗂️","Carousels"]];
+function parseDeliverablesText(t){
+  const out = { counts:{}, other:[] };
+  String(t||"").split(/\s*(?:\+|,|&|;|\n|\band\b)\s*/i).map(x=>x.trim()).filter(Boolean).forEach(part=>{
+    const m = /^(\d+)\s*[x×]?\s*(.*)$/i.exec(part), q = m ? Math.max(1, Math.min(20, parseInt(m[1]))) : 1, lbl = (m ? m[2] : part).toLowerCase();
+    const k = /reel/.test(lbl) ? "reel" : /stor/.test(lbl) ? "story" : /carousel/.test(lbl) ? "carousel" : /(post|static|feed)/.test(lbl) ? "post" : null;
+    if(k) out.counts[k] = (out.counts[k]||0) + q; else out.other.push(part);
+  });
+  return out;
+}
+function deliverablesText(counts, other){
+  const parts = DELIV_KINDS.filter(([k])=> counts[k] > 0).map(([k,l,,pl])=> `${counts[k]} ${counts[k]>1?pl:l}`);
+  return parts.concat((other||[]).filter(Boolean)).join(" + ");
+}
+// hashtags / mentions: one field in the database ("#a #b @c"), two sections in the form
+function splitTags(t){
+  const toks = String(t||"").split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
+  return { tags: [...new Set(toks.filter(x=>x[0]==="#").map(x=>"#"+x.slice(1).replace(/[^\p{L}\p{N}_]/gu,"")).filter(x=>x.length>1))],
+           ments: [...new Set(toks.filter(x=>x[0]==="@").map(x=>"@"+x.slice(1).replace(/[^A-Za-z0-9._]/g,"").toLowerCase()).filter(x=>x.length>1))] };
+}
+function tagBoxHtml(id, pre, list, ph){
+  return `<div class="cm-tagbox" id="${id}" data-pre="${pre}">${list.map(t=>`<span class="cm-tag" data-tag="${esc(t)}">${esc(t)}<button type="button" aria-label="Remove">✕</button></span>`).join("")}<input type="text" placeholder="${esc(ph)}" autocomplete="off" autocapitalize="off"></div>`;
+}
+function wireTagBox(box){
+  const pre = box.dataset.pre, inp = box.querySelector("input");
+  const clean = v => pre==="#" ? v.replace(/^[#@]+/,"").replace(/[^\p{L}\p{N}_]/gu,"") : v.replace(/^[@#]+/,"").replace(/^https?:\/\/(www\.)?instagram\.com\//i,"").replace(/[^A-Za-z0-9._]/g,"").toLowerCase();
+  const add = raw => String(raw||"").split(/[\s,;]+/).forEach(v=>{ v = clean(v.trim()); if(!v) return; const t = pre + v;
+      if([...box.querySelectorAll(".cm-tag")].some(x=> x.dataset.tag.toLowerCase()===t.toLowerCase())) return;
+      const chip = el("span","cm-tag"); chip.dataset.tag = t; chip.innerHTML = `${esc(t)}<button type="button" aria-label="Remove">✕</button>`; box.insertBefore(chip, inp); });
+  inp.addEventListener("keydown", e=>{ if(["Enter"," ",",","Tab"].includes(e.key) && inp.value.trim()){ if(e.key!=="Tab") e.preventDefault(); add(inp.value); inp.value=""; }
+    else if(e.key==="Backspace" && !inp.value){ const last = [...box.querySelectorAll(".cm-tag")].pop(); if(last) last.remove(); } });
+  inp.addEventListener("blur", ()=>{ if(inp.value.trim()){ add(inp.value); inp.value=""; } });
+  inp.addEventListener("paste", e=>{ const t = (e.clipboardData||window.clipboardData).getData("text"); if(/[\s,;]/.test(t)){ e.preventDefault(); add(t); } });
+  box.addEventListener("click", e=>{ const b = e.target.closest(".cm-tag button"); if(b){ b.parentNode.remove(); box.dispatchEvent(new Event("change")); } else inp.focus(); });
+  box.__value = ()=>{ if(inp.value.trim()){ add(inp.value); inp.value=""; } return [...box.querySelectorAll(".cm-tag")].map(x=>x.dataset.tag); };
+}
+
 function openCampaignModal(existing, preset){
   preset = preset || {};
   const ed = existing || {};
@@ -1551,8 +1612,9 @@ function openCampaignModal(existing, preset){
   const ctype = ed.campaign_type || preset.campaign_type || (/paid/i.test(ed.type||"") && !/hybrid/i.test(ed.type||"") ? "paid" : /hybrid/i.test(ed.type||"") ? "barter_paid" : "barter");
   const opt = (arr,val)=>arr.map(o=>`<option${o===val?' selected':''}>${o}</option>`).join("");
   const kv = (arr,val)=>arr.map(([k,l])=>`<option value="${k}"${k===val?' selected':''}>${l}</option>`).join("");
-  const plats = String(ed.platforms||"Instagram").split(/\s*,\s*/).filter(Boolean);
   const list = v => Array.isArray(v) ? v.join(", ") : (v||"");
+  const dv = parseDeliverablesText(ed.deliverables || ct.deliverables || (existing ? "" : "1 Reel"));
+  const tg = splitTags(ed.hashtags);
   let m = document.getElementById("campaignModal"); if(m) m.remove();
   m = el("div","modal-overlay"); m.id="campaignModal";
   m.innerHTML = `<div class="modal modal-lg">
@@ -1569,10 +1631,19 @@ function openCampaignModal(existing, preset){
       <div class="mf-row"><label class="cm-paid">Budget (₹)<input name="budget" type="number" min="0" value="${ed.budget!=null?esc(ed.budget):''}" placeholder="100000"></label>
       <label class="cm-nobarter-creators">Number of creators<input name="creators_paid" type="number" min="0" value="${ed.creators!=null?esc(ed.creators):''}" placeholder="10"></label>
       <label>Objective<select name="objective">${opt(["Awareness","Engagement","Sales / Conversions","UGC content","Product launch","App installs","Store visits"], ed.objective)}</select></label></div>
-      <label>Platforms</label>
-      <div class="cm-chips">${CAMP_PLATFORMS.map(p=>`<label><input type="checkbox" name="platforms" value="${esc(p)}"${plats.includes(p)?' checked':''}> ${esc(p)}</label>`).join("")}</div>
-      <label>Hashtags &amp; mentions<input name="hashtags" value="${esc(ed.hashtags||'')}" placeholder="#summerglow #ad @lumecosmetics"></label>
-      <label>Deliverables<textarea name="deliverables" rows="2" placeholder="e.g. 1 Reel + 2 Stories + 1 Static post">${esc(ed.deliverables||'')}</textarea></label>
+      <div class="cm-sec">📱 Platform &amp; deliverables</div>
+      <div class="mf-row"><label>Platform<select name="platform" id="cmPlat">${CAMP_PLATFORMS.map(p=>`<option value="${esc(p)}"${p==="Instagram"?" selected":""}>${esc(p)}${p==="Instagram"?"":" — not available yet"}</option>`).join("")}</select>
+        <span class="cm-plat-msg" id="cmPlatMsg" role="alert" hidden></span></label><span></span></div>
+      <div class="cm-dlabel">What each creator posts <span class="muted">— tick and set how many</span></div>
+      <div class="cm-deliv" id="cmDeliv">${DELIV_KINDS.map(([k,l,ic])=>{ const n = dv.counts[k]||0;
+        return `<div class="cm-dl${n?" on":""}" data-dk="${k}"><label class="cm-dl-ck"><input type="checkbox" data-dkc="${k}"${n?" checked":""}> <span class="cm-dl-ic">${ic}</span> ${esc(l)}</label>
+          <span class="cm-qty"><button type="button" data-dq="-1" aria-label="Fewer">−</button><input type="number" min="1" max="20" value="${n||1}" data-dqn="${k}" aria-label="${esc(l)} quantity"><button type="button" data-dq="1" aria-label="More">+</button></span></div>`; }).join("")}</div>
+      <div class="cm-dsum" id="cmDsum"></div>
+      <label>Anything else to deliver <span class="muted" style="font-weight:400">(optional — e.g. raw UGC files)</span><input name="deliv_other" maxlength="200" value="${esc(dv.other.join(" + "))}" placeholder="e.g. 3 raw photos"></label>
+      <div class="cm-sec"># Hashtags <span class="muted" style="font-weight:400;font-size:12px">— every post must use them (checked automatically)</span></div>
+      ${tagBoxHtml("cmTags", "#", tg.tags, tg.tags.length ? "Add another…" : "#summerglow  #ad — press Enter after each")}
+      <div class="cm-sec">@ Mentions <span class="muted" style="font-weight:400;font-size:12px">— accounts every post must tag</span></div>
+      ${tagBoxHtml("cmMents", "@", tg.ments, tg.ments.length ? "Add another…" : "@lumecosmetics — press Enter after each")}
       <label>Brief / notes<textarea name="brief" rows="3" placeholder="Goals, key messaging, dos & don'ts, references…">${esc(ed.brief||'')}</textarea></label>
       <label>Attach anything <span class="muted" style="font-weight:400">(brief PDF, mood board, product images — max 10 MB each)</span><input type="file" id="cmFiles" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.heic,.mp4,.mov,.csv,.txt,.zip,.doc,.docx,.ppt,.pptx,.xls,.xlsx"></label>
       <div id="cmFileList" class="cm-files"></div>
@@ -1583,9 +1654,11 @@ function openCampaignModal(existing, preset){
       ${existing?`<label>Progress %<input name="progress" type="number" min="0" max="100" value="${ed.progress!=null?esc(ed.progress):''}" placeholder="0"></label>`:'<span></span>'}</div>
       <div class="cm-sec">📜 Contract terms <span class="muted" style="font-weight:400;font-size:12px">— sent to each creator automatically the moment you approve them</span></div>
       <div class="mf-row"><label>Product the creator gets<input name="ct_product" maxlength="140" value="${esc(ct.product||'')}" placeholder="Momo box (12 pcs)"></label>
-      <label>Deliverables in the contract<input name="ct_deliv" maxlength="200" value="${esc(ct.deliverables||'')}" placeholder="1 Reel + 2 Stories"></label></div>
-      <div class="mf-row"><label>Ad rights (months)<input name="ct_months" type="number" min="0" max="24" value="${esc(ct.ad_rights_months??1)}"></label>
-      <label>Content due (days after delivery)<input name="ct_days" type="number" min="1" max="60" value="${esc(ct.content_days??7)}"></label></div>
+      <label>Content due (days after delivery)<input name="ct_days" type="number" min="1" max="60" value="${esc(ct.content_days??7)}">
+        <span class="muted cm-hint">Reminders every day at 9:00, then 9:00 + 18:30 for the last 3 days</span></label></div>
+      <div class="mf-row"><label>Ad rights (months)<input name="ct_months" type="number" min="0" max="24" value="${esc(ct.ad_rights_months??1)}">
+        <span class="muted cm-hint">Posts must stay live this long — we check twice a day and remind the creator to restore a missing one</span></label><span></span></div>
+      <div class="cm-ctprev" id="cmCtPrev"></div>
       <label class="cp-check"><input type="checkbox" name="ct_collab"${ct.collab_rights===false?'':' checked'}> Collab rights — the creator adds the brand as an Instagram collaborator</label>
       <label class="cp-check"><input type="checkbox" name="ct_black"${ct.blacklist_clause===false?'':' checked'}> <span><b>Non-delivery = blacklist</b> — if they take the product and don't post on time, they're blacklisted from the platform</span></label>
       <label class="cp-check"><input type="checkbox" name="ct_reship"${ct.reship_clause===false?'':' checked'}> <span><b>Re-ship at their own cost</b> — they must send the product to another creator we name</span></label>
@@ -1626,6 +1699,34 @@ function openCampaignModal(existing, preset){
     form.querySelectorAll("#cmType label").forEach(l=> l.classList.toggle("act", l.querySelector("input").checked));
   };
   form.querySelectorAll("input[name=campaign_type]").forEach(r=> r.onchange = syncType); syncType();
+  // platform: Instagram only for now
+  const plat = document.getElementById("cmPlat"), platMsg = document.getElementById("cmPlatMsg");
+  plat.onchange = ()=>{ if(plat.value==="Instagram"){ platMsg.hidden = true; return; }
+    platMsg.textContent = `⛔ ${plat.value} isn't allowed yet — Geek OS runs Instagram campaigns only. Set back to Instagram.`; platMsg.hidden = false;
+    plat.value = "Instagram"; clearTimeout(plat.__t); plat.__t = setTimeout(()=>{ platMsg.hidden = true; }, 6000); };
+  // deliverables: tick + quantity
+  const counts = ()=>{ const c = {}; form.querySelectorAll("[data-dk]").forEach(r=>{ const k = r.dataset.dk;
+      if(r.querySelector("[data-dkc]").checked) c[k] = Math.max(1, Math.min(20, parseInt(r.querySelector("[data-dqn]").value)||1)); }); return c; };
+  const tagBox = document.getElementById("cmTags"), mentBox = document.getElementById("cmMents");
+  wireTagBox(tagBox); wireTagBox(mentBox);
+  const paintDeliv = ()=>{
+    const c = counts(), other = String(form.querySelector("[name=deliv_other]").value||"").trim();
+    form.querySelectorAll("[data-dk]").forEach(r=> r.classList.toggle("on", r.querySelector("[data-dkc]").checked));
+    const n = Object.values(c).reduce((a,b)=>a+b,0), txt = deliverablesText(c, other?[other]:[]);
+    document.getElementById("cmDsum").innerHTML = n ? `Each creator: <b>${esc(txt)}</b> · <b>${n}</b> post link${n>1?"s":""} to complete the campaign` : `<span style="color:#dc2626">Tick at least one deliverable.</span>`;
+    const days = parseInt(form.querySelector("[name=ct_days]").value)||7, months = Math.max(0, parseInt(form.querySelector("[name=ct_months]").value)||0);
+    const tags = [...tagBox.querySelectorAll(".cm-tag"), ...mentBox.querySelectorAll(".cm-tag")].map(x=>x.dataset.tag);
+    document.getElementById("cmCtPrev").innerHTML = `<b>📜 The contract is written from this form:</b> ${n?esc(txt):"—"} within <b>${days} day${days>1?"s":""}</b> of delivery${tags.length?` · must use <b>${esc(tags.join(" "))}</b>`:""} · ad rights <b>${months} month${months===1?"":"s"}</b> (posts stay live)${form.querySelector("[name=ct_collab]").checked?" · collab with the brand":""}${form.querySelector("[name=ct_black]").checked?` · blacklist if no video in ${days} days`:""}.`;
+  };
+  form.querySelectorAll("[data-dk]").forEach(r=>{
+    const ck = r.querySelector("[data-dkc]"), q = r.querySelector("[data-dqn]");
+    ck.onchange = paintDeliv;
+    q.oninput = ()=>{ if(!ck.checked){ ck.checked = true; } paintDeliv(); };
+    r.querySelectorAll("[data-dq]").forEach(b=> b.onclick = ()=>{ q.value = Math.max(1, Math.min(20, (parseInt(q.value)||1) + parseInt(b.dataset.dq))); ck.checked = true; paintDeliv(); });
+  });
+  ["deliv_other","ct_days","ct_months","ct_collab","ct_black"].forEach(n=>{ const x = form.querySelector(`[name=${n}]`); if(x){ x.addEventListener("input", paintDeliv); x.addEventListener("change", paintDeliv); } });
+  [tagBox, mentBox].forEach(b=>{ b.addEventListener("change", paintDeliv); b.addEventListener("keyup", paintDeliv); b.addEventListener("focusout", ()=> setTimeout(paintDeliv, 0)); });
+  paintDeliv();
   const endIn = form.querySelector("input[name=end_date]"), stSel = document.getElementById("cmStatus");
   if(endIn && stSel) endIn.addEventListener("change", ()=>{ const cur = stSel.value, ended = endIn.value && endIn.value < new Date().toISOString().slice(0,10);
     stSel.innerHTML = campStatusOptions(ended && cur==="Live" ? "Completed" : (!ended && cur==="Completed" ? "Live" : cur), endIn.value); });
@@ -1658,6 +1759,10 @@ function openCampaignModal(existing, preset){
     const csv = v => String(v||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,20);
     err.textContent="";
     if(f.get("start_date") && f.get("end_date") && f.get("end_date") < f.get("start_date")){ err.textContent = "End date must be after the start date."; return; }
+    const dCounts = counts(), dOther = String(f.get("deliv_other")||"").trim();
+    if(!Object.keys(dCounts).length){ err.textContent = "Tick at least one deliverable (Reel, Story, Post or Carousel)."; document.getElementById("cmDeliv").scrollIntoView({block:"center"}); return; }
+    const delivText = deliverablesText(dCounts, dOther ? [dOther] : []);
+    const tagList = tagBox.__value(), mentList = mentBox.__value();
     const pl = f.get("product_link");
     if(pl && !/^https?:\/\//i.test(pl)){ err.textContent = "Product link must start with https://"; return; }
     const ideal = {};
@@ -1697,12 +1802,12 @@ function openCampaignModal(existing, preset){
         objective:f.get("objective"), status:f.get("status"),
         budget: t==="barter" ? null : num(f.get("budget")),
         product_link: t==="paid" ? null : (pl||null), product_value: t==="paid" ? null : num(f.get("product_value")),
-        platforms:f.getAll("platforms").join(", "), hashtags:f.get("hashtags"), deliverables:f.get("deliverables"), brief:f.get("brief"),
+        platforms:"Instagram", hashtags:[...tagList, ...mentList].join(" ") || null, deliverables:delivText, brief:f.get("brief"),
         start_date:f.get("start_date")||null, end_date:f.get("end_date")||null,
         creators: isFinite(creators) && creators>=0 ? creators : 0, attachments: files, ideal_profile: ideal };
       const txt = k => String(f.get(k)||"").trim();
       row.contract_terms = { product: txt("ct_product") || null, product_value: t==="paid" ? null : num(f.get("product_value")),
-        deliverables: txt("ct_deliv") || String(f.get("deliverables")||"").trim() || null,
+        deliverables: delivText,
         ad_rights_months: Math.min(24, Math.max(0, parseInt(f.get("ct_months"))||0)), content_days: Math.min(60, Math.max(1, parseInt(f.get("ct_days"))||7)),
         collab_rights: !!f.get("ct_collab"), blacklist_clause: !!f.get("ct_black"), reship_clause: !!f.get("ct_reship"), extra_terms: txt("ct_extra") || null };
       row.video_brief = { what_to_shoot: txt("vb_shoot") || null, key_messages: txt("vb_msg") || null, dos: txt("vb_dos") || null, donts: txt("vb_donts") || null,
@@ -4711,7 +4816,7 @@ const BP_NEXT = {
   content_submitted:"Video is in — approve it or ask for changes.",
   changes_requested:"Waiting for the creator to resubmit.",
   content_approved:"Approved — waiting for the creator to post and add the link.",
-  published:"Live — numbers are collected automatically; mark done to ask the creator for feedback.",
+  published:"Posting — completes on its own once every deliverable is up; numbers load from their Instagram.",
   completed:"Done ✓"
 };
 let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null, _bpAnalytics = null;
@@ -4759,12 +4864,13 @@ function openBarterProcess(campaignId, campaignName, focusParticipation, tab){
 }
 async function loadBarterProcess(silent){
   const body = document.getElementById("bpBody"); if(!body || !_bpCamp) return;
-  const [t, o] = await Promise.all([
+  const [t, o, g] = await Promise.all([
     sb.schema("api").rpc("barter_tracker", { p_campaign:_bpCamp.id }).then(r=>r, e=>({error:e})),
-    sb.schema("api").rpc("get_outreach", { p_campaign:_bpCamp.id }).then(r=>r, ()=>({data:{}}))
+    sb.schema("api").rpc("get_outreach", { p_campaign:_bpCamp.id }).then(r=>r, ()=>({data:{}})),
+    sb.schema("api").rpc("campaign_deliverable_progress", { p_campaign:_bpCamp.id }).then(r=>r, ()=>({data:{}}))
   ]);
   if(t.error){ if(!silent) body.innerHTML = `<div class="card"><div class="muted">${esc(t.error.message||t.error)}</div></div>`; return; }
-  _bpData = t.data||{}; _bpData.outreach = o.data||{}; pollNavCounts();
+  _bpData = t.data||{}; _bpData.outreach = o.data||{}; _bpData.progress = (g && g.data) || {}; pollNavCounts();
   if(_bpTab==="analytics") await loadBpAnalytics(true);
   if(silent && _bpTab==="bulk") return;
   paintBarterProcess();
@@ -5152,6 +5258,13 @@ function wireHubSetStep(d){
   };
 }
 
+// "Posts 1 of 3 — Reel 1/1 ✓ · Story 0/2" for one creator
+function bpProgressLine(pid){
+  const g = (((_bpData||{}).progress)||{})[pid]; if(!g || !(g.items||[]).length) return "";
+  return `<div class="bp-pp">📦 Posts <b>${g.done}/${g.need}</b>${g.all_done?' <span class="tag good">all up ✓</span>':` <span class="tag warn">still to post: ${esc(g.left||"")}</span>`}
+    ${(g.items||[]).map(i=>`<span class="bp-ppc${i.done>=i.need?" ok":""}">${i.done>=i.need?"✓ ":""}${esc(i.label)} ${i.done}/${i.need}</span>`).join("")}</div>`;
+}
+
 function bpStageBanner(list){
   if(!_bpStage) return "";
   const at = bpStageIndex(_bpStage), L = bpStageList(list), here = L.filter(x=> bpEffectiveIndex(x)===at).length;
@@ -5216,7 +5329,9 @@ function bpTrackerHtml(list){
           ${x.due_on && !["published","completed"].includes(x.stage)?`<div>⏳ Video due <b>${esc(fmtDate(x.due_on))}</b>${overdue?' — <b style="color:#dc2626">overdue</b> (contract: blacklist + re-ship at their cost)':""}</div>`:""}
           ${sub?`<div>🎬 Video${sub.rounds>1?` (round ${esc(sub.rounds)})`:""}: <a href="${esc(safeUrl(sub.url))}" target="_blank" rel="noopener">open the cut ↗</a> · ${esc(fmtDateTime(sub.submitted_at))}${sub.note?` · “${esc(sub.note)}”`:""}</div>`:""}
           ${rev?`<div>${rev.decision==="approved"?"✅ Approved":"✏️ Changes asked"} ${esc(fmtDateTime(rev.at))}${rev.reason?` — “${esc(rev.reason)}”`:""}</div>`:""}
-          ${posts.map(p=>`<div>📲 ${esc(p.media_type)} posted ${esc(fmtDate(p.posted_at))}${p.permalink?` · <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener">open ↗</a>`:""}<div class="bp-metrics">${bpMetricLine(p.stats)}</div></div>`).join("")}
+          ${bpProgressLine(P)}
+          ${posts.map(p=>{ const g = ((((_bpData||{}).progress||{})[P]||{}).posts||[]).find(z=> z.post_id===p.post_id || (z.permalink && z.permalink===p.permalink)) || {};
+            return `<div>📲 ${esc(p.media_type)} posted ${esc(fmtDate(p.posted_at))}${p.permalink?` · <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener">open ↗</a>`:""}${g.missing_since?` <span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⚠️ taken down ${esc(fmtDate(g.missing_since))} — creator reminded to restore</span>`:g.live_checked_at?` <span class="muted" style="font-size:12px">· live ✓ checked ${esc(fmtDateTime(g.live_checked_at))}</span>`:""}<div class="bp-metrics">${bpMetricLine(g.stats||p.stats)}</div></div>`; }).join("")}
         </div>
         <div class="bp-acts">
           ${!fail(x.stage)&&x.stage!=="completed"?`<button class="btn sm ghost" data-bpsetstep="${esc(P)}" title="Put them on any later step — contract, courier, video link, Instagram post…">⚙️ Set step by hand</button>`:""}
@@ -5555,10 +5670,12 @@ function openBpUnblock(part){
 // the creator couldn't post from the app → they send the link (WhatsApp / anything) → paste it here
 function openBpPostLink(part){
   const x = ((_bpData&&_bpData.creators)||[]).find(c=>c.participation_id===part)||{};
+  const g = (((_bpData||{}).progress)||{})[part] || {}, next = (g.items||[]).find(i=> i.done < i.need), nk = next ? (next.kind==="feed"?"post":next.kind) : "reel";
   const m = bpModal("Add the post link", `<form class="modal-form" id="bpPForm">
-      <p class="muted" style="font-size:13px;margin:0">${x.username?`@${esc(x.username)} `:"The creator "}couldn't post from the app? Paste the Instagram link they sent you. The post is added to the campaign, its numbers are fetched, and the campaign is marked complete.</p>
+      <p class="muted" style="font-size:13px;margin:0">${x.username?`@${esc(x.username)} `:"The creator "}couldn't post from the app? Paste the Instagram link they sent you. The post is added to the campaign and its numbers are fetched from their Instagram.
+        ${g.need?`<b>${g.done}/${g.need}</b> up${g.all_done?" — everything is in ✓":` — still to post: <b>${esc(g.left||"")}</b>. The campaign completes when every one is up.`}`:""}</p>
       <label>Instagram link<input name="link" required placeholder="https://www.instagram.com/reel/…"></label>
-      <label>Type<select name="type"><option value="reel">Reel</option><option value="post">Post</option><option value="story">Story</option></select></label>
+      <label>Type<select name="type"><option value="reel"${nk==="reel"?" selected":""}>Reel</option><option value="post"${nk==="post"?" selected":""}>Post</option><option value="story"${nk==="story"?" selected":""}>Story</option></select></label>
       <div class="auth-err" id="bpPErr"></div><button class="btn" type="submit">Add post</button></form>`);
   document.getElementById("bpPForm").onsubmit = async e=>{
     e.preventDefault();
@@ -5566,7 +5683,7 @@ function openBpPostLink(part){
     btn.disabled = true; btn.textContent = "Adding…";
     const { data, error } = await sb.schema("api").rpc("bp_add_post_link", { p_participation:part, p_payload:{ permalink:String(f.get("link")||"").trim(), media_type:f.get("type") } });
     if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Add post"; return; }
-    m.remove(); gateToast(data && data.matched ? "Post added ✓ — numbers loading · campaign complete" : "Post added ✓ — campaign complete. Numbers load once their Instagram syncs (or add them with 📈 Add numbers).");
+    m.remove(); gateToast(`Post added ✓ — numbers are fetched from their Instagram${data && data.stage==="completed" ? " · every post is up — campaign complete 🎉" : " · campaign completes when every post is up"}`);
     loadBarterProcess(true);
   };
 }
@@ -6229,6 +6346,27 @@ async function adminWaTemplates(){
   const set = async (id, st)=>{ const { error:e } = await sb.rpc("admin_wa_template_set", { p_campaign:id, p_status:st }); if(e) alert(e.message); adminWaTemplates(); };
   box.querySelectorAll("[data-tplok]").forEach(b=> b.onclick = ()=>{ if(confirm("Only mark it approved once snapto / Meta shows this exact template as Approved. Held WhatsApp updates will go out on it.")) set(b.dataset.tplok, "approved"); });
   box.querySelectorAll("[data-tplretry]").forEach(b=> b.onclick = ()=> set(b.dataset.tplretry, "queued"));
+  adminStepTemplates(box);
+}
+// the fixed-text step templates (geek_step_*) — all UTILITY; created at Meta on their own once Meta is connected
+async function adminStepTemplates(box){
+  let w = document.getElementById("waStepTpl"); if(!w){ w = el("div",""); w.id = "waStepTpl"; w.style.marginTop = "18px"; box.appendChild(w); }
+  const { data, error } = await sb.rpc("admin_step_templates").then(r=>r, e=>({error:e}));
+  if(error){ w.innerHTML = `<div class="muted">Step templates: ${esc(error.message||error)} — run <code>supabase db push</code>.</div>`; return; }
+  const L = data||[], tag = st=> ({approved:'<span class="tag good">approved</span>', submitted:'<span class="tag warn">with Meta</span>', queued:'<span class="tag warn">queued</span>',
+    manual:'<span class="tag warn">create in snapto</span>', failed:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">failed</span>', rejected:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">rejected</span>'})[st]||esc(st);
+  w.innerHTML = `<h3 style="margin:0 0 4px">Step templates <span class="muted" style="font-size:12px;font-weight:400">· category <b>Utility</b> · English · footer “Reply STOP to stop WhatsApp updates” · {{1}} name · {{2}} campaign · {{3}} brand · {{4}} app link</span></h3>
+    <p class="muted" style="font-size:12.5px;margin:0 0 8px">New ones (deadline reminder, posts still pending, restore your post) are sent to Meta on their own when Meta is connected; otherwise create them in snapto with exactly this text, then press Mark approved. Email and the app alert go right away; the WhatsApp waits until the template is approved.</p>
+    <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Template</th><th>Used for</th><th>Text</th><th>Status</th><th></th></tr></thead><tbody>
+    ${L.map(t=>`<tr><td><code>${esc(t.name)}</code></td><td class="muted" style="font-size:12px">${esc((t.used_for||[]).join(", ").replace(/_/g," "))}</td>
+      <td><div class="wa-tpltext">${esc(t.body||"").replace(/\n/g,"<br>")}</div><button class="mini-btn ghost" data-steptcopy="${esc(t.body||"")}">Copy text</button></td>
+      <td>${tag(t.status)}${t.error?`<div class="muted" style="font-size:11.5px;max-width:220px">${esc(t.error)}</div>`:""}</td>
+      <td style="white-space:nowrap">${t.status!=="approved"?`<button class="mini-btn" data-stepok="${esc(t.name)}">Mark approved</button>`:`<button class="mini-btn ghost" data-stepre="${esc(t.name)}">Resubmit</button>`}</td></tr>`).join("")}
+    </tbody></table></div>`;
+  w.querySelectorAll("[data-steptcopy]").forEach(b=> b.onclick = async ()=>{ try{ await navigator.clipboard.writeText(b.dataset.steptcopy); b.textContent="✓ copied"; }catch(e){ prompt("Copy:", b.dataset.steptcopy); } });
+  const mark = async (n, st)=>{ const { error:e } = await sb.rpc("admin_step_template_mark", { p_name:n, p_status:st }); if(e){ gateToast(e.message); return; } gateToast(st==="approved" ? "Marked approved ✓" : "Queued — sent to Meta on the next run ✓"); adminStepTemplates(box); };
+  w.querySelectorAll("[data-stepok]").forEach(b=> b.onclick = ()=>{ if(confirm("Only mark it approved once snapto / Meta shows this exact template as Approved.")) mark(b.dataset.stepok, "approved"); });
+  w.querySelectorAll("[data-stepre]").forEach(b=> b.onclick = ()=> mark(b.dataset.stepre, "queued"));
 }
 async function adminDelivery(body, silent){
   if(!silent) body.innerHTML = skel("table",6);
