@@ -334,12 +334,7 @@ begin
             || ' — we''ve asked them to restore it.', 'campaigns', 'Open', 'action_required', null);
     exception when others then null; end;
   end if;
-  if po.restore_reminded_at is null or po.restore_reminded_at < now() - interval '11 hours' then
-    perform intel.ci_notify(v_member, po.campaign_id, po.participation_id, 'post_restore',
-      jsonb_build_object('campaign', coalesce(v_name, 'your campaign'), 'kind', po.media_type, 'link', coalesce(po.permalink, ''),
-                         'until', to_char(v_until at time zone 'Asia/Kolkata', 'DD Mon YYYY')));
-    update intel.ci_campaign_post set restore_reminded_at = now(), restore_reminders = restore_reminders + 1 where post_id = p_post;
-  end if;
+  -- the creator is reminded to restore it at the next 9:00 / 18:30 (intel.ci_run_restore_reminders)
   return jsonb_build_object('live', false, 'until', v_until);
 end $$;
 revoke all on function api.ops_post_live(uuid, boolean, text) from public, anon, authenticated;
