@@ -109,3 +109,7 @@ verify_jwt = false
 # "Connect with Facebook" for creator search — signed-in agency / brand / Super Admin only.
 [functions.fb-connect]
 verify_jwt = true
+
+# delivery-address helper: PIN code → city/state, landmark suggestions, map check (signed-in users)
+[functions.geo-lookup]
+verify_jwt = true

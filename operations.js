@@ -993,51 +993,48 @@
     document.getElementById("opsMx").onclick=closeModal;
     var addrs=[], editing=null;
     var line=function(a){ return [a.line1,a.line2,a.landmark,a.city,a.state,a.postal_code].filter(Boolean).join(", "); };
+    var who={ name:"", phone:"" }, ctl=null;
+    // an address the courier can use: everything filled (older addresses may miss the name / mobile / area / landmark)
+    var complete=function(x){ return !!(x && x.recipient_name && x.recipient_phone && x.line1 && x.line2 && x.landmark && x.city && x.state && /^[1-9]\d{5}$/.test(x.postal_code||"")); };
     var paint=function(showForm){
       var body=document.getElementById("opsAdBody"); if(!body) return;
       var a=editing||{};
       var form='<div class="ad-form" id="opsAdForm"'+(showForm?'':' style="display:none"')+'>'
-        + '<div class="ad-form-h"><b>'+(editing&&editing.address_id?'Edit address':'New address')+'</b>'
-        + '<button class="btn sm ghost" type="button" id="opsGeo">📍 Use my current location</button></div>'
-        + '<div class="ci-hint" id="opsGeoMsg"></div>'
-        + '<div class="cp-grid">'
-        +   '<label class="wa-f"><span>Flat / house no., building</span><input id="opsNA1" value="'+esc(a.line1||"")+'" placeholder="B-12, Green Apartments"></label>'
-        +   '<label class="wa-f"><span>Street / area</span><input id="opsNA2" value="'+esc(a.line2||"")+'" placeholder="MG Road, Sector 14"></label>'
-        +   '<label class="wa-f"><span>Landmark</span><input id="opsNALm" value="'+esc(a.landmark||"")+'" placeholder="Near City Mall"></label>'
-        +   '<label class="wa-f"><span>City</span><input id="opsNACity" value="'+esc(a.city||"")+'" placeholder="Delhi"></label>'
-        +   '<label class="wa-f"><span>State</span><input id="opsNAState" value="'+esc(a.state||"")+'" placeholder="Delhi"></label>'
-        +   '<label class="wa-f"><span>PIN code</span><input id="opsNAPin" value="'+esc(a.postal_code||"")+'" inputmode="numeric" maxlength="6" placeholder="110001"></label>'
-        + '</div>'
+        + '<div class="ad-form-h"><b>'+(editing&&editing.address_id?'Edit address':'Add a new address')+'</b></div>'
+        + '<div id="opsAdFields"></div>'
+        + '<label class="cp-check"><input type="checkbox" id="opsAdDefault" checked> Make this my default address</label>'
         + '<div class="cp-ob-actions"><button class="btn sm" id="opsAdNew">Save &amp; ship here</button></div></div>';
       body.innerHTML=(addrs.length
-          ? '<div class="ad-list">'+addrs.map(function(x,i){ return '<label class="ad-opt"><input type="radio" name="opsAddr" value="'+esc(x.address_id)+'"'+((x.is_default||i===0)?' checked':'')+'>'
-              + '<span><b>'+esc(x.label||"Address")+'</b>'+(x.is_default?' <em>Default</em>':'')+'<br>'+esc(line(x))+'</span>'
+          ? '<div class="ad-list">'+addrs.map(function(x,i){ var ok=complete(x); return '<label class="ad-opt'+(ok?'':' ad-incomplete')+'"><input type="radio" name="opsAddr" value="'+esc(x.address_id)+'"'+((x.is_default||i===0)?' checked':'')+'>'
+              + '<span><b>'+esc(x.label||"Address")+'</b>'+(x.is_default?' <em>Default</em>':'')+(ok?'':' <em class="ad-warn">Needs a few details</em>')
+              + '<br>'+(x.recipient_name?esc(x.recipient_name)+' · '+esc(x.recipient_phone||"")+'<br>':'')+esc(line(x))+'</span>'
               + '<button type="button" class="btn sm ghost" data-adedit="'+esc(x.address_id)+'">Edit</button></label>'; }).join("")+'</div>'
             + '<div class="cp-ob-actions ad-acts"><button class="btn sm ghost" id="opsAdAdd">+ Add a new address</button><button class="btn sm" id="opsAdSave">Ship to this address</button></div>'
           : '')
         + form + '<div class="ci-hint cp-err-inline" id="opsAdErr"></div>';
+      if(showForm && window.GeekAddress) ctl=window.GeekAddress.mount(document.getElementById("opsAdFields"), a, who);
       var add=document.getElementById("opsAdAdd"); if(add) add.onclick=function(){ editing=null; paint(true); };
       document.querySelectorAll("#opsAdBody [data-adedit]").forEach(function(b){ b.onclick=function(e){ e.preventDefault(); editing=addrs.filter(function(x){ return x.address_id===b.getAttribute("data-adedit"); })[0]; paint(true); }; });
       var save=document.getElementById("opsAdSave");
       if(save) save.onclick=function(){
         var err=document.getElementById("opsAdErr"); err.textContent=""; var sel=document.querySelector('#opsAdBody input[name=opsAddr]:checked');
         if(!sel){ err.textContent="Pick an address."; return; }
+        var picked=addrs.filter(function(x){ return x.address_id===sel.value; })[0];
+        if(!complete(picked)){ editing=picked; paint(true); var e2=document.getElementById("opsAdErr"); if(e2) e2.textContent="This address needs a few more details for the courier — fill them in and save."; return; }
         var btn=this; btn.disabled=true; btn.textContent="Confirming…";
         api("confirm_campaign_address",{p_participation:part,p_address_id:sel.value}).then(function(r2){
           if(r2.error){ err.textContent=r2.error.message||r2.error; btn.disabled=false; btn.textContent="Ship to this address"; return; }
           closeModal(); loadMyCampaigns(); updateAlertsBadge();
         });
       };
-      document.getElementById("opsGeo").onclick=function(){ useLocation(); };
       document.getElementById("opsAdNew").onclick=async function(){
         var err=document.getElementById("opsAdErr"); err.textContent="";
-        var v=function(id){ return (document.getElementById(id).value||"").trim(); };
-        if(!v("opsNA1")||!v("opsNACity")||!/^\d{6}$/.test(v("opsNAPin"))){ err.textContent="Add the flat / house, city and a 6-digit PIN code."; return; }
-        var btn=this; btn.disabled=true; btn.textContent="Saving…";
+        var btn=this;
         try{
-          var payload={line1:v("opsNA1"),line2:v("opsNA2")||null,landmark:v("opsNALm")||null,city:v("opsNACity"),state:v("opsNAState")||null,
-                       postal_code:v("opsNAPin"),country:"India",label:(editing&&editing.label)||"Home",is_default:true};
+          if(!ctl) throw new Error("The address form didn't load — refresh the page.");
+          var payload=await ctl.collect({ label:(editing&&editing.label)||"Home", is_default: !!(document.getElementById("opsAdDefault")||{}).checked });
           if(editing && editing.address_id) payload.address_id=editing.address_id;
+          btn.disabled=true; btn.textContent="Saving…";
           var r1=await api("upsert_address",{p_payload:payload,p_correlation:"ui-campaign"}); if(r1.error) throw r1.error;
           var aid=(r1.data&&r1.data.address_id)||r1.data||(editing&&editing.address_id);
           var r2=await api("confirm_campaign_address",{p_participation:part,p_address_id:aid}); if(r2.error) throw r2.error;
@@ -1045,32 +1042,10 @@
         }catch(e){ err.textContent=(e&&e.message)||String(e); btn.disabled=false; btn.textContent="Save & ship here"; }
       };
     };
-    // 📍 current location → address (OpenStreetMap) — always editable before saving
-    var useLocation=function(){
-      var msg=document.getElementById("opsGeoMsg"), btn=document.getElementById("opsGeo");
-      if(!navigator.geolocation){ msg.textContent="Location isn't available in this browser — type your address."; return; }
-      btn.disabled=true; btn.textContent="📍 Locating…"; msg.textContent="";
-      navigator.geolocation.getCurrentPosition(async function(pos){
-        var lat=pos.coords.latitude, lon=pos.coords.longitude;
-        try{
-          var res=await fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&lat="+lat+"&lon="+lon,{ headers:{ "Accept-Language":"en" } });
-          var j=await res.json(), a=(j&&j.address)||{};
-          var set=function(id,val){ var e=document.getElementById(id); if(e && val) e.value=val; };
-          set("opsNA1",[a.house_number,a.building||a.amenity].filter(Boolean).join(", "));
-          set("opsNA2",[a.road,a.neighbourhood||a.suburb].filter(Boolean).join(", "));
-          set("opsNALm",a.suburb||a.quarter||a.city_district||"");
-          set("opsNACity",a.city||a.town||a.village||a.county||a.state_district);
-          set("opsNAState",a.state); set("opsNAPin",a.postcode);
-          msg.innerHTML='✓ Filled from your location — add your flat / house number, then save. <a href="https://www.google.com/maps?q='+lat+','+lon+'" target="_blank" rel="noopener">Check on Google Maps ↗</a>';
-        }catch(e){ msg.textContent="Couldn't look up your address — please type it."; }
-        btn.disabled=false; btn.textContent="📍 Use my current location";
-      }, function(err){
-        msg.textContent = err && err.code===1 ? "Location permission is blocked — allow it in your browser, or type your address." : "Couldn't get your location — type your address.";
-        btn.disabled=false; btn.textContent="📍 Use my current location";
-      }, { enableHighAccuracy:true, timeout:15000, maximumAge:60000 });
-    };
     try{
       var r=await api("get_my_profile"); var prof=(r && !r.error)?r.data:null; addrs=(prof&&prof.addresses)||[];
+      var pe=(prof&&prof.personal)||{}; who.name=[pe.first_name,pe.last_name].filter(Boolean).join(" ");
+      who.phone=((prof&&prof.contact)||{}).whatsapp_e164||((prof&&prof.contact)||{}).phone_e164||"";
       paint(!addrs.length);
     }catch(e){ var bd=document.getElementById("opsAdBody"); if(bd) bd.innerHTML='<div class="ci-err-inline">Couldn\'t load addresses: '+esc(e.message||e)+'</div>'; }
   }

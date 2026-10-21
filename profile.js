@@ -357,23 +357,15 @@
               + (a.is_default?'':'<button class="btn sm ghost" data-defaddr="'+esc(a.address_id)+'">Make default</button>')
               + '<button class="btn sm ghost" data-deladdr="'+esc(a.address_id)+'">Remove</button></div></div>';
           }).join(""):'<div class="muted">No address yet — add where brands should ship your products.</div>')+'</div>'
-      + '<div class="cp-addr-tools"><span class="cp-hint" id="cp_addr_mode">Add a new address</span>'
-      + '<button class="btn sm" type="button" id="cp_geo">📍 Use my current location</button></div>'
+      + '<div class="cp-addr-tools"><span class="cp-hint" id="cp_addr_mode">Add a new address</span></div>'
       + '<div class="cp-hint" id="cp_geo_msg"></div>'
-      + '<div class="cp-grid">'
       + '<input type="hidden" id="cp_addr_id" value="">'
-      + field("Label","cp_addr_label","Home",{select:[["Home","Home"],["Office","Office"],["Manager","Manager / agent"],["Other","Other (studio, PG, family…)"]]})
-      + field("House / flat, building","cp_l1","",{privacy:"Campaign-only"})
-      + field("Street / area","cp_l2","")
-      + field("Locality / landmark","cp_landmark","")
-      + field("City","cp_city","")
-      + field("State","cp_state","")
-      + field("PIN / postal code","cp_pin","")
-      + field("Country","cp_country","India")
-      + '</div><label class="cp-check"><input type="checkbox" id="cp_addr_default"'+(addrs.length?'':' checked')+'> Use as my default shipping address</label>'
+      + '<div class="cp-grid">'+field("Label","cp_addr_label","Home",{select:[["Home","Home"],["Office","Office"],["Manager","Manager / agent"],["Other","Other (studio, PG, family…)"]]})+'</div>'
+      + '<div id="cp_addr_form"></div>'
+      + '<label class="cp-check"><input type="checkbox" id="cp_addr_default"'+(addrs.length?'':' checked')+'> Make this my default address</label>'
       + '<div class="cp-addrow"><button class="btn sm" id="cp_addr_save">Save address</button><button class="btn sm ghost" id="cp_addr_new">Clear / new</button></div>'
       + '<div class="cp-note">Your full address is private, used only for campaign logistics you approve — never shown in search or to brands.</div>',
-      {sub:"City, state & PIN required"});
+      {sub:"Every field required · checked on the map"});
 
     // D Professional — name / city come from above, categories from Instagram
     var da = defaultAddr(), cats = (pro.categories||[]).length ? pro.categories : inferCategories();
@@ -606,14 +598,17 @@
     return {};
   }
 
+  var ADDR_CTL = null;
+  function mountAddrForm(a){
+    var box=document.getElementById("cp_addr_form"); if(!box || !window.GeekAddress) return;
+    ADDR_CTL = window.GeekAddress.mount(box, a||{}, { name: fullName(), phone: ((DATA&&DATA.contact)||{}).whatsapp_e164 || "" });
+  }
   async function saveAddress(){
     function v(id){ var e=document.getElementById(id); return e?e.value.trim():null; }
-    var pin=v("cp_pin");
-    if(pin && !/^[A-Za-z0-9 \-]{3,12}$/.test(pin)) throw new Error("Enter a valid postal/PIN code");
-    var payload={ line1:v("cp_l1")||null, line2:v("cp_l2")||null, landmark:v("cp_landmark")||null,
-      city:v("cp_city")||null, state:v("cp_state")||null, postal_code:pin||null, country:v("cp_country")||"India",
-      label:(function(x){ x=String(x||"").trim().toLowerCase(); return x==="home"?"Home":x==="office"?"Office":x==="manager"?"Manager":x?"Other":"Home"; })(v("cp_addr_label")), is_default: !!(document.getElementById("cp_addr_default")||{}).checked };
-    if(!payload.line1 || !payload.city || !payload.state || !payload.postal_code) throw new Error("House / flat, city, state and PIN are required");
+    if(!ADDR_CTL) throw new Error("The address form didn't load — refresh the page.");
+    var payload = await ADDR_CTL.collect({
+      label:(function(x){ x=String(x||"").trim().toLowerCase(); return x==="home"?"Home":x==="office"?"Office":x==="manager"?"Manager":x?"Other":"Home"; })(v("cp_addr_label")),
+      is_default: !!(document.getElementById("cp_addr_default")||{}).checked });
     var id=v("cp_addr_id"); if(id) payload.address_id=id;
     var r=await api("upsert_address",{ p_payload:payload, p_correlation:"ui" }); if(r.error) throw r.error;
   }
@@ -737,12 +732,13 @@
     if(an) an.onclick=function(){ fillAddr({}); };
     function fillAddr(a){
       var set=function(id,v){ var e=document.getElementById(id); if(e) e.value = v==null?"":v; };
-      set("cp_addr_id",a.address_id); set("cp_addr_label",a.label||"Home"); set("cp_l1",a.line1); set("cp_l2",a.line2); set("cp_landmark",a.landmark);
-      set("cp_city",a.city); set("cp_state",a.state); set("cp_pin",a.postal_code); set("cp_country",a.country||"India");
+      set("cp_addr_id",a.address_id); set("cp_addr_label",a.label||"Home");
+      mountAddrForm(a);
       var dflt=document.getElementById("cp_addr_default"); if(dflt) dflt.checked = !!a.is_default || !(DATA.addresses||[]).length;
       var m=document.getElementById("cp_addr_mode"); if(m) m.textContent = a.address_id ? "Editing: "+(a.label||"address") : "Add a new address";
     }
-    document.querySelectorAll("[data-editaddr]").forEach(function(b){ b.onclick=function(){ var a=(DATA.addresses||[]).find(function(x){return x.address_id===b.getAttribute("data-editaddr");}); if(a){ fillAddr(a); document.getElementById("cp_l1").focus(); } }; });
+    mountAddrForm({});
+    document.querySelectorAll("[data-editaddr]").forEach(function(b){ b.onclick=function(){ var a=(DATA.addresses||[]).find(function(x){return x.address_id===b.getAttribute("data-editaddr");}); if(a){ fillAddr(a); var fe=document.getElementById("cp_addr_form"); if(fe){ fe.scrollIntoView({block:"start",behavior:"smooth"}); var i=fe.querySelector("input:not([disabled])"); if(i) i.focus({preventScroll:true}); } } }; });
     document.querySelectorAll("[data-defaddr]").forEach(function(b){ b.onclick=async function(){ var a=(DATA.addresses||[]).find(function(x){return x.address_id===b.getAttribute("data-defaddr");}); if(!a) return;
       var r=await api("upsert_address",{p_payload:{address_id:a.address_id,is_default:true},p_correlation:"ui"}); if(r.error) alert(r.error.message||r.error); load(); }; });
     document.querySelectorAll("[data-deladdr]").forEach(function(b){ b.onclick=async function(){ if(!confirm("Remove this address?")) return;

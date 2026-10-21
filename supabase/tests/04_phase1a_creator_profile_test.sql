@@ -62,8 +62,9 @@ select throws_ok($$ select api.save_profile_section('contact','{"whatsapp_e164":
 select lives_ok($$ select api.save_profile_section('contact','{"whatsapp_e164":"+919812345678","email":"a@b.com"}') $$, 'valid E.164 + email accepted');
 
 -- ===== address: one active default =====
-select api.upsert_address('{"line1":"1 A Rd","city":"Pune","is_default":true}');
-select api.upsert_address('{"line1":"2 B Rd","city":"Pune","is_default":true}');  -- must flip the previous default off
+-- (a saved address needs everything the courier uses: name, mobile, PIN, flat, area, landmark, city, state)
+select api.upsert_address('{"recipient_name":"Asha Rao","recipient_phone":"9812345678","postal_code":"411001","line1":"1 A Rd","line2":"Camp","landmark":"Near MG Road","city":"Pune","state":"Maharashtra","is_default":true}');
+select api.upsert_address('{"recipient_name":"Asha Rao","recipient_phone":"+919812345678","postal_code":"411001","line1":"2 B Rd","line2":"Camp","landmark":"Near MG Road","city":"Pune","state":"maharashtra","is_default":true}');  -- must flip the previous default off
 select is( (select count(*)::int from private.creator_address a where a.identity_id=(select v from _p where k='a') and a.is_default and a.deleted_at is null),
           1, 'only one active default address');
 
