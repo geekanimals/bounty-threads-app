@@ -48,10 +48,18 @@ update private.wa_bot_settings set mode = 'snapto';
 delete from private.wa_bot_pause;
 select ok( not has_function_privilege('anon','api.ops_bot_answer(text,text)','EXECUTE'), 'anon cannot ask for answers');
 select is( api.ops_bot_answer('9811111111', null)->>'why', 'no new message', 'nothing to answer yet');
-select is( api.ops_bot_answer('9811111111', 'hello')->>'go', 'true', 'answers the message the chatbot passed');
+select is( api.ops_bot_answer('9811111111', 'hello')->>'why', 'number not in the app — the team handles it', 'unknown number saying hello: the team handles it');
+select is( api.ops_bot_answer('9811111111', 'register kaise kare')->>'go', 'true', 'unknown number asking how to register: the bot helps');
 select is( api.ops_bot_answer('9811111111', 'STOP')->>'why', 'keyword', 'STOP is never answered');
 update private.wa_bot_settings set mode = 'direct';
 select is( api.ops_bot_answer('9811111111', 'hello')->>'go', 'false', 'direct mode: the chatbot gets nothing to send');
+
+-- ===== stays out of snapto broadcasts =====
+update private.wa_bot_settings set mode = 'direct';
+select api.ops_bot_outbound('wamid.beardo', '919822222222', 'marketing');
+select is( intel.ci_bot_skip_reason('+919822222222', '{}', 'register kaise kare'), 'answer to a snapto broadcast — the team handles it', 'right after a snapto broadcast the bot stays quiet');
+select is( intel.ci_bot_skip_reason('+919833333333', array['wamid.someone-else'], 'register kaise kare'), 'reply to a snapto broadcast — the team handles it', 'a reply to a message we did not send is left to the team');
+select is( intel.ci_bot_skip_reason('+919833333333', '{}', 'app pe login kaise kare'), null, 'a plain register / login question is answered');
 
 select * from finish();
 rollback;

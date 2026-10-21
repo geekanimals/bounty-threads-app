@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
           try {
             await admin.schema("api").rpc("ops_bot_inbound", { p_phone: fromE164, p_wamid: m.id ?? null,
               p_text: m?.text?.body ?? m?.button?.text ?? m?.interactive?.button_reply?.title ?? m?.interactive?.list_reply?.title ?? m?.image?.caption ?? "",
-              p_type: String(m?.type || "text") });
+              p_type: String(m?.type || "text"), p_reply_to: m?.context?.id ?? null });
           } catch (_e) { /* never blocks the webhook */ }
         }
         // delivery/read/failed statuses
