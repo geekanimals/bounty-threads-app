@@ -2097,3 +2097,32 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 .al-hist{margin:16px 0 8px;font-size:15px}
 .al-empty{padding:14px}
 @media (max-width:640px){ .bp-head .r-sub{font-size:12.5px} }
+/* WhatsApp chat: bubbles never squeeze or overlap; time sits under the text */
+.wa-chat>*{flex-shrink:0}
+.wa-chat{gap:6px;padding:14px 12px}
+.wa-bub{max-width:min(78%,560px);padding:7px 10px 5px;min-width:110px}
+.wa-txt{white-space:normal;overflow-wrap:anywhere}
+.wa-txt.clamp{-webkit-line-clamp:6}
+.wa-time{position:static;display:block;text-align:right;margin-top:3px;line-height:1}
+.wa-more{display:block;margin-top:2px}
+.wa-tag{text-transform:none}
+.wa-msg.out.mail .wa-bub,.wa-msg.mail .wa-bub{background:#eef2ff;border:1px solid #d9e0ff}
+.wa-msg.mail .wa-tag{color:#4f46e5}
+[data-theme="dark"] .wa-msg.out.mail .wa-bub{background:#1e2440;border-color:#2c3563;color:#e9edef}
+.cc-wa .wa-chat{height:min(55vh,440px)}
+@media (max-width:640px){ .wa-bub{max-width:88%} }
+/* creator profile card: action first, then the campaign, then the rest */
+.bpp-top{align-items:center}
+.bpp-topacts{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+.bpp-topacts a.btn{text-decoration:none;text-align:center}
+.bpp-wa{background:#25d366!important}
+.bpp-stats4{grid-template-columns:repeat(4,1fr)!important}
+.bpp .jr{margin:4px 0 10px}
+.bpp .bp-now{margin-bottom:4px}
+.bpp-card{border:1px solid var(--line);border-radius:14px;padding:4px 14px 8px;margin-top:12px;background:var(--panel,#fff)}
+.bpp-card .bpp-sec{margin-top:10px}
+.bpp-more>summary{cursor:pointer;list-style:none;padding:6px 0}
+.bpp-more>summary::-webkit-details-marker{display:none}
+.bpp-more>summary::after{content:" ▼";font-size:11px}
+.bpp-more[open]>summary::after{content:" ▲"}
+@media (max-width:640px){ .bpp-stats4{grid-template-columns:repeat(2,1fr)!important} .bpp-top{flex-wrap:wrap} .bpp-topacts{flex-direction:row;width:100%} .bpp-topacts>*{flex:1} }

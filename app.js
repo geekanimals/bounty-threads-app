@@ -5317,44 +5317,50 @@ async function bpCreatorProfile(pid){
   m = el("div","modal-overlay"); m.id = "bpProf";
   const row = (k,v)=> v ? `<div class="bpp-row"><span>${esc(k)}</span><div>${v}</div></div>` : "";
   const handle = cr.username || x.applied_profile || "";
+  const addr = [to.name, to.line1, to.line2, to.landmark, to.city, to.state, to.postal_code].filter(Boolean).join(", ");
+  const posts = x.posts||[];
   m.innerHTML = `<div class="modal modal-lg"><div class="modal-head"><strong>Creator profile</strong><button class="icon-btn" id="bpProfX">✕</button></div>
     <div class="modal-form bpp">
       <div class="bpp-top">${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((handle||"?").slice(0,2).toUpperCase())}</span>`}
         <div style="min-width:0;flex:1"><div class="bpp-name">${esc(cr.name||to.name||handle)}</div>
           ${handle?`<a href="https://instagram.com/${encodeURIComponent(handle)}" target="_blank" rel="noopener">@${esc(handle)} ↗</a>`:""}
           <div class="bpp-cats">${(cr.categories||[]).slice(0,4).map(c=>`<span>${esc(c)}</span>`).join("")}${cr.city?`<span>📍 ${esc(cr.city)}</span>`:""}</div></div>
-        ${handle?`<a class="btn sm" href="/p.html?u=${encodeURIComponent(handle)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}</div>
-      <div class="bpp-stats"><div><b>${cr.followers!=null?fmtNum(cr.followers):"—"}</b><span>Followers</span></div><div><b>${cr.engagement!=null?cr.engagement+"%":"—"}</b><span>Engagement</span></div>
-        <div><b>${cr.avg_reach?fmtNum(Math.round(cr.avg_reach)):"—"}</b><span>Avg reach</span></div><div><b>${esc(((BARTER_STEPS[idx]||[])[1]||"—").replace(/^\d+\.\s*/,""))}</b><span>Step now</span></div>
-        ${cr.profile_pct!=null?`<div><b>${cr.profile_pct}%</b><span>Profile</span></div>`:""}</div>
-      <div id="bppPro"></div>
-      <div class="bpp-sec">Contact</div>
-      ${row("WhatsApp", x.phone||to.phone ? esc(x.phone||to.phone) : "")}
-      ${row("Applied with", x.applied_profile ? "@"+esc(x.applied_profile) : "")}
-      ${row("Applied on", x.applied_at ? esc(fmtDate(x.applied_at)) : "")}
-      ${x.has_address||to.city ? `<div class="bpp-sec">Delivery address</div>${row("Address", esc([to.name, to.line1, to.line2, to.landmark, to.city, to.state, to.postal_code].filter(Boolean).join(", ")))}` : ""}
-      <div class="bpp-sec">This campaign</div>
-      ${row("Contract", con.signed_at ? "✓ signed "+esc(fmtDate(con.signed_at))+(con.signature_name?" by "+esc(con.signature_name):"") : con.issued_at ? "sent "+esc(fmtDate(con.issued_at))+" · not signed yet" : "")}
-      ${row("Courier", ship.courier ? esc(ship.courier)+(ship.tracking_ref?" · "+esc(ship.tracking_ref):"")+(ship.delivered_at?" · delivered "+esc(fmtDate(ship.delivered_at)):ship.shipped_at?" · sent "+esc(fmtDate(ship.shipped_at)):"") : "")}
-      ${row("Video due", x.due_on ? esc(fmtDate(x.due_on)) : "")}
-      ${row("Video", x.submission && x.submission.url ? `<a href="${esc(safeUrl(x.submission.url))}" target="_blank" rel="noopener">open ↗</a>` : "")}
-      ${row("Posts", (x.posts||[]).length ? (x.posts||[]).map(p=>`<a href="${esc(safeUrl(p.permalink||p.url||"#"))}" target="_blank" rel="noopener">${esc(p.media_type||"post")} ↗</a>`).join(" · ") : "")}
-      ${x.blacklisted?row("Note","⛔ Blacklisted"):""}
-      <div class="bpp-sec">All Instagram accounts</div><div id="bppAccts">${skel("list",1)}</div>
-      <div class="hub-foot"><button class="btn sm" data-bpphub="${esc(pid)}">💬 Messages & full history</button></div>
+        <div class="bpp-topacts"><button class="btn sm bpp-wa" data-bpphub="${esc(pid)}">💬 WhatsApp</button>${handle?`<a class="btn sm ghost" href="/p.html?u=${encodeURIComponent(handle)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}</div></div>
+      <div class="bpp-stats bpp-stats4"><div><b>${cr.followers!=null?fmtNum(cr.followers):"—"}</b><span>Followers</span></div><div><b>${cr.engagement!=null?cr.engagement+"%":"—"}</b><span>Engagement</span></div>
+        <div><b>${cr.avg_reach?fmtNum(Math.round(cr.avg_reach)):"—"}</b><span>Avg reach</span></div><div><b>${cr.profile_pct!=null?cr.profile_pct+"%":"—"}</b><span>Profile</span></div></div>
+      ${bpJourneyHtml(x)}
+      ${bpNowBox(x)}
+      <div class="bpp-card"><div class="bpp-sec">📣 This campaign</div>
+        ${row("Contract", con.signed_at ? "✓ signed "+esc(fmtDate(con.signed_at))+(con.signature_name?" by "+esc(con.signature_name):"") : con.issued_at ? "sent "+esc(fmtDate(con.issued_at))+" · <b>not signed yet</b>" : "")}
+        ${row("Ship to", addr ? esc(addr) + (to.phone?` · 📞 ${esc(to.phone)}`:"") : "")}
+        ${row("Courier", ship.courier||ship.status ? esc(ship.courier||"Courier")+(ship.tracking_ref?" · "+esc(ship.tracking_ref):"")+(ship.delivered_at?" · delivered "+esc(fmtDate(ship.delivered_at)):ship.shipped_at?" · sent "+esc(fmtDate(ship.shipped_at)):"") : "")}
+        ${row("Video due", x.due_on && !["published","completed"].includes(x.stage) ? esc(fmtDate(x.due_on)) : "")}
+        ${row("Video", x.submission && x.submission.url ? `<a href="${esc(safeUrl(x.submission.url))}" target="_blank" rel="noopener">▶ open the cut ↗</a>` : "")}
+        ${row("Posts", posts.length ? posts.map(p=> (p.permalink?`<a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener">${esc(p.media_type||"post")} ↗</a>`:esc(p.media_type||"post")) + (p.stats&&p.stats.views!=null?` <span class="muted">${esc(fmtNum(p.stats.views))} views</span>`:"")).join(" · ") : "")}
+        ${x.blacklisted?row("Note","⛔ Blacklisted"):""}
+        ${!con.issued_at && !addr && !ship.status && !x.submission && !posts.length ? `<div class="muted" style="font-size:13px">Nothing yet — contract, courier, video and posts show here as they happen.</div>` : ""}</div>
+      <div class="bpp-card"><div class="bpp-sec">📱 Contact</div>
+        ${row("WhatsApp", x.phone||to.phone ? esc(x.phone||to.phone) : "")}
+        ${row("Applied with", x.applied_profile ? "@"+esc(x.applied_profile) : "")}
+        ${row("Applied on", x.applied_at ? esc(fmtDate(x.applied_at)) : "")}</div>
+      <div class="bpp-card"><div class="bpp-sec">📸 Instagram accounts</div><div id="bppAccts">${skel("list",1)}</div></div>
+      <details class="bpp-card bpp-more"><summary class="bpp-sec">🧬 Profile details</summary><div id="bppPro"><div class="muted">Loading…</div></div></details>
+      <div class="hub-foot"><button class="btn sm ghost" data-bpphub2="${esc(pid)}">🗂 Full history &amp; emails</button>${window.__isAdmin?`<button class="btn sm ghost bp-del" data-bpremove="${esc(pid)}">🗑 Delete from campaign</button>`:""}</div>
     </div></div>`;
   document.body.appendChild(m); m.classList.add("open");
   document.getElementById("bpProfX").onclick = ()=> m.remove(); m.onclick = e=>{ if(e.target.id==="bpProf") m.remove(); };
   const hb = m.querySelector("[data-bpphub]"); if(hb) hb.onclick = ()=>{ m.remove(); openCreatorHub(pid, "whatsapp"); };
+  const hb2 = m.querySelector("[data-bpphub2]"); if(hb2) hb2.onclick = ()=>{ m.remove(); openCreatorHub(pid, "timeline"); };
+  wireBpActions(m, ()=>{ m.remove(); loadBarterProcess(true); });
+  m.querySelectorAll("[data-bpchat]").forEach(b=> b.onclick = ()=>{ m.remove(); openCreatorHub(pid, "whatsapp"); });
   const box = document.getElementById("bppAccts");
-  if(!cr.member_id){ box.innerHTML = `<div class="muted">Not on Geek OS yet.</div>`; return; }
+  if(!cr.member_id){ box.innerHTML = `<div class="muted">Not on Geek OS yet.</div>`; const pp = document.getElementById("bppPro"); if(pp) pp.innerHTML = `<div class="muted">Not on Geek OS yet.</div>`; return; }
   sb.schema("api").rpc("creator_profile_card", { p_member: cr.member_id }).then(({ data:P })=>{
-    const pb = document.getElementById("bppPro"); if(!pb || !P) return;
+    const pb = document.getElementById("bppPro"); if(!pb) return; if(!P){ pb.innerHTML = `<div class="muted">No profile yet.</div>`; return; }
     const AV = { available:"🟢 Available", limited:"🟡 Limited", unavailable:"🔴 Unavailable" };
     const nice = v => String(v||"").replace(/_/g," ").replace(/\b\w/g, c=>c.toUpperCase());
     const list = a => (a||[]).map(nice).join(", ");
-    pb.innerHTML = `<div class="bpp-sec">Profile</div>`
-      + row("Display name", P.display_name ? esc(P.display_name) : "")
+    pb.innerHTML = row("Display name", P.display_name ? esc(P.display_name) : "")
       + row("Availability", P.availability ? esc((AV[P.availability]||P.availability) + (P.availability_limit ? " — "+P.availability_limit : "")) : "")
       + row("Content types", (P.content_formats||[]).length ? esc(list(P.content_formats)) : "")
       + row("Categories", (P.categories||[]).length ? esc(list(P.categories)) : "")
@@ -5507,7 +5513,7 @@ function paintCreatorHub(){
       const long = String(x.text||"").length > 260 || (String(x.text||"").match(/\n/g)||[]).length > 5;
       return sep + `<div class="wa-msg ${x.dir==="in"?"in":"out"}${x.auto?" tpl":""}"><div class="wa-bub">
           ${x.auto?`<span class="wa-tag">🤖 ${esc(String(x.key||"update").replace(/_/g," "))}</span>`:x.dir==="out"&&x.by?`<span class="wa-tag">${esc(x.by)}</span>`:""}
-          <div class="wa-txt${long?" clamp":""}">${esc(x.text||"").replace(/\n/g,"<br>")}</div>${long?`<button class="wa-more" type="button">Read more</button>`:""}
+          <div class="wa-txt${long?" clamp":""}">${esc(String(x.text||"").replace(/\n{3,}/g,"\n\n").trim()).replace(/\n/g,"<br>")}</div>${long?`<button class="wa-more" type="button">Read more</button>`:""}
           <span class="wa-time">${esc(new Date(x.at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}))} ${x.dir==="out"?tick(x):""}</span></div></div>`; }).join("");
     const digits = String(d.phone||"").replace(/\D/g,"");
     sec = `<div class="wa-box">
@@ -6243,10 +6249,11 @@ function inviteChatHtml(id, d){
   const tick = x=> x.status==="failed" ? `<span class="wa-fail" title="${esc(x.error||"")}">❗ not delivered</span>` : x.status==="queued" ? "🕓" : x.status==="read" ? `<span class="wa-read">✓✓</span>` : x.status==="delivered" ? "✓✓" : "✓";
   const bubbles = M.map(x=>{
     const dd = new Date(x.at).toDateString(), sep = dd!==day ? `<div class="wa-day"><span>${esc(fmtDate(x.at))}</span></div>` : ""; day = dd;
-    const txt = String(x.text||"").replace(/<[^>]+>/g," ").replace(/\*\*/g,"");
-    return sep + `<div class="wa-msg ${x.dir==="in"?"in":"out"}${x.auto?" tpl":""}"><div class="wa-bub">
-        ${x.auto?`<span class="wa-tag">${x.channel==="email"?"✉️ email":"🤖"} ${esc(String(x.key||"message").replace(/_/g," "))}</span>`:x.dir==="out"&&x.by?`<span class="wa-tag">${esc(x.by)}</span>`:""}
-        <div class="wa-txt clamp">${esc(txt).replace(/\n/g,"<br>")}</div>${txt.length>200?`<button class="wa-more" type="button">Read more</button>`:""}
+    const txt = String(x.text||"").replace(/<br\s*\/?>/gi,"\n").replace(/<[^>]+>/g," ").replace(/\*\*/g,"").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
+    const long = txt.length > 260 || (txt.match(/\n/g)||[]).length > 5;
+    return sep + `<div class="wa-msg ${x.dir==="in"?"in":"out"}${x.auto?" tpl":""}${x.channel==="email"?" mail":""}"><div class="wa-bub">
+        ${x.auto?`<span class="wa-tag">${x.channel==="email"?"✉️ Email":"🤖 WhatsApp"} · ${esc(String(x.key||"message").replace(/_/g," "))}</span>`:x.dir==="out"&&x.by?`<span class="wa-tag">${esc(x.by)}</span>`:""}
+        <div class="wa-txt${long?" clamp":""}">${esc(txt).replace(/\n/g,"<br>")}</div>${long?`<button class="wa-more" type="button">Read more</button>`:""}
         <span class="wa-time">${esc(new Date(x.at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}))} ${x.dir==="out"?tick(x):""}</span></div></div>`; }).join("");
   return `<div class="wa-box cc-wa">
       <div class="wa-head"><span class="avatar">${esc(String(d.handle||d.name||"?").slice(0,2).toUpperCase())}</span>
