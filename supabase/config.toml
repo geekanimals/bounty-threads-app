@@ -116,3 +116,7 @@ verify_jwt = true
 
 [functions.wa-bot-worker]
 verify_jwt = false
+
+# WhatsApp help bot — called by the snapto chatbot (System Api Call), secret header x-bot-key = BOT_API_KEY
+[functions.wa-bot-answer]
+verify_jwt = false

@@ -17,6 +17,9 @@ select is( intel.ci_e164('919812345678'), '+919812345678', 'country code without
 -- ===== off by default =====
 select is( api.ops_bot_inbound('9812345678', 'w.1', 'hi', 'text')->>'why', 'bot off', 'bot is off until a Super Admin turns it on');
 update private.wa_bot_settings set enabled = true, reply_delay_min = 2;
+update private.wa_bot_settings set mode = 'snapto';
+select is( api.ops_bot_inbound('9812345678', 'w.0', 'hi', 'text')->>'why', 'snapto chatbot replies', 'snapto mode: the backend queue stays quiet');
+update private.wa_bot_settings set mode = 'direct';
 select is( api.ops_bot_inbound('9812345678', 'w.1', 'hi', 'text')->>'queued', 'true', 'queued once on');
 select is( api.ops_bot_inbound('9812345678', 'w.1', 'hi', 'text')->>'why', 'duplicate', 'same WhatsApp message is not queued twice');
 select is( api.ops_bot_inbound('9812345678', 'w.2', 'parcel?', 'text')->>'queued', 'true', 'second message merges');
@@ -39,6 +42,16 @@ select is( intel.ci_bot_team_replied_at('+919800000000', now() - interval '1 hou
 -- ===== unknown number gets a context with no campaigns =====
 select is( intel.ci_bot_context('9800000000')->>'registered', 'false', 'unknown number is not registered');
 select is( jsonb_array_length(intel.ci_bot_context('9800000000')->'invites'), 0, 'and has no invites');
+
+-- ===== snapto chatbot path =====
+update private.wa_bot_settings set mode = 'snapto';
+delete from private.wa_bot_pause;
+select ok( not has_function_privilege('anon','api.ops_bot_answer(text,text)','EXECUTE'), 'anon cannot ask for answers');
+select is( api.ops_bot_answer('9811111111', null)->>'why', 'no new message', 'nothing to answer yet');
+select is( api.ops_bot_answer('9811111111', 'hello')->>'go', 'true', 'answers the message the chatbot passed');
+select is( api.ops_bot_answer('9811111111', 'STOP')->>'why', 'keyword', 'STOP is never answered');
+update private.wa_bot_settings set mode = 'direct';
+select is( api.ops_bot_answer('9811111111', 'hello')->>'go', 'false', 'direct mode: the chatbot gets nothing to send');
 
 select * from finish();
 rollback;
