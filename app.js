@@ -1462,89 +1462,87 @@ async function loadWsDeliverables(c){
 }
 
 function renderCampaignWorkspace(c, apps, barter, pipe){
-  pipe = pipe || [];
   const content = document.querySelector("#content, .content");
-  const st = {Live:"good","In Production":"brand",Sourcing:"warn",Approval:"warn",Draft:"warn",Completed:"good"}[c.status]||"brand";
-  const PENDING = ["applied","eligible","sent_to_brand"], DECLINED = ["ineligible","brand_declined","dropped","rejected"];
-  const applied = apps.filter(a=>a.status==="Applied").concat(pipe.filter(p=>PENDING.includes(p.stage)));
-  const approved = apps.filter(a=>a.status==="Approved").concat(pipe.filter(p=>!PENDING.includes(p.stage) && !DECLINED.includes(p.stage)));
-  const info = (l,v)=> v ? `<div class="cd-row"><span class="cd-l">${l}</span><span class="cd-v">${esc(v)}</span></div>` : "";
-  // Deliverables checklist from the free-text field.
-  const items = (c.deliverables||"").split(/\r?\n|;|,(?![^(]*\))/).map(s=>s.trim()).filter(Boolean);
-  const done = Array.isArray(c.deliverables_done) ? c.deliverables_done : [];
-  const checklist = items.length ? items.map((it,i)=>`<label class="ws-check"><input type="checkbox" data-deliv="${i}" ${done.includes(it)?"checked":""}> <span${done.includes(it)?' style="text-decoration:line-through;opacity:.6"':''}>${esc(it)}</span></label>`).join("")
-    : `<div class="muted" style="padding:6px">No deliverables set — add them via Edit.</div>`;
-  const appRow = a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span>
-    <div class="r-main"><div class="r-title">${esc(a.creator_name)||"Creator"}</div><div class="r-sub">${esc(a.creator_org)||""} · ${esc(a.status)}</div></div>
-    ${a.status==="Applied"?`<span><button class="mini-btn" data-wsapprove="${esc(a.id)}">Approve</button> <button class="mini-btn ghost" data-wsdecline="${esc(a.id)}">Decline</button></span>`:`<span class="tag ${a.status==="Approved"?"good":""}" title="${esc(a.decline_note||"")}">${esc(a.status)}</span>`}</div>`;
-  const barterRow = b=>`<div class="row"><div class="r-main"><div class="r-title">${esc(b.product||"Item")} ${b.creator?`· ${esc(b.creator)}`:""}</div>
-    <div class="r-sub">${esc(b.stage||"Requested")}${b.tracking_number?` · 🚚 ${esc(b.tracking_number)}`:""}${b.deadline?` · ⏰ ${esc(b.deadline)}`:""}</div></div>
-    <span class="tag brand">${esc(b.stage||"Requested")}</span></div>`;
-
+  const old = (apps||[]).filter(a=> a.status==="Applied" || a.status==="Approved");   // applications from the old form (before the pipeline)
   content.innerHTML = `
-    <div style="margin-bottom:14px"><button class="btn ghost" id="wsBack">← Campaigns</button></div>
-    <div class="page-head"><div><h1>${esc(c.name)} <span class="tag ${st}">${esc(c.status)||"Draft"}</span></h1>
-      <p>${[c.brand,c.type,c.objective].filter(Boolean).map(esc).join(" · ")||"Campaign workspace"}</p></div>
-      <button class="btn" id="wsProcess" data-wspanel="bpPanel">🔁 Barter process</button>
-      <button class="btn ghost" id="wsBulk">📥 Bulk upload creators</button>
-      <button class="btn ghost" id="wsInvite" data-wspanel="invPanel">🎯 Invite creators</button>
-      <button class="btn ghost" id="wsEdit">Edit campaign</button>
-      <button class="btn ghost cdel-btn" id="wsDel">${window.__isAdmin?"🗑 Delete campaign":"🗑 Request delete"}</button></div>
-    <div id="wsDelNote"></div>
-
-    <div class="ws-stats">
-      <div class="ws-stat"><b>${applied.length}</b><span>New applicants</span></div>
-      <div class="ws-stat"><b>${approved.length}</b><span>Approved creators</span></div>
-      <div class="ws-stat"><b>${barter.length}</b><span>Barter shipments</span></div>
-      <div class="ws-stat"><b>${c.budget?fmtMoney(c.budget):"—"}</b><span>Budget</span></div>
+    <div class="cc-top"><button class="btn ghost" id="wsBack">← Campaigns</button></div>
+    <div class="cc-head">
+      <div class="cc-title"><h1>${esc(c.name)}</h1><div class="muted">${[c.brand, c.campaign_type?campTypeLabel(c.campaign_type,c.barter_subtype):c.type, c.objective].filter(Boolean).map(esc).join(" · ")||"Campaign"}</div></div>
+      <label class="cc-status"><span>Status</span><select id="ccStatus">${campStatusOptions(c.status, c.end_date)}</select></label>
     </div>
-
+    <div class="cc-actions">
+      <button class="btn" id="ccMatch" data-wspanel="invPanel">🎯 Find matching creators</button>
+      <button class="btn ghost" data-ccsec="bulk">📥 Bulk upload</button>
+      <button class="btn ghost" data-ccsec="terms">📜 Contract &amp; video brief</button>
+      <button class="btn ghost" data-ccsec="outreach">✉️ Outreach message</button>
+      <button class="btn ghost" data-ccsec="shortlist">📋 List for the brand</button>
+      <button class="btn ghost" data-ccsec="analytics">📈 Report</button>
+      <button class="btn ghost" id="wsEdit">✏️ Edit campaign</button>
+      <button class="btn ghost cdel-btn" id="wsDel">${window.__isAdmin?"🗑 Delete":"🗑 Request delete"}</button>
+    </div>
+    <div id="wsDelNote"></div>
+    ${ccDetailsHtml(c)}
     <div id="wsHost" class="ws-host" hidden></div>
-    <div class="card hub-card"><div class="hub-card-h"><h3 style="margin:0">👥 Everyone on this campaign</h3><span class="muted">Tap a creator — profile, every step, WhatsApp history and the next message, all here</span></div>
-      <div id="wsPeople">${skel("list",3)}</div></div>
-    <div class="grid two">
-      <div class="grid" style="gap:16px">
-        <div class="card"><h3>Applicants ${applied.length?`<span class="tag warn">${applied.length} new</span>`:""}</h3>
-          <div class="list" id="wsApps">${(pipe.length||apps.length)?pipe.map(p=>applicantRowHtml(p)).join("")+apps.map(appRow).join(""):`<div class="muted" style="padding:8px">No applications yet. Creators apply from their Media Kit → Open campaigns.</div>`}</div></div>
-        <div class="card"><h3>Barter shipments</h3>
-          <div class="list" id="wsBarter">${barter.length?barter.map(barterRow).join(""):`<div class="muted" style="padding:8px">No barter items linked. Create one in Mass Barter with campaign “${esc(c.name)}”.</div>`}</div></div>
-      </div>
-      <div class="grid" style="gap:16px">
-        <div class="card"><h3>Deliverables</h3><div id="wsChecklist">${wsDelivHead(c)}<div id="wsDelivProg" class="muted" style="font-size:12.5px">Loading who has posted…</div></div></div>
-        <div class="card"><h3>Details</h3>
-          ${info("Type", c.campaign_type?campTypeLabel(c.campaign_type,c.barter_subtype):c.type)}${info("Creators needed", c.creators?String(c.creators):"")}
-          ${c.product_link||c.product_value?`<div class="cd-row"><span class="cd-l">Barter product</span><span class="cd-v">${c.product_link?`<a href="${esc(safeUrl(c.product_link))}" target="_blank" rel="noopener">Open ↗</a>`:""}${c.product_value?` · ${fmtMoney(c.product_value)}`:""}</span></div>`:""}
-          ${info("Platforms", c.platforms)}${info("Hashtags", c.hashtags)}
-          ${info("Timeline", (c.start_date||c.end_date)?`${c.start_date||"—"} → ${c.end_date||"—"}`:"")}
-          ${c.brief?`<div class="cd-block"><div class="cd-l">Brief</div><div class="cd-body">${esc(c.brief)}</div></div>`:""}
-          ${(c.attachments||[]).length?`<div class="cd-block"><div class="cd-l">Files</div><div class="cd-body">${c.attachments.map(a=>`<a href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener">📎 ${esc(a.name)}</a>`).join("<br>")}</div></div>`:""}
-          ${idealProfileHtml(c.ideal_profile)}</div>
-      </div>
-    </div>`;
-
-  document.getElementById("wsBack").onclick = ()=>{ currentPage="campaigns"; renderShell(); };
+    <div class="cc-main" id="bpBody">${skel("list",5)}</div>
+    ${old.length?`<details class="card cc-old"><summary>Older applications (${old.length}) — from before the campaign process</summary><div class="list" id="wsApps">${old.map(a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span>
+      <div class="r-main"><div class="r-title">${esc(a.creator_name)||"Creator"}</div><div class="r-sub">${esc(a.creator_org)||""} · ${esc(a.status)}</div></div>
+      ${a.status==="Applied"?`<span><button class="mini-btn" data-wsapprove="${esc(a.id)}">Approve</button> <button class="mini-btn ghost" data-wsdecline="${esc(a.id)}">Decline</button></span>`:`<span class="tag good">${esc(a.status)}</span>`}</div>`).join("")}</div></details>`:""}`;
+  document.getElementById("wsBack").onclick = ()=>{ _wsMode = false; currentPage="campaigns"; renderShell(); };
   document.getElementById("wsEdit").onclick = ()=> openCampaignModal(c);
   wireCampaignDelete(c);
-  document.getElementById("wsInvite").onclick = ()=> openInvitePanel(c.id, c.name);
-  document.getElementById("wsProcess").onclick = ()=> openBarterProcess(c.id, c.name);
-  document.getElementById("wsBulk").onclick = ()=> openBarterProcess(c.id, c.name, null, "bulk");
+  document.getElementById("ccMatch").onclick = ()=> openInvitePanel(c.id, c.name);
+  content.querySelectorAll("[data-ccsec]").forEach(b=> b.onclick = async ()=>{
+    _bpTab = _bpTab===b.dataset.ccsec ? "tracker" : b.dataset.ccsec;
+    if(_bpTab==="analytics"){ _bpAnalytics = null; paintBarterProcess(); await loadBpAnalytics(); }
+    else paintBarterProcess();
+    const sec = document.getElementById("ccSec"); if(sec) sec.scrollIntoView({ behavior:"smooth", block:"start" });
+  });
+  const stSel = document.getElementById("ccStatus");
+  stSel.onchange = async ()=>{
+    const v = stSel.value, lbl = stSel.options[stSel.selectedIndex].text;
+    if(!await confirmChange(`Change the campaign status to “${lbl.replace(/\s—.*$/,"")}”`, lbl)){ stSel.value = c.status; return; }
+    stSel.disabled = true;
+    const { error } = window.__isAdmin ? await sb.rpc("admin_set_campaign_status", { p_id: c.id, p_status: v }).then(r=>r, e=>({error:e}))
+                                       : await sb.from("campaigns").update({ status: v }).eq("id", c.id).then(r=>r, e=>({error:e}));
+    stSel.disabled = false;
+    if(error){ gateToast(error.message||String(error)); stSel.value = c.status; return; }
+    c.status = v; _wsCampaign.status = v; gateToast(`Status → ${lbl.replace(/\s—.*$/,"")} ✓`);
+  };
   const reload = ()=> openCampaignWorkspace(c.id);
   content.querySelectorAll("[data-wsapprove]").forEach(b=>b.onclick=()=>updateStatus("applications", b.dataset.wsapprove, {status:"Approved"}, reload));
   content.querySelectorAll("[data-wsdecline]").forEach(b=>b.onclick=()=>declineLegacyApplication(b.dataset.wsdecline, reload));
-  wireApplicantButtons(content, reload);
-  loadCampaignPeople(c);
   loadWsDeliverables(c);
-  // an applicant row opens that creator's full story
-  content.querySelectorAll("#wsApps .row").forEach(r=>{ const b = r.querySelector("[data-papprove],[data-pdecline]"); const pid = r.dataset.pid; if(pid && !b){ r.style.cursor = "pointer"; r.onclick = e=>{ if(e.target.closest("a,button")) return; openCreatorHub(pid); }; } });
-  content.querySelectorAll("[data-deliv]").forEach(cb=> cb.onchange = ()=>{
-    const span = cb.parentNode.querySelector("span");
-    if(span){ span.style.textDecoration = cb.checked ? "line-through" : ""; span.style.opacity = cb.checked ? ".6" : ""; }
-    toggleDeliverable(c, items[+cb.dataset.deliv], cb.checked).then(ok=>{
-      if(ok) return;
-      cb.checked = !cb.checked;
-      if(span){ span.style.textDecoration = cb.checked ? "line-through" : ""; span.style.opacity = cb.checked ? ".6" : ""; }
-    });
-  });
+  startCampaignCommand(c);
+}
+// everything about the campaign in one card: what each creator makes, tags, product, dates, terms, brief, files, ideal profile
+function ccDetailsHtml(c){
+  const ct = (c.contract_terms && typeof c.contract_terms==="object") ? c.contract_terms : {};
+  const d = parseDeliverablesText(c.deliverables), tg = splitTags(c.hashtags);
+  const today = new Date().toISOString().slice(0,10);
+  const left = c.end_date ? Math.round((new Date(c.end_date) - new Date(today)) / 86400000) : null;
+  const it = (ic, k, v)=> v ? `<div class="cc-it"><span class="cc-ik">${ic} ${esc(k)}</span><div class="cc-iv">${v}</div></div>` : "";
+  const chips = arr => arr.map(x=>`<span class="cc-chip">${esc(x)}</span>`).join("");
+  const deliv = DELIV_KINDS.filter(([k])=>d.counts[k]).map(([k,l,ic,pl])=>`<span class="cc-chip">${ic} ${d.counts[k]} ${esc(d.counts[k]>1?pl:l)}</span>`).join("") + d.other.map(o=>`<span class="cc-chip">📎 ${esc(o)}</span>`).join("");
+  const terms = [ct.collab_rights!==false?"Collab with the brand":"", ct.blacklist_clause!==false?`Blacklist if no video in ${ct.content_days||7} days`:"", ct.reship_clause!==false?"Re-ship at their cost":""].filter(Boolean);
+  return `<div class="card cc-info">
+    <div class="cc-grid">
+      ${it("📦","Each creator posts", deliv || '<span class="muted">Not set — Edit campaign</span>')}
+      ${it("#","Hashtags", tg.tags.length?chips(tg.tags):'<span class="muted">—</span>')}
+      ${it("@","Mentions", tg.ments.length?chips(tg.ments):'<span class="muted">—</span>')}
+      ${it("🎁","Product", [ct.product?esc(ct.product):"", c.product_value?fmtMoney(c.product_value):"", c.product_link?`<a href="${esc(safeUrl(c.product_link))}" target="_blank" rel="noopener">link ↗</a>`:""].filter(Boolean).join(" · ") || '<span class="muted">—</span>')}
+      ${it("🗓","Dates", `${esc(c.start_date||"—")} → ${esc(c.end_date||"—")}${left!=null?` <span class="cc-left${left<0?" past":left<=3?" soon":""}">${left<0?"ended":left===0?"ends today":`${left} day${left>1?"s":""} left`}</span>`:""}`)}
+      ${it("⏱","Video due", `${esc(ct.content_days||7)} days after delivery · reminders 9:00 + 18:30`)}
+      ${it("📢","Ad rights", `${esc(ct.ad_rights_months??1)} month${(ct.ad_rights_months??1)==1?"":"s"} · posts must stay live (checked twice a day)`)}
+      ${it("🤝","Terms", terms.length?chips(terms):"—")}
+      ${it("👥","Creators needed", c.creators?esc(c.creators):"")}
+      ${c.budget?it("💰","Budget", fmtMoney(c.budget)):""}
+    </div>
+    <div id="wsDelivProg" class="cc-dprog muted"></div>
+    <details class="cc-more"><summary>Brief, files &amp; ideal creator profile</summary>
+      ${c.brief?`<div class="cc-brief">${esc(c.brief).replace(/\n/g,"<br>")}</div>`:'<div class="muted">No brief.</div>'}
+      ${(c.attachments||[]).length?`<div class="cc-files">${c.attachments.map(a=>`<a href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener">📎 ${esc(a.name)}</a>`).join("")}</div>`:""}
+      ${idealProfileHtml(c.ideal_profile)}
+    </details></div>`;
 }
 
 async function toggleDeliverable(c, item, checked){
@@ -4407,7 +4405,9 @@ function wireMkComposer(){
 let _bk = { rows:null, head:null, map:null, preview:null, list:null, src:"", busy:false, note:"" };
 const BK_FIELDS = [
   ["name","Name", /^(full ?name|name|creator( name)?|influencer( name)?)$/i],
-  ["handle","Instagram", /^(?!.*(track|awb|courier)).*(insta|^ig\b|handle|username|profile|account|link|url)/i],
+  ["post_link","Post link", /^(?!.*(track|awb|courier|video|drive)).*((post|reel|story|stories|content|live) ?(link|url)s?|permalink)/i],
+  ["video_link","Video link", /^(?!.*(track|awb|courier)).*((video|drive|cut|edit) ?(link|url)s?)/i],
+  ["handle","Instagram", /^(?!.*(track|awb|courier|post|reel|stor|video|drive|permalink)).*(insta|^ig\b|handle|username|profile|account|link|url)/i],
   ["phone","WhatsApp", /^(?!.*(track|awb|courier|pin|zip|postal|follower)).*(whats ?app|phone|mobile|contact( no| number)?|number|cell|wa\b)/i],
   ["email","Email", /(e-?mail|mail id)/i],
   ["city","City", /(city|location|place|town)/i],
@@ -4434,7 +4434,7 @@ const BK_STATUSES = [
   ["video_brief_sent","Video brief sent","video deadline starts today (campaign's days) + reminders","Video brief"],
   ["video_submitted","Video submitted","waiting for the brand's review","no message"],
   ["client_approved","Client approved","next: creator posts it","Video approved — post it"],
-  ["posted","Posted","campaign complete · numbers show everywhere · feedback optional","Campaign complete"]];
+  ["posted","Posted","needs the Post link(s) — campaign complete · numbers fetched from their Instagram","Campaign complete"]];
 const bkStLabel = k => (BK_STATUSES.find(x=>x[0]===k)||BK_STATUSES[0])[1];
 const bkStMsg = k => (BK_STATUSES.find(x=>x[0]===k)||BK_STATUSES[0])[3];
 const bkStRank = k => Math.max(0, BK_STATUSES.findIndex(x=>x[0]===k)) + 1;
@@ -4453,12 +4453,13 @@ function bkStatus(v){
 }
 const bkNeedsAddr = k => { const r = bkStRank(k); return r>=7 && r<=9; };
 const BK_SAMPLE = [
-  ["Name","Instagram","WhatsApp","Email","City","Status","Address","State","PIN code","Courier","Tracking"],
-  ["Asha Rao","@asha.creates","9876543210","asha@example.com","Mumbai","Approved","","","","",""],
-  ["Rohan Mehta","https://instagram.com/rohan.eats","+91 98111 22233","rohan@example.com","Delhi","",""," ","","",""],
-  ["Meera Shah","meera.styles","9000011111","","Pune","Address confirmed","Flat 4B, Lake View, Koregaon Park","Maharashtra","411001","",""],
-  ["Kabir Sen","@kabir.cooks","9830012345","kabir@example.com","Kolkata","Courier sent","12 Park St","West Bengal","700016","DTDC","D12345678"],
-  ["Nisha Jain","nisha.home","9123456780","","Jaipur","Video brief sent","22 C-Scheme","Rajasthan","302001","Delhivery","https://www.delhivery.com/track/package/1234"]].map(r=>r.map(c=>c.trim()));
+  ["Name","Instagram","WhatsApp","Email","City","Status","Address","State","PIN code","Courier","Tracking","Video link","Post link"],
+  ["Asha Rao","@asha.creates","9876543210","asha@example.com","Mumbai","Approved","","","","","","",""],
+  ["Rohan Mehta","https://instagram.com/rohan.eats","+91 98111 22233","rohan@example.com","Delhi","",""," ","","","","",""],
+  ["Meera Shah","meera.styles","9000011111","","Pune","Address confirmed","Flat 4B, Lake View, Koregaon Park","Maharashtra","411001","","","",""],
+  ["Kabir Sen","@kabir.cooks","9830012345","kabir@example.com","Kolkata","Courier sent","12 Park St","West Bengal","700016","DTDC","D12345678","",""],
+  ["Nisha Jain","nisha.home","9123456780","","Jaipur","Video submitted","22 C-Scheme","Rajasthan","302001","Delhivery","https://www.delhivery.com/track/package/1234","https://drive.google.com/file/d/abc",""],
+  ["Tara Bose","@tara.eats","9007712345","tara@example.com","Kolkata","Posted","5 Lake Rd","West Bengal","700029","DTDC","D999","","https://www.instagram.com/reel/ABC123/ https://www.instagram.com/stories/tara.eats/31415/"]].map(r=>r.map(c=>c.trim()));
 const BK_GUIDE = [
   ["Name","Creator's name — their profile is made with it","Asha Rao","optional"],
   ["Instagram","@handle, handle or profile link — followers, name & photo are fetched automatically","@asha.creates","one of these 3"],
@@ -4470,7 +4471,9 @@ const BK_GUIDE = [
   ["State","State of the address","West Bengal","optional"],
   ["PIN code","6-digit PIN (we also find it inside the address)","700016","optional"],
   ["Courier","Courier company — for Courier sent / Courier delivered","DTDC","optional"],
-  ["Tracking","Tracking ID or tracking link","D12345678","optional"]];
+  ["Tracking","Tracking ID or tracking link","D12345678","optional"],
+  ["Video link","Link to their video (Drive etc.) — for Video submitted / Client approved","https://drive.google.com/…","optional"],
+  ["Post link","Instagram link of every post (space or comma between them) — a row with post links is Posted; Posted without a link waits on Client approved","https://www.instagram.com/reel/…","for Posted"]];
 async function bkDownloadXlsx(){
   await bkLoadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
   const ws = XLSX.utils.aoa_to_sheet(BK_SAMPLE);
@@ -4567,6 +4570,7 @@ function bkSetRows(rows, src){
       const vals = body.slice(0,20).map(r=>String(r[i]||""));
       if(_bk.map.email==null && vals.filter(v=>/@.+\./.test(v)).length >= Math.max(1, vals.length/3)) _bk.map.email = i;
       else if(_bk.map.phone==null && vals.filter(v=>v.replace(/\D/g,"").length>=10 && !/[a-z]/i.test(v)).length >= Math.max(1, vals.length/3)) _bk.map.phone = i;
+      else if(_bk.map.post_link==null && vals.filter(v=>/instagram\.com\/(reel|reels|p|tv|stories)\//i.test(v)).length >= Math.max(1, vals.length/3)) _bk.map.post_link = i;
       else if(_bk.map.handle==null && vals.filter(v=>/instagram\.com|^@/.test(v)).length >= Math.max(1, vals.length/3)) _bk.map.handle = i;
     }
   }
@@ -4577,7 +4581,8 @@ function bkRowData(r){
   const g = k => _bk.map[k]!=null ? String(r.cells[_bk.map[k]]||"").trim() : "";
   return { name:g("name"), handle:g("handle"), phone:g("phone"), email:g("email"), city:g("city"), followers:g("followers"),
            status: r.status||"registered", approved: bkStRank(r.status||"registered")>=4,
-           address:g("address"), state:g("state"), pincode:g("pincode"), courier:g("courier"), tracking:g("tracking") };
+           address:g("address"), state:g("state"), pincode:g("pincode"), courier:g("courier"), tracking:g("tracking"),
+           post_link:g("post_link"), video_link:g("video_link") };
 }
 async function bkCheck(){
   if(!_bk.rows) return;
@@ -4594,7 +4599,8 @@ function bkStatusChip(p, r){
   if(!p) return '<span class="muted">…</span>';
   if(p.no_contact) return '<span class="tag warn">⚠ no WhatsApp / email / Instagram</span>';
   if(p.duplicate) return '<span class="tag warn">Duplicate — same person as a row above · skipped</span>';
-  if(p.already) return '<span class="tag">Already uploaded on this step · skipped (no second message)</span>';
+  if(p.already) return `<span class="tag">Already in${p.live_stage?` · ${bkEsc(String(p.live_stage).replace(/_/g," "))}`:""} — nothing new in this row · skipped</span>`;
+  if(p.needs_post_link) return '<span class="tag warn">Posted needs the post link — goes on Client approved until you add it</span>';
   const st = (r && r.status) || "registered";
   const bad = (p.phone_bad?" · number looks wrong":"") + (p.email_bad?" · email looks wrong":"");
   const warn = [bad.slice(3), r && r._addrMissing ? "add the address" : ""].filter(Boolean).join(" · ");
@@ -4660,7 +4666,7 @@ function bulkHtml(){
         <button class="btn sm ghost" id="bkClear">Clear</button></div>
       <div id="bkResult"></div>` : ""}
     </div>
-    <div class="card" style="margin-top:12px"><h3 style="margin:0 0 8px">Uploaded creators <span class="muted" style="font-size:12px;font-weight:400">— live</span></h3><div id="bkList">${bkListHtml()}</div></div>`;
+    ${_wsMode ? `<div class="muted" style="font-size:12.5px;margin-top:8px">Everyone you upload shows in the creators list below with their step.</div>` : `<div class="card" style="margin-top:12px"><h3 style="margin:0 0 8px">Uploaded creators <span class="muted" style="font-size:12px;font-weight:400">— live</span></h3><div id="bkList">${bkListHtml()}</div></div>`}`;
 }
 function bkWaLine(){
   const w = _bk.wa; if(!w || w==="loading") return "";
@@ -4791,6 +4797,7 @@ function wireBulk(){
     if(error){ paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = error.message||String(error); return; }
     const d = data||{};
     _bk.rows = null; _bk.preview = null; paintBulk();
+    if(d.posted_without_link) setTimeout(()=> gateToast(`⚠️ ${d.posted_without_link} “Posted” row${d.posted_without_link>1?"s":""} had no post link — they're on Client approved until you add the link`), 400);
     gateToast(`✓ ${d.added||0} put on their step now · ${d.invited||0} invited on WhatsApp/email (each got their step's message; they join on their step once profile + Instagram are done)${d.waiting_profile?` · ${d.waiting_profile} on Geek OS, finishing their profile`:""}${d.skipped?` · ${d.skipped} skipped (no contact)`:""}${d.duplicates?` · ${d.duplicates} duplicate${d.duplicates>1?"s":""} skipped`:""}`);
     loadBulkList(); loadBarterProcess(true);
   };
@@ -4840,6 +4847,23 @@ const BP_NEXT = {
   completed:"Done ✓"
 };
 let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null, _bpAnalytics = null;
+let _wsMode = false, _ccFilter = "all", _ccQ = "", _ccInvOpen = null, _bpPeople = null;
+// the campaign page runs the whole process itself: one list, every step, every action
+function startCampaignCommand(c){
+  _wsMode = true; _ccFilter = "all"; _ccQ = ""; _ccInvOpen = null; _bpPeople = null;
+  _bpCamp = { id: c.id, name: c.name }; _bpTab = "tracker"; _bpOpen = null; _bpAnalytics = null;
+  _bk = { rows:null, head:null, map:null, preview:null, list:null, src:"", busy:false, note:"" };
+  window.__bpClose = ()=>{ _bpTab = "tracker"; paintBarterProcess(); };
+  loadBarterProcess();
+  clearInterval(_bpTimer);
+  _bpTimer = setInterval(()=>{
+    if(!_wsMode || !document.getElementById("bpBody")){ clearInterval(_bpTimer); return; }
+    if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open,.cc-ov,#ccOv")) return;
+    const a = document.activeElement; if(a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.tagName==="SELECT")) return;
+    if(document.querySelector("#bpBody .hub-set") || _bpTab==="terms" || _bpTab==="bulk") return;   // never wipe a half-filled form
+    loadBarterProcess(true);
+  }, 20000);
+}
 // On a campaign's own page, Barter process / Bulk upload / Invite open right on that page (same screen);
 // anywhere else they open as the side panel.
 function wsPanelHost(campaignId){
@@ -4867,6 +4891,14 @@ function mountCampaignPanel(panelId, bodyId, campaignId, title, onClose){
   return { el: ov, close };
 }
 function openBarterProcess(campaignId, campaignName, focusParticipation, tab){
+  // on the campaign's own page: no panel — open that creator / section right in the page
+  if(_wsMode && document.getElementById("bpBody") && _bpCamp && String(_bpCamp.id)===String(campaignId)){
+    _bpTab = tab || "tracker"; if(focusParticipation){ _bpOpen = focusParticipation; _ccFilter = "all"; }
+    paintBarterProcess();
+    setTimeout(()=>{ const t = focusParticipation ? document.querySelector(`.bp-card.open`) : document.getElementById("ccSec"); if(t) t.scrollIntoView({ behavior:"smooth", block:"start" }); }, 40);
+    return;
+  }
+  _wsMode = false;
   _bpCamp = { id: campaignId, name: campaignName || "this campaign" }; _bpTab = tab || "tracker"; _bpOpen = focusParticipation || null; _bpAnalytics = null;
   _bk = { rows:null, head:null, map:null, preview:null, list:null, src:"", busy:false, note:"" };
   const P = mountCampaignPanel("bpPanel", "bpBody", campaignId, "Barter process", ()=> clearInterval(_bpTimer));
@@ -4884,11 +4916,13 @@ function openBarterProcess(campaignId, campaignName, focusParticipation, tab){
 }
 async function loadBarterProcess(silent){
   const body = document.getElementById("bpBody"); if(!body || !_bpCamp) return;
-  const [t, o, g] = await Promise.all([
+  const [t, o, g, pp] = await Promise.all([
     sb.schema("api").rpc("barter_tracker", { p_campaign:_bpCamp.id }).then(r=>r, e=>({error:e})),
     sb.schema("api").rpc("get_outreach", { p_campaign:_bpCamp.id }).then(r=>r, ()=>({data:{}})),
-    sb.schema("api").rpc("campaign_deliverable_progress", { p_campaign:_bpCamp.id }).then(r=>r, ()=>({data:{}}))
+    sb.schema("api").rpc("campaign_deliverable_progress", { p_campaign:_bpCamp.id }).then(r=>r, ()=>({data:{}})),
+    _wsMode ? sb.schema("api").rpc("campaign_people", { p_campaign:_bpCamp.id }).then(r=>r, ()=>({data:null})) : Promise.resolve({data:null})
   ]);
+  if(pp && pp.data) _bpPeople = pp.data;
   if(t.error){ if(!silent) body.innerHTML = `<div class="card"><div class="muted">${esc(t.error.message||t.error)}</div></div>`; return; }
   _bpData = t.data||{}; _bpData.outreach = o.data||{}; _bpData.progress = (g && g.data) || {}; pollNavCounts();
   if(_bpTab==="analytics") await loadBpAnalytics(true);
@@ -4905,6 +4939,7 @@ function bpStageIndex(stage){ stage = BP_ALIAS[stage] || stage; const i = BARTER
 function bpEffectiveIndex(x){ const i = bpStageIndex(x.stage); return (x.stage==="product_sent" && x.shipment && x.shipment.status==="delivered") ? bpStageIndex("product_delivered") : i; }
 function paintBarterProcess(){
   const body = document.getElementById("bpBody"); if(!body) return;
+  if(_wsMode) return paintCampaignCommand(body);
   const d = _bpData||{}, c = d.campaign||{}, list = d.creators||[];
   const failed = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
   const done = s => list.filter(x=> !failed(x.stage) && bpEffectiveIndex(x) >= bpStageIndex(s)).length;
@@ -4931,6 +4966,197 @@ function paintBarterProcess(){
   wireBarterProcess();
   if(_bpTab==="bulk"){ wireBulk(); if(!_bk.list) loadBulkList(); }
 }
+// ---------- the campaign page: process tiles + ONE list of every creator (applied, invited, uploaded, in the campaign) ----------
+const CC_TILES = [
+  ["all","Total","everyone on this campaign"],
+  ["invited","Invited","invited, not registered yet"],
+  ["registered","Registered","on Geek OS"],
+  ["insta","Instagram attached","media kit connected"],
+  ["applied","Applied","waiting for screening / the brand"],
+  ["brand_confirmed","Approved","the brand said yes"],
+  ["contract_signed","Contract signed",""],
+  ["address_confirmed","Address confirmed","video brief sent to practise"],
+  ["product_sent","Courier sent",""],
+  ["product_delivered","Courier delivered",""],
+  ["content_submitted","Video submitted",""],
+  ["content_approved","Client approved",""],
+  ["completed","Done","every post up"]];
+// a sheet status (upload row) on the same scale as the steps
+const CC_INV_RANK = { brand_confirmed:4, contract_signed:6, address_confirmed:7, product_sent:8, product_delivered:9, content_submitted:11, content_approved:12, completed:13 };
+function ccRows(){
+  const d = _bpData||{}, P = d.creators||[], ppl = (_bpPeople && _bpPeople.participants)||[], inv = (_bpPeople && _bpPeople.invites)||[];
+  const byP = {}; ppl.forEach(x=> byP[x.participation_id] = x);
+  return P.map(x=>({ kind:"p", id:x.participation_id, x, pp: byP[x.participation_id]||{} }))
+    .concat(inv.map(i=>({ kind:"i", id:i.invite_id, i })));
+}
+function ccMatch(key, r){
+  const fail = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
+  if(key==="all") return true;
+  if(r.kind==="i"){ const i = r.i, rk = bkStRank(i.status||"registered");
+    if(key==="invited") return !i.registered;
+    if(key==="registered") return !!i.registered;
+    if(key==="insta") return !!i.ig_connected;
+    if(key==="applied") return rk<=3;
+    return CC_INV_RANK[key] ? rk >= CC_INV_RANK[key] : false; }
+  const x = r.x;
+  if(key==="invited") return x.stage==="invited";
+  if(key==="registered") return true;
+  if(key==="insta") return !!(r.pp.ig_connected || (x.creator||{}).username);
+  if(key==="applied") return ["applied","eligible","sent_to_brand","shortlisted"].includes(x.stage);
+  return !fail(x.stage) && bpEffectiveIndex(x) >= bpStageIndex(key);
+}
+function paintCampaignCommand(body){
+  const d = _bpData||{}, rows = ccRows(), pb = d.playbook||{};
+  const q = _ccQ.trim().toLowerCase();
+  const hay = r => r.kind==="p" ? [(r.x.creator||{}).username, (r.x.creator||{}).name, r.x.applied_profile, r.x.phone].join(" ").toLowerCase()
+                                : [r.i.name, r.i.handle, r.i.phone, r.i.email, r.i.city].join(" ").toLowerCase();
+  const shown = rows.filter(r=> ccMatch(_ccFilter, r) && (!q || hay(r).includes(q)));
+  const needsYou = (d.creators||[]).filter(x=> ["applied","eligible","sent_to_brand","address_confirmed","product_sent","content_submitted","published"].includes(x.stage)).length;
+  const tile = t => `<button type="button" class="cc-tile${_ccFilter===t[0]?" on":""}" data-cctile="${t[0]}" title="${esc(t[2]||t[1])}"><b>${rows.filter(r=>ccMatch(t[0], r)).length}</b><span>${esc(t[1])}</span>${t[2]&&t[0]!=="all"?`<i>${esc(t[2])}</i>`:""}</button>`;
+  const secTitle = { bulk:"📥 Bulk upload", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand" }[_bpTab];
+  const P = shown.filter(r=>r.kind==="p").map(r=>r.x), I = shown.filter(r=>r.kind==="i");
+  body.innerHTML = `
+    ${pb.saved===false?`<div class="ac360-miss">📜 No contract terms or video brief saved yet — creators get the defaults. <a href="#" id="bpGoTerms">Set them now →</a></div>`:""}
+    <div class="cc-flow">${CC_TILES.map(tile).join("")}</div>
+    ${secTitle?`<div class="card cc-sec" id="ccSec"><div class="cc-sec-h"><h3>${secTitle}</h3><button class="ci-pop-x" id="ccSecX" aria-label="Close">✕</button></div>
+      <div class="ac360-sec">${_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(d.creators||[])}</div></div>`:""}
+    <div class="card cc-list">
+      <div class="cc-list-h"><h3>Creators <span class="muted">${shown.length}${_ccFilter!=="all"?` · ${esc((CC_TILES.find(t=>t[0]===_ccFilter)||[])[1]||"")}`:""}</span></h3>
+        ${needsYou?`<span class="bp-needs cc-needs">⚡ <b>${needsYou}</b> need${needsYou>1?"":"s"} something from you</span>`:""}
+        <input id="ccQ" type="search" placeholder="🔎 Name, @handle, phone, city…" value="${esc(_ccQ)}">
+        ${_ccFilter!=="all"?`<button class="mini-btn ghost" id="ccAll">Show everyone ✕</button>`:""}</div>
+      <div class="cc-hint muted">Tap a creator to open everything — every step with its time, contract, address, courier, video, posts with their numbers — and do any action right there. Changing a step asks only for what it needs (courier, video link, the link of every post).</div>
+      ${P.length ? bpTrackerHtml(P) : ""}
+      ${I.length ? `<div class="cc-invh">${P.length?"Uploaded / invited — not in the campaign yet":""}</div>` + I.map(r=>ccInviteRowHtml(r.i)).join("") : ""}
+      ${!shown.length?`<div class="muted" style="padding:14px">${rows.length?"Nobody here.":"Nobody on this campaign yet — use 🎯 Find matching creators or 📥 Bulk upload."}</div>`:""}
+    </div>`;
+  body.querySelectorAll("[data-cctile]").forEach(b=> b.onclick = ()=>{ _ccFilter = _ccFilter===b.dataset.cctile && b.dataset.cctile!=="all" ? "all" : b.dataset.cctile; paintBarterProcess();
+    const l = body.querySelector(".cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); });
+  const all = body.querySelector("#ccAll"); if(all) all.onclick = ()=>{ _ccFilter = "all"; paintBarterProcess(); };
+  const qi = body.querySelector("#ccQ"); if(qi) qi.oninput = ()=>{ _ccQ = qi.value; const pos = qi.selectionStart; paintBarterProcess(); const n = document.getElementById("ccQ"); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } };
+  const sx = body.querySelector("#ccSecX"); if(sx) sx.onclick = ()=>{ _bpTab = "tracker"; paintBarterProcess(); };
+  const goT = body.querySelector("#bpGoTerms"); if(goT) goT.onclick = e=>{ e.preventDefault(); _bpTab="terms"; paintBarterProcess(); };
+  wireBarterProcess();
+  wireCcInvites(body);
+  if(_bpTab==="bulk"){ wireBulk(); }
+  if(_bpOpen){ const sel = body.querySelector(`[data-ccstep="${_bpOpen}"]`); if(sel) mountInlineSetStep(_bpOpen); }
+}
+// someone uploaded / invited who isn't in the campaign yet (not registered, or registered and connecting)
+function ccInviteRowHtml(i){
+  const open = _ccInvOpen === i.invite_id, st = i.status==="invited" ? "registered" : (i.status||"registered");
+  const who = i.handle ? "@"+i.handle : (i.name || i.phone || i.email || "Creator");
+  const links = (i.post_links||[]), miss = (i.needs||[]);
+  const wa = i.last_wa ? (i.last_wa.status==="sent"||i.last_wa.status==="delivered"||i.last_wa.status==="read" ? "WhatsApp ✓" : i.last_wa.status==="failed" ? "WhatsApp ✗" : "WhatsApp …") : "";
+  return `<div class="card bp-card cc-inv${open?" open":""}">
+    <div class="bp-head" data-ccinvopen="${esc(i.invite_id)}">
+      <span class="avatar">${esc(String(who).replace(/^@/,"").slice(0,2).toUpperCase())}</span>
+      <div style="flex:1;min-width:0">
+        <div class="r-title"><b>${esc(who)}</b>${i.name&&i.handle?` <span class="muted">${esc(i.name)}</span>`:""}
+          ${i.registered?`<span class="tag warn">On Geek OS · ${miss.length?esc(miss.map(x=>/whatsapp/i.test(x)?"connect WhatsApp":"connect Instagram").join(" + ")):"joining"}</span>`:`<span class="tag">Invited · not registered</span>`}
+          ${i.ig_connected?'<span class="tag good">📸 Instagram</span>':""}${links.length?`<span class="tag good">🔗 ${links.length} post link${links.length>1?"s":""}</span>`:""}</div>
+        <div class="r-sub">${esc(bkStLabel(st))} <span class="muted">(from the upload)</span>${wa?` · ${esc(wa)}`:""}${i.invites_sent>1?` · invite sent ${i.invites_sent}×`:""}${i.profile_pct!=null?` · profile ${i.profile_pct}%`:""}</div>
+        <div class="bp-bar"><span style="width:${Math.round(100*bkStRank(st)/13)}%"></span></div></div>
+      <span class="bp-caret">${open?"▲":"▼"}</span></div>
+    ${open?`<div class="bp-detail"><div class="bp-facts">
+        ${[i.phone?`📱 <a href="https://wa.me/${esc(String(i.phone).replace(/\D/g,""))}" target="_blank" rel="noopener">${esc(i.phone)}</a>`:"", i.email?`✉️ ${esc(i.email)}`:"", i.city?`📍 ${esc(i.city)}`:"", i.followers?`👥 ${fmtNum(i.followers)} followers`:""].filter(Boolean).map(x=>`<div>${x}</div>`).join("")}
+        ${i.courier||i.tracking?`<div>🚚 ${esc(i.courier||"")} ${i.tracking?`· <b>${esc(i.tracking)}</b>`:""}</div>`:""}
+        ${i.video_url?`<div>🎬 Video: <a href="${esc(safeUrl(i.video_url))}" target="_blank" rel="noopener">open ↗</a></div>`:""}
+        ${links.map(l=>`<div>📲 <a href="${esc(safeUrl(l))}" target="_blank" rel="noopener">${esc(l.replace(/^https?:\/\/(www\.)?/,""))}</a> <span class="muted">— attached to their campaign the moment they join; numbers come from their Instagram</span></div>`).join("")}
+        ${miss.length?`<div class="muted">Still to connect: ${esc(miss.join(" + "))} — or pick a step below to put them in now.</div>`:""}
+        ${!i.registered?`<div class="muted">They get the step's message on WhatsApp + email with the app link; once they register they land right on this step.</div>`:""}
+      </div>
+      <div class="bp-acts">
+        <label class="cc-setlbl">Move to ${bkStatusSelect(`data-ccinvset="${esc(i.invite_id)}"`, st, "")}</label>
+        <button class="btn sm ghost" data-ccinvlinks="${esc(i.invite_id)}">🔗 Add links / courier</button>
+        <button class="btn sm ghost" data-hubre="${esc(i.invite_id)}" data-ccre="1">↻ Resend invite</button>
+        <button class="btn sm ghost" data-ccinvdel="${esc(i.invite_id)}">Remove</button>
+      </div></div>`:""}
+  </div>`;
+}
+// what a step needs, asked in one small form (and the "are you sure?" in the same place)
+function ccStepNeeds(st, have){
+  const r = bkStRank(st);
+  return { courier: (r===8||r===9) && !have.courier, video: (r===11||r===12) && !have.video, posts: r>=13 ? Math.max(0, (have.need||1) - (have.links||0)) : 0 };
+}
+function ccNeedsForm(title, what, needs, onSave){
+  const n = needs.posts;
+  const m = bpModal(esc(title), `<form class="modal-form" id="ccNF">
+      <p class="muted" style="margin:0 0 4px">${esc(what)}</p>
+      ${needs.courier?`<div class="mf-row"><label>Courier<input name="courier" required placeholder="DTDC, Delhivery…"></label><label>Tracking ID / link<input name="tracking" required placeholder="D1234567 or https://…"></label></div>`:""}
+      ${needs.video?`<label>Video link<input name="video_url" type="url" required placeholder="https://drive.google.com/…"></label>`:""}
+      ${n?`<label>Instagram link of every post — ${n} needed <span class="muted" style="font-weight:400">(one per line)</span><textarea name="posts" rows="${Math.min(6,n+1)}" required placeholder="https://www.instagram.com/reel/…&#10;https://www.instagram.com/stories/…"></textarea></label>`:""}
+      <label class="cp-check"><input type="checkbox" name="notify" checked> Send them the message for this step</label>
+      <div class="auth-err" id="ccNFErr"></div>
+      <button class="btn" type="submit">Yes, change it</button></form>`);
+  document.getElementById("ccNF").onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(e.target), err = document.getElementById("ccNFErr"), btn = e.target.querySelector("button[type=submit]");
+    const posts = String(f.get("posts")||"").split(/[\s,]+/).map(x=>x.trim()).filter(Boolean);
+    if(n && posts.length < n){ err.textContent = `Add ${n} post link${n>1?"s":""} (${posts.length} added).`; return; }
+    if(posts.some(x=> !/instagram\.com\/(reel|reels|p|tv|stories)\//i.test(x))){ err.textContent = "Paste Instagram post links (instagram.com/reel/… , /p/… or /stories/…)."; return; }
+    const payload = { notify: !!f.get("notify") };
+    if(f.get("courier")) payload.courier = String(f.get("courier")).trim();
+    if(f.get("tracking")){ const t = String(f.get("tracking")).trim(); if(/^https?:\/\//i.test(t)) payload.tracking_url = t; payload.tracking = t; }
+    if(f.get("video_url")) payload.video_url = String(f.get("video_url")).trim();
+    if(posts.length) payload.post_urls = posts;
+    btn.disabled = true; btn.textContent = "Saving…";
+    const res = await onSave(payload);
+    if(res && res.error){ err.textContent = res.error.message||String(res.error); btn.disabled = false; btn.textContent = "Yes, change it"; return; }
+    m.remove();
+  };
+  return m;
+}
+async function ccSetInviteStep(i, st, sel){
+  const have = { courier: !!(i.courier && i.tracking), video: !!i.video_url || (i.post_links||[]).length>0, links: (i.post_links||[]).length, need: (parseDeliverablesText(_wsCampaign&&_wsCampaign.deliverables).counts ? Object.entries(parseDeliverablesText(_wsCampaign&&_wsCampaign.deliverables).counts).reduce((a,[,v])=>a+v,0) : 1) || 1 };
+  const needs = ccStepNeeds(st, have), lbl = bkStLabel(st), who = i.handle ? "@"+i.handle : (i.name||"this creator");
+  const save = async payload=>{
+    const r = await sb.schema("api").rpc("invite_set_step", { p_invite: i.invite_id, p_status: st, p_payload: payload }).then(x=>x, e=>({error:e}));
+    if(r.error) return r;
+    gateToast(`${who} → ${lbl} ✓${r.data && r.data.stage ? " · in the campaign now" : " · lands on this step when they join"}`);
+    loadBarterProcess(true); return r;
+  };
+  if(needs.courier || needs.video || needs.posts){ ccNeedsForm(`Move ${who} to “${lbl}”`, "This step needs:", needs, save); if(sel) sel.value = i.status==="invited"?"registered":(i.status||"registered"); return; }
+  if(!await confirmChange(`Move ${who} to “${lbl}”`, "Every step in between is filled in; they get one message for this step.")){ if(sel) sel.value = i.status==="invited"?"registered":(i.status||"registered"); return; }
+  const r = await save({});
+  if(r && r.error){ gateToast(r.error.message||String(r.error)); if(sel) sel.value = i.status||"registered"; }
+}
+function wireCcInvites(body){
+  const inv = ((_bpPeople && _bpPeople.invites)||[]), find = id => inv.find(x=>x.invite_id===id);
+  body.querySelectorAll("[data-ccinvopen]").forEach(h=> h.onclick = e=>{ if(e.target.closest("a,button,select,label")) return; _ccInvOpen = _ccInvOpen===h.dataset.ccinvopen ? null : h.dataset.ccinvopen; paintBarterProcess(); });
+  body.querySelectorAll("[data-ccinvset]").forEach(sel=> sel.onchange = ()=>{ const i = find(sel.dataset.ccinvset); if(i) ccSetInviteStep(i, sel.value, sel); });
+  body.querySelectorAll("[data-ccinvlinks]").forEach(b=> b.onclick = ()=>{ const i = find(b.dataset.ccinvlinks); if(!i) return;
+    const m = bpModal("Add links / courier", `<form class="modal-form" id="ccIL">
+        <div class="mf-row"><label>Courier<input name="courier" value="${esc(i.courier||"")}"></label><label>Tracking ID / link<input name="tracking" value="${esc(i.tracking||"")}"></label></div>
+        <label>Video link<input name="video_url" type="url" value="${esc(i.video_url||"")}" placeholder="https://drive.google.com/…"></label>
+        <label>Post links <span class="muted" style="font-weight:400">(one per line)</span><textarea name="posts" rows="3">${esc((i.post_links||[]).join("\n"))}</textarea></label>
+        <div class="muted" style="font-size:12px">Saved on their row now; attached to their campaign (and their numbers fetched) the moment they join. Post links put them on <b>Posted</b>.</div>
+        <div class="auth-err" id="ccILErr"></div><button class="btn" type="submit">Save</button></form>`);
+    document.getElementById("ccIL").onsubmit = async e=>{ e.preventDefault();
+      const f = new FormData(e.target), posts = String(f.get("posts")||"").split(/[\s,]+/).filter(Boolean), t = String(f.get("tracking")||"").trim();
+      const payload = { courier: String(f.get("courier")||"").trim()||null, tracking: t||null, video_url: String(f.get("video_url")||"").trim()||null, post_urls: posts, notify:false };
+      const target = posts.length ? "posted" : (i.status||"registered");
+      const r = await sb.schema("api").rpc("invite_set_step", { p_invite:i.invite_id, p_status: target, p_payload: payload }).then(x=>x, e2=>({error:e2}));
+      if(r.error){ document.getElementById("ccILErr").textContent = r.error.message||String(r.error); return; }
+      m.remove(); gateToast("Saved ✓"); loadBarterProcess(true); };
+  });
+  body.querySelectorAll("[data-ccinvdel]").forEach(b=> b.onclick = async ()=>{ if(!await confirmChange("Remove this creator from the campaign upload?", "No message is sent.")) return;
+    const { error } = await sb.schema("api").rpc("bulk_delete_invite", { p_invite:b.dataset.ccinvdel }).then(r=>r, e=>({error:e}));
+    if(error){ gateToast(error.message||String(error)); return; } gateToast("Removed ✓"); loadBarterProcess(true); });
+  body.querySelectorAll("[data-ccre]").forEach(b=> b.onclick = async ()=>{ b.disabled = true;
+    const { data, error } = await sb.schema("api").rpc("bulk_resend_invite", { p_invite: b.dataset.hubre }).then(r=>r, e=>({error:e}));
+    gateToast(error ? (error.message||String(error)) : data && data.status==="joined" ? "They're on Geek OS — added to the campaign ✓" : "Invite sent again ✓");
+    loadBarterProcess(true); });
+}
+// the step form inside an open creator card (no pop-up): asks only for what the step needs
+function mountInlineSetStep(pid){
+  const box = document.querySelector(`[data-ccstep="${pid}"]`); if(!box) return;
+  const x = ((_bpData&&_bpData.creators)||[]).find(c=>c.participation_id===pid); if(!x) return;
+  const g = (((_bpData||{}).progress)||{})[pid] || {};
+  const d = { stage:x.stage, participation_id:pid, member_id:(x.creator||{}).member_id, name:(x.creator||{}).name || (x.creator||{}).username,
+              has_courier: !!((x.shipment||{}).tracking_ref || (x.shipment||{}).tracking_url), has_video: !!x.submission, need: g.need||1, posts: g.done||0, left: g.left||"" };
+  box.innerHTML = hubSetStepHtml(d); wireHubSetStep(d);
+}
+
 // step filter: everyone who reached the clicked step (the ones sitting on it right now first)
 let _bpStage = null;
 function bpStageList(list){
@@ -5234,13 +5460,15 @@ function hubSetStepHtml(d){
   if(["rejected","dropped","ineligible","brand_declined","completed"].includes(d.stage)) return "";
   const cur = HUB_FROM_STAGE[d.stage] || "registered", r0 = bkStRank(cur);
   const opts = BK_STATUSES.filter(s=> bkStRank(s[0]) >= r0);
-  return `<div class="bpp-sec">⚙️ Update their step by hand</div>
+  const left = d.need!=null ? Math.max(0, (d.need||1) - (d.posts||0)) : null;
+  return `<div class="bpp-sec">⚙️ Change their step</div>
     <div class="hub-set" id="hubSet">
-      <div class="muted" style="font-size:12.5px">For anything done outside the app — contract signed on paper, courier you booked, a video or post they sent you. Earlier steps are filled in for them; they see it in My Campaigns${d.member_id?"":" once they register"}.</div>
+      <div class="muted" style="font-size:12.5px">For anything done outside the app — contract signed on paper, courier you booked, a video or post they sent you. Earlier steps are filled in for them; they see it in My Campaigns${d.member_id?"":" once they register"}. Each step asks only for what it needs.</div>
       <label>Step<select id="hsStep">${opts.map(s=>`<option value="${s[0]}"${s[0]===cur?" selected":""}>${bkStRank(s[0])}. ${esc(s[1])}</option>`).join("")}</select></label>
-      <div class="hs-x" data-hs="ship"><label>Courier<input id="hsCourier" maxlength="60" placeholder="e.g. DTDC"></label><label>Tracking ID / link<input id="hsTrack" maxlength="300" placeholder="e.g. D1234567 or https://…"></label></div>
-      <div class="hs-x" data-hs="video"><label>Video link<input id="hsVideo" type="url" maxlength="500" placeholder="https://drive.google.com/… or any link to the cut"></label></div>
-      <div class="hs-x" data-hs="post"><label>Instagram post / reel link<input id="hsPost" type="url" maxlength="500" placeholder="https://www.instagram.com/reel/…"></label></div>
+      <div class="hs-x" data-hs="ship"><label>Courier${d.has_courier?' <span class="muted">(saved — change only if needed)</span>':' <i class="hs-req">*</i>'}<input id="hsCourier" maxlength="60" placeholder="e.g. DTDC"></label><label>Tracking ID / link${d.has_courier?"":' <i class="hs-req">*</i>'}<input id="hsTrack" maxlength="300" placeholder="e.g. D1234567 or https://…"></label></div>
+      <div class="hs-x" data-hs="video"><label>Video link${d.has_video?' <span class="muted">(already submitted — optional)</span>':' <i class="hs-req">*</i>'}<input id="hsVideo" type="url" maxlength="500" placeholder="https://drive.google.com/… or any link to the cut"></label></div>
+      <div class="hs-x" data-hs="post"><label>Instagram link of every post ${left!=null?(left?`— <b>${left}</b> still needed${d.left?` (${esc(d.left)})`:""}`:"— all up ✓"):""} <i class="hs-req">*</i> <span class="muted" style="font-weight:400">(one per line)</span>
+        <textarea id="hsPosts" rows="${Math.min(6,(left||1)+1)}" placeholder="https://www.instagram.com/reel/…&#10;https://www.instagram.com/stories/…"></textarea></label></div>
       <label class="hs-notify"><input type="checkbox" id="hsNotify" checked> Send them the message for this step (WhatsApp + email + app)</label>
       <div class="auth-err" id="hsErr"></div>
       <button class="btn sm" id="hsGo" type="button">Save step</button>
@@ -5250,29 +5478,33 @@ function wireHubSetStep(d){
   const sel = document.getElementById("hsStep"); if(!sel) return;
   const show = ()=>{ const r = bkStRank(sel.value);
     document.querySelectorAll("#hubSet [data-hs]").forEach(x=>{ const k = x.dataset.hs;
-      x.hidden = !(k==="ship" ? (r>=8 && r<=9) : k==="video" ? r>=11 : r>=13); }); };
+      x.hidden = !(k==="ship" ? (r>=8 && r<=9) : k==="video" ? (r>=11 && r<=12) : r>=13); }); };
   sel.onchange = show; show();
   if(_hubC.focusStep){ _hubC.focusStep = false; setTimeout(()=> document.getElementById("hubSet")?.scrollIntoView({ block:"center", behavior:"smooth" }), 60); }
   const go = document.getElementById("hsGo"), err = document.getElementById("hsErr");
   go.onclick = async ()=>{
     err.textContent = "";
     const v = id => (document.getElementById(id)||{}).value ? document.getElementById(id).value.trim() : "";
-    const r = bkStRank(sel.value), video = r>=11 ? v("hsVideo") : "", post = r>=13 ? v("hsPost") : "";
+    const r = bkStRank(sel.value), video = r>=11 && r<=12 ? v("hsVideo") : "";
+    const posts = r>=13 ? v("hsPosts").split(/[\s,]+/).map(x=>x.trim()).filter(Boolean) : [];
     const track = r>=8 && r<=9 ? v("hsTrack") : "", courier = r>=8 && r<=9 ? v("hsCourier") : "";
+    const left = d.need!=null ? Math.max(0, (d.need||1) - (d.posts||0)) : 1;
+    if(r>=8 && r<=9 && !d.has_courier && (!courier || !track)){ err.textContent = "Add the courier name and the tracking ID / link."; return; }
+    if(r>=11 && r<=12 && !d.has_video && !video){ err.textContent = "Add the video link."; return; }
     if(video && !/^https?:\/\//i.test(video)){ err.textContent = "The video link must start with https://"; return; }
-    if(post && !/instagram\.com\//i.test(post)){ err.textContent = "Paste the Instagram post or reel link (instagram.com/…)."; return; }
-    if(r>=13 && !post && !confirm("No Instagram link — mark it Posted anyway? (Numbers can't load without the link.)")) return;
+    if(posts.some(x=> !/instagram\.com\/(reel|reels|p|tv|stories)\//i.test(x))){ err.textContent = "Paste Instagram post links (instagram.com/reel/… , /p/… or /stories/…)."; return; }
+    if(r>=13 && posts.length < left){ err.textContent = `Add the link of every post — ${left} needed, ${posts.length} added.`; return; }
     const lbl = bkStLabel(sel.value);
-    if(!await confirmChange(`Put ${d.name||"this creator"} on “${lbl}”`, [video&&"video link saved as their submission", post&&"Instagram post recorded — the campaign completes", courier||track ? "courier + tracking saved" : "", document.getElementById("hsNotify").checked ? "they get this step's message" : "no message is sent"].filter(Boolean).join(" · "))) return;
+    if(!await confirmChange(`Put ${d.name||"this creator"} on “${lbl}”`, [video&&"video link saved as their submission", posts.length&&`${posts.length} post link${posts.length>1?"s":""} saved — numbers fetched from their Instagram`, courier||track ? "courier + tracking saved" : "", document.getElementById("hsNotify").checked ? "they get this step's message" : "no message is sent"].filter(Boolean).join(" · "))) return;
     const payload = { notify: document.getElementById("hsNotify").checked };
-    if(video) payload.video_url = video; if(post) payload.post_url = post; if(courier) payload.courier = courier;
-    if(track){ if(/^https?:\/\//i.test(track)) payload.tracking_url = track; else payload.tracking = track; }
+    if(video) payload.video_url = video; if(posts.length) payload.post_urls = posts; if(courier) payload.courier = courier;
+    if(track){ if(/^https?:\/\//i.test(track)) payload.tracking_url = track; payload.tracking = track; }
     go.disabled = true; go.textContent = "Saving…";
     const { data:res, error } = await sb.schema("api").rpc("team_set_step", { p_participation: d.participation_id, p_status: sel.value, p_payload: payload }).then(x=>x, e=>({error:e}));
     go.disabled = false; go.textContent = "Save step";
     if(error){ err.textContent = error.message||String(error); return; }
     gateToast(`✓ Now on ${hubStepLabel((res&&res.stage)||"")} — updated everywhere`);
-    await hubReload();
+    if(document.getElementById("hubBody")) await hubReload();
     if(typeof loadBarterProcess==="function" && document.getElementById("bpBody")) loadBarterProcess(true);
     if(_hub && _hub.camp && document.getElementById("wsPeople")) loadCampaignPeople(_hub.camp);
   };
@@ -5354,7 +5586,8 @@ function bpTrackerHtml(list){
             return `<div>📲 ${esc(p.media_type)} posted ${esc(fmtDate(p.posted_at))}${p.permalink?` · <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener">open ↗</a>`:""}${g.missing_since?` <span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⚠️ taken down ${esc(fmtDate(g.missing_since))} — creator reminded to restore</span>`:g.live_checked_at?` <span class="muted" style="font-size:12px">· live ✓ checked ${esc(fmtDateTime(g.live_checked_at))}</span>`:""}<div class="bp-metrics">${bpMetricLine(g.stats||p.stats)}</div></div>`; }).join("")}
         </div>
         <div class="bp-acts">
-          ${!fail(x.stage)&&x.stage!=="completed"?`<button class="btn sm ghost" data-bpsetstep="${esc(P)}" title="Put them on any later step — contract, courier, video link, Instagram post…">⚙️ Set step by hand</button>`:""}
+          <button class="btn sm ghost" data-bpprofile="${esc(P)}">👤 Profile, WhatsApp &amp; email</button>
+          ${!fail(x.stage)&&x.stage!=="completed"&&!_wsMode?`<button class="btn sm ghost" data-bpsetstep="${esc(P)}" title="Put them on any later step — contract, courier, video link, Instagram post…">⚙️ Set step by hand</button>`:""}
           ${x.stage==="applied"?`<button class="btn sm" data-bpscreen="${esc(P)}">✓ Meets the brief</button><button class="btn sm ghost" data-bpreject="${esc(P)}">Not a fit</button>`:""}
           ${x.stage==="eligible"?`<button class="btn sm" data-bpsend="${esc(P)}">📋 Add to the brand's list</button>`:""}
           ${x.stage==="sent_to_brand"?`<button class="btn sm" data-bpbrand="${esc(P)}">✅ Brand confirmed</button><button class="btn sm ghost" data-bpbrandno="${esc(P)}">Brand passed</button>`:""}
@@ -5367,10 +5600,11 @@ function bpTrackerHtml(list){
           ${x.stage==="content_submitted"?`<button class="btn sm" data-bpapprove="${esc(P)}">✅ Approve video</button><button class="btn sm ghost" data-bpchanges="${esc(P)}">✏️ Ask for changes</button><button class="btn sm ghost" data-bprelink="${esc(P)}">🔗 Request a new link</button>`:""}
           ${["content_created","content_submitted","changes_requested","content_approved","published","completed"].includes(x.stage)?`<button class="btn sm${x.stage==="content_approved"?"":" ghost"}" data-bppost="${esc(P)}" title="The creator couldn't post from the app? Paste the link they sent you">🔗 Add post link</button>`:""}
           ${["published","completed"].includes(x.stage)&&posts.length?`<button class="btn sm ghost" data-bpmetrics="${esc(P)}">📈 Add numbers</button>`:""}
-          ${x.stage==="published"?`<button class="btn sm" data-bpdone="${esc(P)}">🏁 Mark complete</button>`:""}
+          ${x.stage==="published"&&((((_bpData||{}).progress||{})[P]||{}).all_done)?`<button class="btn sm" data-bpdone="${esc(P)}">🏁 Mark complete</button>`:""}
           ${!["dropped","rejected","completed","published","ineligible","brand_declined"].includes(x.stage)?`<button class="btn sm ghost" data-bpreassign="${esc(P)}">↪ Send product to someone else</button>`:""}
           ${!x.blacklisted&&!["completed"].includes(x.stage)?`<button class="btn sm ghost" data-bpblack="${esc(P)}">⛔ Blacklist</button>`:""}
-        </div></div>`:""}</div>`; }).join("");
+        </div>
+        ${_wsMode&&!fail(x.stage)&&x.stage!=="completed"?`<div class="cc-stepbox" data-ccstep="${esc(P)}"></div>`:""}</div>`:""}</div>`; }).join("");
 }
 // the contract terms + video brief this campaign sends out (editable here too)
 // Every text field is a notepad-style box that grows as you type (one point / link per line).
@@ -5527,6 +5761,7 @@ function wireBarterProcess(){
   body.querySelectorAll("[data-bpclauses]").forEach(a=> a.onclick = e=>{ e.preventDefault(); openBpClauses(a.dataset.bpclauses); });
   body.querySelectorAll("[data-bpship]").forEach(b=> b.onclick = ()=> openBpShipment(b.dataset.bpship));
   body.querySelectorAll("[data-bpsetstep]").forEach(b=> b.onclick = ()=> openCreatorHub(b.dataset.bpsetstep, "overview", true));
+  body.querySelectorAll("[data-bpprofile]").forEach(b=> b.onclick = ()=> openCreatorHub(b.dataset.bpprofile, "overview"));
   body.querySelectorAll("[data-bpdeliv]").forEach(b=> b.onclick = ()=>{
     call("bp_mark_delivered", { p_participation:b.dataset.bpdeliv }, b, b.innerHTML); });
   body.querySelectorAll("[data-bpapprove]").forEach(b=> b.onclick = ()=> call("bp_review_video", { p_participation:b.dataset.bpapprove, p_approve:true, p_reason:null }, b, b.innerHTML));

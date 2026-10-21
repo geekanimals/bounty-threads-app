@@ -1948,3 +1948,46 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 .ad-incomplete{opacity:.9}.ad-warn{color:#b45309!important;font-style:normal!important}
 [data-theme="dark"] .ga-f input,[data-theme="dark"] .ga-f select,[data-theme="dark"] .ga textarea,[data-theme="dark"] .ga-ph b{border-color:var(--line);background:transparent}
 @media (max-width:600px){.ga-row{grid-template-columns:1fr}}
+
+/* ---- campaign page = command center ---- */
+.cc-top{margin-bottom:12px}
+.cc-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+.cc-title h1{margin:0 0 2px;font-size:28px}
+.cc-status{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#6b7280);min-width:260px}
+.cc-status select{padding:10px 12px;border-radius:11px;border:1.5px solid var(--brand,#7c3aed);font:inherit;font-size:14px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink,#111);background:var(--card,#fff)}
+.cc-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.cc-actions .btn{white-space:nowrap}
+.cc-info{margin-bottom:14px}
+.cc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px 18px}
+.cc-it{display:flex;flex-direction:column;gap:4px;min-width:0}
+.cc-ik{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#6b7280)}
+.cc-iv{font-size:13.5px;display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.cc-chip{padding:3px 9px;border-radius:999px;background:rgba(124,58,237,.08);font-weight:600;font-size:12.5px}
+.cc-left{padding:2px 8px;border-radius:999px;background:rgba(18,183,106,.12);color:#067647;font-size:11.5px;font-weight:700}
+.cc-left.soon{background:rgba(247,144,9,.14);color:#b45309}.cc-left.past{background:rgba(107,114,128,.14);color:#4b5563}
+.cc-dprog{margin-top:10px;font-size:12.5px}
+.cc-more{margin-top:10px}.cc-more summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--brand,#6d28d9)}
+.cc-brief{white-space:normal;font-size:13.5px;line-height:1.55;margin:8px 0}
+.cc-files{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0}
+.cc-main{display:flex;flex-direction:column;gap:14px}
+.cc-flow{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px}
+.cc-tile{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border-radius:13px;border:1px solid var(--line,#e5e7eb);background:var(--card,#fff);cursor:pointer;text-align:left;font:inherit;color:inherit;min-height:74px;transition:border-color .15s,box-shadow .15s}
+.cc-tile b{font-size:22px;line-height:1.1}
+.cc-tile span{font-size:12.5px;font-weight:600}
+.cc-tile i{font-style:normal;font-size:10.5px;color:var(--muted,#6b7280);line-height:1.25}
+.cc-tile:hover{border-color:rgba(124,58,237,.45)}
+.cc-tile.on{border-color:var(--brand,#7c3aed);box-shadow:0 0 0 3px rgba(124,58,237,.14);background:rgba(124,58,237,.05)}
+.cc-sec-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}.cc-sec-h h3{margin:0}
+.cc-list-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.cc-list-h h3{margin:0;flex:0 0 auto}.cc-list-h h3 .muted{font-size:13px;font-weight:500}
+.cc-list-h input{flex:1 1 220px;min-width:180px;padding:9px 12px;border:1px solid var(--line,#e5e7eb);border-radius:10px;font:inherit;background:var(--card,#fff);color:inherit}
+.cc-needs{margin:0!important;padding:6px 10px!important;font-size:12.5px}
+.cc-hint{font-size:12px;margin:0 0 10px}
+.cc-invh{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#6b7280);margin:14px 0 6px}
+.cc-inv .avatar{flex:0 0 auto}
+.cc-setlbl{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600}
+.cc-stepbox{margin-top:10px}
+.cc-old{margin-top:14px}.cc-old summary{cursor:pointer;font-weight:700}
+.hs-req{color:#dc2626;font-style:normal}
+.hub-set textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line,#e5e7eb);border-radius:9px;font:inherit;font-weight:400;background:var(--card,#fff);color:inherit;resize:vertical}
+@media (max-width:700px){.cc-head{align-items:stretch}.cc-status{min-width:0;width:100%}.cc-flow{grid-template-columns:repeat(3,1fr)}.cc-tile{min-height:64px;padding:8px}.cc-tile b{font-size:18px}.cc-tile i{display:none}}

@@ -654,9 +654,9 @@
       case 'brand_confirmed': case 'accepted': return box('🎉','You\'re selected!','Your contract is being prepared — it will appear here in a moment.');
       case 'contract_sent': return box('📜','Sign your contract','Product, deliverables, ASCI, ad rights, posting only after approval, and the non-delivery terms. Read it to the end and sign.','<button class="btn sm" data-contract="'+P+'">Read &amp; sign contract</button>','act');
       case 'contract_signed': return box('📍','Confirm your delivery address','Pick a saved address, edit it, add a new one or use your current location.','<button class="btn sm" data-address="'+P+'">Confirm delivery address</button>','act');
-      case 'address_confirmed': return box('📦','Your product is being packed','The courier and tracking number show here the moment it ships.');
+      case 'address_confirmed': return box('📦','Your product is being packed','The courier and tracking number show here the moment it ships. Your <b>video brief</b> is ready — read it now and start planning / practising your video; the deadline starts once the parcel reaches you.', c.video_brief?readBrief:'');
       case 'product_sent':
-        if(sh.status==='delivered') return box('✅','Delivered','Your video brief is on its way to you.');
+        if(sh.status==='delivered') return box('✅','Delivered','Your video brief is on its way to you.', c.video_brief?readBrief:'');
         return box('🚚','Your product is on the way',
           '<div class="trk">'+(sh.courier?'<span>Courier <b>'+esc(sh.courier)+'</b></span>':'')
           +(sh.tracking_ref?'<span>Tracking no. <b class="trk-no">'+esc(sh.tracking_ref)+'</b> <button class="btn sm ghost" data-copy="'+esc(sh.tracking_ref)+'">Copy</button></span>':'')
