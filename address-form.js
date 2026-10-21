@@ -35,17 +35,21 @@
     var st=canonState(a.state);
     root.innerHTML=''
       + '<div class="ga" id="'+id+'">'
-      + '<div class="ga-loc"><button type="button" class="btn sm ghost" id="'+f("loc")+'">📍 Use my current location</button><span class="ga-hint" id="'+f("locmsg")+'"></span></div>'
-      + '<label class="ga-f"><span>Country/Region</span><select disabled><option>India</option></select></label>'
-      + '<label class="ga-f"><span>Full name (First and Last name) <i>*</i></span><input id="'+f("name")+'" autocomplete="name" maxlength="80" value="'+esc(name)+'"></label>'
-      + '<label class="ga-f"><span>Mobile number <i>*</i></span><div class="ga-ph"><b>+91</b><input id="'+f("phone")+'" inputmode="numeric" autocomplete="tel-national" maxlength="10" value="'+esc(ph)+'" placeholder="10-digit mobile number"></div><small>May be used to assist delivery</small></label>'
-      + '<label class="ga-f"><span>Pincode <i>*</i></span><input id="'+f("pin")+'" inputmode="numeric" autocomplete="postal-code" maxlength="6" value="'+esc(a.postal_code||"")+'" placeholder="6 digits [0-9] PIN code"><small id="'+f("pinmsg")+'"></small></label>'
-      + '<label class="ga-f"><span>Flat, House no., Building, Company, Apartment <i>*</i></span><input id="'+f("l1")+'" autocomplete="address-line1" maxlength="120" value="'+esc(a.line1||"")+'"></label>'
-      + '<label class="ga-f ga-ac"><span>Area, Street, Sector, Village <i>*</i></span><input id="'+f("l2")+'" autocomplete="off" maxlength="160" value="'+esc(a.line2||"")+'"><div class="ga-menu" id="'+f("l2m")+'" hidden></div></label>'
-      + '<label class="ga-f ga-ac"><span>Landmark <i>*</i></span><input id="'+f("lm")+'" autocomplete="off" maxlength="120" value="'+esc(a.landmark||"")+'" placeholder="E.g. near Apollo Hospital"><div class="ga-menu" id="'+f("lmm")+'" hidden></div></label>'
+      + '<div class="ga-top">'
+      +   '<label class="ga-f ga-ac ga-search"><span>🔎 Search your address</span><input id="'+f("q")+'" autocomplete="off" maxlength="160" placeholder="Type your building, society, street or area…"><div class="ga-menu" id="'+f("qm")+'" hidden></div></label>'
+      +   '<div class="ga-loc"><button type="button" class="btn sm ghost" id="'+f("loc")+'">📍 Use my current location</button><span class="ga-hint" id="'+f("locmsg")+'"></span></div>'
+      + '</div>'
+      + '<label class="ga-f ga-pin"><span>PIN code <i>*</i></span><input id="'+f("pin")+'" inputmode="numeric" autocomplete="postal-code" maxlength="6" value="'+esc(a.postal_code||"")+'" placeholder="6-digit PIN — fills city &amp; state"><small id="'+f("pinmsg")+'"></small></label>'
       + '<div class="ga-row">'
       +   '<label class="ga-f ga-ac"><span>Town/City <i>*</i></span><input id="'+f("city")+'" autocomplete="address-level2" maxlength="80" value="'+esc(a.city||"")+'"><div class="ga-menu" id="'+f("citym")+'" hidden></div></label>'
       +   '<label class="ga-f"><span>State <i>*</i></span><select id="'+f("state")+'"><option value="">Choose a state</option>'+STATES.map(function(s){ return '<option'+(s===st?' selected':'')+'>'+esc(s)+'</option>'; }).join("")+'</select></label>'
+      + '</div>'
+      + '<label class="ga-f"><span>Flat, House no., Building, Apartment <i>*</i></span><input id="'+f("l1")+'" autocomplete="address-line1" maxlength="120" value="'+esc(a.line1||"")+'" placeholder="E.g. B-204, Green Park Society"></label>'
+      + '<label class="ga-f ga-ac"><span>Area, Street, Sector, Village <i>*</i></span><input id="'+f("l2")+'" autocomplete="off" maxlength="160" value="'+esc(a.line2||"")+'" placeholder="Start typing — pick from the list"><div class="ga-menu" id="'+f("l2m")+'" hidden></div></label>'
+      + '<label class="ga-f ga-ac"><span>Landmark <i>*</i></span><input id="'+f("lm")+'" autocomplete="off" maxlength="120" value="'+esc(a.landmark||"")+'" placeholder="Type a nearby place — e.g. Apollo"><div class="ga-menu" id="'+f("lmm")+'" hidden></div></label>'
+      + '<div class="ga-row">'
+      +   '<label class="ga-f"><span>Receiver\'s full name <i>*</i></span><input id="'+f("name")+'" autocomplete="name" maxlength="80" value="'+esc(name)+'"></label>'
+      +   '<label class="ga-f"><span>Mobile number <i>*</i></span><div class="ga-ph"><b>+91</b><input id="'+f("phone")+'" inputmode="numeric" autocomplete="tel-national" maxlength="10" value="'+esc(ph)+'" placeholder="10-digit mobile"></div></label>'
       + '</div>'
       + '<div class="ga-map" id="'+f("map")+'" hidden></div>'
       + '<details class="ga-di"'+(a.delivery_instructions?' open':'')+'><summary>Delivery instructions (optional)</summary><textarea id="'+f("di")+'" rows="2" maxlength="300" placeholder="E.g. call before delivery, gate code, best time">'+esc(a.delivery_instructions||"")+'</textarea></details>'
@@ -109,8 +113,10 @@
       if(focus || q.length<3) return loc;
       var m=await near(q); return loc.concat(m.filter(function(x){ return x.raw.street || x.raw.locality; }).slice(0,5));
     }, function(it){ $("l2").value = it.raw && it.raw.street ? [it.raw.street, it.raw.locality].filter(Boolean).join(", ") : it.title; invalidate(); });
-    menu($("lm"), $("lmm"), async function(q){ if(q.length<2) return [];
-      var m=await near(q.replace(/^(near|opp\.?|opposite|behind|beside)\s+/i,""));
+    menu($("lm"), $("lmm"), async function(q){ q=q.replace(/^(near|opp\.?|opposite|behind|beside)\s+/i,""); if(q.length<2) return [];
+      var r=await geo({ action:"search", kind:"landmark", q:q+(($("city").value||"").trim()?" "+$("city").value.trim():""), pin:digits($("pin").value) });
+      if(r && r.source==="google" && (r.items||[]).length) return r.items.slice(0,7).map(function(x){ return { title:x.name, sub:x.sub, raw:x }; });
+      var m=await near(q);
       return m.slice(0,7); },
       function(it){ $("lm").value = /^(near|opp|opposite|behind|beside)\b/i.test($("lm").value) ? $("lm").value.replace(/^(\S+)\s.*$/,"$1 ")+it.title : "Near "+it.title;
         if(it.raw && it.raw.lat){ state.coords={ lat:it.raw.lat, lon:it.raw.lon }; } invalidate(); });
@@ -118,6 +124,29 @@
       var P=state.pinInfo, L=P ? [P.city, P.district].filter(Boolean) : [];
       return L.filter(function(x,i){ return L.indexOf(x)===i && (!q || x.toLowerCase().indexOf(q.toLowerCase())>=0); }).map(function(x){ return { title:x, sub:P.state }; });
     }, function(it){ $("city").value=it.title; invalidate(); });
+
+    // ---- one search box: type the address, pick it, everything fills ----
+    var fillFrom=function(x){
+      if(!x) return;
+      var set=function(k,v){ if(v) $(k).value=v; };
+      if(x.poi && x.name){ set("lm", "Near "+x.name); }
+      else if(x.house) set("l1", x.house);
+      set("l2", x.street || [x.street, x.locality].filter(Boolean).join(", ") || (x.poi?"":x.name));
+      set("city", x.city); var s=canonState(x.state); if(s) $("state").value=s;
+      var pin=digits(x.pin||x.postcode).slice(0,6); if(pin.length===6){ $("pin").value=pin; lookupPin(); }
+      if(x.lat!=null && x.lon!=null) state.coords={ lat:+x.lat, lon:+x.lon };
+      invalidate();
+      var next=!$("l1").value.trim()?"l1":!$("l2").value.trim()?"l2":!$("lm").value.trim()?"lm":pin.length!==6?"pin":null;
+      if(next) setTimeout(function(){ $(next).focus(); }, 60);
+    };
+    menu($("q"), $("qm"), async function(q){ if(q.length<3) return [];
+      var r=await geo({ action:"search", q:q, pin:digits($("pin").value) });
+      return (r && r.items || []).map(function(x){ return { title:x.name, sub:x.sub, raw:x }; }); },
+      async function(it){ var x=it.raw||{};
+        $("q").value=[it.title, it.sub].filter(Boolean).join(", ");
+        if(x.place_id){ var d=await geo({ action:"place", id:x.place_id }); if(d && d.ok){ fillFrom(d); return; } }
+        fillFrom({ house:x.house, street:[x.street, x.locality].filter(Boolean).join(", ") || x.name, city:x.city, state:x.state, pin:x.postcode, lat:x.lat, lon:x.lon });
+      });
 
     // ---- the map check ----
     function invalidate(){ if(state.sig && state.sig!==sigNow()){ state.verified=false; state.pinned=false; state.check=null; } paintMap(); }

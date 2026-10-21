@@ -1524,7 +1524,10 @@ function ccDetailsHtml(c){
   const chips = arr => arr.map(x=>`<span class="cc-chip">${esc(x)}</span>`).join("");
   const deliv = DELIV_KINDS.filter(([k])=>d.counts[k]).map(([k,l,ic,pl])=>`<span class="cc-chip">${ic} ${d.counts[k]} ${esc(d.counts[k]>1?pl:l)}</span>`).join("") + d.other.map(o=>`<span class="cc-chip">📎 ${esc(o)}</span>`).join("");
   const terms = [ct.collab_rights!==false?"Collab with the brand":"", ct.blacklist_clause!==false?`Blacklist if no video in ${ct.content_days||7} days`:"", ct.reship_clause!==false?"Re-ship at their cost":""].filter(Boolean);
-  return `<div class="card cc-info">
+  // folded by default — the creators list is what the page is for; tap the bar to see everything
+  const sumBits = [deliv ? deliv : "", (c.start_date||c.end_date) ? `<span class="cc-chip">🗓 ${esc(c.start_date||"—")} → ${esc(c.end_date||"—")}</span>` : "",
+                   left!=null ? `<span class="cc-left${left<0?" past":left<=3?" soon":""}">${left<0?"ended":left===0?"ends today":`${left} day${left>1?"s":""} left`}</span>` : ""].filter(Boolean).join("");
+  return `<details class="card cc-info cc-fold"><summary><b>📋 Campaign details</b><span class="cc-sumchips">${sumBits}</span><span class="cc-fold-tap">Tap to see all</span></summary>
     <div class="cc-grid">
       ${it("📦","Each creator posts", deliv || '<span class="muted">Not set — Edit campaign</span>')}
       ${it("#","Hashtags", tg.tags.length?chips(tg.tags):'<span class="muted">—</span>')}
@@ -1542,7 +1545,7 @@ function ccDetailsHtml(c){
       ${c.brief?`<div class="cc-brief">${esc(c.brief).replace(/\n/g,"<br>")}</div>`:'<div class="muted">No brief.</div>'}
       ${(c.attachments||[]).length?`<div class="cc-files">${c.attachments.map(a=>`<a href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener">📎 ${esc(a.name)}</a>`).join("")}</div>`:""}
       ${idealProfileHtml(c.ideal_profile)}
-    </details></div>`;
+    </details></details>`;
 }
 
 async function toggleDeliverable(c, item, checked){
@@ -4873,6 +4876,85 @@ const BP_NEXT = {
   published:"Posting — completes on its own once every deliverable is up; numbers load from their Instagram.",
   completed:"Done ✓"
 };
+// ---- where a creator is stuck, whose turn it is, and the one-tap action — the same 12-step track the creator sees ----
+const BP_JOURNEY = [["applied","Applied"],["brand_confirmed","Selected"],["contract_sent","Contract"],["contract_signed","Signed"],
+  ["address_confirmed","Address"],["product_sent","Shipped"],["product_delivered","Delivered"],["content_created","Brief"],
+  ["content_submitted","Video sent"],["content_approved","Approved"],["published","Posted"],["completed","Done"]];
+const BP_J_ALIAS = { invited:"applied", shortlisted:"applied", eligible:"applied", sent_to_brand:"applied", accepted:"brand_confirmed", changes_requested:"content_created" };
+const BP_FAIL = ["dropped","rejected","ineligible","brand_declined"];
+function bpJIndex(x){
+  if(x.stage==="product_sent" && x.shipment && x.shipment.status==="delivered") return 6;
+  const s = BP_J_ALIAS[x.stage] || x.stage, i = BP_JOURNEY.findIndex(j=> j[0]===s); return i<0 ? 0 : i;
+}
+function bpJourneyHtml(x){
+  const idx = bpJIndex(x), st = x.steps||{}, sh = x.shipment||{}, con = x.contract||{}, failed = BP_FAIL.includes(x.stage);
+  const when = k => st[k] || (k==="product_delivered"?sh.delivered_at:null) || (k==="product_sent"?sh.shipped_at:null) || (k==="applied"?x.applied_at:null)
+                 || (k==="brand_confirmed"?st.accepted:null) || (k==="contract_sent"?con.issued_at:null) || (k==="contract_signed"?con.signed_at:null);
+  return `<div class="jr bp-jr"><div class="jr-track">${BP_JOURNEY.map((j,i)=>{
+      const cls = failed ? (i<idx?"done":"") : (i<idx || x.stage==="completed") ? "done" : i===idx ? "now" : "";
+      const at = when(j[0]);
+      return `<div class="jr-step ${cls}" title="${esc(j[1])}${at?" · "+esc(fmtDateTime(at)):""}"><i>${cls==="done"?"✓":(i+1)}</i><span>${esc(j[1])}</span></div>`; }).join("")}</div></div>`;
+}
+// { turn: you | creator | brand | done | off, title, text, acts: [[data-attr, label, primary?]] }
+function bpNext(x){
+  const P = x.participation_id, ship = x.shipment||{}, g = (((_bpData||{}).progress)||{})[P] || {};
+  const today = new Date().toISOString().slice(0,10), overdue = x.due_on && x.due_on < today;
+  const chat = ["bpchat","💬 Message on WhatsApp"];
+  if(BP_FAIL.includes(x.stage)) return { turn:"off", title:`Out of the campaign — ${String(x.stage).replace(/_/g," ")}`, text: x.reason||"", acts:[] };
+  if(x.blocked_at) return { turn:"you", tone:"bad", title:"Blocked — no video after delivery", text:`Call ${x.phone||"them"}, note what they said and unblock with a new date.`, acts:[["bpunblock","✅ Called — unblock",1],["bpcall","📝 Note a call"],chat] };
+  switch(x.stage){
+    case "invited": case "shortlisted": return { turn:"creator", title:"Invited — waiting for them to accept", text:"They got the invite on WhatsApp + email.", acts:[chat] };
+    case "applied": return { turn:"you", title:"Screen this creator", text:"Do they fit the brief?", acts:[["bpscreen","✓ Meets the brief",1],["bpreject","Not a fit"]] };
+    case "eligible": return { turn:"you", title:"Add them to the brand's list", text:"They cleared screening.", acts:[["bpsend","📋 Add to the brand's list",1]] };
+    case "sent_to_brand": return { turn:"brand", title:"Waiting for the brand", text:"Record what the brand said.", acts:[["bpbrand","✅ Brand confirmed",1],["bpbrandno","Brand passed"]] };
+    case "brand_confirmed": case "accepted": return { turn:"you", title:"Send the contract", text:"Usually goes out on its own — send it now if it hasn't.", acts:[["bpcontract","📜 Send contract now",1]] };
+    case "contract_sent": return { turn:"creator", title:"Stuck: contract not signed", text:"They need to open the app and sign.", acts:[chat,["bpcontract","🔁 Resend contract"]] };
+    case "contract_signed": return { turn:"creator", title:"Stuck: delivery address", text:"They need to confirm where to ship.", acts:[chat] };
+    case "address_confirmed": return { turn:"you", title:"Ship the product", text:"Book the courier and add the tracking.", acts:[["bpship","🚚 Add courier & tracking",1]] };
+    case "product_sent":
+      if(ship.status==="delivered") return { turn:"creator", title:"Making the video", text: x.due_on?`Due ${fmtDate(x.due_on)}.`:"", acts:[chat,["bppost","🔗 Add post / story"]] };
+      if(ship.status==="shipped") return { turn:"you", title:"In transit — mark delivered when it arrives", text: ship.shipped_at?`Sent ${fmtDate(ship.shipped_at)}.`:"", acts:[["bpdeliv","📦 Mark delivered",1],["bpship","✎ Edit courier"]] };
+      return { turn:"you", title:"Add the courier & tracking", text:"", acts:[["bpship","🚚 Add courier & tracking",1]] };
+    case "content_created": return { turn:"creator", tone: overdue?"bad":"", title: overdue?"Stuck: video overdue":"Making the video", text: x.due_on?`${overdue?"Was due":"Due"} ${fmtDate(x.due_on)} · ${x.reminders_sent||0} reminder${x.reminders_sent==1?"":"s"} sent.`:"", acts:[chat,["bppost","🔗 Add post / story"]] };
+    case "changes_requested": return { turn:"creator", title:"Fixing the video", text:"Waiting for the new cut.", acts:[chat] };
+    case "content_submitted": return { turn:"you", title:"Review the video", text:"Approve it or ask for changes.", acts:[["bpapprove","✅ Approve video",1],["bpchanges","✏️ Ask for changes"]] , video: x.submission && x.submission.url };
+    case "content_approved": return { turn:"creator", title:"Stuck: not posted yet", text:"Approved — waiting for them to post.", acts:[chat,["bppost","🔗 Add post / story",1]] };
+    case "published": return g.all_done
+      ? { turn:"you", title:"Every post is up", text:"Mark the campaign complete for them.", acts:[["bpdone","🏁 Mark complete",1],["bpmetrics","📈 Add numbers"]] }
+      : { turn:"creator", title:"Posting", text: g.left?`Still to post: ${g.left}.`:"", acts:[["bppost","🔗 Add post / story",1],["bpmetrics","📈 Add numbers"],chat] };
+    case "completed": return { turn:"done", title:"Done ✓", text:"", acts:[["bpmetrics","📈 Add numbers"]] };
+  }
+  return { turn:"you", title: hubStepLabel(x.stage), text:"", acts:[] };
+}
+const BP_TURN = { you:["⚡ Your turn","you"], creator:["⏳ Creator's turn","cr"], brand:["🏢 Brand's turn","br"], done:["✓ Done","ok"], off:["Out","off"] };
+function bpTurnChip(n){ const t = BP_TURN[n.turn]||BP_TURN.you; return `<span class="bp-turn ${t[1]}">${t[0]}</span>`; }
+function bpActBtn(a, P, small){ return `<button type="button" class="btn sm${a[2]?"":" ghost"}${small?" bp-rowact":""}" data-${a[0]}="${esc(P)}">${a[1]}</button>`; }
+function bpNowBox(x){
+  const n = bpNext(x), P = x.participation_id;
+  return `<div class="jr-now bp-now ${n.turn==="you"?"act":""}${n.tone==="bad"?" bad":""}"><div class="jr-now-h">${bpTurnChip(n)} <b>${esc(n.title)}</b></div>
+    ${n.text?`<div class="jr-now-t">${esc(n.text)}</div>`:""}
+    <div class="ci-evrow">${n.video?`<a class="btn sm ghost" href="${esc(safeUrl(n.video))}" target="_blank" rel="noopener">▶ Watch the video</a>`:""}${n.acts.map(a=> bpActBtn(a, P)).join("")}${n.acts.some(a=>a[0]==="bpchat")?"":`<button type="button" class="btn sm ghost" data-bpchat="${esc(P)}">💬 WhatsApp</button>`}</div></div>`;
+}
+// the "more actions" row without the buttons the next-action box already shows
+function bpDedupe(shown, html){
+  const t = document.createElement("div"); t.innerHTML = html;
+  t.querySelectorAll("button").forEach(b=>{ const k = [...b.attributes].map(a=>a.name).find(n=> /^data-bp/.test(n)); if(k && shown.has(k.slice(5))) b.remove(); });
+  return t.innerHTML;
+}
+// a red, explicit "are you sure?" for deletes
+function confirmDelete(title, detail){
+  return new Promise(res=>{
+    const m = el("div","modal-overlay open"); m.id = "ccDelAsk";
+    m.innerHTML = `<div class="modal" style="max-width:440px"><div class="modal-head"><strong>${esc(title)}</strong><button class="icon-btn" data-x aria-label="Close">✕</button></div>
+      <div class="modal-form"><p style="margin:0 0 6px;font-weight:600">Are you sure you want to delete this?</p>
+        <p class="muted" style="margin:0 0 14px;font-size:13px">${esc(detail||"This can't be undone.")}</p>
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" data-no type="button">Cancel</button><button class="btn danger" data-yes type="button">🗑 Yes, delete</button></div></div></div>`;
+    document.body.appendChild(m);
+    const done = v=>{ m.remove(); res(v); };
+    m.querySelector("[data-x]").onclick = ()=> done(false); m.querySelector("[data-no]").onclick = ()=> done(false);
+    m.querySelector("[data-yes]").onclick = ()=> done(true); m.onclick = e=>{ if(e.target===m) done(false); };
+  });
+}
 let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null, _bpAnalytics = null;
 let _wsMode = false, _ccFilter = "all", _ccQ = "", _ccInvOpen = null, _bpPeople = null;
 // the campaign page runs the whole process itself: one list, every step, every action
@@ -4955,6 +5037,32 @@ async function loadBarterProcess(silent){
   if(_bpTab==="analytics") await loadBpAnalytics(true);
   if(silent && _bpTab==="bulk") return;
   paintBarterProcess();
+  ccApplyFocus();
+}
+// from the 🔔 to-do list: open the campaign, that creator, and the action they're stuck on
+async function goToCreatorAction(openId, pid, act){
+  document.getElementById("notifOverlay")?.classList.remove("open");
+  document.getElementById("hubModal")?.remove();
+  if(!openId){ gateToast("This item isn't tied to a campaign page."); return; }
+  window.__ccFocus = { pid, act, camp: String(openId) };
+  if(_wsMode && _bpCamp && String(_bpCamp.id)===String(openId) && document.getElementById("bpBody") && _bpData){ ccApplyFocus(); return; }
+  currentPage = "campaigns"; renderShell();
+  await openCampaignWorkspace(openId);
+}
+window.goToCreatorAction = goToCreatorAction;
+function ccApplyFocus(){
+  const f = window.__ccFocus; if(!f || !_bpData || !_bpCamp || String(_bpCamp.id)!==f.camp) return;
+  window.__ccFocus = null;
+  if(!f.pid){ window.scrollTo({ top:0, behavior:"smooth" }); return; }
+  if(!((_bpData.creators||[]).some(c=> c.participation_id===f.pid))){ gateToast("That creator isn't on this campaign any more — the list is up to date."); return; }
+  _bpOpen = f.pid; _ccFilter = "all"; _ccQ = ""; _bpTab = "tracker"; paintBarterProcess();
+  setTimeout(()=>{
+    const card = document.querySelector(`[data-bpcard="${f.pid}"]`); if(!card) return;
+    card.scrollIntoView({ behavior:"smooth", block:"start" }); card.classList.add("bp-flash"); setTimeout(()=> card.classList.remove("bp-flash"), 2400);
+    if(!f.act) return;
+    const b = card.querySelector(`.bp-now [data-${f.act}]`) || card.querySelector(`[data-${f.act}]`);
+    if(b){ b.classList.add("bp-pulse"); if(f.act!=="bpdone") setTimeout(()=> b.click(), 350); }
+  }, 120);
 }
 async function loadBpAnalytics(quiet){
   const { data, error } = await sb.schema("api").rpc("campaign_analytics", { p_campaign:_bpCamp.id }).then(r=>r, e=>({error:e}));
@@ -5073,6 +5181,9 @@ function ccInviteRowHtml(i){
   const open = _ccInvOpen === i.invite_id, st = i.status==="invited" ? "registered" : (i.status||"registered");
   const who = i.handle ? "@"+i.handle : (i.name || i.phone || i.email || "Creator");
   const links = (i.post_links||[]), miss = (i.needs||[]);
+  const nx = !i.registered ? { turn:"creator", title:"Stuck: not registered yet", text:`Invite sent ${i.invites_sent||1}×${i.last_invited_at?` · last ${fmtDate(i.last_invited_at)}`:""}` }
+           : miss.length ? { turn:"creator", title:`Stuck: ${miss.map(x=>/whatsapp/i.test(x)?"connect WhatsApp":"connect Instagram").join(" + ")}`, text:"Registered on Geek OS — joins the campaign once connected." }
+           : { turn:"creator", title:"Joining the campaign…", text:"" };
   const wa = i.last_wa ? (i.last_wa.status==="sent"||i.last_wa.status==="delivered"||i.last_wa.status==="read" ? "WhatsApp ✓" : i.last_wa.status==="failed" ? "WhatsApp ✗" : "WhatsApp …") : "";
   return `<div class="card bp-card cc-inv${open?" open":""}">
     <div class="bp-head" data-ccinvopen="${esc(i.invite_id)}">
@@ -5081,10 +5192,11 @@ function ccInviteRowHtml(i){
         <div class="r-title"><b>${esc(who)}</b>${i.name&&i.handle?` <span class="muted">${esc(i.name)}</span>`:""}
           ${i.registered?`<span class="tag warn">On Geek OS · ${miss.length?esc(miss.map(x=>/whatsapp/i.test(x)?"connect WhatsApp":"connect Instagram").join(" + ")):"joining"}</span>`:`<span class="tag">Invited · not registered</span>`}
           ${i.ig_connected?'<span class="tag good">📸 Instagram</span>':""}${links.length?`<span class="tag good">🔗 ${links.length} post link${links.length>1?"s":""}</span>`:""}</div>
-        <div class="r-sub">${esc(bkStLabel(st))} <span class="muted">(from the upload)</span>${wa?` · ${esc(wa)}`:""}${i.invites_sent>1?` · invite sent ${i.invites_sent}×`:""}${i.profile_pct!=null?` · profile ${i.profile_pct}%`:""}</div>
-        <div class="bp-bar"><span style="width:${Math.round(100*bkStRank(st)/13)}%"></span></div></div>
+        <div class="r-sub">${esc(bkStLabel(st))} <span class="muted">(from the upload)</span>${wa?` · ${esc(wa)}`:""}${i.profile_pct!=null?` · profile ${i.profile_pct}%`:""}</div>
+        <div class="bp-stuck">${bpTurnChip(nx)} <b>${esc(nx.title)}</b>${nx.text?` <span class="muted">${esc(nx.text)}</span>`:""}</div></div>
+      <span class="bp-rowacts">${!i.registered||miss.length?`<button type="button" class="btn sm bp-rowact" data-hubre="${esc(i.invite_id)}" data-ccre="1">↻ Resend invite</button>`:""}<button type="button" class="bp-chatbtn" data-ccinvchat="${esc(i.invite_id)}" title="Messages &amp; WhatsApp">💬</button></span>
       <span class="bp-caret">${open?"▲":"▼"}</span></div>
-    ${open?`<div class="bp-detail"><div class="bp-facts">
+    ${open?`<div class="bp-detail"><div class="cc-invchat" data-invchat="${esc(i.invite_id)}">${skel("list",2)}</div><div class="bp-facts">
         ${[i.phone?`📱 <a href="https://wa.me/${esc(String(i.phone).replace(/\D/g,""))}" target="_blank" rel="noopener">${esc(i.phone)}</a>`:"", i.email?`✉️ ${esc(i.email)}`:"", i.city?`📍 ${esc(i.city)}`:"", i.followers?`👥 ${fmtNum(i.followers)} followers`:""].filter(Boolean).map(x=>`<div>${x}</div>`).join("")}
         ${i.courier||i.tracking?`<div>🚚 ${esc(i.courier||"")} ${i.tracking?`· <b>${esc(i.tracking)}</b>`:""}</div>`:""}
         ${i.video_url?`<div>🎬 Video: <a href="${esc(safeUrl(i.video_url))}" target="_blank" rel="noopener">open ↗</a></div>`:""}
@@ -5094,9 +5206,9 @@ function ccInviteRowHtml(i){
       </div>
       <div class="bp-acts">
         <label class="cc-setlbl">Move to ${bkStatusSelect(`data-ccinvset="${esc(i.invite_id)}"`, st, "")}</label>
-        <button class="btn sm ghost" data-ccinvlinks="${esc(i.invite_id)}">🔗 Add links / courier</button>
-        <button class="btn sm ghost" data-hubre="${esc(i.invite_id)}" data-ccre="1">↻ Resend invite</button>
-        <button class="btn sm ghost" data-ccinvdel="${esc(i.invite_id)}">Remove</button>
+        <button class="btn sm ghost" data-ccinvpost="${esc(i.invite_id)}">📲 Add post / story + numbers</button>
+        <button class="btn sm ghost" data-ccinvlinks="${esc(i.invite_id)}">🔗 Links / courier</button>
+        <button class="btn sm ghost bp-del" data-ccinvdel="${esc(i.invite_id)}">🗑 Delete</button>
       </div></div>`:""}
   </div>`;
 }
@@ -5149,7 +5261,7 @@ async function ccSetInviteStep(i, st, sel){
 }
 function wireCcInvites(body){
   const inv = ((_bpPeople && _bpPeople.invites)||[]), find = id => inv.find(x=>x.invite_id===id);
-  body.querySelectorAll("[data-ccinvopen]").forEach(h=> h.onclick = e=>{ if(e.target.closest("a,button,select,label")) return; _ccInvOpen = _ccInvOpen===h.dataset.ccinvopen ? null : h.dataset.ccinvopen; paintBarterProcess(); });
+  body.querySelectorAll("[data-ccinvopen]").forEach(h=> h.onclick = e=>{ if(e.target.closest("a,button,select,label,input")) return; _ccInvOpen = _ccInvOpen===h.dataset.ccinvopen ? null : h.dataset.ccinvopen; paintBarterProcess(); });
   body.querySelectorAll("[data-ccinvset]").forEach(sel=> sel.onchange = ()=>{ const i = find(sel.dataset.ccinvset); if(i) ccSetInviteStep(i, sel.value, sel); });
   body.querySelectorAll("[data-ccinvlinks]").forEach(b=> b.onclick = ()=>{ const i = find(b.dataset.ccinvlinks); if(!i) return;
     const m = bpModal("Add links / courier", `<form class="modal-form" id="ccIL">
@@ -5166,9 +5278,15 @@ function wireCcInvites(body){
       if(r.error){ document.getElementById("ccILErr").textContent = r.error.message||String(r.error); return; }
       m.remove(); gateToast("Saved ✓"); loadBarterProcess(true); };
   });
-  body.querySelectorAll("[data-ccinvdel]").forEach(b=> b.onclick = async ()=>{ if(!await confirmChange("Remove this creator from the campaign upload?", "No message is sent.")) return;
-    const { error } = await sb.schema("api").rpc("bulk_delete_invite", { p_invite:b.dataset.ccinvdel }).then(r=>r, e=>({error:e}));
-    if(error){ gateToast(error.message||String(error)); return; } gateToast("Removed ✓"); loadBarterProcess(true); });
+  body.querySelectorAll("[data-ccinvdel]").forEach(b=> b.onclick = async ()=>{ const i = find(b.dataset.ccinvdel)||{}, who = i.handle ? "@"+i.handle : (i.name||i.phone||"this creator");
+    if(!await confirmDelete(`Delete ${who} from this campaign?`, "They come off the upload / invite list. No message is sent.")) return;
+    const { error } = await (window.__isAdmin ? sb.schema("api").rpc("admin_remove_from_campaign", { p_participation:null, p_invite:b.dataset.ccinvdel })
+                                              : sb.schema("api").rpc("bulk_delete_invite", { p_invite:b.dataset.ccinvdel })).then(r=>r, e=>({error:e}));
+    if(error){ gateToast(error.message||String(error)); return; } gateToast(`${who} deleted ✓`); if(_ccInvOpen===b.dataset.ccinvdel) _ccInvOpen = null; loadBarterProcess(true); });
+  body.querySelectorAll("[data-ccinvchat]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); _ccInvOpen = b.dataset.ccinvchat; paintBarterProcess();
+    setTimeout(()=>{ const c = document.querySelector(`[data-invchat="${b.dataset.ccinvchat}"]`); if(c) c.scrollIntoView({ behavior:"smooth", block:"center" }); }, 60); });
+  body.querySelectorAll("[data-ccinvpost]").forEach(b=> b.onclick = ()=>{ const i = find(b.dataset.ccinvpost); if(i) openPostAdd({ invite:i }); });
+  body.querySelectorAll("[data-invchat]").forEach(box=> loadInviteChat(box, box.dataset.invchat));
   body.querySelectorAll("[data-ccre]").forEach(b=> b.onclick = async ()=>{ b.disabled = true;
     const { data, error } = await sb.schema("api").rpc("bulk_resend_invite", { p_invite: b.dataset.hubre }).then(r=>r, e=>({error:e}));
     gateToast(error ? (error.message||String(error)) : data && data.status==="joined" ? "They're on Geek OS — added to the campaign ✓" : "Invite sent again ✓");
@@ -5333,7 +5451,7 @@ function paintCampaignPeople(){
 // one creator on one campaign: profile %, contact, every step, every message (and send the next one)
 let _hubC = { pid:null, data:null, tab:"overview" };
 async function openCreatorHub(pid, tab, focusStep){
-  _hubC = { pid, data:null, tab: tab || "overview", focusStep: !!focusStep };
+  _hubC = { pid, data:null, tab: tab || "whatsapp", focusStep: !!focusStep };
   let m = document.getElementById("hubModal"); if(m) m.remove();
   m = el("div","modal-overlay open"); m.id = "hubModal";
   m.innerHTML = `<div class="modal modal-lg hub-modal"><div class="modal-head"><strong>Creator on this campaign</strong><button class="icon-btn" id="hubX" aria-label="Close">✕</button></div>
@@ -5354,7 +5472,9 @@ function paintCreatorHub(){
   const cr = d.creator||{}, h = d.applied_profile || cr.username || "", pr = d.profile, pct = pr && pr.pct!=null ? pr.pct : null;
   const WA = (d.messages||[]).filter(x=> x.channel==="whatsapp"), OTH = (d.messages||[]).filter(x=> x.channel!=="whatsapp");
   if(_hubC.tab==="messages") _hubC.tab = "whatsapp";
-  const tabs = [["overview","Overview"],["timeline",`What they did (${(d.timeline||[]).length})`],["whatsapp",`💬 WhatsApp (${WA.length})`],["other",`✉️ Email & app (${OTH.length + (d.alerts||[]).length})`]];
+  const tabs = [["whatsapp",`💬 WhatsApp (${WA.length})`],["overview","Overview"],["timeline",`What they did (${(d.timeline||[]).length})`],["other",`✉️ Email & app (${OTH.length + (d.alerts||[]).length})`]];
+  // where they are stuck + the one-tap action, above everything (same as the row on the campaign page)
+  const hx = ((((_bpData||{}).creators)||[]).find(c=> c.participation_id===d.participation_id)) || { participation_id:d.participation_id, stage:d.stage, applied_at:d.applied_at };
   let sec = "";
   if(_hubC.tab==="overview"){
     const row = (k,v)=> v ? `<div class="bpp-row"><span>${esc(k)}</span><div>${v}</div></div>` : "";
@@ -5370,7 +5490,7 @@ function paintCreatorHub(){
       ${pr ? `<div class="cp-bar" style="margin:4px 0 8px"><span style="width:${pct||0}%"></span></div>${(pr.missing||[]).length?`<div class="muted" style="font-size:12.5px">Not filled yet: ${esc(pr.missing.join(", "))}</div>`:`<div class="muted" style="font-size:12.5px">Everything filled in ✓</div>`}` : `<div class="muted">No profile yet.</div>`}
       ${hubSetStepHtml(d)}
       <div id="hubPro"></div>
-      <div class="hub-foot"><button class="btn ghost sm" data-hubbp>🔁 Open in Barter process</button>${h?`<a class="btn ghost sm" href="/p.html?u=${encodeURIComponent(h)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}<button class="btn sm" data-hubtab2="whatsapp">💬 WhatsApp chat</button></div>`;
+      <div class="hub-foot"><button class="btn ghost sm" data-hubbp>🔁 Open in Barter process</button>${h?`<a class="btn ghost sm" href="/p.html?u=${encodeURIComponent(h)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}${window.__isAdmin?`<button class="btn ghost sm bp-del" data-bpremove="${esc(d.participation_id)}">🗑 Delete from campaign</button>`:""}</div>`;
   } else if(_hubC.tab==="timeline"){
     const T = d.timeline||[], A = d.alerts||[];
     const nice = x=> String(x||"").replace(/_/g," ");
@@ -5420,11 +5540,14 @@ function paintCreatorHub(){
         ${h?`<a href="https://instagram.com/${encodeURIComponent(h)}" target="_blank" rel="noopener">@${esc(h)} ↗</a>`:""}
         <div class="bpp-cats"><span class="hub-now">${esc(hubStepLabel(d.stage))}</span>${(cr.categories||[]).slice(0,3).map(c=>`<span>${esc(c)}</span>`).join("")}${cr.city?`<span>📍 ${esc(cr.city)}</span>`:""}</div></div>
       ${pct!=null?`<div class="prof-pop-ring hub-ring" style="--p:${pct}" title="Profile complete"><span>${pct}%</span></div>`:""}</div>
-    <div class="bpp-stats"><div><b>${cr.followers!=null?fmtNum(cr.followers):"—"}</b><span>Followers</span></div><div><b>${cr.engagement!=null?cr.engagement+"%":"—"}</b><span>Engagement</span></div>
-      <div><b>${cr.avg_reach?fmtNum(Math.round(cr.avg_reach)):"—"}</b><span>Avg reach</span></div><div><b>${(d.messages||[]).length}</b><span>Messages</span></div></div>
+    ${_hubC.tab==="whatsapp"?"":`<div class="bpp-stats"><div><b>${cr.followers!=null?fmtNum(cr.followers):"—"}</b><span>Followers</span></div><div><b>${cr.engagement!=null?cr.engagement+"%":"—"}</b><span>Engagement</span></div>
+      <div><b>${cr.avg_reach?fmtNum(Math.round(cr.avg_reach)):"—"}</b><span>Avg reach</span></div><div><b>${(d.messages||[]).length}</b><span>Messages</span></div></div>`}
+    <div class="hub-nowwrap">${_hubC.tab==="whatsapp"?"":bpJourneyHtml(hx)}${bpNowBox(hx)}</div>
     <div class="admin-tabs hub-ctabs">${tabs.map(t=>`<button class="${_hubC.tab===t[0]?"act":""}" data-hubtab2="${t[0]}">${esc(t[1])}</button>`).join("")}</div>
     <div class="hub-sec">${sec}</div>`;
   body.querySelectorAll("[data-hubtab2]").forEach(b=> b.onclick = ()=>{ _hubC.tab = b.dataset.hubtab2; paintCreatorHub(); });
+  wireBpActions(body, ()=>{ if(document.getElementById("hubBody")) hubReload(); if(document.getElementById("bpBody")) loadBarterProcess(true); });
+  body.querySelectorAll("[data-bpchat]").forEach(b=> b.onclick = ()=>{ _hubC.tab = "whatsapp"; paintCreatorHub(); setTimeout(()=> document.getElementById("hubText")?.focus(), 50); });
   const bp = body.querySelector("[data-hubbp]"); if(bp) bp.onclick = ()=>{ document.getElementById("hubModal")?.remove(); const c = _hub.camp || {}; openBarterProcess(c.id || d.campaign_id, c.name || d.campaign, d.participation_id); };
   if(_hubC.tab==="overview" && d.member_id){
     sb.schema("api").rpc("creator_profile_card", { p_member: d.member_id }).then(({ data:P })=>{
@@ -5551,9 +5674,9 @@ function bpStageBanner(list){
   return `<div class="bp-stage-ban"><span>Showing <b>${L.length}</b> who reached <b>${esc(lbl)}</b> · <b>${here}</b> on this step right now</span><button class="mini-btn ghost" id="bpStageClear">Show everyone ✕</button></div>`;
 }
 function bpMetricLine(st){
-  st = st||{}; const K = [["views","views"],["reach","reach"],["likes","likes"],["comments","comments"],["shares","shares"],["saves","saves"]];
+  st = st||{}; const K = [["views","views"],["reach","reach"],["likes","likes"],["comments","comments"],["shares","shares"],["saves","saves"],["replies","replies"],["link_clicks","link clicks"],["sticker_taps","sticker taps"]];
   const parts = K.filter(k=> st[k[0]]!=null).map(k=>`${esc(k[1])} <b>${fmtNum(st[k[0]])}</b>`);
-  return parts.length ? parts.join(" · ") + (st.source==="public" ? ' <span class="muted">(public counts — full insights load once Instagram shares them)</span>' : "") : '<span class="muted">numbers load within a few hours of posting</span>';
+  return parts.length ? parts.join(" · ") + (st.source==="public" ? ' <span class="muted">(public counts — full insights load once Instagram shares them)</span>' : st.source==="screenshot" ? ' <span class="muted">(read from the screenshot)</span>' : st.source==="manual" ? ' <span class="muted">(typed in)</span>' : "") : '<span class="muted">numbers load within a few hours of posting</span>';
 }
 function bpTrackerHtml(list){
   if(!list.length) return `<div class="card"><div class="muted">Nobody in this campaign yet. Send the outreach message, or invite creators from the campaign's 🎯 Invite panel.</div></div>`;
@@ -5567,8 +5690,8 @@ function bpTrackerHtml(list){
     const overdue = x.due_on && x.due_on < today && ["content_created","changes_requested"].includes(x.stage);
     const label = fail(x.stage) ? `<b>${esc(String(x.stage).replace(/_/g," "))}</b>${x.reason?` — ${esc(x.reason)}`:""}`
                 : esc((BARTER_STEPS[idx]||["","—"])[1]) + (BP_NEXT[x.stage] ? ` · <span class="bp-next">${esc(BP_NEXT[x.stage])}</span>` : "");
-    const P = x.participation_id;
-    return `<div class="card bp-card${open?" open":""}">
+    const P = x.participation_id, nx = bpNext(x), shown = new Set(nx.acts.map(a=>a[0]));
+    return `<div class="card bp-card${open?" open":""}" data-bpcard="${esc(P)}">
       <div class="bp-head" data-bpopen="${esc(P)}">
         <span class="bp-who" data-bpprof="${esc(P)}" title="Open the creator's full profile">${cr.profile_picture_url?`<img class="ap-pic" src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((cr.username||"?").slice(0,2).toUpperCase())}</span>`}</span>
         <div style="flex:1;min-width:0">
@@ -5578,10 +5701,14 @@ function bpTrackerHtml(list){
             ${overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':""}
             ${x.blocked_at?`<span class="tag" style="background:rgba(239,68,68,.15);color:#dc2626">⛔ Blocked — call ${esc(x.phone||"them")}</span>`:""}
             ${x.stage==="published"&&x.feedback_requested_at?'<span class="tag warn">Waiting for creator feedback</span>':""}</div>
-          <div class="r-sub">${cr.followers!=null?fmtNum(cr.followers)+" followers · ":""}${label}</div>
-          <div class="bp-bar"><span style="width:${pct}%${fail(x.stage)?";background:#dc2626":""}"></span></div></div>
+          <div class="r-sub">${cr.followers!=null?fmtNum(cr.followers)+" followers · ":""}Step ${bpJIndex(x)+1}/12 · ${esc(((BP_JOURNEY[bpJIndex(x)]||[])[1])||"")}</div>
+          <div class="bp-stuck">${bpTurnChip(nx)} <b>${esc(nx.title)}</b>${nx.text?` <span class="muted">${esc(nx.text)}</span>`:""}</div></div>
+        <span class="bp-rowacts">${nx.acts.filter(a=>a[2]).slice(0,1).map(a=> bpActBtn(a, P, true)).join("")}<button type="button" class="bp-chatbtn" data-bpchat="${esc(P)}" title="WhatsApp chat">💬</button></span>
         <span class="bp-caret">${open?"▲":"▼"}</span></div>
       ${open?`<div class="bp-detail">
+        ${bpJourneyHtml(x)}
+        ${bpNowBox(x)}
+        <details class="bp-allsteps"><summary>Every step with its time</summary>
         <ol class="bp-steps">${BARTER_STEPS.map((s,i)=>{
           const at = st[s[0]] || (s[0]==="applied" ? x.applied_at : null)
                   || (s[0]==="product_sent" ? ship.shipped_at : null) || (s[0]==="product_delivered" ? ship.delivered_at : null)
@@ -5591,7 +5718,7 @@ function bpTrackerHtml(list){
           const here = !fail(x.stage) && i === idx && x.stage!=="completed";
           if(s[0]==="changes_requested" && !at) return "";
           return `<li class="${reached?"on":""}${here?" here":""}"><div><b>${esc(s[1])}${here?' <em class="bp-here">← now</em>':""}</b><span>${esc(s[2])}</span></div>
-            <span class="bp-at">${at?esc(fmtDateTime(at)):reached?"✓":"—"}</span></li>`; }).join("")}</ol>
+            <span class="bp-at">${at?esc(fmtDateTime(at)):reached?"✓":"—"}</span></li>`; }).join("")}</ol></details>
         <div class="bp-facts">
           ${con.issued_at?`<div>📜 Contract ${con.signed_at?`<b>signed</b> by ${esc(con.signature_name||"the creator")} on ${esc(fmtDate(con.signed_at))}`:`sent ${esc(fmtDate(con.issued_at))} — <b>not signed yet</b>`}
              · ${esc(con.product||"product")} · ${(con.deliverables||[]).map(d=>`${esc(d.quantity||1)}× ${esc(d.format||"content")}`).join(" + ")||"—"}
@@ -5610,10 +5737,10 @@ function bpTrackerHtml(list){
           ${rev?`<div>${rev.decision==="approved"?"✅ Approved":"✏️ Changes asked"} ${esc(fmtDateTime(rev.at))}${rev.reason?` — “${esc(rev.reason)}”`:""}</div>`:""}
           ${bpProgressLine(P)}
           ${posts.map(p=>{ const g = ((((_bpData||{}).progress||{})[P]||{}).posts||[]).find(z=> z.post_id===p.post_id || (z.permalink && z.permalink===p.permalink)) || {};
-            return `<div>📲 ${esc(p.media_type)} posted ${esc(fmtDate(p.posted_at))}${p.permalink?` · <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener">open ↗</a>`:""}${g.missing_since?` <span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⚠️ taken down ${esc(fmtDate(g.missing_since))} — creator reminded to restore</span>`:g.live_checked_at?` <span class="muted" style="font-size:12px">· live ✓ checked ${esc(fmtDateTime(g.live_checked_at))}</span>`:""}<div class="bp-metrics">${bpMetricLine(g.stats||p.stats)}</div></div>`; }).join("")}
+            return `<div>📲 ${esc(p.media_type)} posted ${esc(fmtDate(p.posted_at))}${p.permalink?` · <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener">open ↗</a>`:""}${p.screenshot_url?` · <a href="${esc(safeUrl(p.screenshot_url))}" target="_blank" rel="noopener">📷 screenshot</a>`:""}${g.missing_since?` <span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⚠️ taken down ${esc(fmtDate(g.missing_since))} — creator reminded to restore</span>`:g.live_checked_at?` <span class="muted" style="font-size:12px">· live ✓ checked ${esc(fmtDateTime(g.live_checked_at))}</span>`:""}<div class="bp-metrics">${bpMetricLine(g.stats||p.stats)}</div></div>`; }).join("")}
         </div>
-        <div class="bp-acts">
-          <button class="btn sm ghost" data-bpprofile="${esc(P)}">👤 Profile, WhatsApp &amp; email</button>
+        <div class="bp-acts">${bpDedupe(shown, `
+          <button class="btn sm ghost" data-bpprofile="${esc(P)}">👤 Profile, chat &amp; history</button>
           ${!fail(x.stage)&&x.stage!=="completed"&&!_wsMode?`<button class="btn sm ghost" data-bpsetstep="${esc(P)}" title="Put them on any later step — contract, courier, video link, Instagram post…">⚙️ Set step by hand</button>`:""}
           ${x.stage==="applied"?`<button class="btn sm" data-bpscreen="${esc(P)}">✓ Meets the brief</button><button class="btn sm ghost" data-bpreject="${esc(P)}">Not a fit</button>`:""}
           ${x.stage==="eligible"?`<button class="btn sm" data-bpsend="${esc(P)}">📋 Add to the brand's list</button>`:""}
@@ -5625,11 +5752,13 @@ function bpTrackerHtml(list){
           ${x.stage==="product_sent"&&ship.status==="shipped"?`<button class="btn sm" data-bpdeliv="${esc(P)}">📦 Mark delivered → send video brief</button>`:""}
           ${x.blocked_at?`${x.phone?`<a class="btn sm ghost" href="tel:${esc(x.phone)}">📞 Call</a>`:""}<button class="btn sm" data-bpunblock="${esc(P)}">✅ Called — unblock</button><button class="btn sm ghost" data-bpcall="${esc(P)}">📝 Note a call</button>`:""}
           ${x.stage==="content_submitted"?`<button class="btn sm" data-bpapprove="${esc(P)}">✅ Approve video</button><button class="btn sm ghost" data-bpchanges="${esc(P)}">✏️ Ask for changes</button><button class="btn sm ghost" data-bprelink="${esc(P)}">🔗 Request a new link</button>`:""}
-          ${["content_created","content_submitted","changes_requested","content_approved","published","completed"].includes(x.stage)?`<button class="btn sm${x.stage==="content_approved"?"":" ghost"}" data-bppost="${esc(P)}" title="The creator couldn't post from the app? Paste the link they sent you">🔗 Add post link</button>`:""}
+          ${["content_created","content_submitted","changes_requested","content_approved","published","completed"].includes(x.stage)?`<button class="btn sm${x.stage==="content_approved"?"":" ghost"}" data-bppost="${esc(P)}" title="The creator couldn't post from the app? Paste the link, or add a story screenshot">🔗 Add post / story</button>`:""}
           ${["published","completed"].includes(x.stage)&&posts.length?`<button class="btn sm ghost" data-bpmetrics="${esc(P)}">📈 Add numbers</button>`:""}
           ${x.stage==="published"&&((((_bpData||{}).progress||{})[P]||{}).all_done)?`<button class="btn sm" data-bpdone="${esc(P)}">🏁 Mark complete</button>`:""}
           ${!["dropped","rejected","completed","published","ineligible","brand_declined"].includes(x.stage)?`<button class="btn sm ghost" data-bpreassign="${esc(P)}">↪ Send product to someone else</button>`:""}
           ${!x.blacklisted&&!["completed"].includes(x.stage)?`<button class="btn sm ghost" data-bpblack="${esc(P)}">⛔ Blacklist</button>`:""}
+`)}
+          ${window.__isAdmin?`<button class="btn sm ghost bp-del" data-bpremove="${esc(P)}">🗑 Delete from campaign</button>`:""}
         </div>
         ${_wsMode&&!fail(x.stage)&&x.stage!=="completed"?`<div class="cc-stepbox" data-ccstep="${esc(P)}"></div>`:""}</div>`:""}</div>`; }).join("");
 }
@@ -5770,17 +5899,23 @@ function bpShortlistHtml(list){
           <td>${bpStageIndex(x.stage)>=bpStageIndex("brand_confirmed")?'<span class="tag good">Brand confirmed</span>':x.stage==="sent_to_brand"?'<span class="tag warn">With the brand</span>':'<span class="tag">Screened</span>'}</td></tr>`; }).join("")}
     </tbody></table></div>`:`<div class="muted" style="padding:10px">Nobody has cleared screening yet — screen the creators in the Creators tab first.</div>`}</div>`;
 }
-function wireBarterProcess(){
-  const body = document.getElementById("bpBody"); if(!body) return;
-  const again = ()=> loadBarterProcess(true);
+// every creator action button (data-bp…) — on the campaign page, in the creator card and in the 🔔 to-do list
+function wireBpActions(root, again){
   const call = async (fn, args, btn, label)=>{
     if(btn){ btn.disabled = true; btn.textContent = "…"; }
     const { error } = await sb.schema("api").rpc(fn, args);
-    if(error){ alert(error.message); if(btn){ btn.disabled=false; btn.innerHTML=label; } return false; }
-    again(); return true;
+    if(error){ gateToast(error.message); if(btn){ btn.disabled=false; btn.innerHTML=label; } return false; }
+    again && again(); return true;
   };
-  body.querySelectorAll("[data-bpprof]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); bpCreatorProfile(b.dataset.bpprof); });
-  body.querySelectorAll("[data-bpopen]").forEach(h=> h.onclick = ()=>{ _bpOpen = _bpOpen===h.dataset.bpopen ? null : h.dataset.bpopen; paintBarterProcess(); });
+  const body = root;
+  body.querySelectorAll("[data-bpchat]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); openCreatorHub(b.dataset.bpchat, "whatsapp"); });
+  body.querySelectorAll("[data-bpremove]").forEach(b=> b.onclick = async e=>{ e.stopPropagation();
+    const x = (((_bpData||{}).creators)||[]).find(c=> c.participation_id===b.dataset.bpremove) || {}, who = (x.creator||{}).username ? "@"+x.creator.username : "this creator";
+    if(!await confirmDelete(`Delete ${who} from this campaign?`, "Their contract, courier, video, posts and every message about this campaign go too. This can't be undone.")) return;
+    b.disabled = true;
+    const { error } = await sb.schema("api").rpc("admin_remove_from_campaign", { p_participation: b.dataset.bpremove, p_invite: null }).then(r=>r, e2=>({error:e2}));
+    if(error){ gateToast(error.message||String(error)); b.disabled = false; return; }
+    gateToast(`${who} deleted from the campaign ✓`); document.getElementById("hubModal")?.remove(); if(_bpOpen===b.dataset.bpremove) _bpOpen = null; again && again(); });
   body.querySelectorAll("[data-bpscreen]").forEach(b=> b.onclick = ()=> call("screen_participation", { p_participation:b.dataset.bpscreen, p_eligible:true, p_reason:null }, b, "✓ Meets the brief"));
   body.querySelectorAll("[data-bpreject]").forEach(b=> b.onclick = async ()=>{
     const pick = await openReasonModal("Why doesn't this creator fit the brief?"); if(!pick) return;
@@ -5794,7 +5929,7 @@ function wireBarterProcess(){
   body.querySelectorAll("[data-bpclauses]").forEach(a=> a.onclick = e=>{ e.preventDefault(); openBpClauses(a.dataset.bpclauses); });
   body.querySelectorAll("[data-bpship]").forEach(b=> b.onclick = ()=> openBpShipment(b.dataset.bpship));
   body.querySelectorAll("[data-bpsetstep]").forEach(b=> b.onclick = ()=> openCreatorHub(b.dataset.bpsetstep, "overview", true));
-  body.querySelectorAll("[data-bpprofile]").forEach(b=> b.onclick = ()=> openCreatorHub(b.dataset.bpprofile, "overview"));
+  body.querySelectorAll("[data-bpprofile]").forEach(b=> b.onclick = ()=> openCreatorHub(b.dataset.bpprofile, "whatsapp"));
   body.querySelectorAll("[data-bpdeliv]").forEach(b=> b.onclick = ()=>{
     call("bp_mark_delivered", { p_participation:b.dataset.bpdeliv }, b, b.innerHTML); });
   body.querySelectorAll("[data-bpapprove]").forEach(b=> b.onclick = ()=> call("bp_review_video", { p_participation:b.dataset.bpapprove, p_approve:true, p_reason:null }, b, b.innerHTML));
@@ -5811,6 +5946,13 @@ function wireBarterProcess(){
     const r = (prompt("Blacklist this creator — why?\nThey stay on the list until you lift it. Per the contract they must re-ship the product at their own cost — use “Send product to someone else” to pick who.")||"").trim(); if(!r) return;
     call("blacklist_creator", { p_participation:b.dataset.bpblack, p_reason:r }, b, "⛔ Blacklist"); });
   body.querySelectorAll("[data-bpreassign]").forEach(b=> b.onclick = ()=> openBpReassign(b.dataset.bpreassign));
+}
+function wireBarterProcess(){
+  const body = document.getElementById("bpBody"); if(!body) return;
+  const again = ()=> loadBarterProcess(true);
+  body.querySelectorAll("[data-bpprof]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); bpCreatorProfile(b.dataset.bpprof); });
+  body.querySelectorAll("[data-bpopen]").forEach(h=> h.onclick = e=>{ if(e.target.closest("button,a,select,input,label")) return; _bpOpen = _bpOpen===h.dataset.bpopen ? null : h.dataset.bpopen; paintBarterProcess(); });
+  wireBpActions(body, again);
   const rep = body.querySelector("#bpRepCsv"); if(rep) rep.onclick = ()=> bpDownloadReport();
   const rfb = body.querySelector("#bpRepFb"); if(rfb) rfb.onclick = ()=> connectFacebookSearch();
   btAutoGrow(body);
@@ -5957,47 +6099,184 @@ function openBpUnblock(part){
   };
 }
 // the creator couldn't post from the app → they send the link (WhatsApp / anything) → paste it here
-function openBpPostLink(part){
-  const x = ((_bpData&&_bpData.creators)||[]).find(c=>c.participation_id===part)||{};
-  const g = (((_bpData||{}).progress)||{})[part] || {}, next = (g.items||[]).find(i=> i.done < i.need), nk = next ? (next.kind==="feed"?"post":next.kind) : "reel";
-  const m = bpModal("Add the post link", `<form class="modal-form" id="bpPForm">
-      <p class="muted" style="font-size:13px;margin:0">${x.username?`@${esc(x.username)} `:"The creator "}couldn't post from the app? Paste the Instagram link they sent you. The post is added to the campaign and its numbers are fetched from their Instagram.
-        ${g.need?`<b>${g.done}/${g.need}</b> up${g.all_done?" — everything is in ✓":` — still to post: <b>${esc(g.left||"")}</b>. The campaign completes when every one is up.`}`:""}</p>
-      <label>Instagram link<input name="link" required placeholder="https://www.instagram.com/reel/…"></label>
-      <label>Type<select name="type"><option value="reel"${nk==="reel"?" selected":""}>Reel</option><option value="post"${nk==="post"?" selected":""}>Post</option><option value="story"${nk==="story"?" selected":""}>Story</option></select></label>
-      <div class="auth-err" id="bpPErr"></div><button class="btn" type="submit">Add post</button></form>`);
-  document.getElementById("bpPForm").onsubmit = async e=>{
+// ---------- posts: link, or a story screenshot, + the numbers (typed, read from the screenshot, or fetched) ----------
+const POST_NUM_KEYS = [["views","Views / plays"],["reach","Reach"],["likes","Likes"],["comments","Comments"],["shares","Shares"],["saves","Saves"],
+  ["replies","Replies"],["link_clicks","Link clicks"],["sticker_taps","Sticker taps"],["profile_visits","Profile visits"]];
+function postNumsHtml(vals){ vals = vals||{};
+  return `<div class="pa-nums">${POST_NUM_KEYS.map(([k,l])=>`<label>${esc(l)}<input name="m_${k}" type="text" inputmode="numeric" value="${vals[k]!=null?esc(vals[k]):""}" placeholder="—"></label>`).join("")}</div>`; }
+function postNumsRead(form){ const out = {};
+  POST_NUM_KEYS.forEach(([k])=>{ const v = String((form.querySelector(`[name="m_${k}"]`)||{}).value||"").replace(/[,\s]/g,"").toLowerCase(); if(!v) return;
+    const m = v.match(/^([0-9]+(?:\.[0-9]+)?)(k|m|l)?$/); if(!m) return; out[k] = Math.round(Number(m[1]) * (m[2]==="k"?1e3:m[2]==="m"?1e6:m[2]==="l"?1e5:1)); });
+  return out; }
+// screenshot → preview + numbers read from it (post-shot-read); returns { file() }
+function shotReader(box, form, kindOf){
+  let file = null;
+  box.innerHTML = `<label class="pa-shot"><input type="file" accept="image/*" hidden><span class="pa-shot-btn">📷 Add the insights screenshot</span><span class="muted">Story, reel or post insights — we read the numbers off it.</span></label><div class="pa-prev" hidden></div>`;
+  const inp = box.querySelector("input"), prev = box.querySelector(".pa-prev");
+  inp.onchange = async ()=>{
+    file = inp.files && inp.files[0]; if(!file) return;
+    if(file.size > 8*1024*1024){ gateToast("That screenshot is over 8 MB — crop it first."); file = null; return; }
+    const url = URL.createObjectURL(file);
+    prev.hidden = false; prev.innerHTML = `<img src="${url}" alt="Screenshot"><div class="pa-prev-t">⏳ Reading the numbers…</div>`;
+    const b64 = await new Promise(r=>{ const fr = new FileReader(); fr.onload = ()=> r(String(fr.result||"")); fr.onerror = ()=> r(""); fr.readAsDataURL(file); });
+    const { data, error } = await sb.functions.invoke("post-shot-read", { body:{ image: b64, media_type: kindOf() } }).then(x=>x, e=>({error:e}));
+    const t = prev.querySelector(".pa-prev-t");
+    if(error || !data || data.error){ t.textContent = "Couldn't read it — type the numbers below. " + ((data&&data.error)||""); }
+    else {
+      const m = data.metrics||{}, n = Object.keys(m).length;
+      Object.entries(m).forEach(([k,v])=>{ const f = form.querySelector(`[name="m_${k}"]`); if(f){ f.value = v; f.classList.add("pa-filled"); } });
+      t.innerHTML = n ? `✓ Read ${n} number${n>1?"s":""} — check them below.${data.note?` <span class="muted">${esc(data.note)}</span>`:""}` : esc(data.note||"No numbers found — type them below.");
+      const det = form.querySelector("details.pa-numwrap"); if(det) det.open = true;
+    }
+  };
+  return { file: ()=> file };
+}
+async function uploadProof(file){
+  const org = window.Auth && Auth.profile && Auth.profile.org_id;
+  if(!org) throw new Error("Your account has no workspace for uploads — type the numbers and add the link instead.");
+  const ext = (file.type.split("/")[1]||"png").replace(/[^a-z0-9]/gi,"").slice(0,5) || "png";
+  const path = `${org}/proof/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const up = await sb.storage.from("campaign-files").upload(path, file, { contentType: file.type || "image/png", upsert:false });
+  if(up.error) throw new Error("Couldn't upload the screenshot: " + up.error.message);
+  return sb.storage.from("campaign-files").getPublicUrl(path).data.publicUrl;
+}
+// one form for every place a post is added: a creator in the campaign ({part}) or an invited / uploaded one ({invite})
+function openPostAdd(o){
+  const part = o.part, inv = o.invite;
+  const x = part ? (((_bpData&&_bpData.creators)||[]).find(c=>c.participation_id===part)||{}) : {};
+  const handle = part ? ((x.creator||{}).username || x.applied_profile || "") : (inv.handle||"");
+  const g = part ? ((((_bpData||{}).progress)||{})[part] || {}) : {}, next = (g.items||[]).find(i=> i.done < i.need);
+  const nk = next ? (next.kind==="feed"?"post":next.kind) : (o.kind||"reel");
+  const m = bpModal("Add a post / story", `<form class="modal-form pa" id="paForm">
+      <p class="muted" style="font-size:13px;margin:0">${handle?`<b>@${esc(handle)}</b> — `:""}paste the link, or for a story just add its screenshot. Numbers are read from the screenshot, fetched from their public Instagram, or typed in.
+        ${g.need?` <b>${g.done}/${g.need}</b> up${g.all_done?" ✓":` — still to post: ${esc(g.left||"")}`}.`:""}</p>
+      <div class="pa-kind">${[["reel","🎬 Reel"],["story","⭕ Story"],["post","🖼 Post"]].map(([k,l])=>`<label><input type="radio" name="type" value="${k}"${k===nk?" checked":""}><span>${l}</span></label>`).join("")}</div>
+      <label class="pa-link">Instagram link <span class="muted pa-opt" style="font-weight:400"></span><input name="link" placeholder="https://www.instagram.com/reel/…"></label>
+      ${handle?`<div><button type="button" class="btn sm ghost" id="paPick">📸 Pick from @${esc(handle)}'s Instagram</button><div id="paGrid" class="pa-grid"></div></div>`:""}
+      <div id="paShot"></div>
+      <details class="pa-numwrap"><summary>Numbers <span class="muted">(optional — filled from the screenshot)</span></summary>${postNumsHtml()}</details>
+      <div class="auth-err" id="paErr"></div><button class="btn" type="submit">Save</button></form>`);
+  const form = document.getElementById("paForm"), kindOf = ()=> (form.querySelector("[name=type]:checked")||{}).value || "reel";
+  const opt = ()=>{ const st = kindOf()==="story"; form.querySelector(".pa-opt").textContent = st ? "(optional for a story — stories expire; the screenshot is enough)" : ""; };
+  form.querySelectorAll("[name=type]").forEach(r=> r.onchange = opt); opt();
+  const shot = shotReader(document.getElementById("paShot"), form, kindOf);
+  const pick = document.getElementById("paPick");
+  if(pick) pick.onclick = async ()=>{
+    const grid = document.getElementById("paGrid"); pick.disabled = true; pick.textContent = "Loading their latest posts…";
+    const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username: handle, media_limit: 12 } }).then(x2=>x2, e=>({error:e}));
+    pick.disabled = false; pick.textContent = `📸 Pick from @${handle}'s Instagram`;
+    const posts = (data && data.posts) || [];
+    if(error || !posts.length){ grid.innerHTML = `<div class="muted" style="font-size:12.5px">${esc((data&&data.error) || "Couldn't load their posts — paste the link.")}</div>`; return; }
+    grid.innerHTML = posts.map((p,i)=>{ const im = p.media_type==="VIDEO" ? p.thumbnail_url : (p.media_url||p.thumbnail_url);
+      return `<button type="button" class="pa-tile" data-i="${i}">${im?`<img src="${esc(safeUrl(im))}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`:""}
+        <span>${esc(p.media_type==="VIDEO"?"🎬":p.media_type==="CAROUSEL_ALBUM"?"🗂":"🖼")} ${p.timestamp?esc(fmtDate(p.timestamp)):""}</span><span>❤️ ${p.like_count!=null?esc(fmtNum(p.like_count)):"—"} · 💬 ${p.comments_count!=null?esc(fmtNum(p.comments_count)):"—"}</span></button>`; }).join("");
+    grid.querySelectorAll(".pa-tile").forEach(t=> t.onclick = ()=>{ const p = posts[+t.dataset.i];
+      form.querySelector("[name=link]").value = p.permalink||"";
+      const k = /\/reel\//.test(p.permalink||"") || p.media_type==="VIDEO" ? "reel" : "post"; const r = form.querySelector(`[name=type][value="${k}"]`); if(r){ r.checked = true; opt(); }
+      if(p.like_count!=null) form.querySelector("[name=m_likes]").value = p.like_count;
+      if(p.comments_count!=null) form.querySelector("[name=m_comments]").value = p.comments_count;
+      grid.querySelectorAll(".pa-tile").forEach(z=> z.classList.toggle("on", z===t)); });
+  };
+  form.onsubmit = async e=>{
     e.preventDefault();
-    const f = new FormData(e.target), err = document.getElementById("bpPErr"), btn = e.target.querySelector("button");
-    btn.disabled = true; btn.textContent = "Adding…";
-    const { data, error } = await sb.schema("api").rpc("bp_add_post_link", { p_participation:part, p_payload:{ permalink:String(f.get("link")||"").trim(), media_type:f.get("type") } });
-    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Add post"; return; }
-    m.remove(); gateToast(`Post added ✓ — numbers are fetched from their Instagram${data && data.stage==="completed" ? " · every post is up — campaign complete 🎉" : " · campaign completes when every post is up"}`);
-    loadBarterProcess(true);
+    const err = document.getElementById("paErr"), btn = form.querySelector("button[type=submit]");
+    const link = String(form.querySelector("[name=link]").value||"").trim(), kind = kindOf(), nums = postNumsRead(form), f = shot.file();
+    err.textContent = "";
+    if(link && !/^https?:\/\/(www\.|m\.)?instagram\.com\/([^/?#]+\/)?(reel|reels|p|tv|stories)\//i.test(link)){ err.textContent = "Paste an Instagram post link (instagram.com/reel/… , /p/… or /stories/…)."; return; }
+    if(!link && !(kind==="story" && f)){ err.textContent = kind==="story" ? "Add the story's screenshot (or its link)." : "Paste the post's link — or pick it from their Instagram."; return; }
+    btn.disabled = true; btn.textContent = "Saving…";
+    try{
+      let shotUrl = null; if(f){ btn.textContent = "Uploading the screenshot…"; shotUrl = await uploadProof(f); }
+      const payload = { permalink: link || null, media_type: kind, screenshot_url: shotUrl, metrics: nums };
+      if(part){
+        const { data, error } = await sb.schema("api").rpc("bp_add_post_link", { p_participation: part, p_payload: payload });
+        if(error) throw error;
+        gateToast(`${kind==="story"?"Story":"Post"} added ✓${Object.keys(nums).length?" with its numbers":link?" — numbers are fetched from their Instagram":""}${data && data.stage==="completed" ? " · every post is up — complete 🎉" : ""}`);
+        loadBarterProcess(true); if(document.getElementById("hubBody")) hubReload();
+      } else {
+        const { error } = await sb.schema("api").rpc("invite_add_post", { p_invite: inv.invite_id, p_payload: payload });
+        if(error) throw error;
+        if(link && bkStRank(inv.status||"registered") < bkStRank("posted")){
+          const all = [...new Set([...(inv.post_links||[]), link])];
+          await sb.schema("api").rpc("invite_set_step", { p_invite: inv.invite_id, p_status: "posted", p_payload: { post_urls: all, notify:false } }).then(r=>r, ()=>null);
+        }
+        gateToast(`${kind==="story"?"Story":"Post"} saved on their row ✓ — goes onto their campaign when they join`);
+        loadBarterProcess(true);
+      }
+      m.remove();
+    }catch(ex){ err.textContent = ex.message||String(ex); btn.disabled = false; btn.textContent = "Save"; }
   };
 }
+function openBpPostLink(part){ openPostAdd({ part }); }
 function openBpMetrics(part){
   const x = ((_bpData&&_bpData.creators)||[]).find(c=>c.participation_id===part)||{}, posts = x.posts||[];
+  if(!posts.length){ openPostAdd({ part, kind:"story" }); return; }
   const last = (posts[posts.length-1]||{}).stats||{};
-  const n = (k,l)=>`<label>${l}<input name="${k}" type="number" min="0" value="${last[k]!=null&&last.source!=="public"?esc(last[k]):""}"></label>`;
-  const m = bpModal("Add the numbers", `<form class="modal-form" id="bpMForm">
-      <p class="muted" style="font-size:13px;margin:0">Instagram insights load on their own when the creator's account allows it. If not, type them in from the creator's insights screenshot.</p>
+  const m = bpModal("Add the numbers", `<form class="modal-form pa" id="bpMForm">
+      <p class="muted" style="font-size:13px;margin:0">Instagram insights load on their own when the creator's account allows it. If not, add their insights screenshot — we read the numbers — or type them.</p>
       ${posts.length>1?`<label>Post<select name="post">${posts.map(p=>`<option value="${esc(p.post_id)}">${esc(p.media_type)} · ${esc(fmtDate(p.posted_at))}</option>`).join("")}</select></label>`:""}
-      <div class="mf-row">${n("views","Views / plays")}${n("reach","Reach")}</div>
-      <div class="mf-row">${n("likes","Likes")}${n("comments","Comments")}</div>
-      <div class="mf-row">${n("shares","Shares")}${n("saves","Saves")}</div>
+      <div id="bpMShot"></div>
+      ${postNumsHtml(last.source==="public"?{}:last)}
       <div class="auth-err" id="bpMErr"></div><button class="btn" type="submit">Save numbers</button></form>`);
-  document.getElementById("bpMForm").onsubmit = async e=>{
+  const form = document.getElementById("bpMForm");
+  const kindOf = ()=>{ const id = (form.querySelector("[name=post]")||{}).value; const p = posts.find(z=> z.post_id===id) || posts[posts.length-1]; return (p&&p.media_type)||"reel"; };
+  const shot = shotReader(document.getElementById("bpMShot"), form, kindOf);
+  form.onsubmit = async e=>{
     e.preventDefault();
-    const f = new FormData(e.target), err = document.getElementById("bpMErr"), btn = e.target.querySelector("button"), p = {};
-    ["views","reach","likes","comments","shares","saves"].forEach(k=>{ const v = String(f.get(k)||"").trim(); if(v!=="") p[k] = Math.max(0, Math.round(Number(v))||0); });
+    const err = document.getElementById("bpMErr"), btn = form.querySelector("button"), p = postNumsRead(form);
     if(!Object.keys(p).length){ err.textContent = "Add at least one number."; return; }
-    if(f.get("post")) p.post_id = f.get("post");
+    const f = form.querySelector("[name=post]"); if(f) p.post_id = f.value;
     btn.disabled = true; btn.textContent = "Saving…";
-    const { error } = await sb.schema("api").rpc("bp_record_metrics", { p_participation:part, p_payload:p });
-    if(error){ err.textContent = error.message; btn.disabled=false; btn.textContent="Save numbers"; return; }
-    m.remove(); loadBarterProcess(true);
+    try{
+      if(shot.file()) p.screenshot_url = await uploadProof(shot.file());
+      const { error } = await sb.schema("api").rpc("bp_record_metrics", { p_participation:part, p_payload:p });
+      if(error) throw error;
+      m.remove(); gateToast("Numbers saved ✓"); loadBarterProcess(true);
+    }catch(ex){ err.textContent = ex.message||String(ex); btn.disabled=false; btn.textContent="Save numbers"; }
   };
+}
+// invited / uploaded creator: every message sent so far + their WhatsApp chat, and a box to message them
+const _invChat = {};
+function inviteChatHtml(id, d){
+  const M = (d.messages||[]), digits = String(d.phone||"").replace(/\D/g,"");
+  let day = "";
+  const tick = x=> x.status==="failed" ? `<span class="wa-fail" title="${esc(x.error||"")}">❗ not delivered</span>` : x.status==="queued" ? "🕓" : x.status==="read" ? `<span class="wa-read">✓✓</span>` : x.status==="delivered" ? "✓✓" : "✓";
+  const bubbles = M.map(x=>{
+    const dd = new Date(x.at).toDateString(), sep = dd!==day ? `<div class="wa-day"><span>${esc(fmtDate(x.at))}</span></div>` : ""; day = dd;
+    const txt = String(x.text||"").replace(/<[^>]+>/g," ").replace(/\*\*/g,"");
+    return sep + `<div class="wa-msg ${x.dir==="in"?"in":"out"}${x.auto?" tpl":""}"><div class="wa-bub">
+        ${x.auto?`<span class="wa-tag">${x.channel==="email"?"✉️ email":"🤖"} ${esc(String(x.key||"message").replace(/_/g," "))}</span>`:x.dir==="out"&&x.by?`<span class="wa-tag">${esc(x.by)}</span>`:""}
+        <div class="wa-txt clamp">${esc(txt).replace(/\n/g,"<br>")}</div>${txt.length>200?`<button class="wa-more" type="button">Read more</button>`:""}
+        <span class="wa-time">${esc(new Date(x.at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}))} ${x.dir==="out"?tick(x):""}</span></div></div>`; }).join("");
+  return `<div class="wa-box cc-wa">
+      <div class="wa-head"><span class="avatar">${esc(String(d.handle||d.name||"?").slice(0,2).toUpperCase())}</span>
+        <div class="wa-head-id"><b>${esc(d.name||(d.handle?"@"+d.handle:"")||d.phone||"Creator")}</b><span>${d.phone?esc(d.phone):"no WhatsApp number"}${d.session_open?" · chat open":""}${d.opted_out?" · opted out":""}</span></div>
+        ${digits?`<a class="wa-open" href="https://wa.me/${digits}" target="_blank" rel="noopener">Open in WhatsApp ↗</a>`:""}</div>
+      <div class="wa-chat" data-invscroll>${bubbles || `<div class="wa-empty">Nothing sent yet.</div>`}</div>
+      <div class="wa-compose"><textarea data-invtext="${esc(id)}" rows="1" placeholder="${d.phone?(d.session_open?"Type a message":"Type a message (WhatsApp delivers it only within 24 h of their last reply)"):"No WhatsApp number on their row"}"${d.phone&&!d.opted_out?"":" disabled"}></textarea>
+        <button class="wa-send" data-invsend="${esc(id)}" type="button" aria-label="Send"${d.phone&&!d.opted_out?"":" disabled"}>➤</button></div>
+      <div class="wa-note">${d.session_open ? "✅ They replied in the last 24 h — your message goes straight to their WhatsApp." : "Outside WhatsApp's 24-hour window a typed message can't be delivered — use ↻ Resend invite (an approved template), or Open in WhatsApp."}</div></div>`;
+}
+async function loadInviteChat(box, id){
+  const paint = d=>{ if(!box.isConnected) return; box.innerHTML = inviteChatHtml(id, d);
+    const sc = box.querySelector("[data-invscroll]"); if(sc) sc.scrollTop = sc.scrollHeight;
+    box.querySelectorAll(".wa-more").forEach(b=> b.onclick = ()=>{ const t = b.previousElementSibling; t.classList.toggle("clamp"); b.textContent = t.classList.contains("clamp") ? "Read more" : "Show less"; });
+    const ta = box.querySelector("[data-invtext]"), go = box.querySelector("[data-invsend]");
+    if(ta){ ta.oninput = ()=>{ ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; };
+      ta.onkeydown = e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); go.click(); } }; }
+    if(go) go.onclick = async ()=>{ const t = (ta.value||"").trim(); if(!t){ gateToast("Type a message first."); return; }
+      go.disabled = true;
+      const { data:r, error } = await sb.functions.invoke("wa-send", { body:{ to_phone: d.phone, text: t, subject: (_wsCampaign&&_wsCampaign.name) || null } }).then(x=>x, e=>({error:e}));
+      go.disabled = false;
+      const msg = (r && r.error) || (error && (typeof fnError==="function" ? await fnError(error) : error.message));
+      if(msg){ gateToast(/24-hour|template|opted in/i.test(msg) ? "Can't deliver a typed message now (outside WhatsApp's 24-hour window) — use ↻ Resend invite, or Open in WhatsApp." : msg); return; }
+      ta.value = ""; gateToast("WhatsApp message sent ✓"); delete _invChat[id]; loadInviteChat(box, id); };
+  };
+  if(_invChat[id]) paint(_invChat[id]);
+  const { data, error } = await sb.schema("api").rpc("invite_messages", { p_invite: id }).then(r=>r, e=>({error:e}));
+  if(error){ if(box.isConnected && !_invChat[id]) box.innerHTML = `<div class="muted" style="font-size:12.5px">Messages: ${esc(error.message||String(error))}</div>`; return; }
+  if(_invChat[id] && JSON.stringify(_invChat[id]) === JSON.stringify(data)) return;
+  _invChat[id] = data; paint(data);
 }
 async function openBpReassign(part){
   const { data } = await sb.schema("api").rpc("campaign_matches", { p_campaign:_bpCamp.id, p_limit:40 }).then(r=>r, ()=>({data:[]}));

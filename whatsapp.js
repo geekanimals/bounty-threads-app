@@ -115,6 +115,10 @@
     el.innerHTML=list.map(function(c){ return '<div class="wa-conv" data-id="'+esc(c.id)+'"><b>'+esc(c.subject||c.contact_phone_e164)+'</b>'
       +'<div class="muted">'+esc(c.contact_phone_e164)+' · '+fmt(c.last_message_at)+'</div></div>'; }).join("");
     el.querySelectorAll("[data-id]").forEach(function(d){ d.onclick=function(){ openConv(d.getAttribute("data-id"), d.querySelector("b").textContent); }; });
+    // opened from the to-do list: go straight to that number's chat
+    if(window.__waOpenPhone){ var ph=window.__waOpenPhone; window.__waOpenPhone=null;
+      var hit=list.filter(function(c){ return c.contact_phone_e164===ph; })[0];
+      if(hit) openConv(hit.id, hit.subject||hit.contact_phone_e164); }
   }
   async function openConv(id, title){
     _conv=id;

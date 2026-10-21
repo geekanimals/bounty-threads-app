@@ -2010,3 +2010,90 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 .al-day:first-child{margin-top:0}
 .al-camp{display:inline-block;font-size:12px;color:#6c5ce7;background:rgba(108,92,231,.1);border-radius:6px;padding:1px 7px;margin:3px 0;cursor:pointer}
 @media (max-width:600px){ .al-f{min-width:100%} }
+/* address form: one search box first, PIN fills city + state */
+.ga-top{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:12px;background:rgba(0,113,133,.06);border:1px solid rgba(0,113,133,.18)}
+.ga-search input{font-size:15.5px;padding:12px 14px}
+.ga-pin input{font-size:17px;letter-spacing:2px;font-weight:600;max-width:220px}
+.ad-back{border:0;background:transparent;color:#007185;font-weight:700;cursor:pointer;padding:0;font:inherit;font-size:13.5px}
+.ad-form.solo{border:0;padding:0;margin-top:0}
+/* campaign details: folded until tapped */
+.cc-fold>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cc-fold>summary::-webkit-details-marker{display:none}
+.cc-fold>summary .cc-sumchips{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
+.cc-fold>summary .cc-fold-tap{font-size:12px;color:var(--muted);white-space:nowrap}
+.cc-fold>summary .cc-fold-tap::after{content:" ▼"}
+.cc-fold[open]>summary .cc-fold-tap::after{content:" ▲"}
+.cc-fold[open]>summary{margin-bottom:12px}
+.cc-fold[open]>summary .cc-sumchips{display:none}
+/* creator rows: where they're stuck, whose turn, one-tap action + chat */
+.bp-stuck{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px;font-size:13px;line-height:1.35}
+.bp-stuck .muted{font-size:12.5px}
+.bp-turn{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap}
+.bp-turn.you{background:rgba(247,144,9,.15);color:#b54708}
+.bp-turn.cr{background:rgba(91,91,240,.12);color:var(--brand,#5b5bf0)}
+.bp-turn.br{background:rgba(14,165,233,.13);color:#0369a1}
+.bp-turn.ok{background:rgba(18,183,106,.14);color:#067647}
+.bp-turn.off{background:rgba(120,130,150,.15);color:var(--muted)}
+.bp-rowacts{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.bp-rowact{white-space:nowrap}
+.bp-chatbtn{width:36px;height:36px;border-radius:50%;border:0;background:#25d366;color:#fff;font-size:16px;cursor:pointer;flex:0 0 36px;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.bp-chatbtn:hover{filter:brightness(.95)}
+.bp-detail .bp-jr{margin:0 0 10px}
+.bp-now{margin:0 0 12px}
+.jr-now.bad{background:rgba(239,68,68,.07);border-color:rgba(239,68,68,.35)}
+.bp-allsteps{margin:0 0 10px}
+.bp-allsteps>summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--brand,#5b5bf0);margin-bottom:6px}
+.bp-del{color:#dc2626!important;border-color:rgba(220,38,38,.35)!important}
+.btn.danger{background:#dc2626;color:#fff;border:0}
+.bp-flash{box-shadow:0 0 0 3px rgba(247,144,9,.55);transition:box-shadow .4s}
+.bp-pulse{animation:bpPulse 1s ease-in-out 3}
+@keyframes bpPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+.hub-nowwrap{margin:12px 0 4px}
+.hub-nowwrap .jr{margin-bottom:10px}
+.cc-invchat{margin-bottom:12px}
+.cc-wa .wa-chat{height:min(42vh,340px)}
+@media (max-width:640px){
+  .bp-head{flex-wrap:wrap}
+  .bp-head>div[style*="flex:1"]{flex:1 1 calc(100% - 100px)!important}
+  .bp-rowacts{width:100%;justify-content:flex-end;order:5}
+  .bp-rowact{flex:1}
+}
+/* add a post / story */
+.pa-kind{display:flex;gap:6px}
+.pa-kind label{flex:1;margin:0}
+.pa-kind input{position:absolute;opacity:0;pointer-events:none}
+.pa-kind span{display:block;text-align:center;padding:9px 6px;border:1px solid var(--line);border-radius:10px;font-weight:700;font-size:13.5px;cursor:pointer}
+.pa-kind input:checked+span{border-color:var(--brand,#5b5bf0);background:rgba(91,91,240,.08);color:var(--brand,#5b5bf0)}
+.pa-shot{display:flex;flex-direction:column;gap:3px;padding:12px;border:1.5px dashed rgba(91,91,240,.45);border-radius:12px;cursor:pointer;text-align:center;margin:0}
+.pa-shot-btn{font-weight:700;color:var(--brand,#5b5bf0)}
+.pa-shot .muted{font-size:12px}
+.pa-prev{display:flex;gap:10px;align-items:center;margin-top:8px}
+.pa-prev img{width:64px;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.pa-prev-t{font-size:13px}
+.pa-numwrap>summary{cursor:pointer;font-weight:700;font-size:13.5px}
+.pa-nums{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:8px}
+.pa-nums label{font-size:12px;margin:0}
+.pa-nums input{width:100%;box-sizing:border-box}
+.pa-nums input.pa-filled{border-color:#12b76a;background:rgba(18,183,106,.06)}
+.pa-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:8px}
+.pa-tile{display:flex;flex-direction:column;gap:2px;padding:4px;border:1px solid var(--line);border-radius:10px;background:var(--panel,#fff);cursor:pointer;font:inherit;font-size:11px;color:inherit;text-align:left}
+.pa-tile img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:7px}
+.pa-tile.on{border-color:var(--brand,#5b5bf0);box-shadow:0 0 0 2px rgba(91,91,240,.3)}
+/* the team's to-do list (🔔 + All alerts page) */
+.td-list{display:flex;flex-direction:column;gap:8px}
+.td-it{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel,#fff);transition:opacity .4s}
+.td-it.td-done{opacity:.35}
+.td-pic,.td-ic{width:36px;height:36px;border-radius:50%;flex:0 0 36px;object-fit:cover;display:flex;align-items:center;justify-content:center;background:rgba(91,91,240,.08);font-size:17px}
+.td-main{flex:1;min-width:0}
+.td-t{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.td-t b{font-size:13.5px}
+.td-c{font-size:12px;color:var(--brand,#5b5bf0);font-weight:600;margin:2px 0}
+.td-acts{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
+.td-acts a.btn{text-decoration:none;display:inline-flex;align-items:center}
+.td-review,.td-blocked,.td-whatsapp{border-left:3px solid #f79009}
+.al-todo-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.al-todo-h h3{margin:0}
+.al-n{display:inline-block;min-width:22px;padding:1px 7px;border-radius:999px;background:#f79009;color:#fff;font-size:12.5px;text-align:center}
+.al-hist{margin:16px 0 8px;font-size:15px}
+.al-empty{padding:14px}
+@media (max-width:640px){ .bp-head .r-sub{font-size:12.5px} }

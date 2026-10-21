@@ -6,9 +6,13 @@
 //   { action: "verify", line1, line2, landmark, city, state, pin } → finds the address on the map and says whether it
 //                                                     matches the PIN + state (and how precisely: street / area / PIN)
 //   { action: "reverse", lat, lon }                 → address of the current location
+//   { action: "search", q, pin? }                   → full-address suggestions as the creator types (Google Places when
+//                                                     GOOGLE_MAPS_API_KEY is set, else OpenStreetMap / Photon)
+//   { action: "place", id }                         → one Google suggestion → PIN, area, city, state, position
 // Called from the server so the lookups don't depend on the browser (CORS, OpenStreetMap's User-Agent rule).
 import { corsHeaders, json } from "../_shared/cors.ts";
 
+const GKEY = Deno.env.get("GOOGLE_MAPS_API_KEY") || "";
 const UA = "GeekOS/1.0 (Geek Influencer OS delivery address form)";
 const cache = new Map<string, { at: number; v: unknown }>();
 const TTL = 6 * 3600_000;
@@ -111,6 +115,64 @@ async function reverse(lat: number, lon: number) {
     state: a.state || "", pin: a.postcode || "", lat, lon, display: j?.display_name || "" };
 }
 
+// ---------- full-address search (Google-like typeahead) ----------
+async function gPost(url: string, body: unknown, mask?: string): Promise<any> {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 6000);
+  try {
+    const h: Record<string, string> = { "Content-Type": "application/json", "X-Goog-Api-Key": GKEY };
+    if (mask) h["X-Goog-FieldMask"] = mask;
+    const r = await fetch(url, { method: "POST", headers: h, body: JSON.stringify(body), signal: ctl.signal });
+    if (!r.ok) { console.error("google", r.status, (await r.text()).slice(0, 200)); return null; }
+    return await r.json();
+  } catch (_e) { return null; } finally { clearTimeout(t); }
+}
+async function search(q: string, pin: string, kind: string) {
+  q = q.trim(); if (q.length < 2) return { ok: true, items: [] };
+  const p = pin && /^[1-9][0-9]{5}$/.test(pin) ? await pincode(pin) : null;
+  const at = (p as any)?.at as { lat: number; lon: number } | null;
+  if (GKEY) {
+    const body: any = { input: q, includedRegionCodes: ["in"], languageCode: "en" };
+    if (at) body.locationBias = { circle: { center: { latitude: at.lat, longitude: at.lon }, radius: kind === "landmark" ? 5000 : 30000 } };
+    if (kind === "landmark") body.includedPrimaryTypes = ["establishment", "point_of_interest"];
+    const j = await gPost("https://places.googleapis.com/v1/places:autocomplete", body);
+    if (j) {
+      const items = ((j.suggestions || []) as any[]).map((s) => s.placePrediction).filter(Boolean).slice(0, 8).map((pp: any) => ({
+        place_id: pp.placeId, name: pp.structuredFormat?.mainText?.text || pp.text?.text || "",
+        sub: pp.structuredFormat?.secondaryText?.text || "", source: "google" }));
+      return { ok: true, items, source: "google" };
+    }
+  }
+  const bias = at ? `&lat=${at.lat}&lon=${at.lon}&location_bias_scale=0.5&zoom=12` : "";
+  const j = await getJson(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=12&lang=en${bias}`);
+  const seen = new Set<string>();
+  const items = ((j?.features ?? []) as any[]).map((f) => {
+    const pr = f.properties || {}, c = f.geometry?.coordinates || [];
+    return { name: pr.name || [pr.housenumber, pr.street].filter(Boolean).join(" "), house: pr.housenumber || "", street: pr.street || "",
+      locality: pr.district || pr.locality || pr.suburb || "", city: pr.city || pr.county || "", state: pr.state || "",
+      postcode: String(pr.postcode || "").replace(/\D/g, "").slice(0, 6), country: pr.countrycode || "", lat: c[1], lon: c[0], source: "osm" };
+  }).filter((x) => x.name && String(x.country).toUpperCase() === "IN")
+    .filter((x) => { const k = norm(x.name + " " + x.locality + " " + x.city); if (seen.has(k)) return false; seen.add(k); return true; })
+    .map((x) => ({ ...x, sub: [x.street !== x.name ? x.street : "", x.locality, x.city, x.state, x.postcode].filter(Boolean).join(", ") }))
+    .slice(0, 8);
+  return { ok: true, items, source: "osm" };
+}
+async function place(id: string) {
+  if (!GKEY || !/^[A-Za-z0-9_-]{10,300}$/.test(id)) return { ok: false, error: "unknown place" };
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 6000);
+  try {
+    const r = await fetch(`https://places.googleapis.com/v1/places/${id}`, { signal: ctl.signal,
+      headers: { "X-Goog-Api-Key": GKEY, "X-Goog-FieldMask": "addressComponents,location,formattedAddress,displayName,types" } });
+    if (!r.ok) return { ok: false, error: "lookup failed" };
+    const j: any = await r.json();
+    const comp = (type: string) => ((j.addressComponents || []) as any[]).find((c) => (c.types || []).includes(type))?.longText || "";
+    const isPoi = ((j.types || []) as string[]).some((x) => ["establishment", "point_of_interest"].includes(x));
+    return { ok: true, name: j.displayName?.text || "", poi: isPoi, house: [comp("subpremise"), comp("premise"), comp("street_number")].filter(Boolean).join(", "),
+      street: [comp("route"), comp("sublocality_level_2"), comp("sublocality_level_1") || comp("neighborhood")].filter(Boolean).join(", "),
+      city: comp("locality") || comp("administrative_area_level_3") || comp("administrative_area_level_2"),
+      state: comp("administrative_area_level_1"), pin: comp("postal_code"), lat: j.location?.latitude, lon: j.location?.longitude, display: j.formattedAddress || "" };
+  } catch (_e) { return { ok: false, error: "lookup failed" }; } finally { clearTimeout(t); }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -121,6 +183,8 @@ Deno.serve(async (req) => {
       case "suggest": return json(await suggest(String(b.q || ""), String(b.pin || ""), String(b.city || ""), String(b.state || "")));
       case "verify": return json(await verify(b));
       case "reverse": return json(await reverse(Number(b.lat), Number(b.lon)));
+      case "search": return json(await search(String(b.q || "").slice(0, 200), String(b.pin || ""), String(b.kind || "")));
+      case "place": return json(await place(String(b.id || "")));
       default: return json({ error: "unknown action" }, 400);
     }
   } catch (e) {

@@ -124,3 +124,6 @@ verify_jwt = false
 # WhatsApp help bot — Super Admin "try the bot" (nothing is sent)
 [functions.wa-bot-preview]
 verify_jwt = true
+
+[functions.post-shot-read]
+verify_jwt = true

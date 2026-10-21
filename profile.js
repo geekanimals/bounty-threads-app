@@ -349,21 +349,23 @@
     // C Delivery addresses (one or many; one is the default for shipments)
     var addrs = (d.addresses || []);
     body += section("address","Delivery addresses *",
-        '<div class="cp-list" id="cp_addr_list">'+(addrs.length?addrs.map(function(a){
+        '<div id="cp_addr_listwrap"><div class="cp-list" id="cp_addr_list">'+(addrs.length?addrs.map(function(a){
             return '<div class="cp-item"><div><b>'+esc(a.label||"Address")+'</b>'+(a.is_default?' <span class="cp-badge">Default</span>':'')
               + '<div class="muted">'+esc([a.line1,a.line2,a.landmark,a.city,a.state,a.postal_code].filter(Boolean).join(", "))+'</div></div>'
               + '<div class="cp-item-acts">'
               + '<button class="btn sm ghost" data-editaddr="'+esc(a.address_id)+'">Edit</button>'
               + (a.is_default?'':'<button class="btn sm ghost" data-defaddr="'+esc(a.address_id)+'">Make default</button>')
               + '<button class="btn sm ghost" data-deladdr="'+esc(a.address_id)+'">Remove</button></div></div>';
-          }).join(""):'<div class="muted">No address yet — add where brands should ship your products.</div>')+'</div>'
-      + '<div class="cp-addr-tools"><span class="cp-hint" id="cp_addr_mode">Add a new address</span></div>'
+          }).join(""):'')+'</div>'
+      + (addrs.length?'<div class="cp-addrow"><button class="btn sm" type="button" id="cp_addr_new">+ Add a new address</button></div>':'')+'</div>'
+      + '<div id="cp_addr_box"'+(addrs.length?' hidden':'')+'>'
+      + '<div class="ad-form-h"><b id="cp_addr_mode">Add a new address</b>'+(addrs.length?'<button type="button" class="ad-back" id="cp_addr_back">← Saved addresses</button>':'')+'</div>'
       + '<div class="cp-hint" id="cp_geo_msg"></div>'
       + '<input type="hidden" id="cp_addr_id" value="">'
-      + '<div class="cp-grid">'+field("Label","cp_addr_label","Home",{select:[["Home","Home"],["Office","Office"],["Manager","Manager / agent"],["Other","Other (studio, PG, family…)"]]})+'</div>'
       + '<div id="cp_addr_form"></div>'
+      + '<div class="cp-grid">'+field("Save as","cp_addr_label","Home",{select:[["Home","Home"],["Office","Office"],["Manager","Manager / agent"],["Other","Other"]]})+'</div>'
       + '<label class="cp-check"><input type="checkbox" id="cp_addr_default"'+(addrs.length?'':' checked')+'> Make this my default address</label>'
-      + '<div class="cp-addrow"><button class="btn sm" id="cp_addr_save">Save address</button><button class="btn sm ghost" id="cp_addr_new">Clear / new</button></div>'
+      + '<div class="cp-addrow"><button class="btn sm" id="cp_addr_save">Save address</button></div></div>'
       + '<div class="cp-note">Your full address is private, used only for campaign logistics you approve — never shown in search or to brands.</div>',
       {sub:"Every field required · checked on the map"});
 
@@ -728,8 +730,11 @@
     // addresses: save / new / edit / default / remove
     var as=document.getElementById("cp_addr_save");
     if(as) as.onclick=async function(){ setStatus("address","saving"); try{ await saveAddress(); setStatus("address","saved"); await load(); }catch(e){ setStatus("address","error", e.message||e); var gm=document.getElementById("cp_geo_msg"); if(gm) gm.textContent="⚠ "+(e.message||e); } };
+    var showAddrForm=function(on){ var lw=document.getElementById("cp_addr_listwrap"), bx=document.getElementById("cp_addr_box");
+      if(lw) lw.hidden=!!on && !!(DATA.addresses||[]).length; if(bx) bx.hidden=!on && !!(DATA.addresses||[]).length; };
     var an=document.getElementById("cp_addr_new");
-    if(an) an.onclick=function(){ fillAddr({}); };
+    if(an) an.onclick=function(){ fillAddr({}); showAddrForm(true); };
+    var ab=document.getElementById("cp_addr_back"); if(ab) ab.onclick=function(){ showAddrForm(false); };
     function fillAddr(a){
       var set=function(id,v){ var e=document.getElementById(id); if(e) e.value = v==null?"":v; };
       set("cp_addr_id",a.address_id); set("cp_addr_label",a.label||"Home");
@@ -738,7 +743,7 @@
       var m=document.getElementById("cp_addr_mode"); if(m) m.textContent = a.address_id ? "Editing: "+(a.label||"address") : "Add a new address";
     }
     mountAddrForm({});
-    document.querySelectorAll("[data-editaddr]").forEach(function(b){ b.onclick=function(){ var a=(DATA.addresses||[]).find(function(x){return x.address_id===b.getAttribute("data-editaddr");}); if(a){ fillAddr(a); var fe=document.getElementById("cp_addr_form"); if(fe){ fe.scrollIntoView({block:"start",behavior:"smooth"}); var i=fe.querySelector("input:not([disabled])"); if(i) i.focus({preventScroll:true}); } } }; });
+    document.querySelectorAll("[data-editaddr]").forEach(function(b){ b.onclick=function(){ var a=(DATA.addresses||[]).find(function(x){return x.address_id===b.getAttribute("data-editaddr");}); if(a){ fillAddr(a); showAddrForm(true); var fe=document.getElementById("cp_addr_form"); if(fe){ fe.scrollIntoView({block:"start",behavior:"smooth"}); var i=fe.querySelector("input:not([disabled])"); if(i) i.focus({preventScroll:true}); } } }; });
     document.querySelectorAll("[data-defaddr]").forEach(function(b){ b.onclick=async function(){ var a=(DATA.addresses||[]).find(function(x){return x.address_id===b.getAttribute("data-defaddr");}); if(!a) return;
       var r=await api("upsert_address",{p_payload:{address_id:a.address_id,is_default:true},p_correlation:"ui"}); if(r.error) alert(r.error.message||r.error); load(); }; });
     document.querySelectorAll("[data-deladdr]").forEach(function(b){ b.onclick=async function(){ if(!confirm("Remove this address?")) return;

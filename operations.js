@@ -77,10 +77,21 @@
     if(route==="campaignops" && n.campaign_id){ setTimeout(function(){ openCampaignDetail(n.campaign_id); },60); }
   }
 
+  // the team (Super Admin / agency / brand) sees only what they must do; creators see their alerts
+  function isTeam(){ return !!window.__isAdmin || (typeof currentRole!=="undefined" && currentRole!=="creator"); }
+  var _todoTimer=null;
   async function updateAlertsBadge(){
     try{
-      var r=await api("get_my_notifications",{p_only_unread:true});
-      var n=(r && !r.error && Array.isArray(r.data))?r.data.length:0;
+      var n=0;
+      if(isTeam()){
+        var t=await api("admin_todo",{p_campaign:null});
+        if(t && !t.error){ n=Number((t.data||{}).total)||0; window.__todo=t.data; }
+        else { var r0=await api("get_my_notifications",{p_only_unread:true}); n=(r0 && !r0.error && Array.isArray(r0.data))?r0.data.length:0; }
+        if(!_todoTimer) _todoTimer=setInterval(function(){ if(document.visibilityState==="visible") updateAlertsBadge(); }, 60000);
+      } else {
+        var r=await api("get_my_notifications",{p_only_unread:true});
+        n=(r && !r.error && Array.isArray(r.data))?r.data.length:0;
+      }
       window.__alertsUnread=n;
       var bell=document.getElementById("notifCount"); if(bell){ bell.textContent=n>9?"9+":String(n); bell.style.display=n>0?"":"none"; }
       var a=document.querySelector('#nav a[data-page="alerts"]'); if(!a) return;
@@ -98,14 +109,23 @@
       +   '<label class="al-f al-grow"><span>Search</span><input id="alSearch" placeholder="Creator, step, campaign…"></label>'
       + '</div>'
       + '<div id="alCampChips" class="al-chips"></div>'
+      + '<div id="alTodo"></div>'
       + '<div id="opsAlertsBody">'+(window.skel?skel("list",4):'<div class="card"><div class="muted">Loading…</div></div>')+'</div></div>';
   };
   var _al = { camp:"", status:"all", q:"", items:[], timer:null };
   async function loadAlerts(target){
     // the 🔔 drawer: latest alerts + a button to the full page
     if(target){
-      try{ var r=await api("get_my_notifications",{p_only_unread:false}); if(r.error) throw r.error; renderAlertsList(r.data||[], target); }
-      catch(e){ target.innerHTML='<div class="card ci-err-inline">Couldn\'t load alerts: '+esc(e.message||e)+'</div>'; }
+      var done=false;
+      if(isTeam()){
+        var hd=document.querySelector("#notifDrawer .drawer-head strong"); if(hd) hd.textContent="To do";
+        var hm=document.querySelector("#notifDrawer .drawer-head .muted"); if(hm) hm.textContent="Only what needs you — do it right here";
+        try{ var t=await api("admin_todo",{p_campaign:null}); if(t.error) throw t.error; renderTodo(t.data||{}, target, true); done=true; }catch(e0){ done=false; }
+      }
+      if(!done){
+        try{ var r=await api("get_my_notifications",{p_only_unread:false}); if(r.error) throw r.error; renderAlertsList(r.data||[], target); }
+        catch(e){ target.innerHTML='<div class="card ci-err-inline">Couldn\'t load alerts: '+esc(e.message||e)+'</div>'; }
+      }
       var head=document.querySelector("#notifDrawer .drawer-head > div");
       if(head && !document.getElementById("notifAll")){
         var b=document.createElement("button"); b.id="notifAll"; b.className="mini-btn"; b.style.marginTop="6px"; b.textContent="View all alerts →";
@@ -123,6 +143,13 @@
     if(ss && !ss.__w){ ss.__w=1; ss.value=_al.status; ss.onchange=function(){ _al.status=ss.value; loadAlertsPage(false); }; }
     if(qs && !qs.__w){ qs.__w=1; qs.value=_al.q; qs.oninput=function(){ clearTimeout(_al.timer); _al.timer=setTimeout(function(){ _al.q=qs.value.trim(); loadAlertsPage(false); }, 350); }; }
     var last = more && _al.items.length ? _al.items[_al.items.length-1].created_at : null;
+    var td=document.getElementById("alTodo");
+    if(td && isTeam() && !more){
+      api("admin_todo",{p_campaign:_al.camp||null}).then(function(t){ if(!t || t.error){ td.innerHTML=""; return; }
+        var x=t.data||{}; td.innerHTML='<div class="card al-todo"><div class="al-todo-h"><h3>⚡ To do'+(Number(x.total)?' <span class="al-n">'+esc(x.total)+'</span>':'')+'</h3><span class="muted">Only what needs you — tap to do it</span></div><div id="alTodoList"></div></div>'
+          + '<h3 class="al-hist">History</h3>';
+        renderTodo(x, document.getElementById("alTodoList"), false); });
+    }
     try{
       var r=await api("get_my_alerts_page",{ p_campaign:_al.camp||null, p_status:_al.status, p_search:_al.q||null, p_limit:100, p_before:last });
       if(r.error) throw r.error;
@@ -199,6 +226,65 @@
     // row click → mark read
     body.querySelectorAll(".ops-alert").forEach(function(row){ row.onclick=function(){
       var id=row.getAttribute("data-nid"); if(row.classList.contains("unread")){ api("mark_notification_read",{p_id:id}).then(function(){ row.classList.remove("unread"); updateAlertsBadge(); }); }
+    }; });
+  }
+  // ---- the team's to-do list: each item has its action right on it, or opens that creator on that step ----
+  var TODO_IC={ screen:"🔎", add_list:"📋", brand:"🏢", contract:"📜", unsigned:"✍️", ship:"🚚", deliver:"📦", review:"🎬", overdue:"⏰", blocked:"⛔",
+                whatsapp:"💬", signup:"🏢", campaign_approval:"📣", delete_request:"🗑" };
+  function todoActs(it){
+    var P=esc(it.participation_id||""), b=function(k,l,primary){ return '<button class="btn sm'+(primary?'':' ghost')+'" data-td="'+k+'" data-tdk="'+esc(it.key)+'">'+l+'</button>'; };
+    var open=it.participation_id ? b("open","Open creator →") : "";
+    switch(it.kind){
+      case "screen": return b("screen","✓ Meets the brief",1)+b("go:bpreject","Not a fit")+open;
+      case "add_list": return b("add_list","📋 Add to the brand's list",1)+open;
+      case "brand": return b("brand","✅ Brand confirmed",1)+b("go:bpbrandno","Brand passed")+open;
+      case "contract": return b("contract","📜 Send contract now",1)+open;
+      case "unsigned": return b("go:bpchat","💬 Remind on WhatsApp",1)+b("contract","🔁 Resend contract")+open;
+      case "ship": return b("go:bpship","🚚 Add courier & tracking",1)+open;
+      case "deliver": return b("deliver","📦 Mark delivered",1)+open;
+      case "review": return (it.video_url?'<a class="btn sm ghost" href="'+esc(it.video_url)+'" target="_blank" rel="noopener">▶ Watch</a>':'')+b("approve","✅ Approve video",1)+b("go:bpchanges","✏️ Ask for changes")+open;
+      case "overdue": return b("go:bpchat","💬 Message them",1)+(it.phone?'<a class="btn sm ghost" href="tel:'+esc(it.phone)+'">📞 Call</a>':'')+open;
+      case "blocked": return (it.phone?'<a class="btn sm" href="tel:'+esc(it.phone)+'">📞 Call '+esc(it.phone)+'</a>':'')+b("go:bpunblock","✅ Called — unblock")+open;
+      case "whatsapp": return b("wa","💬 Reply on WhatsApp",1);
+      case "signup": return b("route","Review the account",1);
+      case "campaign_approval": return b("camp","Open the campaign",1);
+      case "delete_request": return b("route","Open delete requests",1);
+    }
+    return open;
+  }
+  function ago(t){ try{ var m=Math.round((Date.now()-new Date(t).getTime())/60000); if(m<60) return m+" min ago"; var h=Math.round(m/60); if(h<48) return h+" h ago"; return Math.round(h/24)+" days ago"; }catch(e){ return ""; } }
+  function renderTodo(d, target, compact){
+    if(!target) return;
+    var L=(d.items||[]);
+    if(!L.length){ target.innerHTML='<div class="'+(compact?'card':'')+' al-empty"><b>🎉 Nothing needs you right now.</b><div class="muted">New applications, videos to review, parcels to ship and WhatsApp chats waiting for a person show up here.</div></div>'
+      + (compact?'<button class="mini-btn ghost" id="tdHist" style="margin-top:8px">See all alerts →</button>':''); }
+    else target.innerHTML=(compact?'<div class="muted" style="margin:0 0 8px">'+L.length+' thing'+(L.length>1?'s':'')+' to do</div>':'')
+      + '<div class="td-list">'+L.slice(0, compact?40:300).map(function(it){
+        return '<div class="td-it td-'+esc(it.kind)+'" data-tdrow="'+esc(it.key)+'">'
+          + (it.pic?'<img class="td-pic" src="'+esc(it.pic)+'" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility=\'hidden\'">':'<span class="td-ic">'+(TODO_IC[it.kind]||"•")+'</span>')
+          + '<div class="td-main"><div class="td-t"><b>'+esc(it.title)+'</b><span class="ci-hint">'+esc(ago(it.since))+'</span></div>'
+          + (it.campaign?'<div class="td-c">📣 '+esc(it.campaign)+(it.brand?' · '+esc(it.brand):'')+'</div>':'')
+          + (it.body?'<div class="ci-hint">'+esc(it.body)+'</div>':'')
+          + '<div class="ci-evrow td-acts">'+todoActs(it)+'</div></div></div>'; }).join("")+'</div>';
+    var h=target.querySelector("#tdHist"); if(h) h.onclick=function(){ var ov=document.getElementById("notifOverlay"); if(ov) ov.classList.remove("open"); currentPage="alerts"; if(typeof renderShell==="function") renderShell(); };
+    var find=function(k){ for(var i=0;i<L.length;i++) if(L[i].key===k) return L[i]; return null; };
+    var after=function(row, msg){ if(window.gateToast) gateToast(msg); if(row){ row.classList.add("td-done"); setTimeout(function(){ row.remove(); }, 600); } updateAlertsBadge();
+      if(typeof loadBarterProcess==="function" && document.getElementById("bpBody")) loadBarterProcess(true); };
+    target.querySelectorAll("[data-td]").forEach(function(btn){ btn.onclick=async function(e){ e.stopPropagation();
+      var it=find(btn.getAttribute("data-tdk")); if(!it) return; var a=btn.getAttribute("data-td"), row=btn.closest(".td-it");
+      var rpc=function(fn,args,msg){ btn.disabled=true; var t0=btn.textContent; btn.textContent="…";
+        return api(fn,args).then(function(r){ if(r.error){ btn.disabled=false; btn.textContent=t0; if(window.gateToast) gateToast(r.error.message||String(r.error)); return; } after(row, msg); }); };
+      if(a==="screen") return rpc("screen_participation",{p_participation:it.participation_id,p_eligible:true,p_reason:null},"Screened ✓ — next: add them to the brand's list");
+      if(a==="add_list") return rpc("advance_participation",{p_participation:it.participation_id,p_to:"sent_to_brand",p_reason:"added to the brand's list"},"Added to the brand's list ✓");
+      if(a==="brand") return rpc("brand_decide_participation",{p_participation:it.participation_id,p_confirm:true,p_reason:null},"Brand confirmed ✓ — the contract goes out");
+      if(a==="contract") return rpc("bp_send_contract",{p_participation:it.participation_id},"Contract sent ✓");
+      if(a==="deliver") return rpc("bp_mark_delivered",{p_participation:it.participation_id},"Marked delivered ✓ — video brief sent");
+      if(a==="approve") return rpc("bp_review_video",{p_participation:it.participation_id,p_approve:true,p_reason:null},"Video approved ✓");
+      if(a==="open") return window.goToCreatorAction && goToCreatorAction(it.open_id, it.participation_id, null);
+      if(a.indexOf("go:")===0) return window.goToCreatorAction && goToCreatorAction(it.open_id, it.participation_id, a.slice(3));
+      if(a==="wa"){ var ov=document.getElementById("notifOverlay"); if(ov) ov.classList.remove("open"); window.__waOpenPhone=it.phone; currentPage="messages"; if(typeof renderShell==="function") renderShell(); return; }
+      if(a==="camp") return window.goToCreatorAction && goToCreatorAction(it.open_id, null, null);
+      if(a==="route"){ routeNotification({ action_route: it.route||"admin:approvals" }); return; }
     }; });
   }
   function findNotif(list,id){ for(var i=0;i<list.length;i++) if(list[i].notification_id===id) return list[i]; return null; }
@@ -1077,11 +1163,17 @@
     var paint=function(showForm){
       var body=document.getElementById("opsAdBody"); if(!body) return;
       var a=editing||{};
-      var form='<div class="ad-form" id="opsAdForm"'+(showForm?'':' style="display:none"')+'>'
-        + '<div class="ad-form-h"><b>'+(editing&&editing.address_id?'Edit address':'Add a new address')+'</b></div>'
-        + '<div id="opsAdFields"></div>'
-        + '<label class="cp-check"><input type="checkbox" id="opsAdDefault" checked> Make this my default address</label>'
-        + '<div class="cp-ob-actions"><button class="btn sm" id="opsAdNew">Save &amp; ship here</button></div></div>';
+      if(showForm){
+        // adding / editing: only the form — no saved list, no extra buttons
+        body.innerHTML='<div class="ad-form solo" id="opsAdForm">'
+          + '<div class="ad-form-h"><b>'+(editing&&editing.address_id?'Edit address':'Add a new address')+'</b>'+(addrs.length?'<button type="button" class="ad-back" id="opsAdBack">← Saved addresses</button>':'')+'</div>'
+          + '<div id="opsAdFields"></div>'
+          + '<div class="cp-ob-actions"><button class="btn" id="opsAdNew">Save &amp; ship here</button></div></div>'
+          + '<div class="ci-hint cp-err-inline" id="opsAdErr"></div>';
+        if(window.GeekAddress) ctl=window.GeekAddress.mount(document.getElementById("opsAdFields"), a, who);
+        var bk=document.getElementById("opsAdBack"); if(bk) bk.onclick=function(){ editing=null; paint(false); };
+      } else {
+      var form='';
       body.innerHTML=(addrs.length
           ? '<div class="ad-list">'+addrs.map(function(x,i){ var ok=complete(x); return '<label class="ad-opt'+(ok?'':' ad-incomplete')+'"><input type="radio" name="opsAddr" value="'+esc(x.address_id)+'"'+((x.is_default||i===0)?' checked':'')+'>'
               + '<span><b>'+esc(x.label||"Address")+'</b>'+(x.is_default?' <em>Default</em>':'')+(ok?'':' <em class="ad-warn">Needs a few details</em>')
@@ -1090,7 +1182,7 @@
             + '<div class="cp-ob-actions ad-acts"><button class="btn sm ghost" id="opsAdAdd">+ Add a new address</button><button class="btn sm" id="opsAdSave">Ship to this address</button></div>'
           : '')
         + form + '<div class="ci-hint cp-err-inline" id="opsAdErr"></div>';
-      if(showForm && window.GeekAddress) ctl=window.GeekAddress.mount(document.getElementById("opsAdFields"), a, who);
+      }
       var add=document.getElementById("opsAdAdd"); if(add) add.onclick=function(){ editing=null; paint(true); };
       document.querySelectorAll("#opsAdBody [data-adedit]").forEach(function(b){ b.onclick=function(e){ e.preventDefault(); editing=addrs.filter(function(x){ return x.address_id===b.getAttribute("data-adedit"); })[0]; paint(true); }; });
       var save=document.getElementById("opsAdSave");
@@ -1105,12 +1197,13 @@
           closeModal(); loadMyCampaigns(); updateAlertsBadge();
         });
       };
-      document.getElementById("opsAdNew").onclick=async function(){
+      var nb=document.getElementById("opsAdNew");
+      if(nb) nb.onclick=async function(){
         var err=document.getElementById("opsAdErr"); err.textContent="";
         var btn=this;
         try{
           if(!ctl) throw new Error("The address form didn't load — refresh the page.");
-          var payload=await ctl.collect({ label:(editing&&editing.label)||"Home", is_default: !!(document.getElementById("opsAdDefault")||{}).checked });
+          var payload=await ctl.collect({ label:(editing&&editing.label)||"Home", is_default: (editing&&editing.address_id) ? !!editing.is_default : true });
           if(editing && editing.address_id) payload.address_id=editing.address_id;
           btn.disabled=true; btn.textContent="Saving…";
           var r1=await api("upsert_address",{p_payload:payload,p_correlation:"ui-campaign"}); if(r1.error) throw r1.error;
