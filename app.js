@@ -1294,19 +1294,40 @@ function renderCampaigns(){
   return html;
 }
 
+// progress is worked out from where every creator is (not typed by hand): { id: {pct, done, active, applied} }
+let _campProg = {}, _campProgAt = 0, _campProgP = null;
+function campProgLine(c){
+  const g = _campProg[c.id];
+  if(!g) return `${parseInt(c.creators)||0} creators`;
+  return g.active ? `${g.pct}% · ${g.done}/${g.active} creators done${g.applied?` · ${g.applied} applied`:""}` : (g.applied ? `${g.applied} applied · nobody approved yet` : "No creators yet");
+}
+function paintCampProgress(){
+  document.querySelectorAll("[data-cprog]").forEach(e=>{ const id = e.dataset.cprog, g = _campProg[id];
+    if(e.classList.contains("bar")){ const sp = e.querySelector("span"); if(sp) sp.style.width = (g ? g.pct : 0) + "%"; }
+    else if(e.dataset.cprogkind==="pct") e.textContent = (g ? g.pct : 0) + "%";
+    else { const c = { id, creators: e.dataset.creators }; e.textContent = campProgLine(c); } });
+}
+function loadCampProgress(force){
+  if(!window.sb) return;
+  if(!force && _campProgP && Date.now() - _campProgAt < 30000){ _campProgP.then(paintCampProgress); return; }
+  _campProgAt = Date.now();
+  _campProgP = sb.schema("api").rpc("campaigns_progress").then(r=>{ if(r && !r.error && r.data) _campProg = r.data; }, ()=>{});
+  _campProgP.then(paintCampProgress);
+}
 function campaignCardsHtml(list){
+  setTimeout(()=>loadCampProgress(), 0);
   if(!list.length) return `<div class="card"><div class="ai-suggest"><span class="spark">📣</span><div class="s-body"><b>No campaigns yet</b><p>Click "+ New Campaign" to launch your first one 👆</p></div></div></div>`;
   return list.map(c=>{
     const st = {Live:"good","In Production":"brand",Sourcing:"warn",Approval:"warn",Draft:"warn",Completed:"good"}[c.status]||"brand";
-    const prog = Math.max(0, Math.min(100, parseInt(c.progress)||0));
+    const prog = (_campProg[c.id]||{}).pct||0;
     const creators = parseInt(c.creators)||0;
     return `<div class="card"><h3>${esc(c.name)}<span class="tag ${st}">${esc(c.status)||"Draft"}</span></h3>${window.__isAdmin && c.org_name ? `<div class="muted" style="font-size:12px">🏢 ${esc(c.org_name)}</div>` : ""}
       <div class="muted">${esc(c.brand)||"—"} · ${esc(c.campaign_type?campTypeLabel(c.campaign_type,c.barter_subtype):c.type)||"—"}${c.objective?` · ${esc(c.objective)}`:""}</div>
       ${c.deliverables?`<div class="muted" style="margin-top:6px;font-size:13px">📦 ${esc(c.deliverables)}</div>`:""}
       ${c.budget?`<div class="muted" style="font-size:13px">💰 ₹${fmtNum(c.budget)}</div>`:""}
       ${(c.start_date||c.end_date)?`<div class="muted" style="font-size:13px">🗓 ${esc(c.start_date)||"—"} → ${esc(c.end_date)||"—"}</div>`:""}
-      <div class="bar" style="margin-top:8px"><span style="width:${prog}%"></span></div>
-      <div class="camp-foot"><span class="muted">${prog}% · ${creators} creators</span>
+      <div class="bar" style="margin-top:8px" data-cprog="${esc(c.id)}" title="How far the approved creators are: contract → courier → video → every post up"><span style="width:${prog}%"></span></div>
+      <div class="camp-foot"><span class="muted" data-cprog="${esc(c.id)}" data-creators="${creators}">${esc(campProgLine(c))}</span>
       <span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini-btn" data-opencamp="${esc(c.id)}">Open</button><button class="mini-btn" data-bpcamp="${esc(c.id)}">🔁 Process</button><button class="mini-btn" data-bkcamp="${esc(c.id)}">📥 Bulk upload</button><button class="mini-btn" data-invcamp="${esc(c.id)}">🎯 Invite</button><button class="mini-btn ghost" data-editcamp="${esc(c.id)}">Edit</button></span></div></div>`;
   }).join("");
 }
@@ -1649,9 +1670,8 @@ function openCampaignModal(existing, preset){
       <div id="cmFileList" class="cm-files"></div>
       <div class="mf-row"><label>Start date<input name="start_date" type="date" value="${esc(ed.start_date||'')}"></label>
       <label>End date<input name="end_date" type="date" value="${esc(ed.end_date||'')}"></label></div>
-      <div class="mf-row"><label>Status<select name="status" id="cmStatus">${campStatusOptions(ed.status, ed.end_date)}</select>
-        <span class="muted" style="font-weight:400;font-size:12px;text-transform:none;letter-spacing:0">Live = open for creators. It turns <b>Completed</b> on its own after the end date.</span></label>
-      ${existing?`<label>Progress %<input name="progress" type="number" min="0" max="100" value="${ed.progress!=null?esc(ed.progress):''}" placeholder="0"></label>`:'<span></span>'}</div>
+      <label>Status<select name="status" id="cmStatus">${campStatusOptions(ed.status, ed.end_date)}</select>
+        <span class="muted cm-hint"><b>Draft</b> — hidden from creators · <b>Live</b> — creators see it and can apply · <b>Shortlist completed</b> — the campaign keeps running for the creators already in it, nobody new can apply · it turns <b>Completed</b> on its own after the end date, or once every creator is done. Progress is counted on its own from where each creator is.</span></label>
       <div class="cm-sec">📜 Contract terms <span class="muted" style="font-weight:400;font-size:12px">— sent to each creator automatically the moment you approve them</span></div>
       <div class="mf-row"><label>Product the creator gets<input name="ct_product" maxlength="140" value="${esc(ct.product||'')}" placeholder="Momo box (12 pcs)"></label>
       <label>Content due (days after delivery)<input name="ct_days" type="number" min="1" max="60" value="${esc(ct.content_days??7)}">
@@ -1812,7 +1832,6 @@ function openCampaignModal(existing, preset){
         collab_rights: !!f.get("ct_collab"), blacklist_clause: !!f.get("ct_black"), reship_clause: !!f.get("ct_reship"), extra_terms: txt("ct_extra") || null };
       row.video_brief = { what_to_shoot: txt("vb_shoot") || null, key_messages: txt("vb_msg") || null, dos: txt("vb_dos") || null, donts: txt("vb_donts") || null,
         caption: txt("vb_caption") || null, reference_links: txt("vb_refs") || null, posting_note: txt("vb_note") || null };
-      if(existing) row.progress = parseInt(f.get("progress"))||0;
       let error;
       const save = r => existing ? sb.from("campaigns").update(r).eq("id", existing.id) : sb.from("campaigns").insert(r);
       if(!existing && window.Auth&&Auth.profile){ row.org_name=Auth.profile.org; row.org_id=Auth.profile.org_id; }
@@ -1891,11 +1910,12 @@ async function loadReportRows(){
   const list = data||[];
   if(!list.length){ wrap.innerHTML = `<div class="muted" style="padding:12px">No campaigns yet — launch one to see performance here.</div>`; return; }
   wrap.innerHTML = list.map(c=>{
-    const prog = Math.max(0,Math.min(100,parseInt(c.progress)||0));
+    const prog = (_campProg[c.id]||{}).pct||0;
     const creators = parseInt(c.creators)||0;
+    setTimeout(()=>loadCampProgress(), 0);
     return `<div class="row"><span class="dot brand"></span><div class="r-main"><div class="r-title">${esc(c.name)}</div>
       <div class="r-sub">${esc(c.brand)||"—"} · ${esc(c.type)||"—"} · ${creators} creators</div></div>
-      <span class="tag good">${prog}%</span></div>`;
+      <span class="tag good" data-cprog="${esc(c.id)}" data-cprogkind="pct">${prog}%</span></div>`;
   }).join("");
 }
 
