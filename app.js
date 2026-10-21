@@ -4422,19 +4422,20 @@ const BK_FIELDS = [
 // each creator can already be on any step — the sheet's Status column uses these exact words (= the Barter process steps)
 // [key, write this in the sheet, what happens, message the creator gets]
 const BK_STATUSES = [
-  ["registered","Registered","added to the campaign, waiting for screening","no message"],
-  ["screened","Screened","checked against the brand's criteria","no message"],
-  ["sent_to_brand","Sent to brand","on the brand's final list","no message"],
-  ["approved","Approved","brand said yes → contract goes out","Invite (geek_campaign_access)"],
-  ["contract_sent","Contract sent","creator signs it in the app","Sign your contract"],
-  ["contract_signed","Contract signed","next: creator confirms the address","Confirm your address"],
-  ["address_confirmed","Address confirmed","next: you add the courier","no message"],
-  ["courier_sent","Courier sent","next: creator taps Received","Product shipped"],
-  ["courier_delivered","Courier delivered","video brief goes out · video deadline starts today","Video brief"],
-  ["video_brief_sent","Video brief sent","video deadline starts today (campaign's days) + reminders","Video brief"],
-  ["video_submitted","Video submitted","waiting for the brand's review","no message"],
-  ["client_approved","Client approved","next: creator posts it","Video approved — post it"],
-  ["posted","Posted","needs the Post link(s) — campaign complete · numbers fetched from their Instagram","Campaign complete"]];
+  // [key, write this in the sheet, what happens, message the creator gets, what the row needs]
+  ["registered","Applied","added to the campaign, waiting for screening (blank Status = this)","no message",""],
+  ["screened","Screened","checked against the brand's criteria","no message",""],
+  ["sent_to_brand","Sent to brand","on the brand's final list","no message",""],
+  ["approved","Approved","brand said yes → the contract goes out","Invite (geek_campaign_access)",""],
+  ["contract_sent","Contract sent","creator signs it in the app","Sign your contract",""],
+  ["contract_signed","Contract signed","next: the creator confirms the address","Confirm your address",""],
+  ["address_confirmed","Address confirmed","they can read the video brief in the app to practise · next: you add the courier","no message","Address (+ State, PIN code) — or they add it in the app"],
+  ["courier_sent","Courier sent","creator can track it · next: they tap Received","Product shipped","Courier + Tracking"],
+  ["courier_delivered","Courier delivered","the video deadline (campaign's days) starts today + reminders","Video brief","Courier + Tracking"],
+  ["video_brief_sent","Video brief sent","same as Courier delivered (optional)","Video brief","Courier + Tracking"],
+  ["video_submitted","Video submitted","waiting for the brand's review","no message","Video link"],
+  ["client_approved","Client approved","next: the creator posts it","Video approved — post it","Video link"],
+  ["posted","Posted / Done","campaign complete · numbers fetched from their Instagram","Campaign complete","Post link — the link of every post"]];
 const bkStLabel = k => (BK_STATUSES.find(x=>x[0]===k)||BK_STATUSES[0])[1];
 const bkStMsg = k => (BK_STATUSES.find(x=>x[0]===k)||BK_STATUSES[0])[3];
 const bkStRank = k => Math.max(0, BK_STATUSES.findIndex(x=>x[0]===k)) + 1;
@@ -4447,7 +4448,7 @@ function bkStatus(v){
     courier_sent:["courier sent","shipped","dispatched","in transit","product sent"],
     courier_delivered:["courier delivered","courier received","delivered","received","product received","product delivered"],
     video_brief_sent:["video brief sent","brief sent","video brief"], video_submitted:["video submitted","submitted","video sent"],
-    client_approved:["client approved","video approved","content approved"], posted:["posted","live","published","reel posted","done","completed","complete"] };
+    client_approved:["client approved","video approved","content approved"], posted:["posted","live","published","reel posted","done","completed","complete","posted / done","posted/done","posted done"] };
   for(const k in M) if(M[k].includes(t)) return k;
   return null;
 }
@@ -4600,7 +4601,10 @@ function bkStatusChip(p, r){
   if(p.no_contact) return '<span class="tag warn">⚠ no WhatsApp / email / Instagram</span>';
   if(p.duplicate) return '<span class="tag warn">Duplicate — same person as a row above · skipped</span>';
   if(p.already) return `<span class="tag">Already in${p.live_stage?` · ${bkEsc(String(p.live_stage).replace(/_/g," "))}`:""} — nothing new in this row · skipped</span>`;
-  if(p.needs_post_link) return '<span class="tag warn">Posted needs the post link — goes on Client approved until you add it</span>';
+  if(p.lands_on && p.lands_on !== ((r && r.status) || "registered") && bkStRank(p.lands_on) < bkStRank((r && r.status) || "registered")){
+    const miss = [p.needs_post_link?"Post link":"", p.needs_video?"Video link":"", p.needs_courier?"Courier + Tracking":""].filter(Boolean).join(" + ") || "the details for this step";
+    return `<span class="tag warn">Needs ${bkEsc(miss)} — lands on <b>${bkEsc(bkStLabel(p.lands_on))}</b> until you add ${miss.includes("+")?"them":"it"}</span>`;
+  }
   const st = (r && r.status) || "registered";
   const bad = (p.phone_bad?" · number looks wrong":"") + (p.email_bad?" · email looks wrong":"");
   const warn = [bad.slice(3), r && r._addrMissing ? "add the address" : ""].filter(Boolean).join(" · ");
@@ -4681,16 +4685,17 @@ function bkGuideHtml(open){
       <li><b>Download a template</b> below (Excel or CSV) — or copy it straight into a new Google Sheet.</li>
       <li><b>One creator per row.</b> Keep the first row as the column names.</li>
       <li>Every row needs <b>at least one of WhatsApp, Email or Instagram</b> — best is WhatsApp + email: the invite goes to both and all later updates go there.</li>
-      <li><b>Status</b> column: write <b>exactly</b> one of the 13 step names below — where that creator is right now (every row can be different; blank = <b>Registered</b>). You can also change it here before and after the upload.</li>
-      <li><b>Messages:</b> each creator gets <b>one</b> message for their step — <b>Approved</b> → the invite; Contract sent / Contract signed / Courier sent / Courier delivered / Video brief sent / Client approved / Posted → that step's message. <b>Posted</b> is the last step — the campaign is complete. Registered, Screened, Sent to brand, Address confirmed and Video submitted send no message.</li>
+      <li><b>Status</b> column: write <b>exactly</b> one of the step names below — where that creator is right now (every row can be different; blank = <b>Applied</b>). You can also change it here before and after the upload.</li>
+      <li><b>Some steps need one more column</b> (see “The row also needs”): <b>Courier sent / delivered</b> → Courier + Tracking · <b>Video submitted / Client approved</b> → Video link · <b>Posted / Done</b> → Post link of every post. A row without it is put one step back until you add it — the preview shows this before you upload.</li>
+      <li><b>Messages:</b> each creator gets <b>one</b> message for their step — <b>Approved</b> → the invite; Contract sent / Contract signed / Address confirmed / Courier sent / Courier delivered / Client approved / Posted → that step's message. <b>Posted / Done</b> is the last step — the campaign is complete. Applied, Screened, Sent to brand and Video submitted send no message.</li>
       <li><b>After that the normal flow runs:</b> next steps, follow-ups and reminders. From <b>Courier delivered / Video brief sent</b> the video deadline is the campaign's own number of days <b>from today</b>, with the usual reminders.</li>
       <li>For <b>Address confirmed</b>, <b>Courier sent</b> and <b>Courier delivered</b> add the <b>Address</b> (+ State, PIN code); for <b>Courier sent / delivered</b> also the <b>Courier</b> and <b>Tracking</b> ID or link.</li>
       <li><b>New creators</b> (not on Geek OS yet): the step's message carries the app link → they register → <b>connect Instagram</b> (media kit) → <b>complete the profile</b> (name, city, email, WhatsApp, address are <b>pre-filled from your sheet</b>; Instagram followers, name and photo are <b>fetched automatically</b>) → they join the campaign <b>right on their step</b> (earlier steps marked “confirmed offline”). No second message.</li>
       <li>Upload the file — or paste a Google Sheet link (Share → <b>Anyone with the link</b> → Viewer). Column names don't have to match exactly; we match them and you can fix them in the dropdowns.</li>
     </ol>
     <div class="bk-mini"><b>Statuses — write exactly this in the sheet:</b></div>
-    <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable bk-sttable"><thead><tr><th>#</th><th>Write in Status</th><th>What happens</th><th>Message to the creator</th></tr></thead><tbody>
-      ${BK_STATUSES.map(([k,l,h,m],n)=>`<tr><td><span class="bk-stn">${n+1}</span></td><td><code>${bkEsc(l)}</code></td><td>${bkEsc(h)}</td><td>${m==="no message"?'<span class="muted">— no message</span>':`✉️ ${bkEsc(m)}`}</td></tr>`).join("")}
+    <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable bk-sttable"><thead><tr><th>#</th><th>Write in Status</th><th>What happens</th><th>The row also needs</th><th>Message to the creator</th></tr></thead><tbody>
+      ${BK_STATUSES.map(([k,l,h,m,nd],n)=>`<tr><td><span class="bk-stn">${n+1}</span></td><td><code>${bkEsc(l)}</code></td><td>${bkEsc(h)}</td><td>${nd?`<b>${bkEsc(nd)}</b>`:'<span class="muted">—</span>'}</td><td>${m==="no message"?'<span class="muted">— no message</span>':`✉️ ${bkEsc(m)}`}</td></tr>`).join("")}
     </tbody></table></div>
     <div class="bk-mini">Columns:</div>
     <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable"><thead><tr><th>Column</th><th>What to put</th><th>Example</th><th>Needed?</th></tr></thead><tbody>
@@ -4797,7 +4802,8 @@ function wireBulk(){
     if(error){ paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = error.message||String(error); return; }
     const d = data||{};
     _bk.rows = null; _bk.preview = null; paintBulk();
-    if(d.posted_without_link) setTimeout(()=> gateToast(`⚠️ ${d.posted_without_link} “Posted” row${d.posted_without_link>1?"s":""} had no post link — they're on Client approved until you add the link`), 400);
+    const held = [d.posted_without_link?`${d.posted_without_link} without the post link`:"", d.without_video?`${d.without_video} without the video link`:"", d.without_courier?`${d.without_courier} without courier + tracking`:""].filter(Boolean);
+    if(held.length) setTimeout(()=> gateToast(`⚠️ Some rows were put one step back: ${held.join(" · ")} — add those columns and upload again to move them on`), 400);
     gateToast(`✓ ${d.added||0} put on their step now · ${d.invited||0} invited on WhatsApp/email (each got their step's message; they join on their step once profile + Instagram are done)${d.waiting_profile?` · ${d.waiting_profile} on Geek OS, finishing their profile`:""}${d.skipped?` · ${d.skipped} skipped (no contact)`:""}${d.duplicates?` · ${d.duplicates} duplicate${d.duplicates>1?"s":""} skipped`:""}`);
     loadBulkList(); loadBarterProcess(true);
   };
