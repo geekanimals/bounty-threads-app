@@ -2,6 +2,9 @@
 // every hour and the moment a campaign post link is added)
 //
 // For every campaign post (a reel / story / feed post a creator posted for a campaign):
+//   0) finds NEW campaign posts on its own: for creators whose video is approved, every post after the approval that
+//      carries the campaign's #hashtag / @mention (stories + campaigns without tags: the kinds still needed, e.g.
+//      2 Reels + 1 Post) is saved as their campaign post — no link needed from anyone;
 //   1) finds it on the creator's OWN connected Instagram (the Media Kit token) by its link and remembers its media id;
 //   2) fetches its numbers (views, reach, likes, comments, shares, saves) — right away, then every 2 h for 3 days,
 //      then every 12 h for 30 days (stories only while they are live, 24 h);
@@ -44,10 +47,6 @@ Deno.serve(async (req) => {
   const deny = workerGuard(req); if (deny) return deny;
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
   const api = admin.schema("api");
-  const { data: list, error } = await api.rpc("ops_post_targets", { p_limit: 150 });
-  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
-  const targets = (list ?? []) as Target[];
-
   const tokens = new Map<string, string | null>();
   const media = new Map<string, { items: any[]; complete: boolean }>();
   const tokenOf = async (member: string) => {
@@ -74,6 +73,27 @@ Deno.serve(async (req) => {
     if (st.ok) for (const s of (st.j?.data ?? [])) items.push({ ...s, media_product_type: "STORY" });
     const out = { items, complete }; media.set(member, out); return out;
   };
+
+  // 0) find new campaign posts on each creator's Instagram (creators whose video is approved and still have posts to go up)
+  let detected = 0;
+  const { data: who } = await api.rpc("ops_detect_members", { p_limit: 200 });
+  for (const member of ((who ?? []) as string[])) {
+    try {
+      const token = await tokenOf(member); if (!token) continue;
+      const [feed, st] = await Promise.all([
+        ig("me/media?fields=id,caption,permalink,media_type,media_product_type,timestamp&limit=50", token),
+        ig("me/stories?fields=id,permalink,media_type,timestamp", token)]);
+      if (!feed.ok && !st.ok) { if (isAuth(feed.err)) tokens.set(member, null); continue; }
+      const items = [...(feed.ok ? feed.j?.data ?? [] : []), ...(st.ok ? (st.j?.data ?? []).map((x: any) => ({ ...x, media_product_type: "STORY" })) : [])];
+      const { data: n } = await api.rpc("ops_detect_posts", { p_member: member, p_media: items });
+      detected += Number(n || 0);
+    } catch (e) { console.error("ci-post-insights-worker detect:", member, (e as Error).message); }
+  }
+
+  // 1) numbers + "still live?" for every campaign post (incl. the ones just found)
+  const { data: list, error } = await api.rpc("ops_post_targets", { p_limit: 150 });
+  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  const targets = (list ?? []) as Target[];
 
   let resolved = 0, numbers = 0, live = 0, gone = 0, skipped = 0, failed = 0;
   for (const t of targets) {
@@ -126,6 +146,6 @@ Deno.serve(async (req) => {
       failed++; console.error("ci-post-insights-worker:", t.post_id, (e as Error).message);
     }
   }
-  return new Response(JSON.stringify({ ok: true, posts: targets.length, resolved, numbers, live, gone, skipped, failed }),
+  return new Response(JSON.stringify({ ok: true, detected, posts: targets.length, resolved, numbers, live, gone, skipped, failed }),
     { headers: { "Content-Type": "application/json" } });
 });

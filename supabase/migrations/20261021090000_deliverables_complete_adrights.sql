@@ -742,3 +742,114 @@ begin
 end $$;
 revoke all on function api.record_campaign_post(uuid,jsonb) from public, anon;
 grant execute on function api.record_campaign_post(uuid,jsonb) to authenticated, service_role;
+
+-- ---------------------------------------------------------------------------------------------------
+-- 8) posts are found on their own — by the server, every hour, from the creator's own Instagram (no app open needed)
+--    For a creator whose video is approved: every post after the approval that carries the campaign's #hashtag /
+--    @mention is this campaign's post and its link is saved. Stories (Instagram gives no caption for stories) and
+--    campaigns without tags: the first posts of the kinds still needed count (e.g. 2 Reels + 1 Post → the first 2 reels
+--    and the first feed post after approval). The same Instagram post never counts for two campaigns.
+-- ---------------------------------------------------------------------------------------------------
+create or replace function intel.ci_ig_code(p text)
+returns text language sql immutable set search_path = '' as $$
+  select coalesce((regexp_match(coalesce(p,''), 'instagram\.com/(?:[^/]+/)?(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)', 'i'))[1],
+                  'story:' || (regexp_match(coalesce(p,''), 'instagram\.com/stories/[^/]+/([0-9]+)', 'i'))[1],
+                  intel.ci_norm_permalink(p)) $$;
+
+create or replace function intel.ci_media_kind(m jsonb)
+returns text language sql immutable set search_path = '' as $$
+  select case when upper(coalesce(m->>'media_product_type','')) = 'STORY' then 'story'
+              when upper(coalesce(m->>'media_product_type','')) = 'REELS' then 'reel'
+              when upper(coalesce(m->>'media_type','')) in ('VIDEO','REELS') then 'reel'
+              else 'post' end $$;
+
+create or replace function intel.ci_autodetect_from(p_member uuid, p_media jsonb)
+returns int language plpgsql security definer set search_path = '' as $$
+declare r record; m jsonb; v_tags text[]; v_since timestamptz; v_pid uuid; v_n int := 0; v_kind text; v_cap text;
+        v_left jsonb; v_need int; v_tagged boolean; v_code text;
+begin
+  if p_member is null or jsonb_typeof(coalesce(p_media,'null'::jsonb)) <> 'array' then return 0; end if;
+  for r in select p.participation_id, p.campaign_id, p.stage from intel.ci_campaign_participation p
+             join intel.ci_identity_actor_access a on a.identity_id = p.identity_id and a.access_role = 'self' and a.revoked_at is null
+            where a.member_id = p_member and p.stage in ('content_approved','published') and p.blocked_at is null
+            order by p.updated_at loop
+    v_tags := intel.ci_campaign_tags(r.campaign_id);
+    select min(ev.at) into v_since from intel.ci_campaign_event ev
+     where ev.participation_id = r.participation_id and ev.entity = 'participation' and ev.to_status = 'content_approved';
+    v_since := coalesce(v_since, now() - interval '2 days') - interval '10 minutes';
+    -- what is still needed, per kind: {"reel":1,"story":2,"post":0}
+    select coalesce(jsonb_object_agg(case i->>'kind' when 'feed' then 'post' else i->>'kind' end, greatest((i->>'need')::int - (i->>'done')::int, 0)), '{}'::jsonb)
+      into v_left from jsonb_array_elements(coalesce(intel.ci_deliverables_progress(r.participation_id)->'items','[]'::jsonb)) i;
+    for m in select e from jsonb_array_elements(p_media) e
+              where nullif(e->>'timestamp','') is not null and (e->>'timestamp')::timestamptz >= v_since
+              order by (e->>'timestamp')::timestamptz loop
+      v_code := intel.ci_ig_code(m->>'permalink');
+      -- already on a campaign (this one or another)
+      continue when exists (select 1 from intel.ci_campaign_post po
+                             where (nullif(m->>'id','') is not null and po.external_media_id = m->>'id')
+                                or (v_code is not null and intel.ci_ig_code(po.permalink) = v_code));
+      v_kind := intel.ci_media_kind(m);
+      v_need := coalesce((v_left->>v_kind)::int, 0);
+      v_cap := lower(coalesce(m->>'caption',''));
+      v_tagged := cardinality(v_tags) > 0 and exists (select 1 from unnest(v_tags) t where position(t in v_cap) > 0);
+      if v_kind = 'story' or cardinality(v_tags) = 0 then
+        continue when v_need <= 0 and not v_tagged;        -- no caption to match: only the kinds still needed
+      else
+        continue when not v_tagged;                         -- feed posts / reels must carry the campaign's tags
+      end if;
+      insert into intel.ci_campaign_post(participation_id, campaign_id, media_type, permalink, caption, external_media_id, posted_at)
+      values (r.participation_id, r.campaign_id, v_kind, nullif(m->>'permalink',''), nullif(m->>'caption',''), nullif(m->>'id',''),
+              coalesce(nullif(m->>'timestamp','')::timestamptz, now()))
+      returning post_id into v_pid;
+      v_left := v_left || jsonb_build_object(v_kind, greatest(v_need - 1, 0));
+      begin perform intel.ci_check_caption_tags(r.participation_id, 'post', v_pid, m->>'caption', null); exception when others then null; end;
+      insert into intel.ci_campaign_event(campaign_id, participation_id, entity, from_status, to_status, actor_member_id, reason)
+      values (r.campaign_id, r.participation_id, 'submission', null, 'posted', null, v_kind || ' found on Instagram automatically');
+      if r.stage = 'content_approved' then
+        perform intel.ci_participation_advance(r.participation_id, 'published', null, 'post found on Instagram automatically');
+        r.stage := 'published';
+      end if;
+      v_n := v_n + 1;
+    end loop;
+  end loop;
+  return v_n;
+end $$;
+revoke all on function intel.ci_autodetect_from(uuid, jsonb) from public, anon, authenticated;
+
+-- the Media Kit sync (creator opens the app) uses the same rules
+create or replace function intel.ci_autodetect_posts(p_member uuid)
+returns int language plpgsql security definer set search_path = '' as $$
+declare v_media jsonb;
+begin
+  -- links the team added by hand: match them to the creator's synced Instagram media so the numbers load
+  update intel.ci_campaign_post po set external_media_id = mm.e->>'id'
+    from public.social_accounts sa, jsonb_array_elements(coalesce(sa.recent_media,'[]'::jsonb) || coalesce(sa.recent_stories,'[]'::jsonb)) as mm(e)
+   where po.external_media_id is null and po.permalink is not null and sa.member_id = p_member and sa.platform = 'instagram'
+     and intel.ci_ig_code(mm.e->>'permalink') = intel.ci_ig_code(po.permalink)
+     and intel.ci_member_of_identity((select identity_id from intel.ci_campaign_participation x where x.participation_id = po.participation_id)) = p_member;
+  select coalesce(sa.recent_media,'[]'::jsonb)
+         || coalesce((select jsonb_agg(s || '{"media_product_type":"STORY"}'::jsonb) from jsonb_array_elements(coalesce(sa.recent_stories,'[]'::jsonb)) s), '[]'::jsonb)
+    into v_media from public.social_accounts sa where sa.member_id = p_member and sa.platform = 'instagram' limit 1;
+  return intel.ci_autodetect_from(p_member, coalesce(v_media, '[]'::jsonb));
+end $$;
+revoke all on function intel.ci_autodetect_posts(uuid) from public, anon, authenticated;
+
+-- the worker: which creators to look at (video approved / posting, still something to post) …
+create or replace function api.ops_detect_members(p_limit int default 200)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(distinct m.member_id), '[]'::jsonb) from (
+    select intel.ci_member_of_identity(p.identity_id) as member_id
+      from intel.ci_campaign_participation p
+     where p.stage in ('content_approved','published') and p.blocked_at is null
+       and not coalesce((intel.ci_deliverables_progress(p.participation_id)->>'all_done')::boolean, false)
+     limit greatest(coalesce(p_limit, 200), 1)) m
+  where m.member_id is not null $$;
+revoke all on function api.ops_detect_members(int) from public, anon, authenticated;
+grant execute on function api.ops_detect_members(int) to service_role;
+
+-- … and what it found on their Instagram (posts + live stories, newest 50)
+create or replace function api.ops_detect_posts(p_member uuid, p_media jsonb)
+returns int language sql security definer set search_path = '' as $$
+  select intel.ci_autodetect_from(p_member, p_media) $$;
+revoke all on function api.ops_detect_posts(uuid, jsonb) from public, anon, authenticated;
+grant execute on function api.ops_detect_posts(uuid, jsonb) to service_role;
