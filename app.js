@@ -3301,11 +3301,15 @@ function csScoutPanel(res, S, refresh){
     go.disabled = true; go.textContent = "Searching Instagram…";
     const msg = document.getElementById("csScoutMsg");
     msg.innerHTML = `<div class="cs-scout-run"><span class="mk-spin sm"></span> Reading Instagram posts and pulling profiles — about 20–40 seconds…</div>`;
-    const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"scout", city, category:cat, keyword } }).then(r=>r, e=>({error:e}));
+    // never spin forever: give up after 90 seconds
+    const { data, error } = await Promise.race([
+      sb.functions.invoke("ig-discover", { body:{ action:"scout", city, category:cat, keyword } }).then(r=>r, e=>({error:e})),
+      new Promise(r=>setTimeout(()=>r({ error:{ message:"Instagram is taking too long — please try again in a minute." } }), 90000)) ]);
     go.disabled = false; go.textContent = "🔄 Search again";
     if(error || !data || data.error){ msg.innerHTML = `<div class="muted">${esc((data && data.error) || (error && error.message) || "Couldn't reach Instagram.")}</div>`; return; }
     S._scout = Object.assign({}, S._scout, { [key]: data });
     gateToast(`${data.with_stats||0} creator(s) with full profile${(data.no_stats||[]).length?` + ${(data.no_stats||[]).length} more handle(s)`:""} added`);
+    if(data.note) msg.insertAdjacentHTML("beforeend", `<div class="muted">⚠️ ${esc(data.note)}</div>`);
     if(refresh) refresh();
   };
 }

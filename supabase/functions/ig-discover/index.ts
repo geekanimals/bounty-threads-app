@@ -253,20 +253,26 @@ Deno.serve(async (req) => {
       const tags = scoutTags(city, category, keyword);
       const count = new Map<string, number>(), seenIn = new Map<string, string>();
       const used: string[] = []; let lastErr = "", permErr = false;
-      for (const tag of tags) {
-        const hs = await (await fetch(`${FB_GRAPH}/ig_hashtag_search?user_id=${igId}&q=${encodeURIComponent(tag)}&access_token=${FT}`)).json().catch(() => ({}));
+      const caps = await Promise.all(tags.map(async (tag) => {
+        const hs = await fj(`${FB_GRAPH}/ig_hashtag_search?user_id=${igId}&q=${encodeURIComponent(tag)}&access_token=${FT}`);
         const hid = hs?.data?.[0]?.id;
-        if (!hid) { if (hs?.error) { lastErr = String(hs.error.message || ""); permErr = permErr || needsPermission(hs); } continue; }
-        used.push(tag);
-        for (const edge of ["top_media", "recent_media"]) {
-          const mr = await (await fetch(`${FB_GRAPH}/${hid}/${edge}?user_id=${igId}&fields=caption&limit=50&access_token=${FT}`)).json().catch(() => ({}));
-          for (const m of (mr?.data ?? [])) {
-            for (const x of (String(m?.caption || "").match(/@([A-Za-z0-9._]{2,30})/g) || [])) {
-              const h = x.slice(1).toLowerCase().replace(/\.+$/, "");
-              if (h.length < 2) continue;
-              count.set(h, (count.get(h) || 0) + 1);
-              if (!seenIn.has(h)) seenIn.set(h, tag);
-            }
+        if (!hid) { if (hs?.error) { lastErr = String(hs.error.message || ""); permErr = permErr || needsPermission(hs); } return null; }
+        const pages = await Promise.all(["top_media", "recent_media"].map(async (edge) => {
+          let mr = await fj(`${FB_GRAPH}/${hid}/${edge}?user_id=${igId}&fields=caption&limit=50&access_token=${FT}`);
+          if (!Array.isArray(mr?.data)) mr = await fj(`${FB_GRAPH}/${hid}/${edge}?user_id=${igId}&fields=caption&limit=25&access_token=${FT}`);
+          return mr?.data ?? [];
+        }));
+        return { tag, media: pages.flat() };
+      }));
+      for (const c of caps) {
+        if (!c) continue;
+        used.push(c.tag);
+        for (const m of c.media) {
+          for (const x of (String(m?.caption || "").match(/@([A-Za-z0-9._]{2,30})/g) || [])) {
+            const h = x.slice(1).toLowerCase().replace(/\.+$/, "");
+            if (h.length < 2) continue;
+            count.set(h, (count.get(h) || 0) + 1);
+            if (!seenIn.has(h)) seenIn.set(h, c.tag);
           }
         }
       }
@@ -277,11 +283,14 @@ Deno.serve(async (req) => {
       const ranked = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([h]) => h).slice(0, 30);
       const want = (category ? [category] : []);
       const profiles: any[] = [], noStats: string[] = [];
-      for (let i = 0; i < ranked.length; i += 6) {
-        const batch = ranked.slice(i, i + 6);
+      let bdPerm = false;
+      for (let i = 0; i < ranked.length; i += 10) {
+        const batch = ranked.slice(i, i + 10);
+        if (bdPerm) { noStats.push(...batch); continue; }
         const got = await Promise.all(batch.map((h) => bdProfile(igId, FT, h)));
         got.forEach((p, k) => {
           const h = batch[k];
+          if (p && (p as any).perm) { bdPerm = true; noStats.push(h); return; }
           if (!p) { noStats.push(h); return; }
           profiles.push({ ...p, source: "hashtag", city: cityFor(p.bio, city), category: want.join(","), caption: `${p.caption} #${seenIn.get(h)}`.slice(0, 1500) });
         });
@@ -293,6 +302,7 @@ Deno.serve(async (req) => {
       }
       profiles.sort((a, b) => (b.followers || 0) - (a.followers || 0));
       return json({ ok: true, tags: used, found: ranked.length, with_stats: profiles.length,
+        note: bdPerm ? "Handles added. Followers / engagement need Meta's instagram_manage_insights permission — once it's on, reconnect Facebook and search again." : undefined,
         profiles: profiles.map(({ caption: _c, mentions: _m, ...r }) => r), no_stats: noStats });
     }
 
@@ -303,12 +313,18 @@ Deno.serve(async (req) => {
   }
 });
 
+// fetch JSON with a time limit so one slow Instagram call can't hang the whole search
+async function fj(url: string, ms = 12000): Promise<any> {
+  try { const r = await fetch(url, { signal: AbortSignal.timeout(ms) }); return await r.json().catch(() => ({})); }
+  catch { return { error: { message: "Instagram took too long to answer" } }; }
+}
+
 // one public profile through business discovery (null = personal / private / missing account)
 async function bdProfile(igId: string, FT: string, username: string) {
   const fields = `business_discovery.username(${encodeURIComponent(username)}){username,name,biography,followers_count,media_count,profile_picture_url,media.limit(12){caption,permalink,like_count,comments_count}}`;
-  const j = await (await fetch(`${FB_GRAPH}/${igId}?fields=${fields}&access_token=${FT}`)).json().catch(() => ({}));
+  const j = await fj(`${FB_GRAPH}/${igId}?fields=${fields}&access_token=${FT}`);
   const bd = j?.business_discovery;
-  if (!bd) return null;
+  if (!bd) return needsPermission(j) ? ({ perm: true } as any) : null;
   const media: any[] = bd?.media?.data ?? [];
   const avg = (k: string) => media.length ? media.reduce((s2: number, m: any) => s2 + (Number(m?.[k]) || 0), 0) / media.length : null;
   const caption = media.map((m: any) => m?.caption || "").join(" ").slice(0, 1200);
