@@ -46,8 +46,15 @@ select is( (select template_key from private.ci_video_nudge limit 1), 'video_nud
 delete from private.ci_video_nudge;
 update intel.ci_campaign set ends_on = current_date - 1 where campaign_id = (select v::uuid from _v where k='camp');
 update private.ci_step_wa_status set status = 'approved' where wa_template = 'geek_step_video_final';
+select set_config('ci.morning_slot','false',true);
+select is( intel.ci_run_video_reminders(), 0, 'campaign over: no warning in the evening slot');
+select set_config('ci.morning_slot','true',true);
 select is( intel.ci_run_video_reminders(), 1, 'campaign over: still reminded');
 select is( (select template_key from private.ci_video_nudge limit 1), 'video_blacklist_warning', 'with the blocklist warning');
+insert into private.ci_video_nudge(participation_id, slot_at, template_key) values
+  ((select v::uuid from _v where k='part'), now() - interval '1 day', 'video_blacklist_warning'),
+  ((select v::uuid from _v where k='part'), now() - interval '2 days', 'video_blacklist_warning');
+select is( intel.ci_run_video_reminders(), 0, 'blocklist warning goes 3 times at most');
 delete from private.ci_video_nudge;
 update intel.ci_campaign_participation set stage = 'content_submitted' where participation_id = (select v::uuid from _v where k='part');
 select is( intel.ci_run_video_reminders(), 0, 'video in: no more reminders');
