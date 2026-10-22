@@ -1478,6 +1478,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
       <button class="btn ghost" data-ccsec="outreach">✉️ Outreach message</button>
       <button class="btn ghost" data-ccsec="shortlist">📋 List for the brand</button>
       <button class="btn ghost" data-ccsec="analytics">📈 Report</button>
+      <button class="btn ghost" data-ccsec="traits">🧩 Creator traits</button>
       <button class="btn cc-needbtn" id="ccNeedsBtn" hidden></button>
       <button class="btn ghost" id="wsEdit">✏️ Edit campaign</button>
       <button class="btn ghost cdel-btn" id="wsDel">${window.__isAdmin?"🗑 Delete":"🗑 Request delete"}</button>
@@ -1916,6 +1917,9 @@ function renderReports(){
   html += kpiRow(currentRole);
   html += `<div class="card"><h3>Campaign Performance</h3>
     <div class="list" id="reportRows"><div class="muted" style="padding:12px">Loading…</div></div></div>`;
+  html += `<div class="card" style="margin-top:16px"><h3 style="margin-top:0">🧩 Creator traits report</h3>
+    <p class="muted" style="margin:-4px 0 10px;font-size:13px">Group creators by what they have in common — category, skills, city, age, profile completion, followers and more. Pick a campaign once it's done to see what the creators who posted had in common.</p>
+    <div id="ctrRoot"></div></div>`;
   return html;
 }
 
@@ -1935,6 +1939,141 @@ async function loadReportRows(){
       <div class="r-sub">${esc(c.brand)||"—"} · ${esc(c.type)||"—"} · ${creators} creators</div></div>
       <span class="tag good" data-cprog="${esc(c.id)}" data-cprogkind="pct">${prog}%</span></div>`;
   }).join("");
+}
+
+/* ================= 🧩 Creator traits report — group creators by what they have in common =================
+ * Scope: all creators · one campaign (Geek OS + uploaded) · one brand · and who (everyone / approved / posted).
+ * Group by any trait (category, skill, city, age, profile completion…), split by a second one, see what the
+ * creators who posted had in common. Click a group to see its creators. CSV for the groups and the raw rows. */
+const CTR_TRAITS = [
+  ["categories","Category"],["skills","Skill"],["formats","Content type"],["languages","Language"],["city","City"],["state","State"],
+  ["gender","Gender"],["age","Age"],["profile","Profile completion"],["followers","Followers"],["engagement","Engagement"],
+  ["barter","Takes barter"],["pet","Pet parent"],["parent","Mom / parent"],["joined_via","Joined via"],["stage","Campaign step"],["posted","Posted?"],["kind","On Geek OS?"]];
+const _ctrS = {};   // report state per place (Reports page / each campaign)
+function ctrVals(r, t){
+  const one = v => (v==null || v==="") ? ["Not given"] : [v];
+  const f = Number(r.followers), e = Number(r.engagement), p = r.profile_pct;
+  switch(t){
+    case "categories": case "skills": case "formats": case "languages": return (r[t]||[]).length ? r[t].map(cap1) : ["Not given"];
+    case "city": case "state": return one(r[t] ? cap1(String(r[t]).toLowerCase()) : null);
+    case "gender": return one(r.gender ? cap1(r.gender) : null);
+    case "age": return r.age==null ? ["Not given"] : [r.age<25?"18–24":r.age<35?"25–34":r.age<45?"35–44":"45+"];
+    case "profile": return p==null ? ["No profile"] : [p>=100?"100% complete":p>=75?"75–99%":p>=50?"50–74%":p>=25?"25–49%":"0–24%"];
+    case "followers": return r.followers==null ? ["No numbers"] : [f<1e3?"Under 1K":f<1e4?"Nano 1K–10K":f<5e4?"Micro 10K–50K":f<2e5?"Mid 50K–200K":f<1e6?"Macro 200K–1M":"Mega 1M+"];
+    case "engagement": return r.engagement==null ? ["No numbers"] : [e<1?"Under 1%":e<3?"1–3%":e<5?"3–5%":e<10?"5–10%":"10%+"];
+    case "barter": return [r.barter===true?"Yes":r.barter===false?"No":"Not given"];
+    case "pet": return [r.pet?"🐾 Has a pet":"No pet"];
+    case "parent": return [r.parent?(r.gender==="male"?"👨 Dad":"👩 Mom / parent"):"Not a parent"];
+    case "joined_via": return [r.joined_via ? cap1(r.joined_via) : "Signed up themselves"];
+    case "stage": return [r.stage ? ((typeof hubStepLabel==="function" && hubStepLabel(r.stage)) || cap1(r.stage)) : "Not on a campaign"];
+    case "posted": return [Number(r.posted)>0?"✅ Posted":"Not posted"];
+    case "kind": return [r.kind==="invite"?"Not on Geek OS (uploaded)":"On Geek OS"];
+  }
+  return ["—"];
+}
+function ctrGroup(rows, t){
+  const G = new Map();
+  rows.forEach(r=> [...new Set(ctrVals(r, t))].forEach(v=>{ if(!G.has(v)) G.set(v, []); G.get(v).push(r); }));
+  const n = rows.length || 1, avg = (a,k)=>{ const x = a.map(r=> Number(r[k])).filter(v=> !isNaN(v) && r0(v)); return x.length ? x.reduce((s2,v)=>s2+v,0)/x.length : null; };
+  function r0(v){ return v!==null; }
+  return [...G.entries()].map(([v, a])=>({ v, rows:a, n:a.length, pct:Math.round(100*a.length/n),
+      followers: avg(a.filter(r=>r.followers!=null),"followers"), eng: avg(a.filter(r=>r.engagement!=null),"engagement"),
+      profile: avg(a.filter(r=>r.profile_pct!=null),"profile_pct"),
+      posted: a.filter(r=> Number(r.posted)>0).length, completed: a.filter(r=> Number(r.completed)>0).length,
+      views: a.reduce((s2,r)=> s2 + (Number(r.views)||0), 0), likes: a.reduce((s2,r)=> s2 + (Number(r.likes)||0), 0) }))
+    .sort((x,y)=> (["Not given","No profile","No numbers","Not on a campaign"].includes(x.v) - ["Not given","No profile","No numbers","Not on a campaign"].includes(y.v)) || y.n - x.n || String(x.v).localeCompare(String(y.v)));
+}
+async function mountTraitReport(root, opts){
+  if(!root) return; opts = opts || {};
+  const fixedCamp = opts.campaign || null, ctx = fixedCamp ? "camp:" + fixedCamp : "reports";
+  const S = _ctrS[ctx] || (_ctrS[ctx] = { group:"categories", split:"", who:"", scope: fixedCamp ? "campaign" : "all", campaign: fixedCamp || "", brand:"", data:null, key:"", at:0, open:null });
+  const key = [S.scope, S.campaign, S.brand, S.who].join("|");
+  const paint = ()=> ctrPaint(root, opts, S);
+  if(S.data && S.key===key && Date.now()-S.at < 60000){ paint(); return; }
+  root.innerHTML = skel("table", 4);
+  const args = { p_campaign: S.scope==="campaign" ? (S.campaign||null) : null, p_brand: S.scope==="brand" ? (S.brand||null) : null, p_only: S.who || null };
+  if(S.scope==="campaign" && !args.p_campaign){ S.data = { rows:[] }; S.key = key; S.at = Date.now(); paint(); return; }
+  if(S.scope==="brand" && !args.p_brand){ S.data = { rows:[] }; S.key = key; S.at = Date.now(); paint(); return; }
+  const { data, error } = await sb.schema("api").rpc("creator_trait_rows", args).then(r=>r, e=>({error:e}));
+  S.data = error ? { error: error.message||String(error), rows:[] } : (data||{ rows:[] }); S.key = key; S.at = Date.now();
+  paint();
+}
+let _ctrLists = null;
+async function ctrLoadLists(){
+  if(_ctrLists) return _ctrLists;
+  const [c, b] = await Promise.all([ sb.schema("api").rpc("org_reports").then(r=>r, ()=>({data:[]})), sb.schema("api").rpc("brand_list").then(r=>r, ()=>({data:[]})) ]);
+  _ctrLists = { camps: (Array.isArray(c.data)?c.data:[]).map(x=>({ id:x.campaign_id||x.legacy_campaign_id||x.id, name:x.name, brand:x.brand, status:x.lifecycle_status })),
+                brands: (Array.isArray(b.data)?b.data:[]).map(x=>({ id:x.brand_id, name:x.name })) };
+  return _ctrLists;
+}
+function ctrPaint(root, opts, S){
+  const D = S.data || { rows:[] }, rows = D.rows || [], fixed = !!opts.campaign;
+  const G = ctrGroup(rows, S.group), label = k=> (CTR_TRAITS.find(t=>t[0]===k)||[])[1] || k;
+  const multi = ["categories","skills","formats","languages"].includes(S.group);
+  const SG = S.split ? ctrGroup(rows, S.split).map(x=> x.v) : [];
+  const posted = rows.filter(r=> Number(r.posted)>0).length, prof = rows.filter(r=> r.profile_pct!=null);
+  const views = rows.reduce((a,r)=> a + (Number(r.views)||0), 0);
+  // most common traits at a glance (for the creators in scope)
+  const glance = ["categories","skills","city","gender","age","profile","followers"].map(t=>{
+    const top = ctrGroup(rows, t).filter(g=> !["Not given","No profile","No numbers"].includes(g.v)).slice(0,3);
+    return top.length ? `<div class="ctr-gl"><span>${esc(label(t))}</span>${top.map(g=>`<b title="${g.n} creators">${esc(g.v)} <i>${g.pct}%</i></b>`).join("")}</div>` : "";
+  }).join("");
+  const maxN = Math.max(1, ...G.map(g=> g.n));
+  const fmtA = (v, d)=> v==null ? "—" : d ? (Math.round(v*10)/10)+d : kfmtN(v);
+  root.innerHTML = `<div class="ctr">
+    <div class="ctr-bar">
+      ${fixed ? "" : `<label>Creators<select id="ctrScope"><option value="all"${S.scope==="all"?" selected":""}>${window.__isAdmin?"Every creator":"All my campaigns' creators"}</option><option value="campaign"${S.scope==="campaign"?" selected":""}>One campaign</option><option value="brand"${S.scope==="brand"?" selected":""}>One brand</option></select></label>
+        ${S.scope==="campaign"?`<label>Campaign<select id="ctrCamp"><option value="">Pick a campaign…</option></select></label>`:""}
+        ${S.scope==="brand"?`<label>Brand<select id="ctrBrand"><option value="">Pick a brand…</option></select></label>`:""}`}
+      <label>Who<select id="ctrWho"><option value="">Everyone</option><option value="approved"${S.who==="approved"?" selected":""}>Approved by the brand</option><option value="completed"${S.who==="completed"?" selected":""}>Posted / completed only</option></select></label>
+      <label>Group by<select id="ctrGroup">${CTR_TRAITS.map(([k,l])=>`<option value="${k}"${S.group===k?" selected":""}>${esc(l)}</option>`).join("")}</select></label>
+      <label>Split by<select id="ctrSplit"><option value="">— nothing —</option>${CTR_TRAITS.filter(t=>t[0]!==S.group).map(([k,l])=>`<option value="${k}"${S.split===k?" selected":""}>${esc(l)}</option>`).join("")}</select></label>
+      <span class="ctr-acts"><button class="mini-btn ghost" id="ctrCsv">⬇ Groups CSV</button><button class="mini-btn ghost" id="ctrCsvRaw">⬇ All creators CSV</button></span>
+    </div>
+    ${D.error ? `<div class="muted" style="padding:10px">${esc(D.error)}${/creator_trait_rows/.test(D.error)?" — run <code>supabase db push</code> first.":""}</div>` :
+      !rows.length ? `<div class="muted" style="padding:14px">${S.scope==="campaign"&&!S.campaign?"Pick a campaign above.":S.scope==="brand"&&!S.brand?"Pick a brand above.":"No creators in this view yet."}</div>` : `
+    <div class="ctr-kpis"><div><b>${fmtNum(rows.length)}</b>Creators</div><div><b>${prof.length?Math.round(prof.reduce((a,r)=>a+r.profile_pct,0)/prof.length)+"%":"—"}</b>Avg profile complete</div>
+      <div><b>${fmtNum(posted)}</b>Posted (${Math.round(100*posted/rows.length)}%)</div><div><b>${views?kfmtN(views):"—"}</b>Views from posts</div>
+      <div><b>${fmtA(rows.filter(r=>r.followers!=null).reduce((a,r,_,A)=>a+Number(r.followers)/A.length,0)||null)}</b>Avg followers</div></div>
+    ${glance?`<div class="ctr-glance"><div class="act-sub" style="margin-top:0">What they have in common</div>${glance}</div>`:""}
+    <div class="ctr-h"><b>By ${esc(label(S.group))}</b><span class="muted">${G.length} group${G.length===1?"":"s"}${multi?" · a creator with several counts in each":""} · tap a group to see its creators</span></div>
+    <div style="overflow-x:auto"><table class="tbl ctr-tbl"><thead><tr><th>${esc(label(S.group))}</th><th>Creators</th><th>Share</th>
+      ${S.split ? SG.map(v=>`<th class="ctr-sp">${esc(v)}</th>`).join("") : `<th>Avg followers</th><th>Avg engagement</th><th>Avg profile</th><th>Posted</th><th>Completed</th><th>Views</th>`}</tr></thead><tbody>
+      ${G.map((g,i)=>`<tr data-ctrg="${i}" class="${S.open===g.v?"on":""}"><td><b>${esc(g.v)}</b></td><td>${g.n}</td>
+        <td><span class="ctr-meter"><span style="width:${Math.round(100*g.n/maxN)}%"></span></span> ${g.pct}%</td>
+        ${S.split ? SG.map(v=>{ const k = g.rows.filter(r=> ctrVals(r,S.split).includes(v)).length; return `<td class="ctr-sp${k?"":" muted"}">${k||"·"}</td>`; }).join("")
+          : `<td>${fmtA(g.followers)}</td><td>${fmtA(g.eng,"%")}</td><td>${g.profile==null?"—":Math.round(g.profile)+"%"}</td>
+             <td>${g.posted} <span class="muted">(${Math.round(100*g.posted/g.n)}%)</span></td><td>${g.completed}</td><td>${g.views?kfmtN(g.views):"—"}</td>`}</tr>
+        ${S.open===g.v?`<tr class="ctr-open"><td colspan="${S.split?3+SG.length:9}"><div class="ctr-people">${g.rows.slice(0,200).map(r=>`<span class="ctr-p"${r.member_id?` data-ctrm="${esc(r.member_id)}"`:""}>
+            ${r.pic?`<img src="${esc(safeUrl(r.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`:""}<b>${esc(r.name||r.handle||"Creator")}</b>${r.handle?` <span class="muted">@${esc(r.handle)}</span>`:""}
+            ${r.followers!=null?` · ${kfmtN(r.followers)}`:""}${r.profile_pct!=null?` · ${r.profile_pct}%`:""}${Number(r.posted)>0?" · ✅":""}</span>`).join("")}</div></td></tr>`:""}`).join("")}
+    </tbody></table></div>`}
+  </div>`;
+  const $q = id=> root.querySelector("#"+id), rerun = ()=> mountTraitReport(root, opts);
+  const sc = $q("ctrScope"); if(sc) sc.onchange = ()=>{ S.scope = sc.value; S.open = null; rerun(); };
+  $q("ctrWho").onchange = e=>{ S.who = e.target.value; S.open = null; rerun(); };
+  $q("ctrGroup").onchange = e=>{ S.group = e.target.value; if(S.split===S.group) S.split = ""; S.open = null; paintAgain(); };
+  $q("ctrSplit").onchange = e=>{ S.split = e.target.value; paintAgain(); };
+  function paintAgain(){ ctrPaint(root, opts, S); }
+  root.querySelectorAll("[data-ctrg]").forEach(tr=> tr.onclick = ()=>{ const g = G[+tr.dataset.ctrg]; S.open = S.open===g.v ? null : g.v; paintAgain(); });
+  root.querySelectorAll("[data-ctrm]").forEach(x=> x.onclick = e=>{ e.stopPropagation(); if(window.__isAdmin) adminCreatorProfile(x.dataset.ctrm, {}); });
+  const cs = (name, arr)=>{ const csv = arr.map(r=> r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download = name; a.click(); setTimeout(()=> URL.revokeObjectURL(a.href), 2000); };
+  const tag = (D.campaign&&D.campaign.name) || (D.brand&&D.brand.name) || "all";
+  $q("ctrCsv").onclick = ()=> cs(`creator-traits-${label(S.group)}-${tag}.csv`.replace(/\s+/g,"-").toLowerCase(),
+    [[label(S.group),"Creators","Share %","Avg followers","Avg engagement %","Avg profile %","Posted","Completed","Views","Likes"]]
+      .concat(G.map(g=>[g.v, g.n, g.pct, g.followers==null?"":Math.round(g.followers), g.eng==null?"":Math.round(g.eng*10)/10, g.profile==null?"":Math.round(g.profile), g.posted, g.completed, g.views, g.likes])));
+  $q("ctrCsvRaw").onclick = ()=> cs(`creators-${tag}.csv`.replace(/\s+/g,"-").toLowerCase(),
+    [["Name","Instagram","On Geek OS","Followers","Engagement %","Profile %","Categories","Skills","Content types","Languages","City","State","Gender","Age","Takes barter","Pet","Parent","Joined via","Step","Posted","Completed","Views","Likes"]]
+      .concat(rows.map(r=>[r.name, r.handle, r.kind==="invite"?"no":"yes", r.followers, r.engagement, r.profile_pct, (r.categories||[]).join("; "), (r.skills||[]).join("; "), (r.formats||[]).join("; "),
+        (r.languages||[]).join("; "), r.city, r.state, r.gender, r.age, r.barter, r.pet?"yes":"", r.parent?"yes":"", r.joined_via, r.stage, r.posted, r.completed, r.views, r.likes])));
+  if(!fixed && (S.scope==="campaign" || S.scope==="brand")) ctrLoadLists().then(L=>{
+    const cc = $q("ctrCamp"), bb = $q("ctrBrand");
+    if(cc){ cc.innerHTML = `<option value="">Pick a campaign…</option>` + L.camps.map(x=>`<option value="${esc(x.id)}"${String(S.campaign)===String(x.id)?" selected":""}>${esc(x.name)}${x.brand?` · ${esc(x.brand)}`:""}${x.status?` (${esc(String(x.status).replace(/_/g," "))})`:""}</option>`).join("");
+      cc.onchange = ()=>{ S.campaign = cc.value; S.open = null; rerun(); }; }
+    if(bb){ bb.innerHTML = `<option value="">Pick a brand…</option>` + L.brands.map(x=>`<option value="${esc(x.id)}"${S.brand===x.id?" selected":""}>${esc(x.name)}</option>`).join("");
+      bb.onchange = ()=>{ S.brand = bb.value; S.open = null; rerun(); }; }
+  });
 }
 
 /* ================= DREAM PLAN (Growth) ================= */
@@ -5527,6 +5666,7 @@ function ccMatch(key, r){
 function paintCampaignCommand(body){
   const _y = window.scrollY, _h = body.offsetHeight; if(_h) body.style.minHeight = _h + "px";
   try{ paintCampaignCommandInner(body); } finally { body.style.minHeight = ""; if(Math.abs(window.scrollY - _y) > 2) window.scrollTo(0, _y); }
+  if(_bpTab==="traits" && _bpCamp) mountTraitReport(document.getElementById("ctrCamp"), { campaign:_bpCamp.id });
 }
 function paintCampaignCommandInner(body){
   const d = _bpData||{}, rows = ccRows(), pb = d.playbook||{};
@@ -5541,13 +5681,13 @@ function paintCampaignCommandInner(body){
     nb.onclick = ()=>{ _ccFilter = _ccFilter==="needs" ? "all" : "needs"; _bpTab = "tracker"; paintBarterProcess();
       const l = document.querySelector("#bpBody .cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); }; }
   const tile = t => `<button type="button" class="cc-tile${_ccFilter===t[0]?" on":""}" data-cctile="${t[0]}" title="${esc(t[2]||t[1])}"><b>${rows.filter(r=>ccMatch(t[0], r)).length}</b><span>${esc(t[1])}</span>${t[2]&&t[0]!=="all"?`<i>${esc(t[2])}</i>`:""}</button>`;
-  const secTitle = { bulk:"📥 Bulk upload", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand" }[_bpTab];
+  const secTitle = { bulk:"📥 Bulk upload", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand" }[_bpTab];
   const P = shown.filter(r=>r.kind==="p").map(r=>r.x), I = shown.filter(r=>r.kind==="i");
   body.innerHTML = `
     ${pb.saved===false?`<div class="ac360-miss">📜 No contract terms or video brief saved yet — creators get the defaults. <a href="#" id="bpGoTerms">Set them now →</a></div>`:""}
     <div class="cc-flow">${CC_TILES.map(tile).join("")}</div>
     ${secTitle?`<div class="card cc-sec" id="ccSec"><div class="cc-sec-h"><h3>${secTitle}</h3><button class="ci-pop-x" id="ccSecX" aria-label="Close">✕</button></div>
-      <div class="ac360-sec">${_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(d.creators||[])}</div></div>`:""}
+      <div class="ac360-sec">${_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="traits"?`<div id="ctrCamp"></div>`:_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(d.creators||[])}</div></div>`:""}
     <div class="card cc-list">
       <div class="cc-list-h"><h3>Creators <span class="muted">${shown.length}${_ccFilter==="needs"?" · ⚡ need you":_ccFilter!=="all"?` · ${esc((CC_TILES.find(t=>t[0]===_ccFilter)||[])[1]||"")}`:""}</span></h3>
         ${needsYou?`<button type="button" class="bp-needs cc-needs${_ccFilter==="needs"?" on":""}" id="ccNeedsChip">⚡ <b>${needsYou}</b> need${needsYou>1?"":"s"} you${_ccFilter==="needs"?" · showing them ✕":" — tap to see"}</button>`:""}
@@ -8698,6 +8838,7 @@ function renderContent(){
     const rep = ()=>{ if(currentRole==="creator") loadCreatorReports();
       else (window.sb ? loadOrgReports() : Promise.resolve(false)).then(ok=>{ if(!ok) loadReportRows(); }); };
     rep(); livePage("reports", rep, 60000);
+    if(currentRole!=="creator") mountTraitReport(document.getElementById("ctrRoot"), { fromReports:true });
   }
   if(currentPage==="dashboard"){
     loadDashboard(); pollNavCounts(); livePage("dashboard", ()=>{ loadDashboard(); loadKPIs(); }, 30000);
