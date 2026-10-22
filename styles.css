@@ -2150,3 +2150,7 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 button.cc-needs{cursor:pointer;font:inherit;border:1px solid rgba(247,144,9,.45)}
 button.cc-needs.on{background:#344054;color:#fff;border-color:#344054}
 .bpp-joined{display:inline-flex;align-items:center;gap:4px;margin-top:6px;padding:3px 10px;border-radius:999px;background:rgba(91,91,240,.1);color:var(--brand,#5b5bf0);font-size:12.5px}
+.jv-badge{display:inline-flex;align-items:center;gap:3px;margin-top:6px;padding:3px 10px;border-radius:999px;background:rgba(91,91,240,.1);color:var(--brand,#5b5bf0);font-size:12.5px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.jv-badge.sm{margin:2px 0 0;padding:1px 8px;font-size:11.5px}
+.r-title .jv-badge.sm{margin:0 0 0 4px}
+.hub-who .jv-badge,.acr-lc-who .jv-badge{display:flex;width:fit-content}

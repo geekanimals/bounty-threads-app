@@ -2244,7 +2244,7 @@ function applicantRowHtml(p, showCampaign){
     <div class="r-main"><div class="r-title">${cr.username?`<a href="https://instagram.com/${encodeURIComponent(cr.username)}" target="_blank" rel="noopener">@${esc(cr.username)}</a>`:esc(cr.name||"Creator")}
       ${p.applied_profile && String(p.applied_profile).toLowerCase()!==String(cr.username||"").toLowerCase()?` <span class="tag" title="Applied with this profile">via <a href="https://instagram.com/${encodeURIComponent(p.applied_profile)}" target="_blank" rel="noopener">@${esc(p.applied_profile)}</a></span>`:""}
       ${showCampaign?`<span class="muted" style="font-weight:400"> → ${esc(p.campaign_name||"")}${p.org_name?` · ${esc(p.org_name)}`:""}</span>`:""} ${typeTag(p.campaign_type)}</div>
-      <div class="r-sub">${esc(bits)||"Instagram not connected"}${p.reason && !APPLICANT_PENDING.includes(p.stage)?` · <i>${esc(p.reason)}</i>`:""}</div></div>
+      <div class="r-sub">${esc(bits)||"Instagram not connected"}${p.reason && !APPLICANT_PENDING.includes(p.stage)?` · <i>${esc(p.reason)}</i>`:""}</div>${jvBadge(cr.joined_via, true)}</div>
     ${APPLICANT_PENDING.includes(p.stage)
       ? `<span style="display:flex;gap:6px"><button class="mini-btn" data-papprove="${esc(p.participation_id)}">Approve</button><button class="mini-btn ghost" data-pdecline="${esc(p.participation_id)}">Decline</button></span>`
       : `<span class="tag ${cls}">${esc(lbl)}</span>`}</div>`;
@@ -4938,6 +4938,12 @@ function bpNowBox(x){
     ${n.text?`<div class="jr-now-t">${esc(n.text)}</div>`:""}
     <div class="ci-evrow">${n.video?`<a class="btn sm ghost" href="${esc(safeUrl(n.video))}" target="_blank" rel="noopener">▶ Watch the video</a>`:""}${n.acts.map(a=> bpActBtn(a, P)).join("")}${n.acts.some(a=>a[0]==="bpchat")?"":`<button type="button" class="btn sm ghost" data-bpchat="${esc(P)}">💬 WhatsApp</button>`}</div></div>`;
 }
+// "Joined via <campaign>" — the campaign (or creator upload) that brought a creator onto Geek OS
+function jvBadge(jv, small){
+  if(!jv || (!jv.campaign && !jv.how)) return "";
+  const t = `Joined Geek OS via ${jv.campaign||"Creator upload"}${jv.how?` (${jv.how})`:""}${jv.at?` · ${fmtDate(jv.at)}`:""}`;
+  return `<span class="jv-badge${small?" sm":""}" title="${esc(t)}">🚪 ${small?"via ":"Joined via "}<b>${esc(jv.campaign||"Creator upload")}</b>${!small&&jv.how?` · ${esc(jv.how)}`:""}${!small&&jv.at?` · ${esc(fmtDate(jv.at))}`:""}</span>`;
+}
 // the "more actions" row without the buttons the next-action box already shows
 function bpDedupe(shown, html){
   const t = document.createElement("div"); t.innerHTML = html;
@@ -5332,7 +5338,7 @@ async function bppFillFull(pid, x, row){
     if($("bppAddr") && /Loading/.test($("bppAddr").textContent)) $("bppAddr").innerHTML = `<div class="muted" style="font-size:13px">No address yet.</div>`; return; }
   const nice = v => String(v||"").replace(/_/g," ").replace(/\b\w/g, c=>c.toUpperCase());
   const jv = F.joined_via, jb = $("bppJoined");
-  if(jb && jv) jb.innerHTML = `<span class="bpp-joined" title="How this creator came onto Geek OS">🚪 Joined via ${jv.campaign?`<b>${esc(jv.campaign)}</b>`:"<b>Creator upload</b>"}${jv.how?` · ${esc(jv.how)}`:""}${jv.at?` · ${esc(fmtDate(jv.at))}`:""}</span>`;
+  if(jb && jv) jb.innerHTML = jvBadge(jv);
   const ct = F.contact||{}, wa = F.whatsapp||{}, pe = F.personal||{};
   const tel = ph => ph ? `<a href="tel:${esc(ph)}">${esc(ph)}</a> · <a href="https://wa.me/${esc(String(ph).replace(/\D/g,""))}" target="_blank" rel="noopener">WhatsApp ↗</a>` : "";
   $("bppContact").innerHTML =
@@ -5485,7 +5491,7 @@ function paintCampaignPeople(){
         const wa = p.last_wa ? `<span class="hub-wa ${p.last_wa.status==="sent"?"ok":p.last_wa.status==="failed"?"bad":""}" title="${esc(p.last_wa.error||"")}">💬 ${esc(String(p.last_wa.key||"message").replace(/_/g," "))} · ${p.last_wa.status==="sent"?"sent":p.last_wa.status==="failed"?"failed":"queued"} ${esc(fmtDate(p.last_wa.at))}</span>` : "";
         return `<button class="hub-row" data-hubp="${esc(p.participation_id)}">
           ${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((h||"?").slice(0,2).toUpperCase())}</span>`}
-          <span class="hub-who"><b>${h?"@"+esc(h):esc(cr.name||"Creator")}</b><span class="muted">${esc([cr.followers!=null?fmtNum(cr.followers)+" followers":"", cr.city, p.phone].filter(Boolean).join(" · "))}</span>${wa}</span>
+          <span class="hub-who"><b>${h?"@"+esc(h):esc(cr.name||"Creator")}</b><span class="muted">${esc([cr.followers!=null?fmtNum(cr.followers)+" followers":"", cr.city, p.phone].filter(Boolean).join(" · "))}</span>${jvBadge(cr.joined_via, true)}${wa}</span>
           <span class="hub-meta"><span class="tag ${HUB_DECL.includes(p.stage)?"":"good"}">${esc(hubStepLabel(p.stage))}</span>
             ${p.profile_pct!=null?`<span class="hub-pct" title="Creator profile (optional)">📝 ${p.profile_pct}%</span>`:""}
             ${(p.needs||[]).length?`<span class="hub-need" title="${esc(p.needs.join(", "))}">⚠️ ${esc(p.needs.map(x=>/whatsapp/i.test(x)?"no WhatsApp":"no Instagram").join(" · "))}</span>`:""}</span>
@@ -5614,7 +5620,8 @@ function paintCreatorHub(){
   body.innerHTML = `<div class="bpp-top">${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((h||"?").slice(0,2).toUpperCase())}</span>`}
       <div style="min-width:0;flex:1"><div class="bpp-name">${esc(d.name||cr.name||h||"Creator")}</div>
         ${h?`<a href="https://instagram.com/${encodeURIComponent(h)}" target="_blank" rel="noopener">@${esc(h)} ↗</a>`:""}
-        <div class="bpp-cats"><span class="hub-now">${esc(hubStepLabel(d.stage))}</span>${(cr.categories||[]).slice(0,3).map(c=>`<span>${esc(c)}</span>`).join("")}${cr.city?`<span>📍 ${esc(cr.city)}</span>`:""}</div></div>
+        <div class="bpp-cats"><span class="hub-now">${esc(hubStepLabel(d.stage))}</span>${(cr.categories||[]).slice(0,3).map(c=>`<span>${esc(c)}</span>`).join("")}${cr.city?`<span>📍 ${esc(cr.city)}</span>`:""}</div>
+        ${jvBadge(cr.joined_via)}</div>
       ${pct!=null?`<div class="prof-pop-ring hub-ring" style="--p:${pct}" title="Profile complete"><span>${pct}%</span></div>`:""}</div>
     ${_hubC.tab==="whatsapp"?"":`<div class="bpp-stats"><div><b>${cr.followers!=null?fmtNum(cr.followers):"—"}</b><span>Followers</span></div><div><b>${cr.engagement!=null?cr.engagement+"%":"—"}</b><span>Engagement</span></div>
       <div><b>${cr.avg_reach?fmtNum(Math.round(cr.avg_reach)):"—"}</b><span>Avg reach</span></div><div><b>${(d.messages||[]).length}</b><span>Messages</span></div></div>`}
@@ -5773,6 +5780,7 @@ function bpTrackerHtml(list){
         <div style="flex:1;min-width:0">
           <div class="r-title"><span class="bp-who-n" data-bpprof="${esc(P)}" title="Open the creator's full profile">${cr.username?`@${esc(cr.username)}`:esc(cr.name||"Creator")}</span> <button type="button" class="bp-prof-btn" data-bpprof="${esc(P)}">👤 Profile</button>
             ${x.applied_profile && x.applied_profile!==cr.username?`<span class="tag">via @${esc(x.applied_profile)}</span>`:""}
+            ${jvBadge(cr.joined_via, true)}
             ${x.blacklisted?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⛔ Blacklisted</span>':""}
             ${overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':""}
             ${x.blocked_at?`<span class="tag" style="background:rgba(239,68,68,.15);color:#dc2626">⛔ Blocked — call ${esc(x.phone||"them")}</span>`:""}
@@ -6728,7 +6736,7 @@ function paintCreators(){
         const pic = c.pic ? `<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${esc(String(c.name||"?").slice(0,2).toUpperCase())}'}))">`
                           : `<span class="avatar">${esc(String(c.name||"?").slice(0,2).toUpperCase())}</span>`;
         return `<div class="acr-lr" data-acr="${esc(c.member_id)}" tabindex="0">
-          <span class="acr-lc-who">${pic}<span><b>${esc(c.name)}</b><span class="muted">${c.ig_username?"@"+esc(c.ig_username):"Instagram not connected"}${(c.ig_accounts||[]).length>1?` · ${(c.ig_accounts||[]).length} accounts`:""}</span></span></span>
+          <span class="acr-lc-who">${pic}<span><b>${esc(c.name)}</b><span class="muted">${c.ig_username?"@"+esc(c.ig_username):"Instagram not connected"}${(c.ig_accounts||[]).length>1?` · ${(c.ig_accounts||[]).length} accounts`:""}</span>${jvBadge(c.joined_via, true)}</span></span>
           <span data-l="Followers"><b>${kNum(c.followers)}</b></span>
           <span data-l="Engagement">${c.engagement!=null?c.engagement+"%":"—"}</span>
           <span data-l="Per Reel">${c.reel_rate?"₹"+kNum(Number(c.reel_rate)):"—"}</span>
@@ -6747,7 +6755,7 @@ function paintCreators(){
                         : `<span class="avatar">${esc(String(c.name||"?").slice(0,2).toUpperCase())}</span>`;
       return `<div class="acr-card" data-acr="${esc(c.member_id)}" tabindex="0">
         <div class="acr-top">${pic}<div style="min-width:0"><div class="acr-name">${esc(c.name)}</div>
-          <div class="muted acr-handle">${c.ig_username?"@"+esc(c.ig_username):'<span class="tag warn">Instagram not connected</span>'}</div>
+          <div class="muted acr-handle">${c.ig_username?"@"+esc(c.ig_username):'<span class="tag warn">Instagram not connected</span>'}</div>${jvBadge(c.joined_via, true)}
           ${(c.ig_accounts||[]).length ? `<button type="button" class="acr-igs" data-igaccts="${esc(c.member_id)}" data-igname="${esc(c.name||"")}">📸 ${(c.ig_accounts||[]).length} Instagram ${(c.ig_accounts||[]).length>1?"accounts":"account"} →</button>` : ""}</div>
           ${c.complete?'<span class="tag good">Ready</span>':`<span class="tag warn">${c.done??0}/${c.total??"?"}</span>`}</div>
         <div class="acr-stats"><div><b>${kNum(c.followers)}</b><span>Followers</span></div><div><b>${c.engagement!=null?c.engagement+"%":"—"}</b><span>Engagement</span></div>
