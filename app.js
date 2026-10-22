@@ -3315,6 +3315,8 @@ function csScoutPanel(res, S, refresh){
 }
 function csScoutSummary(d){
   const P = d.profiles||[];
+  if(!(d.found||0)) return `<div class="cs-scout-sum">Read <b>${fmtNum(d.posts_read||0)}</b> public post(s) on ${(d.tags||[]).map(t=>"#"+esc(t)).join(", ")} but none of them @mentioned a creator.
+      <div class="muted">Instagram doesn't tell apps who posted a hashtag post — we can only pick up accounts that are @mentioned in captions. Try a city or a keyword (e.g. "skincare", "Pune"), or paste handles with + Add creators.</div></div>`;
   return `<div class="cs-scout-sum">✅ Found <b>${fmtNum(d.found||0)}</b> account(s) on ${(d.tags||[]).map(t=>"#"+esc(t)).join(", ")} — <b>${fmtNum(d.with_stats||0)}</b> with full profile, added to the list below.
       ${(d.no_stats||[]).length?`<span class="muted">${(d.no_stats||[]).length} are personal / private accounts (Instagram shares no numbers for those) — added as handles.</span>`:""}</div>`
     + (P.length ? `<div class="cs-tag-handles">${P.slice(0,24).map(p=>`<span class="cs-chip on" title="${esc(p.bio||"")}">@${esc(p.handle)} · ${kfmtN(p.followers||0)}</span>`).join("")}</div>` : "");

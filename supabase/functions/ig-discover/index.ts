@@ -211,7 +211,7 @@ Deno.serve(async (req) => {
         // Instagram sometimes answers "reduce the amount of data" → ask again with fewer posts / lighter fields
         const lite = fields.replace(",children{media_url,media_type}", "");
         let mr: any = {};
-        for (const [f, n] of [[fields, 40], [lite, 40], [lite, 25], [lite, 12]] as [string, number][]) {
+        for (const [f, n] of [[lite, 25], [lite, 12], [fields, 8]] as [string, number][]) {
           mr = await (await fetch(`${FB_GRAPH}/${hid}/${e}?user_id=${igId}&fields=${f}&limit=${n}&access_token=${FT}`)).json().catch(() => ({}));
           if (Array.isArray(mr?.data)) break;
         }
@@ -258,9 +258,18 @@ Deno.serve(async (req) => {
         const hid = hs?.data?.[0]?.id;
         if (!hid) { if (hs?.error) { lastErr = String(hs.error.message || ""); permErr = permErr || needsPermission(hs); } return null; }
         const pages = await Promise.all(["top_media", "recent_media"].map(async (edge) => {
-          let mr = await fj(`${FB_GRAPH}/${hid}/${edge}?user_id=${igId}&fields=caption&limit=50&access_token=${FT}`);
-          if (!Array.isArray(mr?.data)) mr = await fj(`${FB_GRAPH}/${hid}/${edge}?user_id=${igId}&fields=caption&limit=25&access_token=${FT}`);
-          return mr?.data ?? [];
+          // a few pages of captions (Instagram caps each page; "reduce the data" → smaller pages)
+          const out: any[] = [];
+          for (const n of [25, 12]) {
+            let url = `${FB_GRAPH}/${hid}/${edge}?user_id=${igId}&fields=caption&limit=${n}&access_token=${FT}`;
+            for (let pg = 0; pg < 3 && url; pg++) {
+              const mr = await fj(url);
+              if (!Array.isArray(mr?.data)) { if (mr?.error) lastErr = String(mr.error.message || lastErr); break; }
+              out.push(...mr.data); url = mr?.paging?.next || "";
+            }
+            if (out.length) break;
+          }
+          return out;
         }));
         return { tag, media: pages.flat() };
       }));
@@ -302,6 +311,7 @@ Deno.serve(async (req) => {
       }
       profiles.sort((a, b) => (b.followers || 0) - (a.followers || 0));
       return json({ ok: true, tags: used, found: ranked.length, with_stats: profiles.length,
+        posts_read: caps.reduce((n, c) => n + (c?.media?.length || 0), 0),
         note: bdPerm ? "Handles added. Followers / engagement need Meta's instagram_manage_insights permission — once it's on, reconnect Facebook and search again." : undefined,
         profiles: profiles.map(({ caption: _c, mentions: _m, ...r }) => r), no_stats: noStats });
     }
@@ -372,6 +382,6 @@ function scoutTags(city: string, category: string, keyword = ""): string[] {
   if (w) t = [w, c ? c + w : w + "india", c ? w + c : (k[0] ? w + k[0] : w + "review"), k[0] ? (c ? c + k[0] : k[0]) : (c ? c + "blogger" : w + "s")];
   else if (c && k.length) t = [c + k[0], c + k[1], k[0] + c, c + (k[2] || "blogger")];
   else if (c) t = [c + "blogger", c + "influencer", c + "creator", c + "diaries"];
-  else t = [k[0], k[0] + "india", k[1], k[2] || k[0] + "s"];
+  else t = [k[0] + "india", "indian" + k[0], k[0], (k[1] || k[0]) + "india"];   // India-first: plain tags are mostly foreign posts
   return [...new Set(t.filter((x) => x && /^[a-z0-9_]{2,60}$/.test(x)))].slice(0, 4);
 }
