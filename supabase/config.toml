@@ -127,3 +127,6 @@ verify_jwt = true
 
 [functions.post-shot-read]
 verify_jwt = true
+
+[functions.brand-login]
+verify_jwt = true

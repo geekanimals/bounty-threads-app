@@ -1648,7 +1648,8 @@ function openCampaignModal(existing, preset){
       <div class="mf-row cm-barter"><label>Barter type<select name="barter_subtype">${kv(BARTER_SUBTYPES, ed.barter_subtype||preset.barter_subtype||"normal_barter")}</select></label>
         <label>Number of creators<input name="creators" type="number" min="0" value="${ed.creators!=null?esc(ed.creators):''}" placeholder="20"></label></div>
       <div class="mf-row"><label>Campaign name<input name="name" required maxlength="120" value="${esc(ed.name||'')}" placeholder="Summer Glow Launch"></label>
-      <label>Brand name<input name="brand" required maxlength="120" value="${esc(ed.brand||'')}" placeholder="Lume Cosmetics"></label></div>
+      <label>Brand<select name="brand_pick" id="cmBrandPick"><option value="">Loading brands…</option></select>
+        <input name="brand" id="cmBrandNew" maxlength="120" value="${esc(ed.brand||preset.brand||'')}" placeholder="New brand name — e.g. Lume Cosmetics" hidden></label></div>
       <div class="mf-row cm-barter"><label>Barter product link<input name="product_link" type="url" value="${esc(ed.product_link||'')}" placeholder="https://brand.com/product"></label>
       <label>Barter product value (₹)<input name="product_value" type="number" min="0" value="${ed.product_value!=null?esc(ed.product_value):''}" placeholder="1499"></label></div>
       <div class="mf-row"><label class="cm-paid">Budget (₹)<input name="budget" type="number" min="0" value="${ed.budget!=null?esc(ed.budget):''}" placeholder="100000"></label>
@@ -1712,6 +1713,16 @@ function openCampaignModal(existing, preset){
       <button class="btn" type="submit">${existing?'Save changes':'Launch Campaign'}</button>
     </form></div>`;
   document.body.appendChild(m); m.classList.add("open");
+  // brand: pick one from the Brand CRM, or add a new one (it becomes a brand record when the campaign is saved)
+  (async ()=>{
+    const sel = document.getElementById("cmBrandPick"), inp = document.getElementById("cmBrandNew"); if(!sel) return;
+    const list = await loadBrandCache();
+    const cur = ed.brand_id || ((list.find(b=> (b.name||"").toLowerCase() === String(ed.brand||preset.brand||"").trim().toLowerCase())||{}).brand_id) || "";
+    const typed = String(ed.brand||preset.brand||"").trim();
+    sel.innerHTML = `<option value="">— Pick the brand —</option>${list.map(b=>`<option value="${esc(b.brand_id)}"${b.brand_id===cur?" selected":""}>${esc(b.name)}${b.category?` · ${esc(b.category)}`:""}</option>`).join("")}<option value="__new"${!cur&&typed?" selected":""}>➕ Add a new brand…</option>`;
+    const sync = ()=>{ const isNew = sel.value==="__new"; inp.hidden = !isNew; inp.required = isNew; if(isNew) setTimeout(()=> inp.focus(), 30); };
+    sel.onchange = sync; sync();
+  })();
   const form = document.getElementById("campaignForm");
   const syncType = ()=>{
     const t = form.querySelector("input[name=campaign_type]:checked").value;
@@ -1820,13 +1831,16 @@ function openCampaignModal(existing, preset){
         }
       }
       const creators = t==="paid" ? parseInt(f.get("creators_paid")) : parseInt(f.get("creators"));
-      const row = { name:f.get("name"), brand:f.get("brand"), campaign_type:t, barter_subtype:st, type:legacyTypeFor(t, st),
+      const pick = String(f.get("brand_pick")||""), newBrand = String(f.get("brand")||"").trim();
+      if(!pick || (pick==="__new" && !newBrand)){ throw new Error(pick==="__new" ? "Type the new brand's name." : "Pick the brand (or ➕ Add a new brand)."); }
+      const row = { name:f.get("name"), brand: pick==="__new" ? newBrand : (((_brandCache||[]).find(b=>b.brand_id===pick)||{}).name || newBrand), campaign_type:t, barter_subtype:st, type:legacyTypeFor(t, st),
         objective:f.get("objective"), status:f.get("status"),
         budget: t==="barter" ? null : num(f.get("budget")),
         product_link: t==="paid" ? null : (pl||null), product_value: t==="paid" ? null : num(f.get("product_value")),
         platforms:"Instagram", hashtags:[...tagList, ...mentList].join(" ") || null, deliverables:delivText, brief:f.get("brief"),
         start_date:f.get("start_date")||null, end_date:f.get("end_date")||null,
         creators: isFinite(creators) && creators>=0 ? creators : 0, attachments: files, ideal_profile: ideal };
+      if(pick && pick!=="__new") row.brand_id = pick; else row.brand_id = null;
       const txt = k => String(f.get(k)||"").trim();
       row.contract_terms = { product: txt("ct_product") || null, product_value: t==="paid" ? null : num(f.get("product_value")),
         deliverables: delivText,
@@ -1838,6 +1852,7 @@ function openCampaignModal(existing, preset){
       const save = r => existing ? sb.from("campaigns").update(r).eq("id", existing.id) : sb.from("campaigns").insert(r);
       if(!existing && window.Auth&&Auth.profile){ row.org_name=Auth.profile.org; row.org_id=Auth.profile.org_id; }
       ({ error } = await save(row));
+      if(error && /brand_id/i.test(error.message||"")){ delete row.brand_id; ({ error } = await save(row)); }   // before the Brand CRM update
       if(error && /contract_terms|video_brief/i.test(error.message||"")){   // database not upgraded yet — save the rest
         delete row.contract_terms; delete row.video_brief; ({ error } = await save(row));
       }
@@ -3295,23 +3310,222 @@ async function applyToCampaign(id, btn){
   await loadMarketplace(); // refresh My applications + card states
 }
 
-/* ================= BRAND CRM / PORTFOLIO (derived from campaigns) ================= */
-function brandTableHtml(title, sub){
-  return pageHead(title, sub) + `<div class="card"><table><thead><tr><th>Brand</th><th>Campaigns</th><th>Active</th><th>Creators</th></tr></thead>
-    <tbody id="brandRows"><tr><td colspan="4" class="muted" style="padding:24px">Loading…</td></tr></tbody></table></div>`;
+/* ================= BRAND CRM ================= */
+let _brandCache = null;
+async function loadBrandCache(force){
+  if(_brandCache && !force) return _brandCache;
+  const { data, error } = await sb.schema("api").rpc("brand_list", { p_q: null }).then(r=>r, e=>({error:e}));
+  _brandCache = error ? [] : (data||[]); _brandCache.err = error ? (error.message||String(error)) : null;
+  return _brandCache;
 }
-function renderBrands(){ return brandTableHtml("Brand CRM","Every brand you work with, from your campaigns."); }
+function brandTableHtml(title, sub){
+  return pageHead(title, sub) + `<div class="card bc-bar">
+      <input id="bcQ" type="search" placeholder="🔎 Brand, category, website…" value="${esc(_bcQ)}">
+      <button class="btn" id="bcAdd">➕ Add brand</button></div>
+    <div id="bcBody">${skel("table")}</div>`;
+}
+let _bcQ = "";
+function renderBrands(){ return brandTableHtml("Brand CRM","Every brand you work with — details, contacts, notes, campaigns, creators and their own login."); }
 function renderPortfolio(){ return brandTableHtml("Portfolio","All brands & campaigns across your group."); }
 async function loadBrands(){
-  const body=document.getElementById("brandRows");
-  if(!body||!window.sb) return;
-  const { data, error } = await sb.from("campaigns").select("brand,status,creators");
-  if(error){ body.innerHTML=`<tr><td colspan="4" class="muted" style="padding:24px">Couldn't load: ${esc(error.message)}</td></tr>`; return; }
-  const map={}; const active=["Live","Shortlist completed","In Production","Sourcing","Approval"];
-  (data||[]).forEach(c=>{ const b=((c.brand||"").trim())||"—"; map[b]=map[b]||{n:0,active:0,creators:0};
-    map[b].n++; if(active.includes(c.status)) map[b].active++; map[b].creators+=parseInt(c.creators)||0; });
-  const rows=Object.entries(map);
-  body.innerHTML = rows.length ? rows.map(([b,v])=>`<tr><td><span class="avatar">${esc(b.slice(0,2).toUpperCase())}</span>${esc(b)}</td><td>${v.n}</td><td>${v.active}</td><td>${v.creators}</td></tr>`).join("") : `<tr><td colspan="4" class="muted" style="padding:24px">No brands yet — add a campaign with a brand.</td></tr>`;
+  const body = document.getElementById("bcBody"); if(!body || !window.sb) return;
+  const q = document.getElementById("bcQ"); let t = null;
+  if(q) q.oninput = ()=>{ clearTimeout(t); t = setTimeout(()=>{ _bcQ = q.value.trim(); paintBrands(); }, 200); };
+  const add = document.getElementById("bcAdd"); if(add) add.onclick = ()=> openBrandForm(null);
+  const list = await loadBrandCache(true);
+  if(!document.getElementById("bcBody")) return;
+  if(list.err){ body.innerHTML = `<div class="card"><div class="muted">Couldn't load brands: ${esc(list.err)}${/brand_list/.test(list.err)?" — run <code>supabase db push</code>.":""}</div></div>`; return; }
+  paintBrands();
+}
+function paintBrands(){
+  const body = document.getElementById("bcBody"); if(!body) return;
+  const q = _bcQ.toLowerCase(), L = (_brandCache||[]).filter(b=> !q || [b.name,b.category,b.website,b.instagram].join(" ").toLowerCase().includes(q));
+  const logo = b => b.logo_url ? `<img class="bc-logo" src="${esc(safeUrl(b.logo_url))}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${esc((b.name||"?").slice(0,2).toUpperCase())}'}))">` : `<span class="avatar">${esc((b.name||"?").slice(0,2).toUpperCase())}</span>`;
+  body.innerHTML = L.length ? `<div class="card bc-list">
+      <div class="bc-lh"><span>Brand</span><span>Campaigns</span><span>Active</span><span>Creators</span><span>Posted</span><span>Login</span><span></span></div>
+      ${L.map(b=>`<div class="bc-row" data-bcopen="${esc(b.brand_id)}" tabindex="0">
+        <span class="bc-who">${logo(b)}<span><b>${esc(b.name)}</b><span class="muted">${esc([b.category, b.contact&&b.contact.name, b.instagram?"@"+b.instagram:""].filter(Boolean).join(" · ")||"—")}</span></span></span>
+        <span data-l="Campaigns"><b>${esc(b.campaigns||0)}</b></span><span data-l="Active">${b.active?`<span class="tag good">${esc(b.active)} live</span>`:'<span class="muted">0</span>'}</span>
+        <span data-l="Creators"><b>${esc(b.creators||0)}</b>${b.uploaded?` <span class="muted" title="Uploaded for this brand">+${esc(b.uploaded)}</span>`:""}</span><span data-l="Posted">${esc(b.posted||0)}</span>
+        <span data-l="Login">${b.logins?`<span class="tag good">🔑 ${esc(b.logins)}</span>`:'<span class="muted">—</span>'}</span>
+        <span class="bc-acts">${window.__isAdmin?`<button class="mini-btn ghost" data-bcup="${esc(b.brand_id)}" title="Upload creators for this brand">📥 Upload creators</button>`:""}${window.__isAdmin?`<button class="mini-btn ghost" data-bclogin="${esc(b.brand_id)}" title="Make a login for the brand">🔑 Login</button>`:""}<button class="mini-btn" data-bcopen2="${esc(b.brand_id)}">Open →</button></span></div>`).join("")}</div>`
+    : `<div class="card"><div class="muted" style="padding:10px">${q?"No brand matches.":"No brands yet — ➕ Add brand, or create a campaign (its brand is added here)."}</div></div>`;
+  body.querySelectorAll("[data-bcopen]").forEach(r=> r.onclick = e=>{ if(e.target.closest("button,a")) return; openBrandCrm(r.dataset.bcopen); });
+  body.querySelectorAll("[data-bcopen2]").forEach(b=> b.onclick = ()=> openBrandCrm(b.dataset.bcopen2));
+  body.querySelectorAll("[data-bcup]").forEach(b=> b.onclick = ()=> goCreatorUpload(b.dataset.bcup));
+  body.querySelectorAll("[data-bclogin]").forEach(b=> b.onclick = ()=> openBrandLogin(b.dataset.bclogin, ()=> loadBrands()));
+}
+function goCreatorUpload(brandId){
+  document.getElementById("bcModal")?.remove();
+  _cu.brand = brandId || ""; _adminTab = "upload"; currentPage = "admin"; renderShell(); window.scrollTo(0,0);
+}
+// add / edit a brand
+function openBrandForm(b, done){
+  b = b || {};
+  const m = bpModal(b.brand_id ? `Edit ${b.name}` : "Add a brand", `<form class="modal-form" id="bfForm">
+      <div class="mf-row"><label>Brand name<input name="name" required maxlength="120" value="${esc(b.name||"")}" placeholder="Beardo"></label>
+        <label>Category<input name="category" maxlength="60" value="${esc(b.category||"")}" placeholder="Men's grooming"></label></div>
+      <div class="mf-row"><label>Website<input name="website" maxlength="200" value="${esc(b.website||"")}" placeholder="https://beardo.in"></label>
+        <label>Instagram<input name="instagram" maxlength="120" value="${esc(b.instagram?"@"+b.instagram:"")}" placeholder="@beardo.official"></label></div>
+      <div class="mf-row"><label>Logo link (optional)<input name="logo_url" maxlength="400" value="${esc(b.logo_url||"")}" placeholder="https://…/logo.png"></label>
+        <label>GSTIN (optional)<input name="gstin" maxlength="20" value="${esc(b.gstin||"")}"></label></div>
+      <label>Billing / office address (optional)<input name="address" maxlength="300" value="${esc(b.address||"")}"></label>
+      <label>Status<select name="status">${[["active","Active client"],["lead","Lead / pitching"],["paused","Paused"],["archived","Archived"]].map(([k,l])=>`<option value="${k}"${(b.status||"active")===k?" selected":""}>${l}</option>`).join("")}</select></label>
+      ${b.brand_id?"":`<div class="bt-sec" style="margin-top:4px">Main contact (optional)</div>
+      <div class="mf-row"><label>Name<input name="contact_name" maxlength="80"></label><label>Role<input name="contact_role" maxlength="60" placeholder="Marketing manager"></label></div>
+      <div class="mf-row"><label>Email<input name="contact_email" type="email" maxlength="120"></label><label>Phone / WhatsApp<input name="contact_phone" maxlength="20"></label></div>`}
+      <label>Notes (optional)<textarea name="notes" rows="2" maxlength="2000">${esc(b.notes||"")}</textarea></label>
+      <div class="auth-err" id="bfErr"></div><button class="btn" type="submit">${b.brand_id?"Save":"Add brand"}</button></form>`);
+  document.getElementById("bfForm").onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(e.target), p = {}; f.forEach((v,k)=> p[k] = String(v).trim());
+    if(b.brand_id) p.brand_id = b.brand_id;
+    const btn = e.target.querySelector("button[type=submit]"); btn.disabled = true; btn.textContent = "Saving…";
+    const { data, error } = await sb.schema("api").rpc("brand_save", { p }).then(r=>r, er=>({error:er}));
+    if(error){ document.getElementById("bfErr").textContent = error.message||String(error); btn.disabled = false; btn.textContent = b.brand_id?"Save":"Add brand"; return; }
+    m.remove(); gateToast(b.brand_id ? "Brand saved ✓" : "Brand added ✓");
+    await loadBrandCache(true);
+    if(done) done(data); else if(document.getElementById("bcBody")) paintBrands();
+    if(!b.brand_id && data && data.brand_id && !done) openBrandCrm(data.brand_id);
+  };
+}
+// brand login (Super Admin): email → account + password shown once
+function openBrandLogin(brandId, after){
+  const b = (_brandCache||[]).find(x=> x.brand_id===brandId) || {};
+  const m = bpModal(`🔑 Login for ${b.name||"this brand"}`, `<form class="modal-form" id="blForm">
+      <p class="muted" style="font-size:13px;margin:0">Makes a Geek OS account for the brand's team. They sign in at the <b>Brand login</b> page and see only <b>${esc(b.name||"this brand")}</b>'s campaigns — creators, contracts, videos to approve, posts and reports.</p>
+      <div class="mf-row"><label>Their email<input name="email" type="email" required maxlength="120" placeholder="marketing@brand.com"></label>
+        <label>Name<input name="name" maxlength="80" placeholder="Brand team"></label></div>
+      <div class="auth-err" id="blErr"></div><button class="btn" type="submit">Create login</button></form><div id="blOut"></div>`);
+  document.getElementById("blForm").onsubmit = async e=>{
+    e.preventDefault();
+    const f = new FormData(e.target), btn = e.target.querySelector("button"); btn.disabled = true; btn.textContent = "Creating…";
+    const { data, error } = await sb.functions.invoke("brand-login", { body:{ action:"create", brand_id: brandId, email: String(f.get("email")||"").trim(), name: String(f.get("name")||"").trim() } }).then(r=>r, er=>({error:er}));
+    const msg = (data && data.error) || (error && (typeof fnError==="function" ? await fnError(error) : error.message));
+    if(msg){ document.getElementById("blErr").textContent = msg; btn.disabled = false; btn.textContent = "Create login"; return; }
+    e.target.remove(); showBrandCreds(document.getElementById("blOut"), data, b.name); after && after();
+  };
+}
+function showBrandCreds(box, d, brandName){
+  if(!box) return;
+  const url = d.login_url || (location.origin + "/brand/");
+  const text = `Your Geek OS login for ${brandName||"your brand"}\nLink: ${url}\nEmail: ${d.email}\nPassword: ${d.password}\n(On the login page tap "Sign in with email & password". You can change the password after signing in.)`;
+  box.innerHTML = `<div class="bl-creds"><div class="bl-ok">✓ Login ready — share it with the brand. The password is shown only now.</div>
+      <div class="bpp-row"><span>Link</span><div><a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></div></div>
+      <div class="bpp-row"><span>Email</span><div><b>${esc(d.email||"")}</b></div></div>
+      <div class="bpp-row"><span>Password</span><div><code class="bl-pw">${esc(d.password||"")}</code></div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn sm" type="button" id="blCopy">📋 Copy login</button>
+        <a class="btn sm ghost" href="mailto:${encodeURIComponent(d.email||"")}?subject=${encodeURIComponent("Your Geek OS login")}&body=${encodeURIComponent(text)}">✉️ Email it</a></div></div>`;
+  document.getElementById("blCopy").onclick = ()=>{ try{ navigator.clipboard.writeText(text); gateToast("Copied ✓"); }catch(e){} };
+}
+// one brand's CRM page: everything about it
+let _bc = { id:null, data:null, tab:"overview" };
+async function openBrandCrm(id, tab){
+  _bc = { id, data:null, tab: tab || _bc.tab || "overview" };
+  let m = document.getElementById("bcModal"); if(m) m.remove();
+  m = el("div","modal-overlay open"); m.id = "bcModal";
+  m.innerHTML = `<div class="modal modal-lg bc-modal"><div class="modal-head"><strong>Brand</strong><button class="icon-btn" id="bcX" aria-label="Close">✕</button></div><div class="modal-form" id="bcBodyM">${skel("list",4)}</div></div>`;
+  document.body.appendChild(m);
+  document.getElementById("bcX").onclick = ()=> m.remove(); m.onclick = e=>{ if(e.target.id==="bcModal") m.remove(); };
+  await bcReload();
+}
+async function bcReload(){
+  const { data, error } = await sb.schema("api").rpc("brand_detail", { p_brand: _bc.id }).then(r=>r, e=>({error:e}));
+  const body = document.getElementById("bcBodyM"); if(!body) return;
+  if(error){ body.innerHTML = `<div class="ci-err-inline">${esc(error.message||String(error))}</div>`; return; }
+  _bc.data = data; paintBrandCrm();
+}
+function paintBrandCrm(){
+  const body = document.getElementById("bcBodyM"), d = _bc.data; if(!body || !d) return;
+  const b = d.brand||{}, T = d.totals||{}, C = d.campaigns||[], K = d.contacts||[], N = d.notes||[], P = d.creators||[], L = d.logins||[];
+  const tabs = [["overview","Overview"],["campaigns",`Campaigns (${C.length})`],["creators",`Creators (${P.length})`],["notes",`Notes & tasks (${N.length})`],["logins",`Logins (${L.length})`]];
+  const row = (k,v)=> v ? `<div class="bpp-row"><span>${esc(k)}</span><div>${v}</div></div>` : "";
+  const STAT = { active:"Active client", lead:"Lead", paused:"Paused", archived:"Archived" };
+  let sec = "";
+  if(_bc.tab==="overview"){
+    sec = `<div class="bpp-card"><div class="bpp-sec">🏢 Details</div>
+        ${row("Category", esc(b.category||""))}${row("Website", b.website?`<a href="${esc(safeUrl(/^https?:/i.test(b.website)?b.website:"https://"+b.website))}" target="_blank" rel="noopener">${esc(b.website)} ↗</a>`:"")}
+        ${row("Instagram", b.instagram?`<a href="https://instagram.com/${encodeURIComponent(b.instagram)}" target="_blank" rel="noopener">@${esc(b.instagram)} ↗</a>`:"")}
+        ${row("GSTIN", esc(b.gstin||""))}${row("Address", esc(b.address||""))}${row("Status", esc(STAT[b.status]||b.status||""))}
+        ${row("Notes", b.notes?esc(b.notes).replace(/\n/g,"<br>"):"")}${row("Added", b.created_at?esc(fmtDate(b.created_at)):"")}
+        <div style="margin-top:8px"><button class="btn sm ghost" id="bcEdit">✏️ Edit details</button></div></div>
+      <div class="bpp-card"><div class="bpp-sec">👤 Contacts</div>
+        ${K.length?K.map(x=>`<div class="bc-contact"><div><b>${esc(x.name)}</b>${x.is_primary?' <span class="tag good">Main</span>':""}${x.role?` <span class="muted">· ${esc(x.role)}</span>`:""}
+            <div class="muted" style="font-size:12.5px">${[x.email?`<a href="mailto:${esc(x.email)}">${esc(x.email)}</a>`:"", x.phone?`<a href="tel:${esc(x.phone)}">${esc(x.phone)}</a> · <a href="https://wa.me/${esc(String(x.phone).replace(/\D/g,"").replace(/^(\d{10})$/,"91$1"))}" target="_blank" rel="noopener">WhatsApp ↗</a>`:""].filter(Boolean).join(" · ")}</div></div>
+            <span><button class="mini-btn ghost" data-bcce="${esc(x.contact_id)}">Edit</button> <button class="mini-btn ghost" data-bccd="${esc(x.contact_id)}">🗑</button></span></div>`).join(""):'<div class="muted" style="font-size:13px">No contacts yet.</div>'}
+        <div style="margin-top:8px"><button class="btn sm ghost" id="bcAddC">➕ Add contact</button></div></div>`;
+  } else if(_bc.tab==="campaigns"){
+    sec = C.length ? `<div class="bc-camps">${C.map(c=>`<div class="bc-camp"><div style="min-width:0;flex:1"><b>${esc(c.name)}</b> <span class="tag ${/live/i.test(c.status||"")?"good":""}">${esc(c.status||"")}</span>
+          <div class="muted" style="font-size:12.5px">${esc([c.start_date&&c.end_date?`${c.start_date} → ${c.end_date}`:"", c.type?campTypeLabel(c.type):"", c.budget?fmtMoney(c.budget):""].filter(Boolean).join(" · "))}</div>
+          <div class="bc-cstats"><span>👥 <b>${esc(c.creators)}</b> in</span><span>✉️ ${esc(c.invited)} invited</span><span>📲 ${esc(c.posts)} posts</span><span>🏁 ${esc(c.done)} done</span></div></div>
+        <button class="btn sm" data-bcgo="${esc(c.id)}">Open campaign →</button></div>`).join("")}</div>`
+      : `<div class="muted">No campaigns for this brand yet.</div>`;
+    sec += `<div style="margin-top:10px"><button class="btn sm" id="bcNewCamp">➕ New campaign for ${esc(b.name)}</button></div>`;
+  } else if(_bc.tab==="creators"){
+    sec = P.length ? `<div class="hub-list">${P.map(p=>{ const cr = p.creator||{}, h = cr.username||"";
+        return `<button class="hub-row" data-bcp="${esc(p.participation_id)}" data-bcpc="${esc(p.campaign_id||"")}">${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((h||"?").slice(0,2).toUpperCase())}</span>`}
+          <span class="hub-who"><b>${h?"@"+esc(h):esc(cr.name||"Creator")}</b><span class="muted">${esc([cr.followers!=null?fmtNum(cr.followers)+" followers":"", p.campaign].filter(Boolean).join(" · "))}</span>${jvBadge(cr.joined_via, true)}</span>
+          <span class="hub-meta"><span class="tag ${HUB_DECL.includes(p.stage)?"":"good"}">${esc(hubStepLabel(p.stage))}</span></span><span class="hub-go">›</span></button>`; }).join("")}</div>`
+      : `<div class="muted">No creators on this brand's campaigns yet.</div>`;
+    if(d.is_admin) sec += `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" id="bcUp">📥 Upload creators for ${esc(b.name)}</button>${d.uploaded?`<span class="muted" style="align-self:center">${esc(d.uploaded)} uploaded for this brand</span>`:""}</div>`;
+  } else if(_bc.tab==="notes"){
+    const IC = { note:"📝", call:"📞", email:"✉️", meeting:"🤝", deal:"💰", task:"✅" };
+    sec = `<div class="bc-noteform"><select id="bcNK">${Object.entries(IC).map(([k,i])=>`<option value="${k}">${i} ${k[0].toUpperCase()+k.slice(1)}</option>`).join("")}</select>
+        <textarea id="bcNB" rows="2" maxlength="4000" placeholder="What happened / what to do next…"></textarea>
+        <input id="bcND" type="date" title="Due date (for tasks)"><button class="btn sm" id="bcNGo">Add</button></div>
+      ${N.length?`<div class="hub-tl">${N.map(n=>`<div class="hub-tl-it"><span class="hub-tl-dot ${n.done_at?"me":""}"></span><div style="flex:1;min-width:0">
+          <b>${IC[n.kind]||"📝"} ${esc(n.kind[0].toUpperCase()+n.kind.slice(1))}</b>${n.due_on?` <span class="tag ${n.done_at?"good":"warn"}">${n.done_at?"done":"due "+esc(fmtDate(n.due_on))}</span>`:""}
+          <div style="white-space:pre-wrap;font-size:13.5px">${esc(n.body)}</div>
+          <div class="muted" style="font-size:12px">${esc(fmtDateTime(n.at))}${n.by?` · ${esc(n.by)}`:""}
+            ${n.kind==="task"?` · <a href="#" data-bcnd="${esc(n.note_id)}" data-v="${n.done_at?"0":"1"}">${n.done_at?"Mark not done":"Mark done"}</a>`:""} · <a href="#" data-bcnx="${esc(n.note_id)}">Delete</a></div></div></div>`).join("")}</div>`:'<div class="muted" style="margin-top:8px">No notes yet — log calls, emails, meetings, deals and tasks here.</div>'}`;
+  } else {
+    sec = `<p class="muted" style="font-size:13px;margin:0 0 10px">The brand's own team signs in at the <b>Brand login</b> page and sees only ${esc(b.name)}'s campaigns.</p>
+      ${L.length?L.map(x=>`<div class="bc-contact"><div><b>${esc(x.name||x.email)}</b> <span class="tag ${x.status==="active"?"good":"warn"}">${esc(x.status||"")}</span>
+          <div class="muted" style="font-size:12.5px">${esc(x.email||"")} · made ${esc(fmtDate(x.created_at))}${x.last_seen?` · last sign-in ${esc(fmtDateTime(x.last_seen))}`:" · never signed in"}</div></div>
+          ${d.is_admin?`<button class="mini-btn ghost" data-bcreset="${esc(x.member_id)}">🔁 New password</button>`:""}</div>`).join(""):'<div class="muted">No login yet.</div>'}
+      ${d.is_admin?`<div style="margin-top:10px"><button class="btn sm" id="bcLogin">🔑 Create a login</button></div><div id="bcCreds"></div>`:""}`;
+  }
+  body.innerHTML = `<div class="bpp-top">${b.logo_url?`<img src="${esc(safeUrl(b.logo_url))}" alt="" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((b.name||"?").slice(0,2).toUpperCase())}</span>`}
+      <div style="min-width:0;flex:1"><div class="bpp-name">${esc(b.name)}</div><div class="bpp-cats">${b.category?`<span>${esc(b.category)}</span>`:""}<span>${esc(STAT[b.status]||"Active client")}</span>${L.length?`<span>🔑 ${L.length} login${L.length>1?"s":""}</span>`:""}</div></div>
+      <div class="bpp-topacts"><button class="btn sm" id="bcTopCamp">➕ Campaign</button>${d.is_admin?`<button class="btn sm ghost" id="bcTopUp">📥 Upload creators</button>`:""}</div></div>
+    <div class="bpp-stats"><div><b>${esc(T.campaigns||0)}</b><span>Campaigns</span></div><div><b>${esc(T.creators||0)}</b><span>Creators</span></div><div><b>${esc(T.posted||0)}</b><span>Posted</span></div>
+      <div><b>${T.spend?fmtMoney(T.spend):T.product_value?fmtMoney(T.product_value):"—"}</b><span>${T.spend?"Budget":"Product value"}</span></div></div>
+    <div class="admin-tabs hub-ctabs">${tabs.map(t=>`<button class="${_bc.tab===t[0]?"act":""}" data-bct="${t[0]}">${esc(t[1])}</button>`).join("")}</div>
+    <div class="hub-sec">${sec}</div>`;
+  const $ = id => document.getElementById(id);
+  body.querySelectorAll("[data-bct]").forEach(x=> x.onclick = ()=>{ _bc.tab = x.dataset.bct; paintBrandCrm(); });
+  const newCamp = ()=>{ document.getElementById("bcModal")?.remove(); currentPage = "campaigns"; renderShell(); setTimeout(()=> openCampaignModal(null, { brand: b.name }), 120); };
+  if($("bcTopCamp")) $("bcTopCamp").onclick = newCamp; if($("bcNewCamp")) $("bcNewCamp").onclick = newCamp;
+  if($("bcTopUp")) $("bcTopUp").onclick = ()=> goCreatorUpload(b.brand_id); if($("bcUp")) $("bcUp").onclick = ()=> goCreatorUpload(b.brand_id);
+  if($("bcEdit")) $("bcEdit").onclick = ()=> openBrandForm(b, ()=> bcReload());
+  const contactForm = x=>{ x = x||{};
+    const m2 = bpModal(x.contact_id?"Edit contact":"Add contact", `<form class="modal-form" id="bccF">
+        <div class="mf-row"><label>Name<input name="name" required maxlength="80" value="${esc(x.name||"")}"></label><label>Role<input name="role" maxlength="60" value="${esc(x.role||"")}" placeholder="Marketing manager"></label></div>
+        <div class="mf-row"><label>Email<input name="email" type="email" maxlength="120" value="${esc(x.email||"")}"></label><label>Phone / WhatsApp<input name="phone" maxlength="20" value="${esc(x.phone||"")}"></label></div>
+        <label class="cp-check"><input type="checkbox" name="is_primary"${x.is_primary||!K.length?" checked":""}> Main contact</label>
+        <div class="auth-err" id="bccErr"></div><button class="btn" type="submit">Save</button></form>`);
+    document.getElementById("bccF").onsubmit = async e=>{ e.preventDefault(); const f = new FormData(e.target);
+      const p = { brand_id: b.brand_id, contact_id: x.contact_id||null, name:f.get("name"), role:f.get("role"), email:f.get("email"), phone:f.get("phone"), is_primary: !!f.get("is_primary") };
+      const { error } = await sb.schema("api").rpc("brand_contact_save", { p }).then(r=>r, er=>({error:er}));
+      if(error){ document.getElementById("bccErr").textContent = error.message||String(error); return; } m2.remove(); bcReload(); };
+  };
+  if($("bcAddC")) $("bcAddC").onclick = ()=> contactForm(null);
+  body.querySelectorAll("[data-bcce]").forEach(x=> x.onclick = ()=> contactForm(K.find(k=> k.contact_id===x.dataset.bcce)));
+  body.querySelectorAll("[data-bccd]").forEach(x=> x.onclick = async ()=>{ if(!await confirmDelete("Delete this contact?", "It comes off the brand.")) return;
+    await sb.schema("api").rpc("brand_contact_delete", { p_contact: x.dataset.bccd }); bcReload(); });
+  body.querySelectorAll("[data-bcgo]").forEach(x=> x.onclick = async ()=>{ document.getElementById("bcModal")?.remove(); currentPage = "campaigns"; renderShell(); await openCampaignWorkspace(x.dataset.bcgo); });
+  body.querySelectorAll("[data-bcp]").forEach(x=> x.onclick = ()=>{ if(x.dataset.bcpc) goToCreatorAction(x.dataset.bcpc, x.dataset.bcp, null); });
+  if($("bcNGo")) $("bcNGo").onclick = async ()=>{ const t = $("bcNB").value.trim(); if(!t){ gateToast("Write the note first."); return; }
+    const { error } = await sb.schema("api").rpc("brand_note_add", { p_brand: b.brand_id, p_kind: $("bcNK").value, p_body: t, p_due: $("bcND").value || null }).then(r=>r, er=>({error:er}));
+    if(error){ gateToast(error.message||String(error)); return; } bcReload(); };
+  body.querySelectorAll("[data-bcnd]").forEach(x=> x.onclick = async e=>{ e.preventDefault(); await sb.schema("api").rpc("brand_note_update", { p_note: x.dataset.bcnd, p_done: x.dataset.v==="1", p_delete: false }); bcReload(); });
+  body.querySelectorAll("[data-bcnx]").forEach(x=> x.onclick = async e=>{ e.preventDefault(); if(!await confirmDelete("Delete this note?", "")) return; await sb.schema("api").rpc("brand_note_update", { p_note: x.dataset.bcnx, p_done: null, p_delete: true }); bcReload(); });
+  if($("bcLogin")) $("bcLogin").onclick = ()=>{ (_brandCache||[]).some(x=>x.brand_id===b.brand_id) || (_brandCache = (_brandCache||[]).concat([{ brand_id:b.brand_id, name:b.name }])); openBrandLogin(b.brand_id, ()=> bcReload()); };
+  body.querySelectorAll("[data-bcreset]").forEach(x=> x.onclick = async ()=>{
+    if(!await confirmChange("Make a new password for this login?", "The old password stops working.")) return;
+    const { data, error } = await sb.functions.invoke("brand-login", { body:{ action:"reset", brand_id: b.brand_id, member_id: x.dataset.bcreset } }).then(r=>r, er=>({error:er}));
+    const msg = (data && data.error) || (error && error.message); if(msg){ gateToast(msg); return; }
+    showBrandCreds($("bcCreds"), data, b.name); });
 }
 
 /* ================= FINANCE (derived economics) ================= */
@@ -7003,12 +7217,14 @@ async function adminWaTemplates(){
 }
 // Super Admin → 🤖 WhatsApp bot (its own page in the sidebar)
 // 📥 Creator upload — creators not tied to a campaign: saved to the creator pool + discovery, invited to register
-let _cu = { head:null, rows:null, map:null, src:"", send:true, q:"", st:"all", list:null, busy:false };
+let _cu = { head:null, rows:null, map:null, src:"", send:true, q:"", st:"all", list:null, busy:false, brand:"" };
 const CU_FIELDS = [["name","Name"],["handle","Instagram"],["phone","WhatsApp"],["email","Email"],["city","City"],["state","State"],["followers","Followers"],["category","Category"]];
 async function adminCreatorUpload(body){
   body.innerHTML = `<div class="card cu">
       <h3 style="margin-top:0">📥 Creator upload</h3>
       <p class="muted" style="font-size:13px;margin:0 0 12px">Add creators who aren't on a campaign yet. Each new creator is saved to your creator pool (and Discovery), gets a WhatsApp + email to <b>register on Geek OS</b>, a reminder on day 2 and day 5, and shows as <b>Joined</b> the moment they register. Anyone already on Geek OS is matched by WhatsApp, email or Instagram and isn't messaged.</p>
+      <label class="cu-brand">For brand <span class="muted" style="font-weight:400">(optional — the register message names the brand, and they show on its Brand CRM page)</span>
+        <select id="cuBrand"><option value="">— No brand —</option></select></label>
       <div class="cu-in">
         <label class="btn sm">📄 Choose Excel / CSV<input type="file" id="cuFile" accept=".xlsx,.xls,.csv,.txt,.ods" hidden></label>
         <input id="cuLink" placeholder="…or paste a Google Sheet link" style="flex:1;min-width:200px"><button class="btn sm ghost" id="cuLinkGo">Load sheet</button>
@@ -7026,6 +7242,9 @@ async function adminCreatorUpload(body){
   document.getElementById("cuLinkGo").onclick = ()=>{ const u = document.getElementById("cuLink").value.trim(); if(u) take(()=> bkReadSheetLink(u), "Google Sheet"); };
   const q = document.getElementById("cuQ"); let t = null; q.oninput = ()=>{ clearTimeout(t); t = setTimeout(()=>{ _cu.q = q.value.trim(); cuLoadList(); }, 300); };
   const st = document.getElementById("cuSt"); st.value = _cu.st; st.onchange = ()=>{ _cu.st = st.value; cuLoadList(); };
+  loadBrandCache().then(list=>{ const sel = document.getElementById("cuBrand"); if(!sel) return;
+    sel.innerHTML = `<option value="">— No brand —</option>${list.map(b=>`<option value="${esc(b.brand_id)}"${_cu.brand===b.brand_id?" selected":""}>${esc(b.name)}</option>`).join("")}`;
+    sel.onchange = ()=>{ _cu.brand = sel.value; cuLoadList(); }; });
   cuPaintPrev(); cuLoadList();
 }
 function cuSetRows(rows, src){
@@ -7057,7 +7276,7 @@ function cuPaintPrev(){
   document.getElementById("cuUp").onclick = async ()=>{
     const rows = _cu.rows.map(cuRow).filter(x=> x.phone || x.email || x.handle); if(!rows.length) return;
     _cu.busy = true; cuPaintPrev();
-    const { data, error } = await sb.schema("api").rpc("creator_upload", { p_rows: rows, p_send: _cu.send }).then(r=>r, e=>({error:e}));
+    const { data, error } = await sb.schema("api").rpc("creator_upload", { p_rows: rows, p_send: _cu.send, p_brand: _cu.brand || null }).then(r=>r, e=>({error:e}));
     _cu.busy = false;
     if(error){ cuPaintPrev(); document.getElementById("cuErr").textContent = error.message||String(error); return; }
     const d = data||{}; _cu.rows = null; cuPaintPrev();
@@ -7067,13 +7286,13 @@ function cuPaintPrev(){
 }
 async function cuLoadList(){
   const box = document.getElementById("cuList"); if(!box) return;
-  const { data, error } = await sb.schema("api").rpc("creator_upload_list", { p_q: _cu.q||null, p_status: _cu.st, p_limit: 500 }).then(r=>r, e=>({error:e}));
+  const { data, error } = await sb.schema("api").rpc("creator_upload_list", { p_q: _cu.q||null, p_status: _cu.st, p_limit: 500, p_brand: _cu.brand || null }).then(r=>r, e=>({error:e}));
   if(!box.isConnected) return;
   if(error){ box.innerHTML = `<div class="muted">${esc(error.message||String(error))}${/creator_upload/.test(error.message||"")?" — run <code>supabase db push</code>.":""}</div>`; return; }
   const d = data||{}, L = d.rows||[];
   const stx = document.getElementById("cuStats"); if(stx) stx.textContent = `${d.total||0} uploaded · ${d.joined||0} joined Geek OS`;
   box.innerHTML = L.length ? `<div style="overflow-x:auto"><table class="tbl cu-tbl"><thead><tr><th>Creator</th><th>WhatsApp</th><th>City</th><th>Followers</th><th>Status</th><th></th></tr></thead><tbody>
-      ${L.map(x=>`<tr><td><b>${esc(x.name||x.member_name||"—")}</b>${x.handle?`<div><a href="https://instagram.com/${encodeURIComponent(x.handle)}" target="_blank" rel="noopener">@${esc(x.handle)}</a></div>`:""}${x.email?`<div class="muted" style="font-size:11.5px">${esc(x.email)}</div>`:""}</td>
+      ${L.map(x=>`<tr><td><b>${esc(x.name||x.member_name||"—")}</b>${x.handle?`<div><a href="https://instagram.com/${encodeURIComponent(x.handle)}" target="_blank" rel="noopener">@${esc(x.handle)}</a></div>`:""}${x.email?`<div class="muted" style="font-size:11.5px">${esc(x.email)}</div>`:""}${x.brand?`<div><span class="tag">🏢 ${esc(x.brand)}</span></div>`:""}</td>
         <td>${x.phone?esc(x.phone):"—"}</td><td>${esc([x.city,x.state].filter(Boolean).join(", ")||"—")}</td><td>${x.followers!=null?fmtNum(x.followers):"—"}</td>
         <td>${x.joined?`<span class="tag good">✓ Joined ${x.joined_at?esc(fmtDate(x.joined_at)):""}</span>`:`<span class="tag warn">Not registered</span><div class="muted" style="font-size:11.5px">${x.invites_sent?`invited ${esc(x.invites_sent)}× · last ${esc(fmtDate(x.last_invited_at))}`:"not messaged yet"}${x.last_wa?` · WhatsApp ${esc(x.last_wa.status==="failed"?"✗ "+String(x.last_wa.error||"failed").slice(0,60):x.last_wa.status)}`:""}</div>`}</td>
         <td style="white-space:nowrap">${x.joined?"":`<button class="mini-btn" data-cure="${esc(x.id)}">↻ ${x.invites_sent?"Resend":"Send invite"}</button>`} <button class="mini-btn ghost" data-cudel="${esc(x.id)}" title="Delete">🗑</button></td></tr>`).join("")}</tbody></table></div>`
