@@ -6,6 +6,7 @@
 //   { action: "tagged" }              → the accounts that tagged / mentioned this Instagram, filed as candidates
 //   { action: "hashtag", tag, edge }  → top (or recent) public posts for a #hashtag (Instagram Public Content Access);
 //                                        the @accounts mentioned in those captions are filed as candidates
+//   { action: "public_stats", handle, links } → public profile analytics + numbers of those post links (saved)
 //   { action: "scout", city, category }  → finds creators of a city and/or category live: builds the matching
 //                                        hashtags (#delhifoodblogger…), reads their top + recent posts, collects the
 //                                        @accounts those posts name, then pulls each one's full public profile
@@ -110,6 +111,65 @@ Deno.serve(async (req) => {
         media_url: m.media_url ?? null, thumbnail_url: m.thumbnail_url ?? null, timestamp: m.timestamp ?? null }));
       return json({ ok: true, profile: { ...profile, bio: String(bd.biography ?? ""), website: bd.website ?? null, follows: bd.follows_count ?? null,
         username: bd.username ?? me }, posts });
+    }
+
+    // public analytics of any public Business / Creator account + the numbers of the given post links — what
+    // engagement-rate tools show (followers, engagement rate, avg likes / comments, latest posts). Read with the
+    // platform's Facebook (Page) connection; saved so the campaign report, the creator row and the cards show it.
+    //   { action: "public_stats", handle, links: [instagram post urls] }
+    if (action === "public_stats") {
+      const handle = String(body?.handle || "").trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/^@/, "").replace(/[/?].*$/, "").toLowerCase();
+      if (!/^[a-z0-9._]{2,30}$/.test(handle)) return json({ error: "No Instagram username for this creator." }, 400);
+      const links: string[] = (Array.isArray(body?.links) ? body.links : []).map((x: unknown) => String(x || "").trim()).filter(Boolean).slice(0, 20);
+      const codeOf = (u: string) => { const m = /instagram\.com\/(?:[^/]+\/)?(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i.exec(u); return m ? m[1] : null; };
+      const codes = [...new Set(links.map(codeOf).filter(Boolean) as string[])];
+      const { data: shared } = await admin.schema("api").rpc("ops_discovery_token");
+      const src = shared?.platform === "facebook" ? await openRow(shared) : null;
+      if (!src?.access_token || !src?.ig_user_id) {
+        return json({ needs_facebook: true, error: "Public Instagram numbers need the one-time “Connect Facebook” by the Super Admin (Discovery → Connect Facebook). Until then add the insights screenshot or type the numbers." }, 200);
+      }
+      const read = async (withViews: boolean) => {
+        const mf = withViews ? "id,permalink,caption,like_count,comments_count,media_type,media_product_type,media_url,thumbnail_url,timestamp,view_count"
+                             : "id,permalink,caption,like_count,comments_count,media_type,media_product_type,media_url,thumbnail_url,timestamp";
+        const fields = `business_discovery.username(${encodeURIComponent(handle)}){username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url,media.limit(50){${mf}}}`;
+        const r = await fetch(`${FB_GRAPH}/${encodeURIComponent(String(src.ig_user_id))}?fields=${fields}&access_token=${encodeURIComponent(String(src.access_token))}`);
+        return { ok: r.ok, j: await r.json().catch(() => ({})) as any };
+      };
+      let r = await read(true);
+      if (!r.ok && /view_count|nonexisting field|Tried accessing/i.test(String(r.j?.error?.message || ""))) r = await read(false);
+      const bd = r.j?.business_discovery;
+      if (!r.ok || !bd) {
+        const m = String(r.j?.error?.message || "");
+        const msg = /does not exist|cannot be found|invalid user/i.test(m) || Number(r.j?.error?.code) === 110
+          ? `@${handle} is a private or personal account — Instagram shares numbers only for public Business / Creator accounts. Add the insights screenshot instead.`
+          : needsPermission(r.j) ? `Instagram refused the lookup (${m || "permission"}) — the Super Admin reconnects Facebook in Discovery.` : (m || "Instagram couldn't return that profile.");
+        if (codes.length) await admin.schema("api").rpc("ops_public_post_save", { p_handle: handle, p_profile: null, p_codes: codes, p_items: [], p_error: msg.slice(0, 200) }).then(() => {}, () => {});
+        return json({ error: msg, private: /private or personal/.test(msg) }, 200);
+      }
+      const media: any[] = bd.media?.data ?? [];
+      const n = (v: unknown) => (typeof v === "number" ? v : null);
+      const avg = (k: string, list = media) => { const x = list.map((m) => n(m?.[k])).filter((v) => v != null) as number[]; return x.length ? x.reduce((a, b) => a + b, 0) / x.length : null; };
+      const reels = media.filter((m) => m?.media_product_type === "REELS" || m?.media_type === "VIDEO");
+      const fol = n(bd.followers_count);
+      const al = avg("like_count"), ac = avg("comments_count");
+      const profile = { handle: String(bd.username || handle).toLowerCase(), name: bd.name ?? null, bio: String(bd.biography ?? ""), website: bd.website ?? null,
+        followers: fol, follows: n(bd.follows_count), media_count: n(bd.media_count), profile_picture_url: bd.profile_picture_url ?? null,
+        avg_likes: al, avg_comments: ac, avg_views: avg("view_count", reels), posts_read: media.length,
+        engagement: fol && al != null ? Math.round(10000 * ((al || 0) + (ac || 0)) / fol) / 100 : null,
+        last_post_at: media[0]?.timestamp ?? null };
+      const { data: saved } = await admin.schema("api").rpc("ops_public_post_save", { p_handle: handle,
+        p_profile: { name: bd.name ?? null, followers_count: fol, media_count: n(bd.media_count), profile_picture_url: bd.profile_picture_url ?? null,
+                     avg_likes: al, avg_comments: ac, engagement: profile.engagement, bio: profile.bio },
+        p_codes: codes, p_items: media, p_error: null });
+      const byCode = new Map(media.map((m) => [codeOf(String(m?.permalink || "")), m]));
+      const posts = codes.map((c) => { const m = byCode.get(c);
+        return m ? { code: c, permalink: m.permalink, media_type: m.media_product_type || m.media_type, likes: n(m.like_count), comments: n(m.comments_count),
+                     views: n(m.view_count), timestamp: m.timestamp ?? null, found: true }
+                 : { code: c, permalink: links.find((l) => codeOf(l) === c) ?? null, found: false, note: "Not among their latest 50 posts (or it's a story) — add the insights screenshot." }; });
+      const recent = media.slice(0, 12).map((m) => ({ permalink: m.permalink, media_type: m.media_product_type || m.media_type, likes: n(m.like_count),
+        comments: n(m.comments_count), views: n(m.view_count), timestamp: m.timestamp ?? null,
+        img: (m.media_type === "VIDEO" ? m.thumbnail_url : (m.media_url || m.thumbnail_url)) ?? null, caption: String(m.caption || "").slice(0, 140) }));
+      return json({ ok: true, profile, posts, recent, saved: Number(saved || 0) });
     }
 
     if (action === "tagged") {
