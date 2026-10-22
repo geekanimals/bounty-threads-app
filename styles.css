@@ -2225,3 +2225,21 @@ button.cc-needs.on{background:#344054;color:#fff;border-color:#344054}
 .ci-av{width:26px;height:26px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px}
 .ci-handle{font-size:13px;font-weight:600;margin-left:4px}
 @media (max-width:640px){ .act-ev{grid-template-columns:1fr} .act-p{white-space:normal} }
+
+/* ===== Super Admin → Creators: filter bar ===== */
+.acr-filters{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 10px;margin:14px 0 4px;padding:12px;border-radius:12px;background:var(--panel-2);border:1px solid var(--line)}
+.acr-filters label{display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;min-width:0}
+.acr-filters select{font:inherit;font-size:13px;text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink);padding:7px 8px;border-radius:9px;border:1px solid var(--line);background:var(--panel);min-width:0;width:100%}
+.acr-filters label.on{color:var(--brand,#6c5ce7)}
+.acr-filters label.on select{border-color:var(--brand,#6c5ce7);background:rgba(108,92,231,.06);font-weight:700}
+.acr-fx-foot{grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px}
+/* ===== delete user ===== */
+.au-del{color:#d92d20 !important;border-color:rgba(217,45,32,.3) !important}
+.au-del:hover{background:rgba(217,45,32,.06) !important}
+.au-del-who{font-weight:700;margin-bottom:10px}
+.au-del-box{font-size:13px;line-height:1.5;padding:12px 14px;border-radius:12px;background:rgba(217,45,32,.06);border:1px solid rgba(217,45,32,.22);margin-bottom:12px}
+.au-del-box ul{margin:6px 0 8px 18px;padding:0}
+.au-del-go{background:#d92d20 !important;border-color:#d92d20 !important;color:#fff !important}
+.au-del-go:disabled{opacity:.45;cursor:not-allowed}
+#ac360Del{align-self:flex-start;margin-right:6px;white-space:nowrap}
+.au-del-lbl{font-size:13px;margin-bottom:6px}

@@ -7033,12 +7033,13 @@ async function adminUsers(body, silent){
       <td style="font-size:12px">${esc([u.last_city,u.last_region].filter(Boolean).join(", ")||"—")}${u.last_ip?`<div class="muted"><code>${esc(u.last_ip)}</code></div>`:""}</td>
       <td>${u.consent==="all"?'<span class="tag good">all</span>':u.consent==="essential"?'<span class="tag warn">essential</span>':'<span class="muted">—</span>'}${u.consent_at?`<div class="muted" style="font-size:11px">${esc(fmtDateTime(u.consent_at))}</div>`:""}</td>
       <td>${u.role!=="creator"?"—":u.profile_complete?'<span class="tag good">complete</span>':`<span class="tag warn">${u.profile_done??0}/${u.profile_total??"?"}</span>`}</td>
-      <td style="white-space:nowrap">${u.role==="creator"?`<button class="mini-btn" data-auprof="${esc(u.member_id)}">Profile</button> `:""}<button class="mini-btn ghost" data-autl="${esc(u.member_id)}">Activity</button></td></tr>`).join("")}
+      <td style="white-space:nowrap">${u.role==="creator"?`<button class="mini-btn" data-auprof="${esc(u.member_id)}">Profile</button> `:""}<button class="mini-btn ghost" data-autl="${esc(u.member_id)}">Activity</button>${Auth.profile && Auth.profile.id===u.member_id ? "" : ` <button class="mini-btn ghost au-del" data-audel="${esc(u.member_id)}" title="Delete this user and all their data">🗑 Delete</button>`}</td></tr>`).join("")}
     </tbody></table></div>${rows.length?"":`<div class="muted" style="padding:8px">No users in this view.</div>`}</div>
     <div id="auDetail"></div><div id="actTimeline"></div>`;
   document.getElementById("auFilter").onchange = e=>{ _auFilter = e.target.value; _auSig=""; adminUsers(body); };
   body.querySelectorAll("[data-auprof]").forEach(b=> b.onclick = ()=> adminCreatorProfile(b.dataset.auprof, all.find(u=>u.member_id===b.dataset.auprof)));
   body.querySelectorAll("[data-autl]").forEach(b=> b.onclick = ()=> adminActivityTimeline(b.dataset.autl, all.find(u=>u.member_id===b.dataset.autl)));
+  body.querySelectorAll("[data-audel]").forEach(b=> b.onclick = ()=> adminDeleteUser(b.dataset.audel, all.find(u=>u.member_id===b.dataset.audel), ()=>{ _auSig = ""; adminUsers(body, true); }));
   clearInterval(_auTimer);
   _auTimer = setInterval(()=>{
     const b = document.getElementById("adminBody");
@@ -7056,11 +7057,12 @@ const agoTxt = t=>{ if(!t) return "—"; const m=Math.round((Date.now()-new Date
 const kNum = n=> n==null ? "—" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(n);
 async function adminCreators(body, silent){
   if(!silent) body.innerHTML = skel("cards",8);
-  const [{ data, error }, ig] = await Promise.all([ sb.rpc("admin_creators"), sb.rpc("admin_ig_accounts").then(r=>r, ()=>({data:null})) ]);
+  const [{ data, error }, ig, fx] = await Promise.all([ sb.rpc("admin_creators"), sb.rpc("admin_ig_accounts").then(r=>r, ()=>({data:null})),
+    sb.rpc("admin_creator_facts").then(r=>r, ()=>({data:null})) ]);
   if(error){ if(!silent) body.innerHTML = adminErr(error); return; }
-  const sig = JSON.stringify([data, ig && ig.data]); if(silent && sig===_acrSig) return; _acrSig = sig;
-  const IGM = (ig && ig.data) || {};
-  _acrData = (data||[]).map(c=> Object.assign({}, c, { ig_accounts: IGM[c.member_id] || [] }));
+  const sig = JSON.stringify([data, ig && ig.data, fx && fx.data]); if(silent && sig===_acrSig) return; _acrSig = sig;
+  const IGM = (ig && ig.data) || {}, FX = (fx && fx.data) || {};
+  _acrData = (data||[]).map(c=> Object.assign({}, c, FX[c.member_id] || {}, { ig_accounts: IGM[c.member_id] || [] }));
   const all = _acrData, n = f=>all.filter(f).length;
   body.innerHTML = `<div class="rp-kpis acr-kpis">
       ${[["all","Creators",all.length],["ig","Instagram connected",n(c=>c.ig_username)],["complete","Profile complete",n(c=>c.complete)],["incomplete","Profile incomplete",n(c=>!c.complete)],
@@ -7074,8 +7076,10 @@ async function adminCreators(body, silent){
         <select id="acrSort">${[["new","Newest first"],["followers","Most followers"],["eng","Best engagement"],["seen","Recently active"],["applied","Most applications"]].map(([k,l])=>`<option value="${k}"${_acrSort===k?" selected":""}>${l}</option>`).join("")}</select>
         <span class="acr-view" role="group" aria-label="View"><button type="button" data-acrview="card" class="${_acrView==="card"?"act":""}" title="Card view">▦ Cards</button><button type="button" data-acrview="list" class="${_acrView==="list"?"act":""}" title="List view">☰ List</button></span>
         <button class="mini-btn ghost" id="acrCsv">⬇ CSV</button></div></div>
+      ${acrFilterHtml(all)}
       <div id="acrGrid"></div></div>`;
   paintCreators();
+  acrWireFilters(body);
   const qi = document.getElementById("acrQ"); let tq;
   qi.oninput = ()=>{ clearTimeout(tq); tq = setTimeout(()=>{ _acrQ = qi.value; _acrPage = 0; paintCreators(); }, 200); };
   document.getElementById("acrF").onchange = e=>{ _acrF = e.target.value; _acrPage = 0; adminCreators(body); };
@@ -7096,13 +7100,79 @@ async function adminCreators(body, silent){
     adminCreators(b, true);
   }, 30000);
 }
+// ---- every filter, on top of the Creators page ----
+let _acrX = {};
+const ACRX = [
+  ["followers","Followers",[["nano","Nano · 1K–10K"],["micro","Micro · 10K–50K"],["mid","Mid · 50K–200K"],["macro","Macro · 200K–1M"],["mega","Mega · 1M+"],["u1k","Under 1K"],["none","No numbers yet"]]],
+  ["cat","Category",null],
+  ["gender","Gender",[["female","Female"],["male","Male"],["other","Other"]]],
+  ["age","Age",[["18","18–24"],["25","25–34"],["35","35–44"],["45","45+"],["none","Not given"]]],
+  ["parent","Mom / parent",[["mom","👩 Moms"],["dad","👨 Dads"],["any","👶 Any parent"],["no","Not a parent"]]],
+  ["pet","Pet",[["yes","🐾 Has a pet"],["dog","🐶 Dog"],["cat","🐱 Cat"],["no","No pet"]]],
+  ["profile","Profile",[["complete","✅ Complete"],["incomplete","Incomplete"],["p0","0–25%"],["p25","25–50%"],["p50","50–75%"],["p75","75–99%"]]],
+  ["ig","Instagram",[["yes","Connected"],["no","Not connected"],["multi","2+ accounts"]]],
+  ["barter","Barter & rates",[["barter","🎁 Open to barter"],["rate","Reel rate added"],["norate","No rate yet"]]],
+  ["wa","WhatsApp",[["yes","✅ Verified"],["no","Not verified"]]],
+  ["active","Last active",[["1","Today"],["7","Last 7 days"],["30","Last 30 days"],["old","30+ days ago"],["never","Never"]]],
+  ["joined","Joined",[["1","Today"],["7","Last 7 days"],["30","Last 30 days"]]],
+  ["via","Joined via",[["bulk","📥 Bulk upload"],["invite","✉️ Invite"],["self","Signed up themselves"]]],
+  ["camp","Campaigns",[["applied","Applied"],["pending","Waiting for approval"],["approved","Approved"],["completed","Completed"],["never","Never applied"]]],
+  ["state","State",null],
+  ["lang","Language",null],
+  ["marital","Marital status",[["single","Single"],["married","Married"]]],
+  ["blocked","Blocklist",[["yes","⛔ Blocklisted"],["no","Not blocklisted"]]]];
+function acrFilterHtml(all){
+  const uniq = f=> [...new Set(all.flatMap(f).filter(Boolean).map(x=> String(x).trim()).filter(Boolean))].sort((a,b)=> a.localeCompare(b));
+  const dyn = { cat: uniq(c=> (c.categories||[]).map(x=> String(x).toLowerCase())).map(x=>[x, cap1(x)]),
+                state: uniq(c=> [c.state]).map(x=>[x.toLowerCase(), x]),
+                lang: uniq(c=> (c.languages||[]).map(x=> String(x).toLowerCase())).map(x=>[x, cap1(x)]) };
+  const on = Object.values(_acrX).filter(Boolean).length;
+  return `<div class="acr-filters">${ACRX.map(([k,l,opts])=>{ const o = opts || dyn[k] || [];
+      return `<label class="${_acrX[k]?"on":""}">${esc(l)}<select data-acrx="${k}"><option value="">Any</option>${o.map(([v,t])=>`<option value="${esc(v)}"${_acrX[k]===v?" selected":""}>${esc(t)}</option>`).join("")}</select></label>`; }).join("")}
+    <div class="acr-fx-foot"><span id="acrXCount" class="muted"></span>${on?`<button type="button" class="mini-btn ghost" id="acrXClear">✕ Clear ${on} filter${on>1?"s":""}</button>`:""}</div></div>`;
+}
+function acrWireFilters(body){
+  body.querySelectorAll("[data-acrx]").forEach(sel=> sel.onchange = ()=>{ _acrX[sel.dataset.acrx] = sel.value; _acrPage = 0;
+    sel.closest("label").classList.toggle("on", !!sel.value); acrXFoot(body); paintCreators(); });
+  acrXFoot(body);
+}
+function acrXFoot(body){
+  const f = body.querySelector(".acr-fx-foot"); if(!f) return;
+  const on = Object.values(_acrX).filter(Boolean).length;
+  f.innerHTML = `<span id="acrXCount" class="muted"><b>${fmtNum(filteredCreators().length)}</b> of ${fmtNum(_acrData.length)} creators match</span>${on?`<button type="button" class="mini-btn ghost" id="acrXClear">✕ Clear ${on} filter${on>1?"s":""}</button>`:""}`;
+  const c = f.querySelector("#acrXClear"); if(c) c.onclick = ()=>{ _acrX = {}; _acrPage = 0; body.querySelectorAll("[data-acrx]").forEach(s2=>{ s2.value = ""; s2.closest("label").classList.remove("on"); }); acrXFoot(body); paintCreators(); };
+}
+function acrXMatch(c){
+  const X = _acrX, f = Number(c.followers), day = 864e5, since = t=> t ? (Date.now()-new Date(t).getTime())/day : Infinity;
+  const pct = c.total ? 100*(c.done||0)/c.total : 0, pets = (c.pet_types||[]).join(" ");
+  const T = {
+    followers: v=> v==="none" ? c.followers==null : c.followers!=null && ({ nano:f>=1e3&&f<1e4, micro:f>=1e4&&f<5e4, mid:f>=5e4&&f<2e5, macro:f>=2e5&&f<1e6, mega:f>=1e6, u1k:f<1e3 })[v],
+    cat: v=> (c.categories||[]).some(x=> String(x).toLowerCase()===v),
+    gender: v=> String(c.gender||"").toLowerCase()===v,
+    age: v=> v==="none" ? c.age==null : c.age!=null && ({ "18":c.age<25, "25":c.age>=25&&c.age<35, "35":c.age>=35&&c.age<45, "45":c.age>=45 })[v],
+    parent: v=> v==="no" ? !c.parent : !!c.parent && (v==="any" || (v==="mom" ? c.gender!=="male" : c.gender==="male")),
+    pet: v=> v==="no" ? !c.has_pet && !c.pets : v==="yes" ? (c.has_pet || c.pets>0) : new RegExp(v, "i").test(pets),
+    profile: v=> v==="complete" ? !!c.complete : v==="incomplete" ? !c.complete : !c.complete && ({ p0:pct<25, p25:pct>=25&&pct<50, p50:pct>=50&&pct<75, p75:pct>=75 })[v],
+    ig: v=> v==="yes" ? !!c.ig_username : v==="no" ? !c.ig_username : (c.ig_accounts||[]).length>1,
+    barter: v=> v==="barter" ? !!c.accepts_barter : v==="rate" ? !!c.reel_rate : !c.reel_rate,
+    wa: v=> v==="yes" ? !!c.wa_verified : !c.wa_verified,
+    active: v=> v==="never" ? !c.last_seen : v==="old" ? (c.last_seen && since(c.last_seen)>30) : since(c.last_seen) <= Number(v),
+    joined: v=> since(c.joined_at) <= Number(v),
+    via: v=> { const h = (c.joined_via && c.joined_via.how) || ""; return v==="self" ? !h : v==="bulk" ? /bulk/.test(h) : /invite/.test(h); },
+    camp: v=> v==="never" ? !c.applied : v==="applied" ? c.applied>0 : v==="pending" ? c.pending>0 : v==="approved" ? c.approved>0 : c.completed>0,
+    state: v=> String(c.state||"").toLowerCase()===v,
+    lang: v=> (c.languages||[]).some(x=> String(x).toLowerCase()===v),
+    marital: v=> String(c.marital||"").toLowerCase()===v,
+    blocked: v=> v==="yes" ? !!c.blocked : !c.blocked };
+  return Object.keys(X).every(k=> !X[k] || !T[k] || T[k](X[k]));
+}
 function filteredCreators(){
   const q = _acrQ.trim().toLowerCase();
   const F = { all:()=>true, ig:c=>c.ig_username, noig:c=>!c.ig_username, complete:c=>c.complete, incomplete:c=>!c.complete, barter:c=>c.accepts_barter,
               rate:c=>c.reel_rate, applied:c=>c.applied>0, pending:c=>c.pending>0, approved:c=>c.approved>0, travel:c=>c.travel_city, pages:c=>c.pages>0, multi:c=>(c.ig_accounts||[]).length>1 }[_acrF] || (()=>true);
   const S = { new:(a,b)=>new Date(b.joined_at||0)-new Date(a.joined_at||0), followers:(a,b)=>(b.followers||0)-(a.followers||0), eng:(a,b)=>(b.engagement||0)-(a.engagement||0),
               seen:(a,b)=>new Date(b.last_seen||0)-new Date(a.last_seen||0), applied:(a,b)=>(b.applied||0)-(a.applied||0) }[_acrSort];
-  return _acrData.filter(F).filter(c=> !q || [c.name,c.ig_username,(c.ig_accounts||[]).map(a=>a.username).join(" "),c.city,c.state,c.whatsapp,c.email,(c.categories||[]).join(" "),(c.skills||[]).join(" ")].join(" ").toLowerCase().includes(q)).sort(S);
+  return _acrData.filter(F).filter(acrXMatch).filter(c=> !q || [c.name,c.ig_username,(c.ig_accounts||[]).map(a=>a.username).join(" "),c.city,c.state,c.whatsapp,c.email,(c.categories||[]).join(" "),(c.skills||[]).join(" ")].join(" ").toLowerCase().includes(q)).sort(S);
 }
 function paintCreators(){
   const g = document.getElementById("acrGrid"); if(!g) return;
@@ -7140,13 +7210,48 @@ function paintCreators(){
         <div class="acr-stats"><div><b>${kNum(c.followers)}</b><span>Followers</span></div><div><b>${c.engagement!=null?c.engagement+"%":"—"}</b><span>Engagement</span></div>
           <div><b>${c.reel_rate?"₹"+kNum(Number(c.reel_rate)):"—"}</b><span>Per Reel</span></div><div><b>${c.applied||0}<small>/${c.approved||0}</small></b><span>Applied / ✓</span></div></div>
         <div class="acr-meta">${c.city?`📍 ${esc([c.city,c.state].filter(Boolean).join(", "))}`:'<span class="muted">📍 No address yet</span>'}${c.travel_city?` · ✈️ ${esc(c.travel_city)}`:""}</div>
-        <div class="acr-chips">${(c.categories||[]).slice(0,3).map(x=>`<span class="cp-tag">${esc(x)}</span>`).join("")}${c.accepts_barter?'<span class="cp-tag">🎁 Barter</span>':""}${c.pets?`<span class="cp-tag">🐾 ${c.pets}</span>`:""}${c.pages?`<span class="cp-tag">+${c.pages} page${c.pages>1?"s":""}</span>`:""}</div>
+        <div class="acr-chips">${(c.categories||[]).slice(0,3).map(x=>`<span class="cp-tag">${esc(x)}</span>`).join("")}${c.accepts_barter?'<span class="cp-tag">🎁 Barter</span>':""}${c.pets||c.has_pet?`<span class="cp-tag">🐾 ${(c.pet_types||[]).join(", ")||c.pets||"Pet"}</span>`:""}${c.parent?`<span class="cp-tag">${c.gender==="male"?"👨 Dad":"👩 Mom"}</span>`:""}${c.age?`<span class="cp-tag">🎂 ${c.age}</span>`:""}${c.blocked?'<span class="cp-tag">⛔ Blocked</span>':""}${c.pages?`<span class="cp-tag">+${c.pages} page${c.pages>1?"s":""}</span>`:""}</div>
         <div class="acr-bar2"><span style="width:${pct}%"></span></div>
         <div class="acr-foot muted">Joined ${esc(fmtDate(c.joined_at))} · active ${agoTxt(c.last_seen)}</div></div>`; }).join("")}</div>
       ${pages>1?`<div class="acr-pager"><button class="mini-btn ghost" data-acrp="-1"${_acrPage?"":" disabled"}>← Prev</button><span class="muted">Page ${_acrPage+1} of ${pages} · ${list.length} creators</span><button class="mini-btn ghost" data-acrp="1"${_acrPage<pages-1?"":" disabled"}>Next →</button></div>`:`<div class="muted" style="font-size:12px;margin-top:10px">${list.length} creator${list.length===1?"":"s"}</div>`}`
     : `<div class="muted" style="padding:14px">No creators in this view.</div>`;
   g.querySelectorAll("[data-acr]").forEach(el=>{ const open = ()=> adminCreatorProfile(el.dataset.acr, _acrData.find(c=>c.member_id===el.dataset.acr)); el.onclick = open; el.onkeydown = e=>{ if(e.key==="Enter") open(); }; });
   g.querySelectorAll("[data-acrp]").forEach(b=> b.onclick = ()=>{ _acrPage += Number(b.dataset.acrp); paintCreators(); document.getElementById("acrGrid").scrollIntoView({behavior:"smooth",block:"start"}); });
+}
+
+// 🗑 Delete a user completely (Super Admin) — login, profile, addresses, Instagram link, campaign history.
+// The same phone / email / Instagram can sign up again afterwards and start fresh.
+function adminDeleteUser(member, u, done){
+  u = u || {};
+  let m = document.getElementById("auDelModal"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id = "auDelModal";
+  const who = u.name || u.email || u.whatsapp || "this user";
+  m.innerHTML = `<div class="modal"><div class="modal-head"><strong>🗑 Delete ${esc(who)}?</strong><button class="icon-btn" id="auDelX">✕</button></div>
+    <div class="modal-form">
+      <div class="au-del-who">${esc(who)}${u.role?` · ${esc(u.role)}`:""}${u.whatsapp?` · ${esc(u.whatsapp)}`:""}${u.email?` · ${esc(u.email)}`:""}${u.ig_username?` · @${esc(u.ig_username)}`:""}</div>
+      <div class="au-del-box"><b>This removes for good:</b>
+        <ul><li>Their login and account</li><li>Creator profile — personal details, contact, addresses, pets, rates, skills</li>
+          <li>Instagram connection and WhatsApp link</li><li>Every campaign they were on — contract, courier, video, posts, messages</li><li>Their alerts and activity log</li></ul>
+        <b>Kept:</b> campaigns they created (moved to you) · a record of this delete in the Audit log.<br>
+        <b>After this</b> they can sign up again with the same number / email / Instagram and start fresh.</div>
+      <div class="au-del-lbl">Type <b>DELETE</b> to confirm</div><input id="auDelTxt" autocomplete="off" placeholder="DELETE">
+      <div id="auDelMsg" class="muted" style="font-size:13px"></div>
+      <div class="modal-actions"><button class="btn ghost" id="auDelNo">Cancel</button><button class="btn au-del-go" id="auDelGo" disabled>🗑 Delete permanently</button></div>
+    </div></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  const close = ()=> m.remove(), txt = m.querySelector("#auDelTxt"), go = m.querySelector("#auDelGo");
+  m.querySelector("#auDelX").onclick = close; m.querySelector("#auDelNo").onclick = close; m.onclick = e=>{ if(e.target.id==="auDelModal") close(); };
+  txt.oninput = ()=>{ go.disabled = txt.value.trim()!=="DELETE"; };
+  txt.focus();
+  go.onclick = async ()=>{
+    go.disabled = true; go.textContent = "Deleting…";
+    const { data, error } = await sb.rpc("admin_delete_user", { p_member: member, p_confirm: txt.value.trim() }).then(r=>r, e=>({error:e}));
+    if(error){ m.querySelector("#auDelMsg").innerHTML = `<span style="color:#d92d20">${esc(error.message||String(error))}</span>${/admin_delete_user/.test(error.message||"")?" — run <code>supabase db push</code> first.":""}`;
+      go.disabled = false; go.textContent = "🗑 Delete permanently"; return; }
+    close(); document.getElementById("ac360")?.remove(); document.body.style.overflow = "";
+    gateToast(`🗑 ${who} deleted${data && data.campaigns_removed_from ? ` — removed from ${data.campaigns_removed_from} campaign(s)` : ""}. They can sign up again fresh.`);
+    if(done) done();
+  };
 }
 
 // Creator 360 — full-screen panel, opened from Creators, All users, Applications
@@ -7242,11 +7347,15 @@ async function adminCreatorProfile(member, row){
         <div class="ac360-prog">${D.identity_id?(req.complete?'<span class="tag good">✅ Profile complete — campaign ready</span>':`<span class="tag warn">Profile ${req.done??0}/${req.total??"?"}</span>`):'<span class="tag warn">No profile yet</span>'}
           ${wa?`<a class="mini-btn ghost" href="https://wa.me/${esc(wa.replace(/\D/g,""))}" target="_blank" rel="noopener">💬 WhatsApp</a>`:""}${!synthetic&&con.email?`<a class="mini-btn ghost" href="mailto:${esc(con.email)}">✉️ Email</a>`:""}</div>
         <div class="act-strip" id="ac360Strip"></div></div>
+        <button class="mini-btn ghost au-del" id="ac360Del" title="Delete this user and all their data">🗑 Delete user</button>
         <button class="ci-pop-x" id="acX" aria-label="Close">✕</button></div>
       <div class="admin-tabs ac360-tabs">${tabs.map(t=>`<button class="${_ac360Tab===t[0]?"act":""}" data-ac360="${t[0]}">${t[1]}</button>`).join("")}</div>
       <div class="ac360-sec">${sections[_ac360Tab]}</div>
       <div class="muted" style="font-size:11px;margin-top:12px">Private data — this view is recorded in the audit log.</div>`;
     bodyEl.querySelector("#acX").onclick = close;
+    const dl = bodyEl.querySelector("#ac360Del");
+    if(dl) dl.onclick = ()=> adminDeleteUser(member, { name, role:"creator", whatsapp:wa, ig_username:ig.username }, ()=>{
+      const b = document.getElementById("adminBody"); if(b && currentPage==="admin"){ _acrSig = ""; _auSig = ""; (_adminTab==="users" ? adminUsers : adminCreators)(b, true); } });
     bodyEl.querySelectorAll("[data-ac360]").forEach(b=> b.onclick = ()=>{ _ac360Tab = b.dataset.ac360; paint(); });
     const ga = bodyEl.querySelector("#acGoApps"); if(ga) ga.onclick = ()=>{ close(); _adminTab = "applications"; currentPage = "admin"; renderShell(); };
     if(_ac360Tab==="activity") creatorActivityPanel(member, bodyEl.querySelector("#ac360Act"));
