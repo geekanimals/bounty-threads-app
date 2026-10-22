@@ -24,7 +24,7 @@ const VER = Deno.env.get("FB_GRAPH_VER") || "v23.0";
 const GRAPH = `https://graph.facebook.com/${VER}`;
 // Business discovery + hashtag search only need these. (instagram_manage_insights isn't needed and the app doesn't have it.)
 // Override with the FB_SCOPES secret if Meta ever asks for a different set.
-const SCOPES = (Deno.env.get("FB_SCOPES") || "instagram_basic,pages_show_list,pages_read_engagement,business_management").trim();
+const SCOPES = (Deno.env.get("FB_SCOPES") || "instagram_basic,instagram_manage_insights,pages_show_list,pages_read_engagement,business_management,ads_read").trim();
 const err = (j: any) => j?.error?.error_user_msg || j?.error?.message || null;
 
 Deno.serve(async (req) => {
