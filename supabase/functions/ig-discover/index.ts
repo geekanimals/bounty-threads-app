@@ -208,9 +208,12 @@ Deno.serve(async (req) => {
       }
       const fields = "id,caption,media_type,media_url,permalink,like_count,comments_count,timestamp,children{media_url,media_type}";
       const pull = async (e: string) => {
-        let mr = await (await fetch(`${FB_GRAPH}/${hid}/${e}?user_id=${igId}&fields=${fields}&limit=40&access_token=${FT}`)).json().catch(() => ({}));
-        if (!Array.isArray(mr?.data)) {      // children isn't allowed on every app → without it
-          mr = await (await fetch(`${FB_GRAPH}/${hid}/${e}?user_id=${igId}&fields=${fields.replace(",children{media_url,media_type}", "")}&limit=40&access_token=${FT}`)).json().catch(() => ({}));
+        // Instagram sometimes answers "reduce the amount of data" → ask again with fewer posts / lighter fields
+        const lite = fields.replace(",children{media_url,media_type}", "");
+        let mr: any = {};
+        for (const [f, n] of [[fields, 40], [lite, 40], [lite, 25], [lite, 12]] as [string, number][]) {
+          mr = await (await fetch(`${FB_GRAPH}/${hid}/${e}?user_id=${igId}&fields=${f}&limit=${n}&access_token=${FT}`)).json().catch(() => ({}));
+          if (Array.isArray(mr?.data)) break;
         }
         return mr;
       };
