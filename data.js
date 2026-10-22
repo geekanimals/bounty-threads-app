@@ -30,13 +30,14 @@ const ROLES = {
   }
 };
 
-// Sidebar, grouped. Keys missing a feature flag (campaignops / brandsetup / cintel) are dropped at render time.
+// Sidebar, grouped. Keys missing a feature flag (campaignops / brandsetup) are dropped at render time.
+// Creator Intelligence lives inside Discovery now (🎯 Match to a brief tab + 🧠 card on every creator).
 // ROLES[x].nav is kept in step (it feeds the ⌘K palette and the default landing page).
 const NAV_SECTIONS = {
   owner: [
     ["Today",     ["dashboard","approvals","messages"]],
     ["Campaigns", ["campaigns","barter","celebrity","logistics","campaignops"]],
-    ["Creators",  ["discover","creators","cintel","irm"]],
+    ["Creators",  ["discover","creators","irm"]],
     ["Brands",    ["brands","brandsetup"]],
     ["Insights",  ["reports","finance","listening"]],
     ["Workspace", ["settings"]]
@@ -44,14 +45,14 @@ const NAV_SECTIONS = {
   corporate: [
     ["Today",     ["dashboard","approvals","messages"]],
     ["Campaigns", ["campaigns","barter","celebrity","logistics","campaignops"]],
-    ["Creators",  ["discover","creators","cintel","irm"]],
+    ["Creators",  ["discover","creators","irm"]],
     ["Brands",    ["portfolio","brandsetup"]],
     ["Insights",  ["reports","finance","listening"]],
     ["Workspace", ["settings"]]
   ],
   manager: [
     ["Today",     ["dashboard","approvals","messages"]],
-    ["Talent",    ["roster","discover","cintel"]],
+    ["Talent",    ["roster","discover"]],
     ["Campaigns", ["campaigns","barter","celebrity","logistics","campaignops"]],
     ["Insights",  ["reports"]],
     ["Workspace", ["settings"]]
@@ -59,7 +60,7 @@ const NAV_SECTIONS = {
   brand: [
     ["Today",     ["dashboard","approvals","messages"]],
     ["Campaigns", ["campaigns","barter","logistics","campaignops"]],
-    ["Creators",  ["discover","creators","cintel","irm"]],
+    ["Creators",  ["discover","creators","irm"]],
     ["Insights",  ["reports","listening"]],
     ["Brand",     ["brandsetup","settings"]]
   ]
@@ -76,7 +77,7 @@ Object.keys(NAV_SECTIONS).forEach(r=>{ ROLES[r].nav = NAV_SECTIONS[r].reduce((a,
 const NAV_META = {
   messages:{ic:"💬",label:"Messages"},
   alerts:{ic:"🔔",label:"Alerts"},
-  discover:{ic:"🔎",label:"Discovery"},
+  discover:{ic:"🔎",label:"Discovery"},  // creator search + Creator Intelligence, one page
   instagram:{ic:"📷",label:"Instagram"}, opencampaigns:{ic:"📣",label:"Campaigns"},
   dashboard:{ic:"🏠",label:"Dashboard"}, brands:{ic:"🏢",label:"Brand CRM"},
   portfolio:{ic:"🗂",label:"Portfolio"}, roster:{ic:"🎬",label:"My Roster"},

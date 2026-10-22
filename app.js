@@ -2428,7 +2428,7 @@ let _discoverPreset = null;
 /* ---------- Discovery: creators already on Geek OS, and creators found on Instagram ---------- */
 let _dcTab = "platform";
 function renderDiscover(){
-  return pageHead("Creator search","Every creator we know — on Geek OS and on Instagram. Filter by category, location, size and engagement, then invite.")
+  return pageHead("Discovery","Every creator we know — on Geek OS and on Instagram. Search with every filter, open any creator's details and intelligence card, match creators to a brief, then invite.")
     + `<div class="dx-tools" id="dxTools"></div><div id="dxIg" style="margin-bottom:12px"></div><div id="csRoot"></div><div id="dxToolBody" style="display:none"></div>`;
 }
 /* ================= Discovery → Instagram tools (official Meta APIs, through the Facebook-connected Instagram) =================
@@ -2463,7 +2463,9 @@ function igtNeedsFb(msg){
 }
 async function renderDxTools(){
   const bar = document.getElementById("dxTools"); if(!bar) return;
-  bar.innerHTML = [["search","🔎 Creator search"],["hashtag","#️⃣ Hashtag search"],["business","📇 Business discovery"]]
+  const tools = [["search","🔎 Creator search"]].concat(window.__ciIntelEnabled ? [["brief","🎯 Match to a brief"]] : [], [["hashtag","#️⃣ Hashtag search"],["business","📇 Business discovery"]]);
+  if(_dxTool==="brief" && !window.__ciIntelEnabled) _dxTool = "search";
+  bar.innerHTML = tools
     .map(([k,l])=>`<button class="${_dxTool===k?"act":""}" data-dxtool="${k}">${l}</button>`).join("");
   bar.querySelectorAll("[data-dxtool]").forEach(b=> b.onclick = ()=>{ _dxTool = b.dataset.dxtool; renderDxTools(); });
   const cs = document.getElementById("csRoot"), ig = document.getElementById("dxIg"), tb = document.getElementById("dxToolBody");
@@ -2472,6 +2474,11 @@ async function renderDxTools(){
   if(!tb) return;
   tb.style.display = _dxTool==="search" ? "none" : "";
   if(_dxTool==="search") return;
+  if(_dxTool==="brief"){            // Creator Intelligence: match the creators you work with to a brief
+    tb.innerHTML = typeof renderBrandIntel==="function" ? renderBrandIntel() : "";
+    if(window.ciIntel) window.ciIntel.loadBrand();
+    return;
+  }
   const conn = await dxConnLine();
   if(_dxTool==="hashtag"){
     const d = _dxHash.data;
@@ -2602,7 +2609,20 @@ const CS_CATS = ["Lifestyle","Fashion","Beauty","Food","Travel","Fitness","Healt
 const CS_TIERS = [["","Any size"],["nano","Nano · 1K–10K",1000,10000],["micro","Micro · 10K–50K",10000,50000],["mid","Mid · 50K–200K",50000,200000],
   ["macro","Macro · 200K–1M",200000,1000000],["mega","Mega · 1M+",1000000,null],["custom","Custom range…"]];
 const CS_CITIES = ["Delhi NCR","Mumbai","Bengaluru","Hyderabad","Chennai","Kolkata","Pune","Ahmedabad","Jaipur","Lucknow","Chandigarh","Indore","Surat","Kochi","Goa","Bhopal","Nagpur","Patna","Dehradun","Guwahati"];
-function csNew(){ return { q:"", categories:[], location:"", tier:"", min:"", max:"", min_engagement:"", gender:"", source:"all", sort:"followers_desc", page:1 }; }
+function csNew(){ return { q:"", categories:[], location:"", tier:"", min:"", max:"", min_engagement:"", gender:"", source:"all", sort:"followers_desc", page:1,
+  state:"", language:"", content_format:"", skill:"", min_age:"", max_age:"", active_days:"", max_engagement:"", flags:[], more:false }; }
+// profile filters (Geek OS creators only — Instagram-only creators have no profile)
+const CS_FLAGS = [["barter","🎁 Takes barter"],["pet","🐾 Pet parent"],["whatsapp","✅ WhatsApp verified"],["brands_worked","🤝 Worked with brands"],["travel","✈️ Ready to travel"],["campaigns_done","🏆 Done campaigns with us"]];
+const CS_FORMATS = ["reels","stories","posts","carousel","ugc","youtube","shorts","live","photography","video editing"];
+let _csOpts = null;
+async function csLoadOpts(){
+  if(_csOpts) return _csOpts;
+  const { data } = await sb.schema("api").rpc("creator_search_options").then(r=>r, ()=>({data:null}));
+  _csOpts = data || { languages:[], content_formats:[], skills:[], states:[] };
+  return _csOpts;
+}
+function csProfCount(S){ return ["state","language","content_format","skill","min_age","max_age","active_days","max_engagement"].filter(k=> S[k]!=="" && S[k]!=null).length + (S.flags||[]).length; }
+const cap1 = v => String(v||"").replace(/_/g," ").replace(/\b\w/g, c=>c.toUpperCase());
 let _csMain = null;
 function mountCreatorSearch(root, opts){
   opts = opts || {};
@@ -2621,8 +2641,22 @@ function mountCreatorSearch(root, opts){
         <label>Engagement<select id="${id("Eng")}">${[["","Any"],["1","1%+"],["2","2%+"],["3","3%+"],["5","5%+"],["8","8%+"]].map(([v,l])=>`<option value="${v}"${S.min_engagement===v?" selected":""}>${l}</option>`).join("")}</select></label>
         <label>Gender<select id="${id("Gen")}">${[["","Any"],["female","Female"],["male","Male"],["other","Other"]].map(([v,l])=>`<option value="${v}"${S.gender===v?" selected":""}>${l}</option>`).join("")}</select></label>
         <label>Creators<select id="${id("Src")}">${[["all","Everyone"],["platform","On Geek OS"],["external","Not on Geek OS yet"]].map(([v,l])=>`<option value="${v}"${S.source===v?" selected":""}>${l}</option>`).join("")}</select></label>
-        <label>Sort<select id="${id("Sort")}">${[["followers_desc","Followers: high → low"],["followers_asc","Followers: low → high"],["engagement_desc","Engagement: high → low"],["recent","Recently found"]].map(([v,l])=>`<option value="${v}"${S.sort===v?" selected":""}>${l}</option>`).join("")}</select></label>
+        <label>Sort<select id="${id("Sort")}">${[["followers_desc","Followers: high → low"],["followers_asc","Followers: low → high"],["engagement_desc","Engagement: high → low"],["engagement_asc","Engagement: low → high"],["active","Recently active"],["campaigns","Most campaigns done"],["recent","Recently found"]].map(([v,l])=>`<option value="${v}"${S.sort===v?" selected":""}>${l}</option>`).join("")}</select></label>
         <button class="btn sm ghost cs-clear" id="${id("Clear")}" type="button">Clear</button>
+      </div>
+      <div class="cs-morerow"><button type="button" class="cs-morebtn${S.more?" on":""}" id="${id("MoreBtn")}">⚙️ More filters${csProfCount(S)?` <b>${csProfCount(S)}</b>`:""} ${S.more?"▴":"▾"}</button>
+        <span class="muted">Profile filters — work on Geek OS creators (Instagram-only creators have no profile)</span></div>
+      <div class="cs-more" id="${id("More")}"${S.more?"":" hidden"}>
+        <div class="cs-filters">
+          <label>State<input id="${id("St")}" list="${id("StList")}" placeholder="Any state" value="${esc(S.state)}"><datalist id="${id("StList")}"></datalist></label>
+          <label>Language<select id="${id("Lang")}"><option value="">Any</option>${S.language?`<option value="${esc(S.language)}" selected>${esc(cap1(S.language))}</option>`:""}</select></label>
+          <label>Content type<select id="${id("Fmt")}"><option value="">Any</option>${CS_FORMATS.map(f=>`<option value="${esc(f)}"${S.content_format===f?" selected":""}>${esc(cap1(f))}</option>`).join("")}</select></label>
+          <label>Skill<select id="${id("Skill")}"><option value="">Any</option>${S.skill?`<option value="${esc(S.skill)}" selected>${esc(cap1(S.skill))}</option>`:""}</select></label>
+          <label>Age<span class="cs-pair"><input id="${id("AMin")}" type="number" min="13" max="99" placeholder="18" value="${esc(S.min_age)}"><span>–</span><input id="${id("AMax")}" type="number" min="13" max="99" placeholder="45" value="${esc(S.max_age)}"></span></label>
+          <label>Last active<select id="${id("Act")}">${[["","Any time"],["1","Today"],["7","Last 7 days"],["30","Last 30 days"],["90","Last 90 days"]].map(([v,l])=>`<option value="${v}"${S.active_days===v?" selected":""}>${l}</option>`).join("")}</select></label>
+          <label>Max engagement<select id="${id("EMax")}">${[["","Any"],["3","Up to 3%"],["5","Up to 5%"],["10","Up to 10%"],["20","Up to 20%"]].map(([v,l])=>`<option value="${v}"${S.max_engagement===v?" selected":""}>${l}</option>`).join("")}</select></label>
+        </div>
+        <div class="cs-flags">${CS_FLAGS.map(([k,l])=>`<button type="button" class="cs-chip${(S.flags||[]).includes(k)?" on":""}" data-csflag="${k}">${esc(l)}</button>`).join("")}</div>
       </div></div>
     <div class="cs-bar"><div id="${id("Count")}" class="cs-count"></div>
       <div class="cs-pool" id="${id("Pool")}"></div>
@@ -2630,11 +2664,17 @@ function mountCreatorSearch(root, opts){
     <div id="${id("Res")}"></div><div id="${id("Pager")}"></div>`;
   const $i = s => document.getElementById(id(s));
   const read = ()=>{ S.q = $i("Q").value.trim(); S.location = $i("Loc").value.trim(); S.tier = $i("Tier").value;
-    S.min = $i("Min").value; S.max = $i("Max").value; S.min_engagement = $i("Eng").value; S.gender = $i("Gen").value; S.source = $i("Src").value; S.sort = $i("Sort").value; };
+    S.min = $i("Min").value; S.max = $i("Max").value; S.min_engagement = $i("Eng").value; S.gender = $i("Gen").value; S.source = $i("Src").value; S.sort = $i("Sort").value;
+    S.state = $i("St").value.trim(); S.language = $i("Lang").value; S.content_format = $i("Fmt").value; S.skill = $i("Skill").value;
+    S.min_age = $i("AMin").value; S.max_age = $i("AMax").value; S.active_days = $i("Act").value; S.max_engagement = $i("EMax").value;
+    const mb = $i("MoreBtn"), n = csProfCount(S); if(mb) mb.innerHTML = `⚙️ More filters${n?` <b>${n}</b>`:""} ${S.more?"▴":"▾"}`; };
   const run = async (keepPage)=>{
     read(); if(!keepPage){ S.page = 1; S.pageP = 1; S.pageE = 1; }
     const t = CS_TIERS.find(x=>x[0]===S.tier), filters = { q:S.q, categories:S.categories, location:S.location, source:S.source, sort:S.sort, gender:S.gender, min_engagement:S.min_engagement };
     if(S.tier==="custom"){ filters.min_followers = S.min; filters.max_followers = S.max; } else if(t && t[2]!=null){ filters.min_followers = t[2]; if(t[3]!=null) filters.max_followers = t[3]; }
+    Object.assign(filters, { state:S.state, language:S.language, content_format:S.content_format, skill:S.skill, min_age:S.min_age, max_age:S.max_age,
+      active_days:S.active_days, max_engagement:S.max_engagement });
+    (S.flags||[]).forEach(f=> filters[f] = "yes");
     Object.keys(filters).forEach(k=>{ if(filters[k]==="" || filters[k]==null) delete filters[k]; });
     $i("Res").innerHTML = skel("cards", 6); $i("Pager").innerHTML = "";
     const ask = (src, page, size)=> sb.schema("api").rpc("creator_search", { p_filters:Object.assign({}, filters, { source:src }), p_page:page, p_size:size, p_campaign: opts.campaign ? opts.campaign.id : null }).then(r=>r, e=>({error:e}));
@@ -2652,7 +2692,8 @@ function mountCreatorSearch(root, opts){
       const R = d.rows||[], ig = kind==="external", pk = both ? (ig?"E":"P") : "";
       const head = ig ? `<div class="cs-sec-h"><span class="cs-sec-t">📸 From Instagram <b>${fmtNum(d.total||0)}</b></span><span class="muted">Not on Geek OS yet — followers & engagement fetched live from Instagram</span></div>`
                       : `<div class="cs-sec-h"><span class="cs-sec-t">👥 On Geek OS <b>${fmtNum(d.total||0)}</b></span><span class="muted">Signed-up creators with connected Instagram — invite in-app</span></div>`;
-      const empty = ig ? `No Instagram creators match yet${opts.campaign?"":" — pick a city or category and tap <b>📡 Find on Instagram</b>, or <b>+ Add creators</b>"}.` : "No Geek OS creator matches these filters.";
+      const empty = ig ? (csProfCount(S) ? "Profile filters are on — Instagram-only creators have no profile, so they're hidden. Clear the ⚙️ More filters to see them."
+          : `No Instagram creators match yet${opts.campaign?"":" — pick a city or category and tap <b>📡 Find on Instagram</b>, or <b>+ Add creators</b>"}.`) : "No Geek OS creator matches these filters.";
       return `<div class="cs-sec ${ig?"cs-sec-ig":""}">${head}<div class="cs-igwarn" hidden></div>
         ${R.length ? `<div class="cs-grid">${R.map(c=> ig ? csIgCard(csIgSeed(c), opts) : csCard(c, opts)).join("")}</div>` : `<div class="card"><div class="muted">${empty}</div></div>`}
         ${csPagerHtml(d, pk, both ? (ig?24:12) : 24)}</div>`;
@@ -2703,6 +2744,18 @@ function mountCreatorSearch(root, opts){
   };
   root.querySelectorAll("[data-cscat]").forEach(b=> b.onclick = ()=>{ const c = b.dataset.cscat, i = S.categories.indexOf(c);
     if(i>=0) S.categories.splice(i,1); else S.categories.push(c); b.classList.toggle("on", i<0); run(); });
+  root.querySelectorAll("[data-csflag]").forEach(b=> b.onclick = ()=>{ S.flags = S.flags||[]; const f = b.dataset.csflag, i = S.flags.indexOf(f);
+    if(i>=0) S.flags.splice(i,1); else S.flags.push(f); b.classList.toggle("on", i<0); run(); });
+  $i("MoreBtn").onclick = ()=>{ S.more = !S.more; $i("More").hidden = !S.more; $i("MoreBtn").classList.toggle("on", S.more); read(); };
+  ["Lang","Fmt","Skill","Act","EMax"].forEach(k=> $i(k).onchange = ()=> run());
+  [$i("St"),$i("AMin"),$i("AMax")].forEach(x=> x.onchange = ()=> run());
+  csLoadOpts().then(o=>{       // dropdown values from what creators actually have
+    const fill = (sel, arr, extra)=>{ const el2 = $i(sel); if(!el2) return; const cur = el2.value;
+      const all = [...new Set([...(extra||[]), ...(arr||[]).map(x=>String(x).toLowerCase())])];
+      el2.innerHTML = `<option value="">Any</option>` + all.map(v=>`<option value="${esc(v)}"${cur===v?" selected":""}>${esc(cap1(v))}</option>`).join(""); };
+    fill("Lang", o.languages); fill("Skill", o.skills); fill("Fmt", o.content_formats, CS_FORMATS);
+    const dl = $i("StList"); if(dl) dl.innerHTML = (o.states||[]).map(x=>`<option value="${esc(x)}">`).join("");
+  });
   $i("Go").onclick = ()=> run();
   $i("Q").onkeydown = e=>{ if(e.key==="Enter") run(); };
   $i("Loc").onchange = ()=> run();
@@ -2736,6 +2789,7 @@ function csPagerHtml(d, pk, size){
 }
 function csWireCards(scope, opts){
   scope.querySelectorAll("[data-csinv]").forEach(b=> b.onclick = ()=> csInvite(b, opts));
+  scope.querySelectorAll("[data-csprof]").forEach(b=> b.onclick = ()=> openDiscoveryCreator(_csRowsById[b.dataset.csprof] || { member_id:b.dataset.csprof }));
   scope.querySelectorAll("[data-cslive]").forEach(b=> b.onclick = async ()=>{ const h = b.dataset.cslive; b.disabled = true; b.textContent = "Fetching…";
     const { data:lk, error:le } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h } }).then(r=>r, e=>({error:e}));
     if(le || !lk || lk.error || !lk.profile){ gateToast((lk && lk.error) || (le && await fnError(le)) || "Couldn't reach Instagram."); b.disabled = false; b.textContent = "🔄 Refresh"; return; }
@@ -2862,7 +2916,11 @@ async function igAutoFill(handles, onOne, warnEl, max){
   };
   await Promise.all([work(), work(), work()]);
 }
+const _csRowsById = {};
+function csAgo(t){ if(!t) return ""; const m = Math.round((Date.now()-new Date(t).getTime())/60000);
+  return m<2 ? "just now" : m<60 ? m+"m ago" : m<1440 ? Math.round(m/60)+"h ago" : m<43200 ? Math.round(m/1440)+"d ago" : Math.round(m/43200)+"mo ago"; }
 function csCard(c, opts){
+  if(c.member_id) _csRowsById[c.member_id] = c;
   const st = c.state_in_campaign, onCamp = st && !["invited","dropped","rejected","ineligible","brand_declined"].includes(st);
   const btn = opts.campaign
     ? (st==="invited" ? `<span class="tag warn">Invited</span>` : onCamp ? `<span class="tag good">On the campaign</span>`
@@ -2878,11 +2936,112 @@ function csCard(c, opts){
     <div class="cs-stats"><div><b>${c.followers!=null?kfmtN(c.followers):"—"}</b><span>Followers</span></div>
       <div><b>${c.engagement!=null?(Math.round(c.engagement*10)/10)+"%":"—"}</b><span>Engagement</span></div>
       <div><b>${c.avg_likes!=null?kfmtN(c.avg_likes):"—"}</b><span>Avg likes</span></div></div>
+    ${c.kind==="platform" ? `<div class="cs-facts">${c.last_seen?`<span class="${(Date.now()-new Date(c.last_seen).getTime())<7*864e5?"on":""}" title="Last active on Geek OS">🟢 Active ${esc(csAgo(c.last_seen))}</span>`:`<span title="No activity recorded">⚪ Not active yet</span>`}
+      ${c.age?`<span>🎂 ${esc(c.age)}</span>`:""}${c.accepts_barter?`<span>🎁 Barter</span>`:""}${c.has_pet?`<span>🐾 Pet parent</span>`:""}${c.wa_verified?`<span>✅ WhatsApp</span>`:""}
+      ${Number(c.campaigns_done)>0?`<span>🏆 ${esc(c.campaigns_done)} done</span>`:""}${(c.languages||[]).length?`<span>🗣 ${esc(c.languages.slice(0,2).map(cap1).join(", "))}</span>`:""}</div>` : ""}
     ${c.bio?`<div class="cs-bio">${esc(c.bio)}</div>`:""}
     ${c.matched_post?`<div class="cs-match">📝 In their post: “${esc(c.matched_post)}…”</div>`:""}
     <div class="cs-tags">${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(x.replace(/\b\w/g,m=>m.toUpperCase()))}</span>`).join("")}</div>
-    <div class="cs-act">${btn}${c.kind!=="platform"?`<button class="btn sm ghost" data-cslive="${esc(c.handle)}" title="Fetch this account's live followers, posts and bio from Instagram">🔄 Live stats</button><a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">💬 DM</a>`:""}</div></div>`;
+    <div class="cs-act">${btn}${c.kind==="platform" && c.member_id ? `<button class="btn sm ghost" data-csprof="${esc(c.member_id)}" title="Full details, intelligence card${window.__isAdmin?" and activity":""}">👤 Details</button>` : ""}${c.kind!=="platform"?`<button class="btn sm ghost" data-cslive="${esc(c.handle)}" title="Fetch this account's live followers, posts and bio from Instagram">🔄 Live stats</button><a class="btn sm ghost" href="https://ig.me/m/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">💬 DM</a>`:""}</div></div>`;
 }
+// 👤 Details from Discovery — Super Admin gets the full Creator 360 (profile, Instagram, campaigns, 🧠 intelligence, 📈 activity);
+// agencies / brands get the creator's summary + their Creator Intelligence card.
+function openDiscoveryCreator(c){
+  if(!c || !c.member_id) return;
+  if(window.__isAdmin){ _ac360Tab = "profile"; adminCreatorProfile(c.member_id, { name:c.name }); return; }
+  let m = document.getElementById("dxCreator"); if(m) m.remove();
+  m = el("div","modal-overlay"); m.id = "dxCreator";
+  const pic = c.profile_picture_url ? `<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : `<span class="avatar">${esc((c.handle||"?").slice(0,2).toUpperCase())}</span>`;
+  const row = (k,v)=> v ? `<div class="bpp-row"><span>${esc(k)}</span><div>${v}</div></div>` : "";
+  m.innerHTML = `<div class="modal modal-lg"><div class="modal-head"><strong>Creator details</strong><button class="icon-btn" id="dxCrX">✕</button></div>
+    <div class="modal-form bpp">
+      <div class="bpp-top">${pic}<div style="min-width:0;flex:1"><div class="bpp-name">${esc(c.name||c.handle||"Creator")}</div>
+          ${c.handle?`<a href="https://instagram.com/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">@${esc(c.handle)} ↗</a>`:""}
+          <div class="bpp-cats">${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(cap1(x))}</span>`).join("")}${c.city?`<span>📍 ${esc(c.city)}</span>`:""}</div></div>
+        <div class="bpp-topacts"><button class="btn sm" id="dxCrInv">🎯 Invite</button>${c.handle?`<a class="btn sm ghost" href="/p.html?u=${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}</div></div>
+      <div class="bpp-stats bpp-stats4"><div><b>${c.followers!=null?fmtNum(c.followers):"—"}</b><span>Followers</span></div><div><b>${c.engagement!=null?(Math.round(c.engagement*10)/10)+"%":"—"}</b><span>Engagement</span></div>
+        <div><b>${c.avg_likes!=null?kfmtN(c.avg_likes):"—"}</b><span>Avg likes</span></div><div><b>${c.profile_pct!=null?c.profile_pct+"%":"—"}</b><span>Profile</span></div></div>
+      <div class="bpp-card"><div class="bpp-sec">🧬 Profile</div>
+        ${row("Last active", c.last_seen ? esc(csAgo(c.last_seen)) : "Not active yet")}
+        ${row("Age", c.age ? esc(c.age) : "")}${row("Location", [c.city,c.state].filter(Boolean).map(esc).join(", "))}
+        ${row("Languages", (c.languages||[]).map(cap1).map(esc).join(", "))}${row("Content types", (c.content_formats||[]).map(cap1).map(esc).join(", "))}
+        ${row("Skills", (c.skills||[]).map(cap1).map(esc).join(", "))}
+        ${row("Barter", c.accepts_barter===true?"🎁 Takes barter":c.accepts_barter===false?"Paid only":"")}${row("Pet parent", c.has_pet?"🐾 Yes":"")}
+        ${row("Travel", c.travel_ready?"✈️ Ready to travel":"")}${row("Worked with brands", Number(c.brands_worked)>0?esc(c.brands_worked):"")}
+        ${row("Campaigns done with us", Number(c.campaigns_done)>0?esc(c.campaigns_done):"")}${row("Bio", c.bio?esc(c.bio):"")}</div>
+      <div class="bpp-card"><div class="bpp-sec">🧠 Creator Intelligence</div><div id="dxCrIntel">${c.identity_id && window.ciIntel ? skel("list",2) : `<div class="muted" style="font-size:13px">${window.__ciIntelEnabled?"No profile yet — the card fills in once they build their profile.":"Creator Intelligence isn't on for this workspace yet."}</div>`}</div></div>
+    </div></div>`;
+  document.body.appendChild(m); m.classList.add("open");
+  const close = ()=> m.remove();
+  document.getElementById("dxCrX").onclick = close; m.onclick = e=>{ if(e.target.id==="dxCreator") close(); };
+  document.getElementById("dxCrInv").onclick = ()=>{ close(); inviteFromDiscovery(c.handle); };
+  if(c.identity_id && window.ciIntel && window.__ciIntelEnabled) window.ciIntel.openCard(c.identity_id, "dxCrIntel");
+}
+
+// 📈 Creator activity — sign-ins, pages opened, time spent, places, device, cookie choice (Super Admin only).
+// Shown on every creator details card: Creator 360, the campaign creator card, Discovery.
+function uaShort(ua){ ua = String(ua||""); if(!ua) return "";
+  const os = /Android/i.test(ua) ? "Android" : /iPhone/i.test(ua) ? "iPhone" : /iPad/i.test(ua) ? "iPad" : /Mac OS X|Macintosh/i.test(ua) ? "Mac" : /Windows/i.test(ua) ? "Windows" : /Linux/i.test(ua) ? "Linux" : "";
+  const br = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /SamsungBrowser/.test(ua) ? "Samsung Internet" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "";
+  return [os, br].filter(Boolean).join(" · ") || ua.slice(0,40); }
+function actPage(p){ return p ? ((NAV_META[p]&&NAV_META[p].label) || cap1(p)) : ""; }
+function actEvent(e){
+  const pg = actPage(e.page);
+  if(e.event==="session_start") return "Opened the app";
+  if(e.event==="page_view") return `Opened <b>${esc(pg||"a page")}</b>`;
+  if(e.event==="time") return `Spent ${esc(e.seconds>=60?Math.round(e.seconds/60)+" min":(e.seconds||0)+"s")} on <b>${esc(pg||"a page")}</b>`;
+  if(e.event==="consent") return `Cookie choice: <b>${esc((e.detail&&e.detail.choice)||"")}</b>`;
+  return esc(cap1(e.event)) + (pg?` · ${esc(pg)}`:"");
+}
+const _actCache = {};
+function actFetch(member, days){
+  const k = member + ":" + (days||30), c = _actCache[k];
+  if(c && Date.now() - c.at < 60000) return c.p;
+  const p = sb.schema("api").rpc("creator_activity", { p_member: member, p_days: days || 30 }).then(r=>r, e=>({error:e}));
+  _actCache[k] = { at: Date.now(), p }; return p;
+}
+// one line under the creator's name: last active · visits · time · cookies · place → opens the Activity tab
+async function acActivityStrip(member, box){
+  if(!window.__isAdmin || !member || !box) return;
+  const { data:A } = await actFetch(member);
+  if(!A){ box.innerHTML = ""; return; }
+  const lp = A.last_place ? [A.last_place.city, A.last_place.country].filter(Boolean).join(", ") : "";
+  box.innerHTML = `<button type="button" class="act-chip" data-acttab>${A.last_seen?`🟢 Active ${esc(csAgo(A.last_seen))}`:"⚪ No activity yet"} · ${fmtNum(A.sessions||0)} visits · ${A.minutes||0} min
+    · 🍪 ${esc(A.consent==="all"?"All cookies":A.consent==="essential"?"Essential":"Not chosen")}${lp?` · 📍 ${esc(lp)}`:""}${A.last_device?` · ${esc(uaShort(A.last_device))}`:""} →</button>`;
+  const b = box.querySelector("[data-acttab]"), t = document.querySelector('[data-ac360="activity"]');
+  if(b) b.onclick = ()=>{ if(t) t.click(); };
+}
+async function creatorActivityPanel(member, box, opts){
+  opts = opts || {}; if(!box) return;
+  if(!window.__isAdmin){ const card = box.closest(".bpp-card"); if(card) card.remove(); else box.innerHTML = ""; return; }
+  if(!member){ box.innerHTML = `<div class="muted" style="font-size:13px">Not on Geek OS yet — no activity.</div>`; return; }
+  box.innerHTML = skel("list", 2);
+  const { data:A, error } = await actFetch(member, opts.days);
+  if(error || !A){ box.innerHTML = `<div class="muted" style="font-size:13px">${esc((error&&error.message)||"No activity.")}${/creator_activity/.test((error&&error.message)||"")?" — run <code>supabase db push</code>.":""}</div>`; return; }
+  const ck = A.consent==="all" ? `<span class="tag good">All cookies</span>` : A.consent==="essential" ? `<span class="tag warn">Essential only</span>` : `<span class="tag">Not chosen</span>`;
+  const lp = A.last_place ? [A.last_place.city, A.last_place.region, A.last_place.country].filter(Boolean).join(", ") : "";
+  const ev = A.events || [], showN = opts.compact ? 6 : 40;
+  const evHtml = list => list.map(e=>`<div class="act-ev"><span class="act-t">${esc(fmtDateTime(e.at))}</span><span class="act-x">${actEvent(e)}</span>${e.place?`<span class="muted act-p">📍 ${esc(e.place)}</span>`:""}</div>`).join("");
+  box.innerHTML = `<div class="act-stats">
+      <div><b>${A.last_seen?esc(csAgo(A.last_seen)):"—"}</b><span>Last active</span></div>
+      <div><b>${A.last_sign_in_at?esc(csAgo(A.last_sign_in_at)):"—"}</b><span>Last sign-in</span></div>
+      <div><b>${fmtNum(A.active_days||0)}</b><span>Active days (${A.days}d)</span></div>
+      <div><b>${fmtNum(A.sessions||0)}</b><span>Visits</span></div>
+      <div><b>${A.minutes||0} min</b><span>Time spent</span></div>
+      <div><b>${fmtNum(A.page_views||0)}</b><span>Pages opened</span></div></div>
+    <div class="bpp-row"><span>Cookies</span><div>${ck}${A.consent!=="all"?` <span class="muted" style="font-size:12px">pages &amp; time are logged only with “All cookies”</span>`:""}</div></div>
+    ${lp?`<div class="bpp-row"><span>Last place</span><div>📍 ${esc(lp)}${A.last_place.ip?` <code class="muted">${esc(A.last_place.ip)}</code>`:""}</div></div>`:""}
+    ${A.last_device?`<div class="bpp-row"><span>Device</span><div>📱 ${esc(uaShort(A.last_device))}</div></div>`:""}
+    ${A.joined_at?`<div class="bpp-row"><span>Joined</span><div>${esc(fmtDate(A.joined_at))}</div></div>`:""}
+    ${(A.pages||[]).length?`<div class="act-sub">Most used pages</div><div class="act-pages">${A.pages.map(p=>`<span>${esc(actPage(p.page))} <b>${fmtNum(p.views||0)}</b>${p.minutes?` · ${esc(p.minutes)} min`:""}</span>`).join("")}</div>`:""}
+    ${(A.places||[]).length>1?`<div class="act-sub">Places</div><div class="act-pages">${A.places.map(p=>`<span>📍 ${esc(p.place)} <b>${fmtNum(p.times)}</b></span>`).join("")}</div>`:""}
+    <div class="act-sub">Recent activity</div>
+    <div class="act-evs">${ev.length ? evHtml(ev.slice(0, showN)) : `<div class="muted" style="font-size:13px">Nothing recorded yet.</div>`}</div>
+    ${ev.length>showN?`<button class="mini-btn ghost" data-actmore>Show all ${ev.length} →</button>`:""}`;
+  const more = box.querySelector("[data-actmore]");
+  if(more) more.onclick = ()=>{ box.querySelector(".act-evs").innerHTML = evHtml(ev); more.remove(); };
+}
+
 // every Instagram account one Geek OS creator has connected (Discovery, campaign invite, Super Admin)
 async function openIgAccountsModal(memberId, name){
   let m = document.getElementById("igAcctsModal"); if(m) m.remove();
@@ -5549,9 +5708,11 @@ async function bppFillFull(pid, x, row){
   const { data:F, error } = await sb.schema("api").rpc("admin_creator_full", { p_participation: pid }).then(r=>r, e=>({error:e}));
   const $ = id => document.getElementById(id);
   if(!$("bppContact")) return;
-  if(error || !F){ ["bppPersonal"].forEach(id=>{ if($(id)) $(id).innerHTML = `<div class="muted" style="font-size:13px">${esc((error&&error.message)||"Not on Geek OS yet.")}</div>`; });
+  if(error || !F){ if($("bppAct")) creatorActivityPanel(null, $("bppAct"));
+    ["bppPersonal"].forEach(id=>{ if($(id)) $(id).innerHTML = `<div class="muted" style="font-size:13px">${esc((error&&error.message)||"Not on Geek OS yet.")}</div>`; });
     if($("bppAddr") && /Loading/.test($("bppAddr").textContent)) $("bppAddr").innerHTML = `<div class="muted" style="font-size:13px">No address yet.</div>`; return; }
   const nice = v => String(v||"").replace(/_/g," ").replace(/\b\w/g, c=>c.toUpperCase());
+  if($("bppAct")) creatorActivityPanel(F.member_id, $("bppAct"), { compact:true });
   const jv = F.joined_via, jb = $("bppJoined");
   if(jb && jv) jb.innerHTML = jvBadge(jv);
   const ct = F.contact||{}, wa = F.whatsapp||{}, pe = F.personal||{};
@@ -5630,6 +5791,7 @@ async function bpCreatorProfile(pid){
         ${row("WhatsApp", x.phone||to.phone ? esc(x.phone||to.phone) : "")}
         ${row("Applied with", x.applied_profile ? "@"+esc(x.applied_profile) : "")}
         ${row("Applied on", x.applied_at ? esc(fmtDate(x.applied_at)) : "")}</div></div>
+      ${window.__isAdmin?`<div class="bpp-card"><div class="bpp-sec">📈 Activity &amp; cookies</div><div id="bppAct"><div class="muted" style="font-size:13px">Loading…</div></div></div>`:""}
       <div class="bpp-card"><div class="bpp-sec">🏠 Delivery addresses</div><div id="bppAddr">${addr?row("Ship to", esc(addr)):`<div class="muted" style="font-size:13px">Loading…</div>`}</div></div>
       <div class="bpp-card"><div class="bpp-sec">🙋 Personal</div><div id="bppPersonal"><div class="muted" style="font-size:13px">Loading…</div></div></div>
       <div class="bpp-card"><div class="bpp-sec">🧬 Profile, skills &amp; equipment</div><div id="bppPro"><div class="muted">Loading…</div></div></div>
@@ -5787,6 +5949,7 @@ function paintCreatorHub(){
       ${pr ? `<div class="cp-bar" style="margin:4px 0 8px"><span style="width:${pct||0}%"></span></div>${(pr.missing||[]).length?`<div class="muted" style="font-size:12.5px">Not filled yet: ${esc(pr.missing.join(", "))}</div>`:`<div class="muted" style="font-size:12.5px">Everything filled in ✓</div>`}` : `<div class="muted">No profile yet.</div>`}
       ${hubSetStepHtml(d)}
       <div id="hubPro"></div>
+      ${window.__isAdmin?`<div class="bpp-sec">📈 Activity &amp; cookies</div><div id="hubAct"></div>`:""}
       <div class="hub-foot"><button class="btn ghost sm" data-hubbp>🔁 Open in Barter process</button>${h?`<a class="btn ghost sm" href="/p.html?u=${encodeURIComponent(h)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}${window.__isAdmin?`<button class="btn ghost sm bp-del" data-bpremove="${esc(d.participation_id)}">🗑 Delete from campaign</button>`:""}</div>`;
   } else if(_hubC.tab==="timeline"){
     const T = d.timeline||[], A = d.alerts||[];
@@ -5847,6 +6010,7 @@ function paintCreatorHub(){
   wireBpActions(body, ()=>{ if(document.getElementById("hubBody")) hubReload(); if(document.getElementById("bpBody")) loadBarterProcess(true); });
   body.querySelectorAll("[data-bpchat]").forEach(b=> b.onclick = ()=>{ _hubC.tab = "whatsapp"; paintCreatorHub(); setTimeout(()=> document.getElementById("hubText")?.focus(), 50); });
   const bp = body.querySelector("[data-hubbp]"); if(bp) bp.onclick = ()=>{ document.getElementById("hubModal")?.remove(); const c = _hub.camp || {}; openBarterProcess(c.id || d.campaign_id, c.name || d.campaign, d.participation_id); };
+  if(_hubC.tab==="overview" && document.getElementById("hubAct")) creatorActivityPanel(d.member_id || null, document.getElementById("hubAct"), { compact:true });
   if(_hubC.tab==="overview" && d.member_id){
     sb.schema("api").rpc("creator_profile_card", { p_member: d.member_id }).then(({ data:P })=>{
       const pb = document.getElementById("hubPro"); if(!pb || !P) return;
@@ -7009,7 +7173,9 @@ async function adminCreatorProfile(member, row){
   const media = ig.media||[], eng = ig.followers && media.length ? (media.reduce((s,m)=>s+(m.likes||0)+(m.comments||0),0)/media.length/ig.followers*100).toFixed(2) : null;
   const camps = D.campaigns||[], mk = D.marketplace||[];
   const stageTag = s=>{ const [l,c] = APPLICANT_STAGE[s] || [String(s||"").replace(/_/g," "), "brand"]; return `<span class="tag ${c}">${esc(l)}</span>`; };
-  const tabs = [["profile","👤 Profile"],["instagram","📸 Instagram"],["campaigns",`📣 Campaigns (${camps.length+mk.length})`],["activity","📈 Activity"]];
+  const tabs = [["profile","👤 Profile"],["instagram","📸 Instagram"],["campaigns",`📣 Campaigns (${camps.length+mk.length})`]]
+    .concat(D.identity_id && window.__ciIntelEnabled ? [["intel","🧠 Intelligence"]] : [], [["activity","📈 Activity"]]);
+  if(_ac360Tab==="intel" && !(D.identity_id && window.__ciIntelEnabled)) _ac360Tab = "profile";
   const pic = ig.pic ? `<img class="ac360-pic" src="${esc(safeUrl(ig.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : `<span class="avatar ac360-pic">${esc(String(name).slice(0,2).toUpperCase())}</span>`;
   const sections = {
     profile: !D.identity_id ? `<div class="card"><div class="muted">This creator hasn't started their profile yet (signed in, profile not created).</div></div>` : `
@@ -7068,16 +7234,14 @@ async function adminCreatorProfile(member, row){
         ${mk.map(a=>`<div class="row"><div class="r-main"><div class="r-title">${esc(a.campaign_name||a.campaign||"Marketplace campaign")}</div><div class="r-sub">Marketplace · applied ${esc(fmtDate(a.applied_at))}</div></div><span class="tag ${a.status==="Approved"?"good":a.status==="Rejected"?"":"warn"}">${esc(a.status||"Applied")}</span></div>`).join("")}</div>
         <div style="margin-top:10px"><button class="mini-btn ghost" id="acGoApps">Open Applications tab →</button></div>`
         : `<div class="muted">No campaign applications yet.</div>`}</div>`,
-    activity: `<div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
-        <div class="ws-stat"><b>${esc(fmtDate(mem.joined_at))}</b><span>Joined</span></div><div class="ws-stat"><b>${agoTxt(mem.last_sign_in_at)}</b><span>Last sign-in</span></div>
-        <div class="ws-stat"><b>${fmtNum(mem.logins||0)}</b><span>Logins</span></div><div class="ws-stat"><b>${agoTxt(mem.last_seen)}</b><span>Last seen</span></div>
-        <div class="ws-stat"><b>${esc(mem.consent||"—")}</b><span>Cookies</span></div><div class="ws-stat"><b>${esc(mem.last_city||"—")}</b><span>Last location</span></div></div>
-      <div id="ac360Tl" style="margin-top:12px">${skel("list",3)}</div>` };
+    activity: `<div class="card"><div id="ac360Act">${skel("list",3)}</div></div>`,
+    intel: `<div class="card"><div id="ac360Intel">${skel("list",3)}</div></div>` };
   const paint = ()=>{
     bodyEl.innerHTML = `<div class="ac360-head">${pic}<div style="min-width:0;flex:1"><h3>${esc(name)}</h3>
         <div class="muted">${ig.username?`<a href="https://instagram.com/${encodeURIComponent(ig.username)}" target="_blank" rel="noopener">@${esc(ig.username)}</a> · ${kNum(ig.followers)} followers · `:""}${esc(mem.status||"")} · joined ${esc(fmtDate(mem.joined_at))}</div>
         <div class="ac360-prog">${D.identity_id?(req.complete?'<span class="tag good">✅ Profile complete — campaign ready</span>':`<span class="tag warn">Profile ${req.done??0}/${req.total??"?"}</span>`):'<span class="tag warn">No profile yet</span>'}
-          ${wa?`<a class="mini-btn ghost" href="https://wa.me/${esc(wa.replace(/\D/g,""))}" target="_blank" rel="noopener">💬 WhatsApp</a>`:""}${!synthetic&&con.email?`<a class="mini-btn ghost" href="mailto:${esc(con.email)}">✉️ Email</a>`:""}</div></div>
+          ${wa?`<a class="mini-btn ghost" href="https://wa.me/${esc(wa.replace(/\D/g,""))}" target="_blank" rel="noopener">💬 WhatsApp</a>`:""}${!synthetic&&con.email?`<a class="mini-btn ghost" href="mailto:${esc(con.email)}">✉️ Email</a>`:""}</div>
+        <div class="act-strip" id="ac360Strip"></div></div>
         <button class="ci-pop-x" id="acX" aria-label="Close">✕</button></div>
       <div class="admin-tabs ac360-tabs">${tabs.map(t=>`<button class="${_ac360Tab===t[0]?"act":""}" data-ac360="${t[0]}">${t[1]}</button>`).join("")}</div>
       <div class="ac360-sec">${sections[_ac360Tab]}</div>
@@ -7085,7 +7249,9 @@ async function adminCreatorProfile(member, row){
     bodyEl.querySelector("#acX").onclick = close;
     bodyEl.querySelectorAll("[data-ac360]").forEach(b=> b.onclick = ()=>{ _ac360Tab = b.dataset.ac360; paint(); });
     const ga = bodyEl.querySelector("#acGoApps"); if(ga) ga.onclick = ()=>{ close(); _adminTab = "applications"; currentPage = "admin"; renderShell(); };
-    if(_ac360Tab==="activity") adminActivityTimeline(member, { name }, bodyEl.querySelector("#ac360Tl"));
+    if(_ac360Tab==="activity") creatorActivityPanel(member, bodyEl.querySelector("#ac360Act"));
+    if(_ac360Tab==="intel" && window.ciIntel) window.ciIntel.openCard(D.identity_id, "ac360Intel");
+    const strip = bodyEl.querySelector("#ac360Strip"); if(strip) acActivityStrip(member, strip);
   };
   paint();
 }
@@ -7873,7 +8039,7 @@ function fmtDateTime(d){ if(!d) return "—"; try{ return new Date(d).toLocaleSt
 const PAGES = {
   profile: (typeof renderProfile==="function"?renderProfile:()=>""),
   intelligence: (typeof renderIntelligence==="function"?renderIntelligence:()=>""),
-  cintel: (typeof renderBrandIntel==="function"?renderBrandIntel:()=>""),
+  cintel: ()=>{ _dxTool = "brief"; currentPage = "discover"; return renderDiscover(); },   // old link → Discovery · Match to a brief
   campaignops: (typeof renderAgencyOps==="function"?renderAgencyOps:()=>""),
   brandsetup: (typeof renderBrandSetup==="function"?renderBrandSetup:()=>""),
   mycampaigns: (typeof renderMyCampaigns==="function"?renderMyCampaigns:()=>""),
@@ -8397,7 +8563,6 @@ function renderContent(){
   if(currentPage==="mediakit") loadMediaKit();
   if(currentPage==="profile" && window.ciProfile) window.ciProfile.load();
   if(currentPage==="intelligence" && window.ciIntel) window.ciIntel.loadSelf();
-  if(currentPage==="cintel" && window.ciIntel) window.ciIntel.loadBrand();
   if(currentPage==="alerts" && window.ciOps) window.ciOps.loadAlerts();
   if(currentPage==="campaignops" && window.ciOps) window.ciOps.loadAgencyOps();
   if(currentPage==="brandsetup" && window.ciOps) window.ciOps.loadBrandSetup();

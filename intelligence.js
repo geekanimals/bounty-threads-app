@@ -208,14 +208,11 @@
   window.renderBrandIntel = function(){
     if(!enabled) return '<div class="card"><h3>Creator Intelligence</h3><div class="muted">This feature isn\'t enabled for your account yet.</div></div>';
     return '<div id="ciBrand" class="ci">'
-      + '<div class="card ci-intro"><h3>Creator Intelligence</h3>'
-      + '<div class="muted">Match creators to a specific brief and read an evidence-backed card for creators you have a relationship with. There is no global ranking and no opaque score — every match is explained by the signals it did and didn\'t meet, for this brief only.</div></div>'
+      + '<div class="card ci-intro"><h3>🎯 Match creators to a brief</h3>'
+      + '<div class="muted">Fill the brief — every creator you work with is checked against it and each match is explained by the signals it did and didn\'t meet. No global ranking, no opaque score. Every creator in Creator search also has a 🧠 Intelligence card under <b>👤 Details</b>.</div></div>'
       + matchForm()
       + '<div id="ciMatchOut"></div>'
       + '<div id="ciCompareOut"></div>'
-      + '<div class="card ci-lookup"><h4>Look up a creator card</h4>'
-      + '<div class="ci-addrow"><input id="ciLookupId" placeholder="Creator identity ID (creators you manage)"><button class="btn sm" id="ciLookupBtn">Open card</button></div>'
-      + '<div class="ci-note">Access is limited to creators your organisation has a relationship with. Cards never expose private contact details, unauthorised rates, or raw messages.</div></div>'
       + '<div id="ciCardOut"></div>'
       + '<div id="ciBrandErr" class="ci-err" style="display:none"></div></div>';
   };
@@ -299,15 +296,16 @@
       var matched = (e.matched_signals||[]), missing = (e.missing_signals||[]);
       return '<div class="card ci-match">'
         + '<div class="ci-mh"><label class="ci-pick"><input type="checkbox" data-pick="'+esc(e.creator_identity_id)+'"> Shortlist</label>'
-        + '<h4>Creator <span class="ci-id">'+esc(shortId(e.creator_identity_id))+'</span></h4>'
+        + '<h4 data-ciname="'+esc(e.creator_identity_id)+'">Creator <span class="ci-id">'+esc(shortId(e.creator_identity_id))+'</span></h4>'
         + tagOf(MSTATUS, e.match_status)+(e.match_strength?tagOf(STRENGTH, e.match_strength):'')+'</div>'
         + '<div class="ci-signals">'
         +   '<div class="ci-sig ok"><div class="ci-sig-h">✓ Strong signals</div>'+(matched.length?('<ul>'+matched.map(function(s){return '<li>'+esc(s)+'</li>';}).join("")+'</ul>'):'<div class="muted">None evidenced for this brief</div>')+'</div>'
         +   '<div class="ci-sig na"><div class="ci-sig-h">− Missing / unknown</div>'+(missing.length?('<ul>'+missing.map(function(s){return '<li>'+esc(s)+'</li>';}).join("")+'</ul>'):'<div class="muted">—</div>')+'</div>'
         + '</div>'
-        + '<button class="btn sm ghost" data-card="'+esc(e.creator_identity_id)+'">Open intelligence card</button></div>';
+        + '<button class="btn sm ghost" data-card="'+esc(e.creator_identity_id)+'">🧠 Open intelligence card</button></div>';
     }).join("");
     out.innerHTML = head + cards;
+    fillNames(out, results.map(function(e){ return e.creator_identity_id; }));
     out.querySelectorAll("[data-card]").forEach(function(b){ b.onclick=function(){ openCard(b.getAttribute("data-card")); }; });
     var byId = {}; results.forEach(function(e){ byId[e.creator_identity_id]=e; });
     out.querySelectorAll("[data-pick]").forEach(function(cb){ cb.onchange=function(){
@@ -317,6 +315,18 @@
       btn.textContent="Compare shortlist ("+shortlistCount()+")"; btn.disabled = shortlistCount()<2;
     };});
     document.getElementById("ciCompareBtn").onclick = compareShortlist;
+  }
+  // show who each creator is (name · @handle · followers) instead of an ID
+  async function fillNames(scope, ids){
+    try{
+      var r = await api("creator_names", { p_ids: ids }); if(r.error || !r.data) return;
+      scope.querySelectorAll("[data-ciname]").forEach(function(h){
+        var n = r.data[h.getAttribute("data-ciname")]; if(!n) return;
+        h.innerHTML = (n.pic?'<img class="ci-av" src="'+esc(n.pic)+'" alt="" referrerpolicy="no-referrer" onerror="this.remove()">':'')
+          + esc(n.name||("@"+(n.handle||"creator"))) + (n.handle?' <a class="ci-handle" href="https://instagram.com/'+encodeURIComponent(n.handle)+'" target="_blank" rel="noopener">@'+esc(n.handle)+'</a>':'')
+          + (n.followers!=null?' <span class="muted" style="font-weight:400;font-size:12px">· '+Number(n.followers).toLocaleString("en-IN")+' followers</span>':'');
+      });
+    }catch(e){}
   }
   function shortId(id){ return id?String(id).slice(0,8)+"…":"—"; }
 
@@ -359,7 +369,7 @@
       ["Verified coverage",  function(c){ var v=((c.d||{}).coverage||{}); return v.value!=null?esc(v.value)+"%":pill(v.status||"insufficient_data"); }],
       ["Confidence",         function(c){ var v=((c.d||{}).confidence||{}); return v.value!=null?esc(v.value):pill(v.status||"insufficient_data"); }]
     ];
-    var heads = cards.map(function(c){ return '<th>'+(c.__err?'<span class="ci-err-inline">no access</span>':('Creator <span class="ci-id">'+esc(shortId(c.id))+'</span>'))+'</th>'; }).join("");
+    var heads = cards.map(function(c){ return '<th'+(c.__err?'':' data-ciname="'+esc(c.id)+'"')+'>'+(c.__err?'<span class="ci-err-inline">no access</span>':('Creator <span class="ci-id">'+esc(shortId(c.id))+'</span>'))+'</th>'; }).join("");
     var body = rows.map(function(r){
       return '<tr><th class="ci-cmp-dim">'+esc(r[0])+'</th>'+cards.map(function(c){ return '<td>'+(c.__err?'—':r[1](c))+'</td>'; }).join("")+'</tr>';
     }).join("");
@@ -367,17 +377,19 @@
       + '<div class="ci-note">Authorised evidence only — no private contact, rates, or messages. Blanks are shown as their real status (e.g. “Insufficient data”), never as zero, and nothing here is an overall score.</div>'
       + '<div class="ci-cmp-scroll"><table class="ci-cmp"><thead><tr><th></th>'+heads+'</tr></thead><tbody>'+body+'</tbody></table></div></div>'
       + brandFeedbackForm();
+    fillNames(out, cards.map(function(c){ return c.id; }));
     wireBrandFeedback();
     out.scrollIntoView({behavior:"smooth", block:"start"});
   }
 
-  async function openCard(identityId){
-    var out = document.getElementById("ciCardOut");
+  async function openCard(identityId, outId){
+    var out = document.getElementById(outId||"ciCardOut"); if(!out) return;
     out.innerHTML = '<div class="card"><div class="muted">Loading creator card…</div></div>';
     try{
       var rr = await Promise.all([ api("get_creator_intelligence", { p_identity_id: identityId }), api("get_creator_commercial_readiness", { p_identity_id: identityId }) ]);
       if(rr[0].error) throw rr[0].error;
-      renderCard(rr[0].data||{}, (rr[1]&&!rr[1].error?rr[1].data:null));
+      renderCard(rr[0].data||{}, (rr[1]&&!rr[1].error?rr[1].data:null), outId);
+      if(!outId) out.scrollIntoView({behavior:"smooth", block:"start"});
     }catch(e){
       var msg = (e && (e.message||e.hint||e.details)) || e;
       // authorisation errors surface as a clear, non-leaky message
@@ -395,8 +407,8 @@
       + r("Barter readiness", fBarter(cm))
       + r("Rate indication", fRate(cm));
   }
-  function renderCard(d, cm){
-    var out = document.getElementById("ciCardOut");
+  function renderCard(d, cm, outId){
+    var out = document.getElementById(outId||"ciCardOut"); if(!out) return;
     var gen = fmtDT(d.generated_at);
     var perf = d.performance||{}, aud = d.audience||{}, rel = d.reliability||{}, bs = d.brand_safety||{}, fr = d.fraud_probability||{}, conf = d.confidence||{}, cov = d.coverage||{};
     function row(title,status,explanation,meta,extra){
@@ -453,7 +465,7 @@
     catch(e){ if(m) m.textContent="Couldn't submit: "+(e.message||e); }
   }
 
-  window.ciIntel = { boot: boot, loadSelf: loadSelf, loadBrand: loadBrand };
+  window.ciIntel = { boot: boot, loadSelf: loadSelf, loadBrand: loadBrand, openCard: openCard };
 
   // self-boot once app + a signed-in user are ready (kept fully passive otherwise)
   var tries=0, t=setInterval(function(){
