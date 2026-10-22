@@ -3,7 +3,7 @@
 // built from the same live data (admin_bot_preview is Super Admin–gated in the database). Nothing is sent.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { aiPrompt, buildAck, buildDraft, parseAi } from "../_shared/wa_bot_core.ts";
+import { aiPrompt, botTurn, parseAi } from "../_shared/wa_bot_core.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -27,9 +27,13 @@ Deno.serve(async (req) => {
     const quiet = !chk?.enabled ? "The bot is OFF — turn it on to reply on WhatsApp."
       : chk?.paused_until ? `Quiet for this number till ${new Date(chk.paused_until).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} (${chk.paused_reason === "team_reply" ? "the team replied" : chk.paused_reason === "handoff" ? "waiting for the team" : "paused by you"}).`
       : chk?.team_replied_at ? "Quiet: someone from the team replied to this number in the last few hours." : null;
-    let d = chk?.ack ? buildAck(question, c, String(chk.ack)) : buildDraft(question, c);
+    // menu first, like the live bot: state "" = a new chat, "menu" = menu already sent, "help"/"campaign" = in a topic
+    const st = String(body.state || "");
+    const turn = botTurn(question, c, st ? { state: st, last_at: new Date().toISOString() } : null);
+    if (!turn.send || !turn.draft) return json({ ok: true, no_reply: turn.reason || "waiting for an option", quiet, registered: !!c.registered, name: c.name || null });
+    let d = turn.draft;
     let ai = false;
-    if (!chk?.ack && body.use_ai !== false && AI_KEY && d.intent !== "human" && d.intent !== "thanks") {
+    if (turn.ai && body.use_ai !== false && AI_KEY && d.intent !== "human" && d.intent !== "thanks") {
       const { system, user } = aiPrompt(question, d, []);
       try {
         const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -44,7 +48,7 @@ Deno.serve(async (req) => {
         }
       } catch (_e) { /* rule-based reply stays */ }
     }
-    return json({ ok: true, reply: d.reply, steps: d.steps, handoff: d.handoff, intent: d.intent, ai, ai_available: !!AI_KEY, quiet, ack: chk?.ack || null,
+    return json({ ok: true, reply: d.reply, steps: d.steps, handoff: d.handoff, intent: d.intent, ai, ai_available: !!AI_KEY, quiet, ack: null, state: turn.state || null,
                   registered: !!c.registered, name: c.name || null });
   } catch (e) {
     console.error("wa-bot-preview", (e as Error).message);

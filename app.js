@@ -7807,7 +7807,7 @@ async function adminWaBot(){
   const st = j=> j.handoff ? '<span class="tag warn">🙋 team needed</span>' : ({sent:'<span class="tag good">replied</span>', skipped:'<span class="tag">quiet</span>', failed:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">failed</span>', queued:'<span class="tag warn">waiting</span>', working:'<span class="tag warn">replying…</span>'})[j.status]||esc(j.status);
   const opt = (v, list, unit)=> list.map(x=>`<option value="${x}" ${Number(v)===x?"selected":""}>${x} ${unit}</option>`).join("");
   box.innerHTML = `<h3 style="margin-top:0">🤖 WhatsApp help bot <span class="tag ${S.enabled?"good":""}" style="margin-left:6px">${S.enabled?"ON":"OFF"}</span></h3>
-    <p class="muted" style="font-size:12.5px;margin:0 0 10px">Answers creators on your snapto number when nobody from the team has replied — from their <b>live</b> data: registered or not, what's missing (Instagram / WhatsApp), every campaign they're in (step, what's stuck, next step, deadline, courier, posts left), and step-by-step register help with screenshots. If someone from the team replied to that number in the last few hours, the bot stays quiet. “TEAM”, complaints or anything it can't answer → it tells them the team will reply and alerts you.</p>
+    <p class="muted" style="font-size:12.5px;margin:0 0 10px">Replies to <b>every number</b> on your snapto WhatsApp. A new chat (or one quiet for 24 h) first gets the <b>Geek Bot welcome + 5 options</b> — 1 Help me · 2 Complete my profile · 3 My campaign · 4 Talk to a team member · 5 Something else — and the bot answers only after one is picked (anything else before that gets no reply; <b>0</b> brings the menu back). <b>4 / TEAM</b> alerts the team and the bot goes quiet for that number. Answers come from the creator's <b>live</b> data on the website (campaigns, step, deadline, courier, profile completion, invites) and the chat history from both sides — your app / bot messages and what was sent from snapto (broadcasts, templates, team replies). If the team replies from snapto, the bot stays quiet for that number.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <button class="btn sm ${S.enabled?"ghost":""}" id="botToggle">${S.enabled?"Turn bot off":"Turn bot on"}</button>
       <label class="muted" style="font-size:12.5px">Reply after <select id="botDelay">${opt(S.reply_delay_min,[0,1,2,3,5,10,15,30],"min")}</select></label>
@@ -7823,6 +7823,8 @@ async function adminWaBot(){
     <div class="wa-auto" style="margin-top:12px"><b>🧪 Try the bot</b> <span class="muted" style="font-size:12px">— see the exact reply it would send to that number. Nothing is sent on WhatsApp.</span>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <input id="botTryQ" placeholder="Question, e.g. mera parcel kab aayega?" style="flex:1;min-width:200px;padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit">
+        <select id="botTryState" title="Where the chat is" style="padding:7px 8px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit">
+          <option value="">New chat → menu first</option><option value="menu">Menu already sent</option><option value="help">After option 1 / 5 (a question)</option><option value="campaign">After option 3 (campaign)</option></select>
         <button class="mini-btn" id="botTry">Show reply</button></div>
       <div class="muted" style="font-size:12px;margin-top:4px">Uses the number typed above.</div>
       <div id="botTryOut"></div></div>
@@ -7852,9 +7854,10 @@ async function adminWaBot(){
     const out = document.getElementById("botTryOut"), q = document.getElementById("botTryQ").value.trim();
     if(!num() || !q){ out.innerHTML = `<div class="muted" style="margin-top:8px">Type a WhatsApp number above and a question.</div>`; return; }
     out.innerHTML = `<div class="muted" style="margin-top:8px">Building the reply from live data…</div>`;
-    const { data:r, error:e } = await sb.functions.invoke("wa-bot-preview", { body:{ phone:num(), question:q } }).then(x=>x, x=>({error:x}));
+    const { data:r, error:e } = await sb.functions.invoke("wa-bot-preview", { body:{ phone:num(), question:q, state:(document.getElementById("botTryState")||{}).value||"" } }).then(x=>x, x=>({error:x}));
     if(e || !r || r.error){ out.innerHTML = `<div class="muted" style="margin-top:8px">${esc((r&&r.error)||(e&&e.message)||"Couldn't build the reply")} — deploy <code>wa-bot-preview</code> if this is new.</div>`; return; }
     const wa = s=> esc(s).replace(/\*([^*\n]+)\*/g,"<b>$1</b>").replace(/_([^_\n]+)_/g,"<i>$1</i>").replace(/\n/g,"<br>");
+    if(r.no_reply){ out.innerHTML = `<div class="wa-auto warn" style="margin-top:8px">🤫 No reply — ${esc(r.no_reply)}. The bot answers only after the creator picks 1–5 from the menu.</div>`; return; }
     out.innerHTML = `${r.quiet?`<div class="wa-auto warn" style="margin-top:8px">⏸ ${esc(r.quiet)} <span class="muted">— this is what it would send otherwise:</span></div>`:""}${r.ack?`<div class="muted" style="font-size:12px;margin-top:8px">Short “team will reply” message: ${esc(r.ack)}</div>`:""}<div class="bot-bubble">${wa(r.reply)}</div>
       <div class="muted" style="font-size:12px;margin-top:4px">${r.registered?"Registered number":"Not registered on this number"}${r.steps?` · + ${r.steps==="register"?"4":"1"} screenshot(s) after this`:""}${r.handoff?" · 🙋 the team gets an alert":""} · ${r.ai?"natural (AI) wording":r.ai_available?"standard wording":"standard wording (no AI key)"}</div>`;
   };

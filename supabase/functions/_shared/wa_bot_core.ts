@@ -156,7 +156,7 @@ export function buildFacts(ctx: BotCtx, hi: boolean): string {
   return lines.join("\n");
 }
 
-const FOOT = (hi: boolean) => hi ? "\n\n_🤖 Geek auto-reply · insaan se baat karni ho to *TEAM* likho_" : "\n\n_🤖 Geek auto-reply · type *TEAM* to talk to a person_";
+const FOOT = (hi: boolean) => hi ? "\n\n_🤖 Geek Bot · menu ke liye *0* · team se baat ke liye *4* likho_" : "\n\n_🤖 Geek Bot · type *0* for the menu or *4* to talk to our team_";
 
 // Hinglish / Hindi? (the helper's check + common chat spellings)
 export function isHi(q: string): boolean {
@@ -312,10 +312,11 @@ export function aiPrompt(question: string, draft: BotDraft, history: Any[]): { s
     "WhatsApp formatting only: *bold*, _italic_, emojis sparingly, numbered steps 1️⃣ 2️⃣. No markdown headers, no tables. Only use links that appear in the FACTS or DRAFT.",
     "If they ask how to register / log in / join, set steps=\"register\" (screenshots are attached for you). If they ask how to connect Instagram / media kit, set steps=\"instagram\".",
     "Answer about the campaign they name; if they don't name one, the DRAFT already picked the right one.",
+    "Read the RECENT CHAT (both our app/bot messages and what Geek sent from snapto) so you don't repeat what they were already told and you answer in context.",
     "Always end with this exact line on its own: " + JSON.stringify(draft.reply.split("\n").pop() || ""),
     'Reply with JSON only: {"reply": string, "steps": "register"|"instagram"|null, "handoff": boolean}',
   ].join("\n");
-  const hist = history.slice(-8).map((h) => `${h.dir === "inbound" ? "Creator" : "Geek"}: ${String(h.text || "").slice(0, 300)}`).join("\n");
+  const hist = history.slice(-14).map((h) => `${h.dir === "inbound" ? "Creator" : (h.by ? "Geek (" + h.by + ")" : "Geek")}: ${String(h.text || "").slice(0, 300)}`).join("\n");
   const user = `FACTS (live from the app):\n${draft.facts}\n\nRECENT CHAT:\n${hist || "(none)"}\n\nCREATOR'S NEW MESSAGE:\n${question}\n\nDRAFT REPLY (correct facts, rewrite it to answer exactly what they asked):\n${draft.reply}`;
   return { system, user };
 }
@@ -344,3 +345,110 @@ export const STEP_IMAGES: Record<"register" | "instagram", { file: string; hi: s
     { file: "reg-3-instagram.jpg", hi: "Connect Instagram dabao → Instagram se login → Allow", en: "Tap Connect Instagram → log in to Instagram → Allow" },
   ],
 };
+
+
+// ---- menu first: every new chat gets the Geek Bot welcome + 5 options; the bot answers after an option ----------
+export const MENU_TTL_H = 24;
+export type BotSession = { state?: string | null; option?: string | null; last_at?: string | null; menu_at?: string | null } | null;
+export type BotTurn = { send: boolean; draft?: BotDraft; ai?: boolean; state?: string; option?: string | null; menu?: boolean; reason?: string };
+
+export function welcomeMenu(ctx: BotCtx): string {
+  const first = String(ctx.name || "").trim().split(/\s+/)[0] || "";
+  return waFormat([
+    `Hi${first ? ` *${first}*` : ""} 👋`,
+    "Thanks for messaging us! I'm *Geek Bot*, the assistant of Geek Animals. How can I help you today?",
+    "",
+    "Please reply with a number:",
+    "1️⃣ Help me",
+    "2️⃣ Complete my profile",
+    "3️⃣ My campaign",
+    "4️⃣ Talk to a team member",
+    "5️⃣ Something else",
+  ].join("\n"));
+}
+
+const OPT_WORDS: [number, RegExp][] = [
+  [4, /^(4|four|team|talk to (a |our )?team( member)?|team member|human|agent|person)\b/i],
+  [1, /^(1|one|help|help me)\b/i],
+  [2, /^(2|two|profile|complete (my )?profile|profile complete)\b/i],
+  [3, /^(3|three|campaign|my campaign|campaigns|campaign related)\b/i],
+  [5, /^(5|five|something else|other|others|else)\b/i],
+];
+// "3", "3.", "3️⃣", "option 3", "3 campaign", "help" … → 1-5
+export function parseOption(text: string): number | null {
+  const t = String(text || "").trim().toLowerCase().replace(/️|⃣/g, "").replace(/^(option|opt|no\.?|number)\s*/i, "").replace(/[*_.)\]-]+/g, " ").trim();
+  if (!t || t.length > 25) return null;                 // "4 din ho gaye parcel nahi aaya" is a question, not option 4
+  for (const [n, re] of OPT_WORDS) if (re.test(t)) return n;
+  return null;
+}
+
+export function profileReply(ctx: BotCtx, hi: boolean): string {
+  const link = appLink(ctx);
+  const T = (h: string, e: string) => (hi ? h : e);
+  if (!ctx.registered) {
+    return T("Profile banane ke liye pehle app pe register karna hai:", "To complete your profile, please register on the app first:") + "\n\n" + registerSteps(hi, link);
+  }
+  const p: Any = (ctx as Any).profile || {};
+  const needs = ctx.needs || [];
+  const lines: string[] = [];
+  if (needs.length) lines.push(T(`Pehle ye connect karo: *${needs.join(" + ")}*`, `First, please connect: *${needs.join(" + ")}*`));
+  if (p.complete) lines.push(T("Aapka profile *100% complete* hai ✅ — campaigns ke liye ready ho.", "Your profile is *100% complete* ✅ — you're ready for campaigns."));
+  else {
+    const miss: string[] = (p.missing || []).slice(0, 10);
+    lines.push(p.total ? T(`Aapka profile *${p.done}/${p.total}* complete hai.`, `Your profile is *${p.done}/${p.total}* complete.`)
+                       : T("Aapka profile abhi shuru nahi hua hai.", "You haven't started your profile yet."));
+    if (miss.length) lines.push(T("Ye abhi baaki hai:", "Still to fill in:") + "\n" + miss.map((m) => `• ${m}`).join("\n"));
+    lines.push(T(`App kholo → *Creator Profile* → ye details bhar do (2–3 minute)${link ? `: ${link}` : ""}`,
+                 `Open the app → *Creator Profile* → fill these in (2–3 minutes)${link ? `: ${link}` : ""}`));
+    lines.push(T("Complete profile = zyada campaigns aur jaldi selection 🚀", "A complete profile gets you more campaigns and faster selection 🚀"));
+  }
+  return lines.join("\n\n");
+}
+
+// one turn of the conversation: menu → option → answer. `q` = the new message(s), `session` = where the chat is.
+export function botTurn(q: string, ctx: BotCtx, session: BotSession, now = Date.now()): BotTurn {
+  const hi = isHi(q);
+  const T = (h: string, e: string) => (hi ? h : e);
+  const last = String(q || "").split("\n").map((x) => x.trim()).filter(Boolean).pop() || "";
+  const intent = detectBotIntent(q);
+  const lastAt = session?.last_at ? Date.parse(session.last_at) : 0;
+  const state = String(session?.state || "");
+  const fresh = !session || !lastAt || now - lastAt > MENU_TTL_H * 3600e3 || state === "team";
+  const asksMenu = /^(0|menu|main menu|start|options?)$/i.test(last.replace(/[️⃣*_.]/g, "").trim());
+  const wrap = (reply: string, it: string, handoff = false, cid: string | null = null, steps: StepsKind = null): BotDraft =>
+    ({ reply: waFormat(reply) + (it === "menu" ? "" : FOOT(hi)), steps, handoff, intent: it, campaign_id: cid, facts: buildFacts(ctx, hi) });
+  const menu = (): BotTurn => ({ send: true, draft: wrap(welcomeMenu(ctx), "menu"), state: "menu", menu: true, option: null });
+  const team = (): BotTurn => {
+    const camps = ctx.campaigns || [], inv = ctx.invites || [];
+    return { send: true, state: "team", option: "4",
+      draft: wrap(T("Theek hai 🙏 Maine Geek team ko bata diya hai — team member jaldi isi chat pe aapko reply karenge.",
+                    "Sure 🙏 I've let the Geek team know — a team member will reply to you right here soon."),
+                  "human", true, pickCampaign(q, camps)?.campaign_id ?? inv[0]?.campaign_id ?? null) };
+  };
+  const choose = (n: number): BotTurn => {
+    if (n === 4) return team();
+    if (n === 1) return { send: true, state: "help", option: "1", draft: wrap(
+      T("Zaroor! 🙂 Apna sawaal yahan likho — main abhi madad karta hoon.\n\nJaise: register / login, Instagram connect, contract, address, parcel kab aayega, video kab tak, post kaise karna hai…",
+        "Of course! 🙂 Please type your question here and I'll help you right away.\n\nFor example: signing up / logging in, connecting Instagram, your contract, address, when your parcel arrives, the video deadline, how to post…"), "help_menu") };
+    if (n === 2) return { send: true, state: "profile", option: "2", draft: wrap(profileReply(ctx, hi), "profile", false, null, !ctx.registered ? "register" : null) };
+    if (n === 3) {
+      const d = buildDraft("status", ctx);
+      return { send: true, state: "campaign", option: "3", draft: d };
+    }
+    return { send: true, state: "other", option: "5", draft: wrap(
+      T("Theek hai 🙂 Batao kya chahiye — apna sawaal ya baat yahan likho.", "Sure 🙂 Please tell us what you need — type your question or message here."), "other_menu") };
+  };
+
+  if (intent === "human") return team();                         // "TEAM" / "talk to a person" — any time
+  if (fresh || asksMenu) return menu();                            // new chat (or 24 h quiet / back from the team) → the menu first
+  const opt = parseOption(last);
+  if (state === "menu") {
+    if (opt) return choose(opt);
+    if (intent === "greet") return menu();                         // "hi" again → the options again
+    return { send: false, reason: "waiting for the creator to pick an option (1-5)" };
+  }
+  // in a topic: a bare number switches topic, anything else gets a real answer from the live data
+  if (opt && /^\W*[1-5]\W*$/.test(last.replace(/[️⃣]/g, ""))) return choose(opt);
+  const d = buildDraft(q, ctx);
+  return { send: true, draft: d, ai: d.intent !== "thanks", state: d.handoff ? "team" : (state || "help"), option: session?.option ?? null };
+}

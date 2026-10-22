@@ -49,9 +49,10 @@ update private.wa_bot_settings set mode = 'snapto';
 delete from private.wa_bot_pause;
 select ok( not has_function_privilege('anon','api.ops_bot_answer(text,text)','EXECUTE'), 'anon cannot ask for answers');
 select is( api.ops_bot_answer('9811111111', null)->>'why', 'no new message', 'nothing to answer yet');
-select is( api.ops_bot_answer('9811111111', 'hello')->>'ack', 'number not in the app — the team handles it', 'unknown number saying hello: a short "team will reply" auto-reply');
+select is( api.ops_bot_answer('9811111111', 'hello')->>'go', 'true', 'every number gets the bot (the menu first) — numbers not in the app too');
 select api.ops_bot_done((select job_id from private.wa_bot_job where phone_e164 = '+919811111111' and status = 'working' order by created_at desc limit 1), 'sent', 'thanks', '{}', null, false, 'ack', null, 0);
-select is( api.ops_bot_answer('9811111111', 'koi hai?')->>'go', 'false', 'that short reply goes once per 12 hours');
+select is( api.ops_bot_answer('9811111111', 'koi hai?')->>'go', 'true', 'next message also reaches the bot (the menu decides whether to answer)');
+select api.ops_bot_done((select job_id from private.wa_bot_job where phone_e164 = '+919811111111' and status = 'working' order by created_at desc limit 1), 'skipped', null, '{}', 'waiting for an option', false, 'waiting_option', null, 0);
 select is( api.ops_bot_answer('9811111111', 'register kaise kare')->>'go', 'true', 'unknown number asking how to register: the bot helps');
 select is( api.ops_bot_answer('9811111111', 'STOP')->>'why', 'keyword', 'STOP is never answered');
 update private.wa_bot_settings set mode = 'direct';
@@ -60,8 +61,14 @@ select is( api.ops_bot_answer('9811111111', 'hello')->>'go', 'false', 'direct mo
 -- ===== stays out of snapto broadcasts =====
 update private.wa_bot_settings set mode = 'direct';
 select api.ops_bot_outbound('wamid.beardo', '919822222222', 'marketing');
-select is( intel.ci_bot_skip_reason('+919822222222', '{}', 'register kaise kare'), 'answer to a snapto broadcast — the team handles it', 'right after a snapto broadcast the bot stays quiet');
-select is( intel.ci_bot_skip_reason('+919833333333', array['wamid.someone-else'], 'register kaise kare'), 'reply to a snapto broadcast — the team handles it', 'a reply to a message we did not send is left to the team');
+select is( intel.ci_bot_skip_reason('+919822222222', '{}', 'register kaise kare'), null, 'replies to a snapto broadcast also get the bot menu');
+select ok( intel.ci_bot_history('+919822222222', '{}', now() + interval '1 minute')::text like '%broadcast / promo message on snapto%', 'the bot sees what snapto sent in the chat history');
+-- ===== menu session =====
+select ok( not has_function_privilege('authenticated','api.ops_bot_session(text,text,text,boolean)','EXECUTE'), 'only the server moves the chat state');
+select is( api.ops_bot_session('9844444444', 'menu', null, true)->>'state', 'menu', 'menu shown → state menu');
+select is( api.ops_bot_session('9844444444', 'campaign', '3')->>'option', '3', 'option 3 picked');
+select ok( (intel.ci_bot_session_of('+919844444444')->>'menu_at') is not null, 'when the menu went is kept');
+select throws_ok( $$ select api.ops_bot_session('9844444444', 'weird') $$, '22023', null, 'unknown state refused');
 select is( intel.ci_bot_skip_reason('+919833333333', '{}', 'app pe login kaise kare'), null, 'a plain register / login question is answered');
 
 select * from finish();

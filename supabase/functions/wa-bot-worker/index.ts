@@ -10,7 +10,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { workerGuard } from "../_shared/worker_auth.ts";
 import { getProvider } from "../_shared/wa_provider.ts";
-import { aiPrompt, buildAck, buildDraft, isHi, parseAi, STEP_IMAGES, type BotDraft } from "../_shared/wa_bot_core.ts";
+import { aiPrompt, botTurn, isHi, parseAi, STEP_IMAGES, type BotDraft } from "../_shared/wa_bot_core.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -67,11 +67,19 @@ Deno.serve(async (req) => {
       const ctx = job.ctx || {};
       ctx.app_url = ENV_APP_URL || ctx.app_url || null;
       const q = String(job.question || "");
-      let d = job.ack ? buildAck(q, ctx, String(job.ack)) : buildDraft(q, ctx);
-      if (!job.ack && job.use_ai !== false && d.intent !== "human" && d.intent !== "thanks") {
+      // menu first: a new chat gets the welcome + 5 options; the bot answers once an option is picked
+      const turn = botTurn(q, ctx, job.session || null);
+      if (!turn.send || !turn.draft) {
+        await api.rpc("ops_bot_done", { p_job: job.job_id, p_status: "skipped", p_reply: null, p_refs: [], p_reason: turn.reason || "no reply",
+          p_handoff: false, p_intent: "waiting_option", p_campaign: null, p_images: 0 });
+        continue;
+      }
+      let d = turn.draft;
+      if (turn.ai && job.use_ai !== false && d.intent !== "human" && d.intent !== "thanks") {
         const better = await aiRewrite(q, d, job.history || []);
         if (better) d = better;
       }
+      const nextState = d.handoff ? "team" : (turn.state || "help");
       try {
         const refs: string[] = [];
         const r = await wa.send({ to: job.phone, text: d.reply.slice(0, 4000) });
@@ -88,6 +96,7 @@ Deno.serve(async (req) => {
         }
         await api.rpc("ops_bot_done", { p_job: job.job_id, p_status: "sent", p_reply: d.reply, p_refs: refs,
           p_reason: d.handoff ? "needs a person" : null, p_handoff: d.handoff, p_intent: d.intent, p_campaign: d.campaign_id, p_images: imgs });
+        await api.rpc("ops_bot_session", { p_phone: job.phone, p_state: nextState, p_option: turn.option ?? null, p_menu: !!turn.menu });
         sent++;
       } catch (e) {
         const msg = (e as Error).message || "send failed";
