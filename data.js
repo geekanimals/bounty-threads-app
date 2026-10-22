@@ -67,7 +67,7 @@ const NAV_SECTIONS = {
 // Super Admin: the platform first (straight into each admin tab), then their own workspace
 const ADMIN_NAV = [["admin:overview","🛡","Command centre"],["admin:approvals","🏢","Account approvals"],["admin:campaigns","📣","All campaigns"],
   ["admin:applications","📝","All applications"],["admin:creators","🎨","All creators"],["admin:users","👥","All users"],
-  ["admin:delivery","📨","WhatsApp & email"],["admin:bot","🤖","WhatsApp bot"],["admin:activity","📈","Activity"],["admin:check","🩺","System check"]];
+  ["admin:delivery","📨","WhatsApp & email"],["admin:bot","🤖","WhatsApp bot"],["admin:upload","📥","Creator upload"],["admin:activity","📈","Activity"],["admin:check","🩺","System check"]];
 Object.keys(NAV_SECTIONS).forEach(r=>{ ROLES[r].nav = NAV_SECTIONS[r].reduce((a,s)=>a.concat(s[1]),[]); });
 
 const NAV_META = {

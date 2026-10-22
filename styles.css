@@ -2131,3 +2131,22 @@ button.bp-fstep.on{border-color:var(--brand);background:rgba(108,92,231,.12);box
 .bpp-addr-h{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
 .bpp-addr-a{display:flex;gap:6px;margin-top:6px}
 .bpp-addr-a a{text-decoration:none}
+/* Super Admin → Creator upload */
+.cu-in{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cu-in input{padding:8px 11px;border-radius:10px;border:1px solid var(--line);background:var(--panel,#fff);color:var(--ink);font:inherit}
+.cu-prev{margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:12px}
+.cu-ph{margin-bottom:8px;font-size:13.5px}
+.cu-map{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:10px}
+.cu-map label{font-size:11.5px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
+.cu-map select{padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--panel,#fff);color:var(--ink);font:inherit;font-size:12.5px}
+.cu-go{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.cu-go .cp-check{flex:1;min-width:220px}
+.cu-lh{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.cu-lh input,.cu-lh select{padding:8px 11px;border-radius:10px;border:1px solid var(--line);background:var(--panel,#fff);color:var(--ink);font:inherit}
+.cu-lh input{flex:1;min-width:180px}
+.cc-needbtn{background:linear-gradient(135deg,#f79009,#f04438)!important;color:#fff!important;border:0!important;animation:ccNeedPulse 2.4s ease-in-out infinite}
+.cc-needbtn.on{animation:none;background:#344054!important}
+@keyframes ccNeedPulse{0%,100%{box-shadow:0 0 0 0 rgba(247,144,9,.45)}50%{box-shadow:0 0 0 6px rgba(247,144,9,0)}}
+button.cc-needs{cursor:pointer;font:inherit;border:1px solid rgba(247,144,9,.45)}
+button.cc-needs.on{background:#344054;color:#fff;border-color:#344054}
+.bpp-joined{display:inline-flex;align-items:center;gap:4px;margin-top:6px;padding:3px 10px;border-radius:999px;background:rgba(91,91,240,.1);color:var(--brand,#5b5bf0);font-size:12.5px}
