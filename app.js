@@ -2580,7 +2580,7 @@ async function dxConnLine(){
     const { data } = await sb.rpc("my_discovery_connection").then(r=>r, ()=>({ data:null }));
     _dxConn = data || {};
   }
-  const fb = _dxConn.facebook;
+  const fb = _dxConn.facebook || _dxConn.team;
   return fb && fb.ig_username ? `<span class="igt-acct">📸 Searching with <b>@${esc(fb.ig_username)}</b>${fb.page_name?` · Page: ${esc(fb.page_name)}`:""}${fb.discovery_ok?' <span class="tag good">on</span>':' <span class="tag warn">not working yet</span>'}</span>`
     : _dxConn.shared ? `<span class="igt-acct">📸 Searching with the Geek team's Instagram</span>` : `<span class="igt-acct off">📸 Instagram search isn't switched on yet</span>`;
 }
@@ -2681,8 +2681,14 @@ async function igConnectStrip(){
     const me = window.Auth && Auth.profile && Auth.profile.id;
     if(me){ const r = await sb.from("social_accounts").select("username,profile_picture_url").eq("platform","instagram").eq("member_id", me).limit(1); row = r.data && r.data[0]; }
   }catch(e){}
+  // the team's Facebook connection already powers search → your own Instagram is optional (only for "who tags me" + DMs)
+  const dc0 = (row && row.username) ? null : await sb.rpc("my_discovery_connection").then(r=>r.data, ()=>null);
+  if(!box.isConnected) return;
   box.innerHTML = row && row.username
     ? `<div class="dx-ig ok">📸 Discovering and messaging from <b>@${esc(row.username)}</b> <span class="muted">— creators who tag this account show up here first.</span></div>`
+    : dc0 && dc0.team && dc0.team.ig_username
+    ? `<div class="dx-ig ok"><div>📸 Searching with the Geek team's <b>@${esc(dc0.team.ig_username)}</b> <span class="muted">— no need to connect again. Optional: connect your own Instagram to see creators who tag you.</span></div>
+       <button class="btn sm ghost" id="dxConnect">Connect my Instagram</button></div>`
     : `<div class="dx-ig"><div>📸 <b>Connect your Instagram</b> <span class="muted">— then creators who tag you appear here automatically, and invites go out from your own handle.</span></div>
        <button class="btn sm" id="dxConnect">Connect Instagram</button></div>`;
   const c = document.getElementById("dxConnect");
@@ -2690,12 +2696,12 @@ async function igConnectStrip(){
   // live Instagram numbers for any creator: one Facebook connection by the Super Admin powers it for everyone
   const { data:dc } = await sb.rpc("my_discovery_connection").then(r=>r, ()=>({data:null}));
   if(!box.isConnected || !dc) return;
-  const fb = dc.facebook, live = (fb && fb.discovery_ok) || dc.shared;
+  const fb = dc.facebook || dc.team, mine = !!dc.facebook, live = (fb && fb.discovery_ok) || dc.shared;
   const isAdm = window.__isAdmin || await sb.rpc("is_platform_admin").then(r=> r.data===true, ()=>false);
   if(!box.isConnected) return;
   if(isAdm){
     box.insertAdjacentHTML("beforeend", fb
-      ? `<div class="dx-ig ${fb.discovery_ok?"ok":""}" style="margin-top:8px">🔎 <b>Instagram search ${fb.discovery_ok?"is on":"isn't working yet"}</b> <span class="muted">— via @${esc(fb.ig_username||"")} (Page: ${esc(fb.page_name||"")})${fb.discovery_ok?" · every brand & agency can look up any public creator":` · ${esc(fb.discovery_error||"")}`}</span>
+      ? `<div class="dx-ig ${fb.discovery_ok?"ok":""}" style="margin-top:8px">🔎 <b>Instagram search ${fb.discovery_ok?"is on":"is connected — waiting on a Meta permission"}</b> <span class="muted">— via @${esc(fb.ig_username||"")} (Page: ${esc(fb.page_name||"")})${!mine&&fb.by?` · connected by ${esc(fb.by)}`:""}${fb.discovery_ok?" · every brand & agency can look up any public creator":/#10|permission/i.test(fb.discovery_error||"")?" · creator numbers switch on once instagram_manage_insights is added in the Meta app, then press Reconnect":` · ${esc(fb.discovery_error||"")}`}</span>
          <button class="btn sm ghost" id="dxFb">Reconnect</button></div>`
       : `<div class="dx-ig" style="margin-top:8px"><div>🔎 <b>Turn on Instagram search for everyone</b> <span class="muted">— Meta gives other creators' followers, posts &amp; engagement only through Facebook Login. Connect the Facebook Page linked to Geek's Instagram <b>once</b>; brands &amp; agencies keep connecting only Instagram.</span></div>
          <button class="btn sm" id="dxFb">Connect Facebook (one time)</button></div>`);
