@@ -90,13 +90,14 @@ function renderNav(){
       const tab = key.split(":")[1];
       const a = el("a","", `<span class="ic">${ic}</span><span>${esc(label)}</span><b class="nav-badge" data-navcount="${key}"></b>`);
       a.setAttribute("data-page", key);
-      if(currentPage==="admin" && _adminTab===tab) a.classList.add("active");
+      if(currentPage==="admin" && (_adminTab===tab || (tab==="advanced" && typeof ADMIN_ADVANCED!=="undefined" && ADMIN_ADVANCED.some(t=> t[0]===_adminTab)))) a.classList.add("active");
       a.onclick = ()=>{ _adminTab = tab; currentPage = "admin"; renderShell(); if(window.innerWidth<=760) $("#sidebar").classList.remove("open"); };
       nav.appendChild(a);
     });
   }
   sections.forEach(([title, keys])=>{
     keys = keys.filter(navKeyAllowed);
+    if(window.__isAdmin && typeof ADMIN_HIDE_KEYS!=="undefined") keys = keys.filter(k=> !ADMIN_HIDE_KEYS.includes(k));
     if(!keys.length) return;
     if(title) navHeading(nav, window.__isAdmin && title==="Today" ? "My workspace" : title);
     renderNavKeys(nav, keys);
@@ -7305,6 +7306,13 @@ async function cuLoadList(){
     const { error:e } = await sb.schema("api").rpc("creator_upload_delete", { p_id: b.dataset.cudel }).then(x=>x, e2=>({error:e2}));
     if(e){ gateToast(e.message||String(e)); return; } gateToast("Deleted ✓"); cuLoadList(); });
 }
+function adminAdvanced(body){
+  const T = [["orgs","🏢","Workspaces","Every agency / brand workspace and its members"],["data","🗄","Data browser","Look at any table row by row"],
+             ["audit","📜","Audit log","Every change, who made it and when"],["admins","🛡","Super admins","Who has Super Admin access"],
+             ["approvals","🏢","Account approvals (old view)","The same signups as Approvals in the sidebar"],["campaigns","📣","All campaigns (old view)","Delete requests and the old campaign table"]];
+  body.innerHTML = `<div class="adv-grid">${T.map(([k,ic,l,d])=>`<button class="card adv-card" data-adv="${k}"><span class="adv-ic">${ic}</span><b>${esc(l)}</b><span class="muted">${esc(d)}</span></button>`).join("")}</div>`;
+  body.querySelectorAll("[data-adv]").forEach(b=> b.onclick = ()=>{ _adminTab = b.dataset.adv; currentPage = "admin"; renderShell(); });
+}
 async function adminBotPage(body){
   body.innerHTML = `<div class="card" id="dlvBot"></div>`;
   await adminWaBot();
@@ -7490,9 +7498,14 @@ async function adminActivityTimeline(member, row, target){
   if(!target) box.scrollIntoView({behavior:"smooth"});
 }
 
+// the tools that live under ⚙️ Advanced (no tab row any more — the sidebar opens each page)
+const ADMIN_ADVANCED = [["advanced","⚙️ Advanced"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["admins","Super admins"],["approvals","Account approvals (old view)"],["campaigns","All campaigns (old view)"]];
+const ADMIN_TITLES = { overview:"Command centre", applications:"All applications", creators:"Creators", users:"All users", delivery:"WhatsApp & email", bot:"WhatsApp bot",
+  upload:"Creator upload", activity:"Activity", check:"System check", advanced:"Advanced", orgs:"Workspaces", data:"Data browser", audit:"Audit log", admins:"Super admins",
+  approvals:"Account approvals", campaigns:"All campaigns" };
 function renderAdmin(){
-  let html = pageHead("Super Admin","Full cross-workspace control — every record, every change, with timestamps.");
-  html += `<div class="admin-tabs">${ADMIN_TABS.map(t=>`<button class="${_adminTab===t[0]?'act':''}" data-atab="${t[0]}">${esc(t[1])}</button>`).join("")}</div>`;
+  let html = pageHead("Super Admin" + (ADMIN_TITLES[_adminTab] ? " · " + ADMIN_TITLES[_adminTab] : ""), "Full cross-workspace control — every record, every change, with timestamps.");
+  if(ADMIN_ADVANCED.some(t=> t[0]===_adminTab)) html += `<div class="admin-tabs">${ADMIN_ADVANCED.map(t=>`<button class="${_adminTab===t[0]?'act':''}" data-atab="${t[0]}">${esc(t[1])}</button>`).join("")}</div>`;
   html += `<div id="adminBody">${skel("table")}</div>`;
   return html;
 }
@@ -7501,7 +7514,7 @@ function loadAdmin(){
   document.querySelectorAll("[data-atab]").forEach(b=> b.onclick = ()=>{ _adminTab = b.dataset.atab; currentPage="admin"; renderShell(); });
   const body = document.getElementById("adminBody");
   if(!body || !window.sb) return;
-  ({ overview:adminOverview, creators:adminCreators, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, delivery:adminDelivery, bot:adminBotPage, upload:adminCreatorUpload, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+  ({ advanced:adminAdvanced, overview:adminOverview, creators:adminCreators, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, delivery:adminDelivery, bot:adminBotPage, upload:adminCreatorUpload, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
 }
 
 /* System check — live-verifies the deployed database matches the code (tables, columns, RPCs).

@@ -68,6 +68,7 @@
   // route a notification's CTA to the right page (and open the campaign when relevant)
   function routeNotification(n){
     var route=n.action_route; if(!route) return;
+    if(route==="admin:approvals") route="approvals";   // signups live on the Approvals page
     if(route.indexOf("admin:")===0){ if(typeof _adminTab!=="undefined") _adminTab=route.slice(6); route="admin"; }
     if(typeof currentRole!=="undefined" && currentRole==="creator") route = ({onboarding:"profile", alerts:"dashboard", growth:"mycampaigns", barter:"opencampaigns", marketplace:"opencampaigns", campaignops:"mycampaigns", approvals:"mycampaigns"})[route] || route;
     else route = ({alerts:"dashboard", mycampaigns:"campaigns", opencampaigns:"campaigns"})[route] || route;
