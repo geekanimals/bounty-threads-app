@@ -7816,12 +7816,12 @@ async function adminCreatorProfile(member, row){
         ${r("Connected", esc(fmtDateTime(ig.connected_at)))}${r("Last synced", agoTxt(ig.synced_at))}</div>
       <div class="ac360-media">${media.map(m=>`<a href="${esc(safeUrl(m.permalink||"#"))}" target="_blank" rel="noopener" class="ac360-post">${m.img?`<img src="${esc(safeUrl(m.img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:""}
           <span>❤ ${kNum(m.likes||0)} · 💬 ${kNum(m.comments||0)}</span></a>`).join("")||'<div class="muted">No recent posts synced.</div>'}</div>`,
-    campaigns: `<div class="card">${camps.length||mk.length ? `<div class="list">${camps.map(c=>`<div class="row"><div class="r-main">
+    campaigns: `<div class="card">${camps.length||mk.length ? `<div class="list">${camps.map(c=>`<div class="row ac-camp" data-accamp="${esc(c.participation_id)}" data-accampname="${esc(c.campaign||"")}" title="Open this creator inside the campaign"><div class="r-main">
           <div class="r-title">${esc(c.campaign||"Campaign")} ${typeTag(c.campaign_type)}</div>
           <div class="r-sub">${esc([c.brand,c.org_name].filter(Boolean).join(" · "))}${c.applied_profile?` · as <b>@${esc(c.applied_profile)}</b>`:""} · applied ${esc(fmtDate(c.applied_at))}${c.starts_on?` · runs ${esc(fmtDate(c.starts_on))} – ${esc(fmtDate(c.ends_on))}`:""}${c.reason?` · <i>${esc(c.reason)}</i>`:""}</div></div>
-          ${stageTag(c.stage)}</div>`).join("")}
+          ${stageTag(c.stage)}<button class="mini-btn" data-accamp="${esc(c.participation_id)}" data-accampname="${esc(c.campaign||"")}">Open in campaign →</button></div>`).join("")}
         ${mk.map(a=>`<div class="row"><div class="r-main"><div class="r-title">${esc(a.campaign_name||a.campaign||"Marketplace campaign")}</div><div class="r-sub">Marketplace · applied ${esc(fmtDate(a.applied_at))}</div></div><span class="tag ${a.status==="Approved"?"good":a.status==="Rejected"?"":"warn"}">${esc(a.status||"Applied")}</span></div>`).join("")}</div>
-        <div style="margin-top:10px"><button class="mini-btn ghost" id="acGoApps">Open Applications tab →</button></div>`
+        <div class="muted" style="margin-top:10px;font-size:12.5px">Tap a campaign to open it with this creator's full card — steps, contract, courier, video, posts and numbers.</div>`
         : `<div class="muted">No campaign applications yet.</div>`}</div>`,
     activity: `<div class="card"><div id="ac360Act">${skel("list",3)}</div></div>`,
     intel: `<div class="card"><div id="ac360Intel">${skel("list",3)}</div></div>` };
@@ -7841,7 +7841,7 @@ async function adminCreatorProfile(member, row){
     if(dl) dl.onclick = ()=> adminDeleteUser(member, { name, role:"creator", whatsapp:wa, ig_username:ig.username }, ()=>{
       const b = document.getElementById("adminBody"); if(b && currentPage==="admin"){ _acrSig = ""; _auSig = ""; (_adminTab==="users" ? adminUsers : adminCreators)(b, true); } });
     bodyEl.querySelectorAll("[data-ac360]").forEach(b=> b.onclick = ()=>{ _ac360Tab = b.dataset.ac360; paint(); });
-    const ga = bodyEl.querySelector("#acGoApps"); if(ga) ga.onclick = ()=>{ close(); _adminTab = "applications"; currentPage = "admin"; renderShell(); };
+    bodyEl.querySelectorAll("[data-accamp]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); close(); openCampaignForCreator(b.dataset.accampname, b.dataset.accamp); });
     if(_ac360Tab==="activity") creatorActivityPanel(member, bodyEl.querySelector("#ac360Act"));
     if(_ac360Tab==="intel" && window.ciIntel) window.ciIntel.openCard(D.identity_id, "ac360Intel");
     const strip = bodyEl.querySelector("#ac360Strip"); if(strip) acActivityStrip(member, strip);
@@ -9856,6 +9856,21 @@ document.addEventListener("click", e=>{
 })();
 
 
+// open a campaign's page and, once it has loaded, this creator's card inside it
+async function openCampaignForCreator(name, pid){
+  const { data } = await sb.from("campaigns").select("id,name").eq("name", name).limit(1).then(r=>r, ()=>({ data:null }));
+  const c = data && data[0]; if(!c){ gateToast(`Couldn't find the campaign “${name}”.`); return; }
+  document.querySelectorAll(".modal-overlay").forEach(m=> m.remove());
+  if(typeof currentPage!=="undefined") currentPage = "campaigns";
+  document.querySelectorAll("[data-page]").forEach(n=> n.classList.toggle("active", n.dataset.page==="campaigns"));
+  await openCampaignWorkspace(c.id); window.scrollTo(0,0);
+  if(!pid) return;
+  for(let i=0; i<40; i++){   // wait for the creators list to load (≤ 10 s), then open their card
+    const x = ((_bpData||{}).creators||[]).find(y=> y.participation_id===pid);
+    if(x){ bpCreatorProfile(pid); return; }
+    await new Promise(r=> setTimeout(r, 250));
+  }
+}
 /* ================= clickable @handles and "via <campaign>" badges, wherever they are ================= */
 document.addEventListener("click", async e=>{
   const ig = e.target.closest && e.target.closest("a.ig-h");
@@ -9867,8 +9882,5 @@ document.addEventListener("click", async e=>{
   const { data } = await sb.from("campaigns").select("id,name").eq("name", name).limit(1).then(r=>r, ()=>({ data:null }));
   const c = data && data[0];
   if(!c){ gateToast(`Couldn't find the campaign “${name}”.`); return; }
-  document.querySelectorAll(".modal-overlay").forEach(m=> m.remove());
-  if(typeof currentPage!=="undefined") currentPage = "campaigns";
-  document.querySelectorAll("[data-page]").forEach(n=> n.classList.toggle("active", n.dataset.page==="campaigns"));
-  openCampaignWorkspace(c.id); window.scrollTo(0,0);
+  openCampaignForCreator(c.name, null);
 }, true);

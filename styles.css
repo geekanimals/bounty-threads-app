@@ -2301,3 +2301,5 @@ img.ap-pic, .cs-top > img, .bp-head > img, td img, .acr-lc-who > img{ cursor:poi
 
 a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#6d5dfc); text-decoration:underline }
 .jv-badge.jv-link{ cursor:pointer } .jv-badge.jv-link:hover{ filter:brightness(.95); text-decoration:underline }
+
+.ac-camp{ cursor:pointer } .ac-camp:hover{ background:rgba(109,93,252,.06) }
