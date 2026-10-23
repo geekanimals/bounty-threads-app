@@ -6645,18 +6645,49 @@ function bpAnalyticsHtml(){
         : `To show their followers, likes and comments too, connect Facebook once as Super Admin (Instagram reads public profiles only through a Facebook Page).`}
         For full numbers (views, reach, shares, saves) ask them to connect Instagram in the app.</div>
       ${!t.public_ready && window.__isAdmin ? `<button class="btn sm" id="bpRepFb" style="margin-top:8px">Connect Facebook (one time)</button>` : ""}</div>`:""}
-    ${rows.length?`<div class="card"><h4 style="margin-top:0">Per creator</h4><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Creator</th><th>Followers</th><th>Posts</th><th>Views</th><th>Reach</th><th>Likes</th><th>Comments</th><th>Shares</th><th>Saves</th><th>Status</th></tr></thead><tbody>
-      ${rows.map(r=>{ const c=r.creator||{}, s=r.totals||{}, n=v=>v==null?"—":fmtNum(v);
+    ${rows.length?`<div class="card"><h4 style="margin-top:0">Per creator</h4><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Creator</th><th>Followers</th><th>Posts</th><th>Views</th><th>Reach</th><th>Likes</th><th>Comments</th><th>Shares</th><th>Saves</th><th>Status</th><th>Insights</th></tr></thead><tbody>
+      ${(window._bpRepRows = rows, rows).map((r, ri)=>{ const c=r.creator||{}, s=r.totals||{}, n=v=>v==null?"—":fmtNum(v);
         const h = bpRepHandle(r), pp = pubOf(h), pic = c.profile_picture_url || (pp && pp.profile_picture_url), fol = c.followers ?? (pp && pp.followers), off = bpRepOff(r);
         return `<tr><td><div style="display:flex;gap:10px;align-items:center">${pic?`<img class="ap-pic" style="width:38px;height:38px" src="${esc(safeUrl(pic))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((h||"?").slice(0,2).toUpperCase())}</span>`}
           <div style="min-width:0"><b>${h?"@"+esc(h):esc(c.name||"—")}</b> ${off?NOT_ON_GEEK:""}${(c.name||(pp&&pp.name))?`<div class="muted" style="font-size:11px">${esc(c.name||pp.name)}</div>`:""}
           ${pp&&pp.engagement!=null&&!c.followers?`<div class="muted" style="font-size:11px">${esc(pp.engagement)}% avg engagement</div>`:""}${(r.posts||[]).map(p=>p.permalink?` <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener" title="${esc(p.media_type)}">↗</a>`:"").join("")}</div></div></td>
           <td>${n(fol)}</td><td>${(r.posts||[]).length}</td><td>${n(s.views)}</td><td>${pubOnly(r)&&s.reach==null?NA_PUB:n(s.reach)}</td><td>${s.likes==null&&pubOnly(r)&&(s.views!=null||s.comments!=null)?`<span class="muted" title="The creator hides like counts on Instagram, so Meta doesn't share them">🙈 hidden</span>`:n(s.likes)}</td><td>${n(s.comments)}</td><td>${pubOnly(r)&&s.shares==null?NA_PUB:n(s.shares)}</td><td>${pubOnly(r)&&s.saves==null?NA_PUB:n(s.saves)}</td>
-          <td>${r.on_sheet?'<span class="tag good">Done</span> <span class="muted" style="font-size:11px">· bulk sheet, not registered</span>':r.stage==="completed"?'<span class="tag good">Done</span>':r.stage==="published"?'<span class="tag warn">Live</span>':'<span class="tag">Approved — not posted</span>'}${(r.posts||[]).length && (r.posts||[]).every(p=>!p.stats||!Object.keys(p.stats).filter(k=>!["at","source"].includes(k)).length)?'<div class="muted" style="font-size:11px">numbers coming</div>':(r.posts||[]).some(p=>p.stats&&p.stats.source==="public")?'<div class="muted" style="font-size:11px">public numbers</div>':""}</td></tr>`; }).join("")}
+          <td>${r.on_sheet?'<span class="tag good">Done</span> <span class="muted" style="font-size:11px">· bulk sheet, not registered</span>':r.stage==="completed"?'<span class="tag good">Done</span>':r.stage==="published"?'<span class="tag warn">Live</span>':'<span class="tag">Approved — not posted</span>'}${(r.posts||[]).length && (r.posts||[]).every(p=>!p.stats||!Object.keys(p.stats).filter(k=>!["at","source"].includes(k)).length)?'<div class="muted" style="font-size:11px">numbers coming</div>':(r.posts||[]).some(p=>p.stats&&p.stats.source==="public")?'<div class="muted" style="font-size:11px">public numbers</div>':""}</td>
+          <td>${(r.posts||[]).some(p=> p.stats && p.stats.screenshot_url) ? `<span class="tag good" title="Numbers read from their insights screenshot">📷 added</span><br>` : ""}<button class="mini-btn${pubOnly(r)?"":" ghost"}" data-repshot="${ri}" title="Upload the creator's Instagram insights screenshot — we read reach, shares, saves, views and likes from it">📷 ${pubOnly(r)?"Add insights":"Update"}</button></td></tr>`; }).join("")}
     </tbody></table></div></div>`:`<div class="card"><div class="muted">No posts yet — creators show up here as soon as their reel goes live.</div></div>`}`;
 }
 const NA_PUB = `<span class="muted" title="Only the creator's own Instagram insights have this — ask them to connect Instagram in the app">🔒</span>`;
 function pubOnly(r){ const P = r.posts||[]; return P.length && P.every(p=> !p.stats || p.stats.source==="public" || !Object.keys(p.stats).filter(k=>!["at","source"].includes(k)).length); }
+// 📷 report row → the creator's insights screenshot (any creator: on Geek OS or only on the bulk sheet); numbers are read
+// from the picture, can be corrected, and replace the public counts in the report
+function openRepShot(r){
+  if(!r) return;
+  if(r.participation_id && ((_bpData&&_bpData.creators)||[]).some(c=> c.participation_id===r.participation_id)) return openBpMetrics(r.participation_id);
+  if(!r.invite_id){ gateToast("Open this creator from the Creators tab to add numbers."); return; }
+  const posts = (r.posts||[]).filter(p=> p.permalink), h = bpRepHandle(r);
+  const m = bpModal(`📷 Insights screenshot · ${h?"@"+esc(h):"creator"}`, `<form class="modal-form pa" id="rsForm">
+      <p class="muted" style="font-size:13px;margin:0">Ask the creator for the <b>View insights</b> screenshot of their post. We read reach, views, likes, comments, shares and saves from it — check and save.</p>
+      ${posts.length>1?`<label>Post<select name="post">${posts.map((p,i)=>`<option value="${i}">${esc(p.media_type||"post")} · ${esc(String(p.permalink).replace(/^https?:\/\/(www\.)?instagram\.com\//,"").slice(0,40))}</option>`).join("")}</select></label>`:""}
+      <div id="rsShot"></div>
+      ${postNumsHtml({})}
+      <div class="auth-err" id="rsErr"></div><button class="btn" type="submit">Save numbers</button></form>`);
+  const form = document.getElementById("rsForm");
+  const cur = ()=> posts[+((form.querySelector("[name=post]")||{}).value||0)] || posts[0] || {};
+  const kindOf = ()=> (cur().media_type) || "reel";
+  const shot = shotReader(document.getElementById("rsShot"), form, kindOf);
+  form.onsubmit = async e=>{
+    e.preventDefault();
+    const err = document.getElementById("rsErr"), btn = form.querySelector("button[type=submit]"), nums = postNumsRead(form), f = shot.file();
+    if(!f && !Object.keys(nums).length){ err.textContent = "Add the screenshot (or type at least one number)."; return; }
+    btn.disabled = true; btn.textContent = "Saving…";
+    try{
+      const shotUrl = f ? await uploadProof(f) : null;
+      const { error } = await sb.schema("api").rpc("invite_add_post", { p_invite: r.invite_id, p_payload: { permalink: cur().permalink || null, media_type: kindOf(), screenshot_url: shotUrl, metrics: nums } });
+      if(error) throw error;
+      m.remove(); gateToast("Insights saved ✓"); await loadBpAnalytics();
+    }catch(ex){ err.textContent = ex.message||String(ex); btn.disabled = false; btn.textContent = "Save numbers"; }
+  };
+}
 function bpRepHandle(r){ const c = r.creator||{}; return pubHandle(c.username || c.handle || r.handle || r.applied_profile || ""); }
 function bpRepOff(r){ const c = r.creator||{}; return !!(r.on_sheet || r.not_connected || c.followers==null); }
 async function bpDownloadReport(){
@@ -6782,6 +6813,7 @@ function wireBarterProcess(){
   body.querySelectorAll("[data-bpopen]").forEach(h=> h.onclick = e=>{ if(e.target.closest("button,a,select,input,label")) return; _bpOpen = _bpOpen===h.dataset.bpopen ? null : h.dataset.bpopen; paintBarterProcess(); });
   wireBpActions(body, again);
   const rep = body.querySelector("#bpRepCsv"); if(rep) rep.onclick = ()=> bpDownloadReport();
+  body.querySelectorAll("[data-repshot]").forEach(b=> b.onclick = ()=> openRepShot((window._bpRepRows||[])[+b.dataset.repshot]));
   const rfb = body.querySelector("#bpRepFb"); if(rfb) rfb.onclick = ()=> connectFacebookSearch();
   btAutoGrow(body);
   const terms = body.querySelector("#bpSaveTerms");
@@ -7070,7 +7102,7 @@ function openBpMetrics(part){
       if(shot.file()) p.screenshot_url = await uploadProof(shot.file());
       const { error } = await sb.schema("api").rpc("bp_record_metrics", { p_participation:part, p_payload:p });
       if(error) throw error;
-      m.remove(); gateToast("Numbers saved ✓"); loadBarterProcess(true);
+      m.remove(); gateToast("Numbers saved ✓"); loadBarterProcess(true); if(_bpTab==="analytics") loadBpAnalytics();
     }catch(ex){ err.textContent = ex.message||String(ex); btn.disabled=false; btn.textContent="Save numbers"; }
   };
 }
