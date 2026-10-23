@@ -6504,7 +6504,8 @@ function wireHubSetStep(d){
 // "Posts 1 of 3 — Reel 1/1 ✓ · Story 0/2" for one creator
 function bpProgressLine(pid){
   const g = (((_bpData||{}).progress)||{})[pid]; if(!g || !(g.items||[]).length) return "";
-  return `<div class="bp-pp">📦 Posts <b>${g.done}/${g.need}</b>${g.all_done?' <span class="tag good">all up ✓</span>':` <span class="tag warn">still to post: ${esc(g.left||"")}</span>`}
+  const x = (((_bpData||{}).creators)||[]).find(c=> c.participation_id===pid), closed = x && x.stage==="completed" && !g.all_done;
+  return `<div class="bp-pp">📦 Posts <b>${g.done}/${g.need}</b>${g.all_done?' <span class="tag good">all up ✓</span>':closed?` <span class="tag good" title="The team marked this creator Done — ${esc(g.left||"")} has no link in the app">✓ marked done by the team</span> <span class="muted" style="font-size:12px">· no link for: ${esc(g.left||"")}</span>`:` <span class="tag warn">still to post: ${esc(g.left||"")}</span>`}
     ${(g.items||[]).map(i=>`<span class="bp-ppc${i.done>=i.need?" ok":""}">${i.done>=i.need?"✓ ":""}${esc(i.label)} ${i.done}/${i.need}</span>`).join("")}</div>`;
 }
 
@@ -6604,7 +6605,7 @@ function bpTrackerHtml(list){
         <div class="bp-facts">
           ${con.issued_at?`<div>📜 Contract ${con.signed_at?`<b>signed</b> by ${esc(con.signature_name||"the creator")} on ${esc(fmtDate(con.signed_at))}`:`sent ${esc(fmtDate(con.issued_at))} — <b>not signed yet</b>`}
              · ${esc(con.product||"product")} · ${(con.deliverables||[]).map(d=>`${esc(d.quantity||1)}× ${esc(d.format||"content")}`).join(" + ")||"—"}
-             · ${esc(con.content_days||7)} days to post · ad rights ${esc(con.ad_rights_months??1)} mo · collab ${con.collab_rights?"✓":"✕"}
+             · ${esc(con.content_days||7)} day${(+(con.content_days||7))===1?"":"s"} to post · ad rights ${esc(con.ad_rights_months??1)} mo · collab ${con.collab_rights?"✓":"✕"}
              ${(con.clauses||[]).some(c=>c.key==="non_delivery")?" · ⛔ blacklist clause":""}${(con.clauses||[]).some(c=>c.key==="reship")?" · ↪ re-ship clause":""}
              <a href="#" data-bpclauses="${esc(P)}">read the contract</a></div>`:""}
           ${to?`<div>📍 Ship to: <b>${esc(to.name||"")}</b>, ${[to.line1,to.line2,to.landmark,to.city,to.state,to.postal_code].filter(Boolean).map(esc).join(", ")}${to.phone?` · 📞 ${esc(to.phone)}`:""}</div>`:""}
@@ -9775,6 +9776,8 @@ if(typeof handleOAuthCallback==="function") handleOAuthCallback();
 if(window.startApp) startApp();
 else init();
 
+const _tblSort = {};
+const tblKey = t=> [...t.querySelectorAll("thead th")].map(h=> h.innerText.replace(/[▲▼]/g,"").trim()).join("|");
 /* ================= every table: click a column to sort, and a filter box above long tables =================
  * Works on any <table class="tbl"> the app draws (reports, users, creators, invites…) without each page wiring it. */
 (function(){
@@ -9795,7 +9798,14 @@ else init();
       const r = (typeof x==="number" && typeof y==="number") ? x-y : String(x).localeCompare(String(y), undefined, { numeric:true });
       return dir==="asc" ? r : -r; });
     rows.forEach(r=> tb.appendChild(r));
+    _tblSort[tblKey(table)] = { col: th.innerText.replace(/[▲▼]/g,"").trim(), dir };
   });
+  // keep the chosen sort when the page redraws the table (live refresh, numbers arriving)
+  const reapply = table=>{
+    const st = _tblSort[tblKey(table)]; if(!st || table.__sorted === st) return;
+    const th = [...table.querySelectorAll("thead th")].find(h=> h.innerText.replace(/[▲▼]/g,"").trim()===st.col); if(!th) return;
+    table.__sorted = st; th.dataset.sort = st.dir === "asc" ? "desc" : "asc"; th.dispatchEvent(new MouseEvent("click", { bubbles:true }));
+  };
   const addFilter = table=>{
     if(table.__flt || !table.tBodies[0] || table.tBodies[0].rows.length < 8) return; table.__flt = true;
     const box = document.createElement("div"); box.className = "tbl-flt";
@@ -9806,7 +9816,7 @@ else init();
       [...table.tBodies[0].rows].forEach(r=>{ const ok = !q || r.innerText.toLowerCase().includes(q); r.style.display = ok ? "" : "none"; if(ok) n++; });
       cnt.textContent = q ? `${n} of ${table.tBodies[0].rows.length}` : ""; };
   };
-  const scan = ()=> document.querySelectorAll("table.tbl").forEach(addFilter);
+  const scan = ()=> document.querySelectorAll("table.tbl").forEach(t=>{ addFilter(t); reapply(t); });
   new MutationObserver(()=>{ clearTimeout(scan._t); scan._t = setTimeout(scan, 150); }).observe(document.documentElement, { childList:true, subtree:true });
 })();
 
