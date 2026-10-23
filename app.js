@@ -3292,7 +3292,10 @@ async function csHashtagPanel(res, tag, S, refresh){
   const body = document.getElementById("csTagBody"); if(!body) return;
   if(error || !data || data.error){ body.innerHTML = `<div class="muted">${esc((data && data.error) || (error && error.message) || "Couldn't reach Instagram.")}</div>`; return; }
   const P = data.posts||[], H = data.handles||[];
-  body.innerHTML = (H.length ? `<div class="cs-tag-sub">Accounts mentioned in these posts — added to your search:</div><div class="cs-tag-handles">${H.map(h=>`<button class="cs-chip" data-taglook="${esc(h)}">@${esc(h)}</button>`).join("")}</div>` : "")
+  const HS = H.slice(0, 12);
+  body.innerHTML = (H.length ? `<div class="cs-tag-sub">Creators in these posts — full profile, photo and followers from Instagram:</div>
+        <div class="cs-grid" id="csTagCards">${HS.map(h=> csIgCard(csIgSeed({ handle:h }), {})).join("")}</div>
+        ${H.length>HS.length?`<div class="cs-tag-handles">${H.slice(HS.length).map(h=>`<button class="cs-chip" data-taglook="${esc(h)}">@${esc(h)}</button>`).join("")}</div>`:""}` : "")
     + (P.length ? `<div class="mk-grid cs-tag-grid">${P.slice(0,18).map(m=>`<a class="mk-post" href="${esc(safeUrl(m.permalink||"#"))}" target="_blank" rel="noopener">
           ${m.media_url && m.media_type!=="VIDEO" ? `<img src="${esc(safeUrl(m.media_url))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : `<div class="mk-post-noimg">${m.media_type==="VIDEO"?"▶ Reel":"Post"}</div>`}
           <span class="mk-meta">❤ ${fmtNum(m.like_count||0)} · 💬 ${fmtNum(m.comments_count||0)}</span></a>`).join("")}</div>
@@ -3301,7 +3304,23 @@ async function csHashtagPanel(res, tag, S, refresh){
   body.querySelectorAll("[data-taglook]").forEach(b=> b.onclick = async ()=>{ const h = b.dataset.taglook; b.disabled = true; b.textContent = "@"+h+" …";
     const { data:lk } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h } }).then(r=>r, ()=>({data:null}));
     b.textContent = lk && lk.profile ? `@${h} · ${kfmtN(lk.profile.followers||0)}` : "@"+h; gateToast(lk && lk.profile ? `@${h} added with live numbers` : ((lk && lk.error) || `@${h} added`)); });
+  csFillProfiles(HS, body);
   if(H.length && refresh) setTimeout(refresh, 400);
+}
+// look up each handle live (3 at a time) and redraw its card with photo, followers, avg likes, engagement
+async function csFillProfiles(handles, scope){
+  const q = handles.slice();
+  const one = async ()=>{ while(q.length){ const h = q.shift();
+    const { data:lk } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h } }).then(r=>r, ()=>({data:null}));
+    const card = scope.querySelector(`[data-igcard="${CSS.escape(h)}"]`); if(!card) continue;
+    const p = lk && lk.profile;
+    const c = p ? csIgSeed({ handle:p.handle||h, name:p.name, profile_picture_url:p.profile_picture_url, followers:p.followers, posts:p.media_count, avg_likes:p.avg_likes, bio:p.bio, _done:true,
+                  engagement: p.followers && p.avg_likes!=null ? Math.round(10000*((+p.avg_likes||0)+(+p.avg_comments||0))/p.followers)/100 : null })
+                : csIgSeed({ handle:h, _done:true, _err: (lk && lk.error) ? (typeof csIgWhy==="function" ? csIgWhy(lk.error) : lk.error) : "No public numbers" });
+    card.outerHTML = csIgCard(c, {});
+    if(typeof csWireCards==="function") csWireCards(scope, {});
+  } };
+  await Promise.all([one(), one(), one()]);
 }
 // City / category → live Instagram: hashtags of that city + category, the creators those posts name, each with full profile
 // a plain search word (not @handle, #hashtag, a link or a username) = what creators post about
@@ -3362,7 +3381,8 @@ function csScoutSummary(d){
       <div class="muted">Instagram doesn't tell apps who posted a hashtag post — we can only pick up accounts that are @mentioned in captions. Try a city or a keyword (e.g. "skincare", "Pune"), or paste handles with + Add creators.</div></div>`;
   return `<div class="cs-scout-sum">✅ Found <b>${fmtNum(d.found||0)}</b> account(s) on ${(d.tags||[]).map(t=>"#"+esc(t)).join(", ")} — <b>${fmtNum(d.with_stats||0)}</b> with full profile, added to the list below.
       ${(d.no_stats||[]).length?`<span class="muted">${(d.no_stats||[]).length} are personal / private accounts (Instagram shares no numbers for those) — added as handles.</span>`:""}</div>`
-    + (P.length ? `<div class="cs-tag-handles">${P.slice(0,24).map(p=>`<span class="cs-chip on" title="${esc(p.bio||"")}">@${esc(p.handle)} · ${kfmtN(p.followers||0)}</span>`).join("")}</div>` : "");
+    + (P.length ? `<div class="cs-grid">${P.slice(0,24).map(p=> csIgCard(csIgSeed({ handle:p.handle, name:p.name, profile_picture_url:p.profile_picture_url, followers:p.followers, posts:p.media_count,
+          avg_likes:p.avg_likes, bio:p.bio, city:p.city, _done:true, engagement: p.followers && p.avg_likes!=null ? Math.round(10000*((+p.avg_likes||0)+(+p.avg_comments||0))/p.followers)/100 : null }), {})).join("")}</div>` : "");
 }
 function kfmtN(n){ n = Number(n)||0; return n>=1e7 ? (n/1e6).toFixed(0)+"M" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e4 ? Math.round(n/1e3)+"K" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(Math.round(n)); }
 async function csInvite(b, opts){
