@@ -3208,8 +3208,12 @@ async function openPublicAnalytics(handle, links, name){
     gateToast("Finding whose post this is…");
     const first = await fetchPublicStats("", links);
     const h2 = first && first.profile && first.profile.handle;
-    if(!h2){ alert((first && first.error) || "Couldn't read that post link."); return; }
-    handle = h2;
+    if(!h2){
+      if(!(first && first.needs_handle)){ alert((first && first.error) || "Couldn't read that post link."); return; }
+      const typed = String(prompt("Whose post is this? Type their Instagram username (e.g. @name):")||"").trim().replace(/^@/,"").toLowerCase();
+      if(!/^[a-z0-9._]{2,30}$/.test(typed)) return;
+      handle = typed;
+    } else handle = h2;
   }
   let m = document.getElementById("paStatsModal"); if(m) m.remove();
   m = el("div","modal-overlay"); m.id = "paStatsModal";
