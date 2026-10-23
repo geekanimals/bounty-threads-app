@@ -6086,7 +6086,7 @@ async function bpCreatorProfile(pid){
   m.innerHTML = `<div class="modal modal-lg"><div class="modal-head"><strong>Creator profile</strong><button class="icon-btn" id="bpProfX">✕</button></div>
     <div class="modal-form bpp">
       <div class="bpp-top"><span id="bppPic">${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((handle||"?").slice(0,2).toUpperCase())}</span>`}</span>
-        <div style="min-width:0;flex:1"><div class="bpp-name"><span id="bppNm">${esc(cr.name||to.name||handle)}</span>${!cr.username&&handle?" "+NOT_ON_GEEK:""}</div>
+        <div style="min-width:0;flex:1"><div class="bpp-name"><span id="bppNm">${esc(cr.name||to.name||handle)}</span>${cr.followers==null&&handle?" "+NOT_ON_GEEK:""}</div>
           ${handle?`<a href="https://instagram.com/${encodeURIComponent(handle)}" target="_blank" rel="noopener">@${esc(handle)} ↗</a>`:""}
           <div class="bpp-cats">${(cr.categories||[]).slice(0,4).map(c=>`<span>${esc(c)}</span>`).join("")}${cr.city?`<span>📍 ${esc(cr.city)}</span>`:""}</div>
           <div id="bppJoined"></div></div>
@@ -6122,7 +6122,7 @@ async function bpCreatorProfile(pid){
   const hb = m.querySelector("[data-bpphub]"); if(hb) hb.onclick = ()=>{ m.remove(); openCreatorHub(pid, "whatsapp"); };
   const bs = m.querySelector("#bppStats"); if(bs) bs.onclick = ()=> openPublicAnalytics(handle, posts.map(p2=> p2.permalink).filter(Boolean), cr.name);
   // not connected on Geek OS → show what we saved from their public Instagram right away, then refresh it live (and save)
-  if(handle && !cr.username) bppPublic(m, pubHandle(handle), posts.map(p2=> p2.permalink).filter(Boolean), cr);
+  if(handle && cr.followers==null) bppPublic(m, pubHandle(handle), posts.map(p2=> p2.permalink).filter(Boolean), cr);
   const hb2 = m.querySelector("[data-bpphub2]"); if(hb2) hb2.onclick = ()=>{ m.remove(); openCreatorHub(pid, "timeline"); };
   wireBpActions(m, ()=>{ m.remove(); loadBarterProcess(true); });
   m.querySelectorAll("[data-bpchat]").forEach(b=> b.onclick = ()=>{ m.remove(); openCreatorHub(pid, "whatsapp"); });
@@ -6492,7 +6492,7 @@ function bpTrackerHtml(list){
   const fail = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
   const today = new Date().toISOString().slice(0,10);
   return list.map(x=>{
-    const cr0 = x.creator||{}, pubH = !cr0.username && x.applied_profile ? pubHandle(x.applied_profile) : "", pp = pubH ? pubOf(pubH) : null;
+    const cr0 = x.creator||{}, pubH = cr0.followers==null && (cr0.username || x.applied_profile) ? pubHandle(cr0.username || x.applied_profile) : "", pp = pubH ? pubOf(pubH) : null;
     const cr = pubH ? Object.assign({}, cr0, { username: pubH, profile_picture_url: cr0.profile_picture_url || (pp && pp.profile_picture_url) || null,
                                                followers: cr0.followers ?? (pp && pp.followers), name: cr0.name || (pp && pp.name) }) : cr0;
     const idx = bpEffectiveIndex(x), st = x.steps||{}, ship = x.shipment||{}, con = x.contract||{};
@@ -6503,7 +6503,7 @@ function bpTrackerHtml(list){
     const label = fail(x.stage) ? `<b>${esc(String(x.stage).replace(/_/g," "))}</b>${x.reason?` — ${esc(x.reason)}`:""}`
                 : esc((BARTER_STEPS[idx]||["","—"])[1]) + (BP_NEXT[x.stage] ? ` · <span class="bp-next">${esc(BP_NEXT[x.stage])}</span>` : "");
     const P = x.participation_id, nx = bpNext(x), shown = new Set(nx.acts.map(a=>a[0]));
-    if(pubH && !pp) setTimeout(()=> pubFill(list.filter(y=> !(y.creator||{}).username && y.applied_profile).map(y=> y.applied_profile), ()=>{ if(_bpTab==="tracker") paintBarterProcess(); }), 0);
+    if(pubH && !pp) setTimeout(()=> pubFill(list.filter(y=> (y.creator||{}).followers==null && ((y.creator||{}).username || y.applied_profile)).map(y=> (y.creator||{}).username || y.applied_profile), ()=>{ if(_bpTab==="tracker") paintBarterProcess(); }), 0);
     return `<div class="card bp-card${open?" open":""}" data-bpcard="${esc(P)}">
       <div class="bp-head" data-bpopen="${esc(P)}">
         <span class="bp-who" data-bpprof="${esc(P)}" title="Open the creator's full profile">${cr.profile_picture_url?`<img class="ap-pic" src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((cr.username||"?").slice(0,2).toUpperCase())}</span>`}</span>
@@ -6658,7 +6658,7 @@ function bpAnalyticsHtml(){
 const NA_PUB = `<span class="muted" title="Only the creator's own Instagram insights have this — ask them to connect Instagram in the app">🔒</span>`;
 function pubOnly(r){ const P = r.posts||[]; return P.length && P.every(p=> !p.stats || p.stats.source==="public" || !Object.keys(p.stats).filter(k=>!["at","source"].includes(k)).length); }
 function bpRepHandle(r){ const c = r.creator||{}; return pubHandle(c.username || c.handle || r.handle || r.applied_profile || ""); }
-function bpRepOff(r){ const c = r.creator||{}; return !!(r.on_sheet || r.not_connected || (!c.username && (r.handle || r.applied_profile))); }
+function bpRepOff(r){ const c = r.creator||{}; return !!(r.on_sheet || r.not_connected || c.followers==null); }
 async function bpDownloadReport(){
   const a = _bpAnalytics||{}, rows = a.creators||[], c = a.campaign||{};
   await pubFill(rows.map(bpRepHandle));   // photo + followers for creators not on Geek OS before the file is made
