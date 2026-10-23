@@ -6432,12 +6432,41 @@ function bpMetricLine(st){
   const parts = K.filter(k=> st[k[0]]!=null).map(k=>`${esc(k[1])} <b>${fmtNum(st[k[0]])}</b>`);
   return parts.length ? parts.join(" · ") + (st.source==="public" ? ' <span class="muted">(public counts — full insights load once Instagram shares them)</span>' : st.source==="screenshot" ? ' <span class="muted">(read from the screenshot)</span>' : st.source==="manual" ? ' <span class="muted">(typed in)</span>' : "") : '<span class="muted">numbers load within a few hours of posting</span>';
 }
+// Public Instagram profile (photo, followers, bio…) for creators who haven't connected Instagram on Geek OS —
+// from what we saved, else looked up live (and saved). Lists repaint once numbers arrive.
+const _pubProf = {}, _pubTried = new Set();
+const pubHandle = h => String(h||"").trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i,"").replace(/^@/,"").replace(/[/?].*$/,"").toLowerCase();
+function pubOf(h){ h = pubHandle(h); return h ? _pubProf[h] || null : null; }
+let _pubBusy = false;
+async function pubFill(handles, repaint){
+  const H = [...new Set(handles.map(pubHandle).filter(h=> /^[a-z0-9._]{2,30}$/.test(h) && !_pubTried.has(h)))];
+  if(!H.length || _pubBusy) return; _pubBusy = true;
+  try{
+    H.forEach(h=> _pubTried.add(h));
+    let changed = false;
+    const { data } = await sb.schema("api").rpc("external_profiles", { p_handles: H }).then(r=>r, ()=>({ data:null }));
+    (data||[]).forEach(p=>{ if(p.followers!=null || p.profile_picture_url){ _pubProf[p.handle] = p; changed = true; } });
+    const miss = H.filter(h=> !_pubProf[h] || _pubProf[h].followers==null).slice(0, 12);
+    const one = async ()=>{ while(miss.length){ const h = miss.shift();
+      const { data:lk } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h } }).then(r=>r, ()=>({data:null}));
+      const P = lk && lk.profile;
+      if(P){ _pubProf[h] = { handle:h, name:P.name, bio:P.bio, followers:P.followers, posts:P.media_count, avg_likes:P.avg_likes, profile_picture_url:P.profile_picture_url,
+        engagement: P.followers && P.avg_likes!=null ? Math.round(10000*((+P.avg_likes||0)+(+P.avg_comments||0))/P.followers)/100 : null }; changed = true; }
+      else if(lk && /limit/i.test(lk.error||"")) { miss.length = 0; } } };
+    await Promise.all([one(), one()]);
+    if(changed && repaint) repaint();
+  } finally { _pubBusy = false; }
+}
+const NOT_ON_GEEK = `<span class="tag" style="background:rgba(245,158,11,.14);color:#b45309" title="Not connected on Geek OS — photo and numbers are from their public Instagram">📸 Not yet on Geek</span>`;
 function bpTrackerHtml(list){
   if(!list.length) return `<div class="card"><div class="muted">Nobody in this campaign yet. Send the outreach message, or invite creators from the campaign's 🎯 Invite panel.</div></div>`;
   const fail = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
   const today = new Date().toISOString().slice(0,10);
   return list.map(x=>{
-    const cr = x.creator||{}, idx = bpEffectiveIndex(x), st = x.steps||{}, ship = x.shipment||{}, con = x.contract||{};
+    const cr0 = x.creator||{}, pubH = !cr0.username && x.applied_profile ? pubHandle(x.applied_profile) : "", pp = pubH ? pubOf(pubH) : null;
+    const cr = pubH ? Object.assign({}, cr0, { username: pubH, profile_picture_url: cr0.profile_picture_url || (pp && pp.profile_picture_url) || null,
+                                               followers: cr0.followers ?? (pp && pp.followers), name: cr0.name || (pp && pp.name) }) : cr0;
+    const idx = bpEffectiveIndex(x), st = x.steps||{}, ship = x.shipment||{}, con = x.contract||{};
     const sub = x.submission, rev = x.review, posts = x.posts||[], to = x.ship_to;
     const open = _bpOpen === x.participation_id;
     const pct = fail(x.stage) ? 0 : Math.round(100*(idx+1)/BARTER_STEPS.length);
@@ -6445,12 +6474,13 @@ function bpTrackerHtml(list){
     const label = fail(x.stage) ? `<b>${esc(String(x.stage).replace(/_/g," "))}</b>${x.reason?` — ${esc(x.reason)}`:""}`
                 : esc((BARTER_STEPS[idx]||["","—"])[1]) + (BP_NEXT[x.stage] ? ` · <span class="bp-next">${esc(BP_NEXT[x.stage])}</span>` : "");
     const P = x.participation_id, nx = bpNext(x), shown = new Set(nx.acts.map(a=>a[0]));
+    if(pubH && !pp) setTimeout(()=> pubFill(list.filter(y=> !(y.creator||{}).username && y.applied_profile).map(y=> y.applied_profile), ()=>{ if(_bpTab==="tracker") paintBarterProcess(); }), 0);
     return `<div class="card bp-card${open?" open":""}" data-bpcard="${esc(P)}">
       <div class="bp-head" data-bpopen="${esc(P)}">
         <span class="bp-who" data-bpprof="${esc(P)}" title="Open the creator's full profile">${cr.profile_picture_url?`<img class="ap-pic" src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((cr.username||"?").slice(0,2).toUpperCase())}</span>`}</span>
         <div style="flex:1;min-width:0">
           <div class="r-title"><span class="bp-who-n" data-bpprof="${esc(P)}" title="Open the creator's full profile">${cr.username?`@${esc(cr.username)}`:esc(cr.name||"Creator")}</span> <button type="button" class="bp-prof-btn" data-bpprof="${esc(P)}">👤 Profile</button>
-            ${x.applied_profile && x.applied_profile!==cr.username?`<span class="tag">via @${esc(x.applied_profile)}</span>`:""}
+            ${pubH ? NOT_ON_GEEK : x.applied_profile && x.applied_profile!==cr.username?`<span class="tag">via @${esc(x.applied_profile)}</span>`:""}
             ${jvBadge(cr.joined_via, true)}
             ${x.blacklisted?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⛔ Blacklisted</span>':""}
             ${overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':""}
@@ -6569,6 +6599,8 @@ function bpAnalyticsHtml(){
   if(!a) return skel("list",3);
   if(a.error) return `<div class="card"><div class="muted">${esc(a.error)}</div></div>`;
   const t = a.totals||{}, rows = a.creators||[];
+  { const need = rows.filter(r=> { const c = r.creator||{}; return bpRepHandle(r) && (!c.profile_picture_url || c.followers==null) && !pubOf(bpRepHandle(r)); }).map(bpRepHandle);
+    if(need.length) setTimeout(()=> pubFill(need, ()=>{ if(_bpTab==="analytics") paintBarterProcess(); }), 0); }
   const er = (t.followers && (t.likes!=null||t.comments!=null)) ? (100*((t.likes||0)+(t.comments||0)+(t.shares||0)+(t.saves||0))/t.followers).toFixed(2)+"%" : "—";
   const tile = (v,l)=>`<div class="ws-stat"><b>${v==null?"—":fmtNum(v)}</b><span>${l}</span></div>`;
   return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -6586,19 +6618,29 @@ function bpAnalyticsHtml(){
       ${!t.public_ready && window.__isAdmin ? `<button class="btn sm" id="bpRepFb" style="margin-top:8px">Connect Facebook (one time)</button>` : ""}</div>`:""}
     ${rows.length?`<div class="card"><h4 style="margin-top:0">Per creator</h4><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Creator</th><th>Followers</th><th>Posts</th><th>Views</th><th>Reach</th><th>Likes</th><th>Comments</th><th>Shares</th><th>Saves</th><th>Status</th></tr></thead><tbody>
       ${rows.map(r=>{ const c=r.creator||{}, s=r.totals||{}, n=v=>v==null?"—":fmtNum(v);
-        return `<tr><td><b>${c.username?"@"+esc(c.username):esc(c.name||"—")}</b>${c.username&&c.name?`<div class="muted" style="font-size:11px">${esc(c.name)}</div>`:""}${(r.posts||[]).map(p=>p.permalink?` <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener" title="${esc(p.media_type)}">↗</a>`:"").join("")}</td>
-          <td>${n(c.followers)}</td><td>${(r.posts||[]).length}</td><td>${n(s.views)}</td><td>${n(s.reach)}</td><td>${n(s.likes)}</td><td>${n(s.comments)}</td><td>${n(s.shares)}</td><td>${n(s.saves)}</td>
+        const h = bpRepHandle(r), pp = pubOf(h), pic = c.profile_picture_url || (pp && pp.profile_picture_url), fol = c.followers ?? (pp && pp.followers), off = bpRepOff(r);
+        return `<tr><td><div style="display:flex;gap:10px;align-items:center">${pic?`<img class="ap-pic" style="width:38px;height:38px" src="${esc(safeUrl(pic))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((h||"?").slice(0,2).toUpperCase())}</span>`}
+          <div style="min-width:0"><b>${h?"@"+esc(h):esc(c.name||"—")}</b> ${off?NOT_ON_GEEK:""}${(c.name||(pp&&pp.name))?`<div class="muted" style="font-size:11px">${esc(c.name||pp.name)}</div>`:""}
+          ${pp&&pp.engagement!=null&&!c.followers?`<div class="muted" style="font-size:11px">${esc(pp.engagement)}% avg engagement</div>`:""}${(r.posts||[]).map(p=>p.permalink?` <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener" title="${esc(p.media_type)}">↗</a>`:"").join("")}</div></div></td>
+          <td>${n(fol)}</td><td>${(r.posts||[]).length}</td><td>${n(s.views)}</td><td>${n(s.reach)}</td><td>${n(s.likes)}</td><td>${n(s.comments)}</td><td>${n(s.shares)}</td><td>${n(s.saves)}</td>
           <td>${r.on_sheet?'<span class="tag good">Done</span> <span class="muted" style="font-size:11px">· bulk sheet, not registered</span>':r.stage==="completed"?'<span class="tag good">Done</span>':r.stage==="published"?'<span class="tag warn">Live</span>':'<span class="tag">Approved — not posted</span>'}${(r.posts||[]).length && (r.posts||[]).every(p=>!p.stats||!Object.keys(p.stats).filter(k=>!["at","source"].includes(k)).length)?'<div class="muted" style="font-size:11px">numbers coming</div>':(r.posts||[]).some(p=>p.stats&&p.stats.source==="public")?'<div class="muted" style="font-size:11px">public numbers</div>':""}</td></tr>`; }).join("")}
     </tbody></table></div></div>`:`<div class="card"><div class="muted">No posts yet — creators show up here as soon as their reel goes live.</div></div>`}`;
 }
-function bpDownloadReport(){
+function bpRepHandle(r){ const c = r.creator||{}; return pubHandle(c.username || c.handle || r.handle || r.applied_profile || ""); }
+function bpRepOff(r){ const c = r.creator||{}; return !!(r.on_sheet || r.not_connected || (!c.username && (r.handle || r.applied_profile))); }
+async function bpDownloadReport(){
   const a = _bpAnalytics||{}, rows = a.creators||[], c = a.campaign||{};
+  await pubFill(rows.map(bpRepHandle));   // photo + followers for creators not on Geek OS before the file is made
   const cell = v=>{ v = v==null?"":String(v); return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; };
-  const head = ["Creator","Followers","Post type","Post link","Posted on","Views","Reach","Likes","Comments","Shares","Saves","Status"];
+  const head = ["Instagram","Name","Profile link","Profile picture","On Geek OS","Followers","Avg likes","Avg engagement %","Bio","Post type","Post link","Posted on","Views","Reach","Likes","Comments","Shares","Saves","Numbers from","Status"];
   const lines = [];
-  rows.forEach(r=>{ const cr=r.creator||{}; (r.posts||[]).forEach(p=>{ const s=p.stats||{};
-    lines.push(["@"+(cr.username||""), cr.followers??"", p.media_type, p.permalink||"", p.posted_at?new Date(p.posted_at).toLocaleDateString("en-IN"):"",
-      s.views??"", s.reach??"", s.likes??"", s.comments??"", s.shares??"", s.saves??"", r.stage].map(cell).join(",")); }); });
+  rows.forEach(r=>{ const cr=r.creator||{}, h=bpRepHandle(r), pp=pubOf(h)||{};
+    (r.posts||[]).forEach(p=>{ const s=p.stats||{};
+    lines.push([h?"@"+h:"", cr.name||pp.name||"", h?`https://instagram.com/${h}`:"", cr.profile_picture_url||pp.profile_picture_url||"", bpRepOff(r)?"Not yet":"Yes",
+      cr.followers??pp.followers??"", pp.avg_likes!=null?Math.round(pp.avg_likes):"", pp.engagement??"", String(cr.bio||pp.bio||"").replace(/\s+/g," ").slice(0,200),
+      p.media_type, p.permalink||"", p.posted_at?new Date(p.posted_at).toLocaleDateString("en-IN"):"",
+      s.views??"", s.reach??"", s.likes??"", s.comments??"", s.shares??"", s.saves??"",
+      s.source==="public"?"public profile":s.source==="screenshot"?"screenshot":s.source==="manual"?"typed in":"Instagram insights", r.stage].map(cell).join(",")); }); });
   const t = a.totals||{};
   const csv = [`${c.name||"Campaign"} — report`, `${c.brand||""}`, "",
     `Creators live,${t.creators_live??""}`, `Posts,${t.posts??""}`, `Views,${t.views??""}`, `Reach,${t.reach??""}`, `Likes,${t.likes??""}`,
