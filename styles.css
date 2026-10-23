@@ -2295,3 +2295,6 @@ table.tbl thead th:hover{ color:var(--accent,#6d5dfc) }
 table.tbl thead th.srt-a::after{ content:" ▲"; font-size:10px } table.tbl thead th.srt-d::after{ content:" ▼"; font-size:10px }
 .tbl-flt{ display:flex; gap:10px; align-items:center; margin:0 0 8px } .tbl-flt input{ flex:1; max-width:420px }
 .cc-list-h select{ max-width:190px }
+
+.acr-hs{ cursor:pointer; user-select:none } .acr-hs:hover,.acr-hs.on{ color:var(--accent,#6d5dfc) }
+img.ap-pic, .cs-top > img, .bp-head > img, td img, .acr-lc-who > img{ cursor:pointer }

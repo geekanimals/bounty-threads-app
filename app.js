@@ -7537,7 +7537,7 @@ async function adminCreators(body, silent){
       <div class="acr-tools"><input id="acrQ" placeholder="🔍 Name, @handle, city, niche, phone…" value="${esc(_acrQ)}">
         <select id="acrF">${[["all","All creators"],["ig","Instagram connected"],["noig","Instagram not connected"],["complete","Profile complete"],["incomplete","Profile incomplete"],["barter","Open to barter"],["rate","Reel rate added"],["applied","Applied to campaigns"],["pending","Waiting for approval"],["approved","Approved in campaigns"],["travel","Travelling now"],["multi","2+ Instagram accounts"],["pages","Manages other pages"]]
           .map(([k,l])=>`<option value="${k}"${_acrF===k?" selected":""}>${l}</option>`).join("")}</select>
-        <select id="acrSort">${[["new","Newest first"],["followers","Most followers"],["eng","Best engagement"],["seen","Recently active"],["applied","Most applications"]].map(([k,l])=>`<option value="${k}"${_acrSort===k?" selected":""}>${l}</option>`).join("")}</select>
+        <select id="acrSort">${[["new","Newest first"],["old","Oldest first"],["followers","Followers: high → low"],["followers_asc","Followers: low → high"],["eng","Engagement: high → low"],["eng_asc","Engagement: low → high"],["rate","Per reel: high → low"],["rate_asc","Per reel: low → high"],["applied","Most applications"],["approved","Most approved"],["profile","Profile: most complete"],["profile_asc","Profile: least complete"],["seen","Recently active"],["name","Name A → Z"],["loc","Location A → Z"]].map(([k,l])=>`<option value="${k}"${_acrSort===k?" selected":""}>${l}</option>`).join("")}</select>
         <span class="acr-view" role="group" aria-label="View"><button type="button" data-acrview="card" class="${_acrView==="card"?"act":""}" title="Card view">▦ Cards</button><button type="button" data-acrview="list" class="${_acrView==="list"?"act":""}" title="List view">☰ List</button></span>
         <button class="mini-btn ghost" id="acrCsv">⬇ CSV</button></div></div>
       ${acrFilterHtml(all)}
@@ -7634,7 +7634,13 @@ function filteredCreators(){
   const q = _acrQ.trim().toLowerCase();
   const F = { all:()=>true, ig:c=>c.ig_username, noig:c=>!c.ig_username, complete:c=>c.complete, incomplete:c=>!c.complete, barter:c=>c.accepts_barter,
               rate:c=>c.reel_rate, applied:c=>c.applied>0, pending:c=>c.pending>0, approved:c=>c.approved>0, travel:c=>c.travel_city, pages:c=>c.pages>0, multi:c=>(c.ig_accounts||[]).length>1 }[_acrF] || (()=>true);
-  const S = { new:(a,b)=>new Date(b.joined_at||0)-new Date(a.joined_at||0), followers:(a,b)=>(b.followers||0)-(a.followers||0), eng:(a,b)=>(b.engagement||0)-(a.engagement||0),
+  const pctOf = c=> c.complete ? 101 : c.total ? (c.done||0)/c.total*100 : 0, nil = (v, big)=> v==null||v==="" ? big : +v;
+  const S = { new:(a,b)=>new Date(b.joined_at||0)-new Date(a.joined_at||0), old:(a,b)=>new Date(a.joined_at||0)-new Date(b.joined_at||0),
+              followers:(a,b)=>(b.followers||0)-(a.followers||0), followers_asc:(a,b)=>nil(a.followers,9e12)-nil(b.followers,9e12),
+              eng:(a,b)=>(b.engagement||0)-(a.engagement||0), eng_asc:(a,b)=>nil(a.engagement,9e9)-nil(b.engagement,9e9),
+              rate:(a,b)=>(+b.reel_rate||0)-(+a.reel_rate||0), rate_asc:(a,b)=>nil(a.reel_rate,9e12)-nil(b.reel_rate,9e12),
+              approved:(a,b)=>(b.approved||0)-(a.approved||0), profile:(a,b)=>pctOf(b)-pctOf(a), profile_asc:(a,b)=>pctOf(a)-pctOf(b),
+              name:(a,b)=>String(a.name||"").localeCompare(String(b.name||"")), loc:(a,b)=>String(a.city||"~").localeCompare(String(b.city||"~")),
               seen:(a,b)=>new Date(b.last_seen||0)-new Date(a.last_seen||0), applied:(a,b)=>(b.applied||0)-(a.applied||0) }[_acrSort];
   return _acrData.filter(F).filter(acrXMatch).filter(c=> !q || [c.name,c.ig_username,(c.ig_accounts||[]).map(a=>a.username).join(" "),c.city,c.state,c.whatsapp,c.email,(c.categories||[]).join(" "),(c.skills||[]).join(" ")].join(" ").toLowerCase().includes(q)).sort(S);
 }
@@ -7644,7 +7650,7 @@ function paintCreators(){
   const shown = list.slice(_acrPage*ACR_PAGE, (_acrPage+1)*ACR_PAGE);
   const pager = pages>1 ? `<div class="acr-pager"><button class="mini-btn ghost" data-acrp="-1"${_acrPage?"":" disabled"}>← Prev</button><span class="muted">Page ${_acrPage+1} of ${pages} · ${list.length} creators</span><button class="mini-btn ghost" data-acrp="1"${_acrPage<pages-1?"":" disabled"}>Next →</button></div>` : `<div class="acr-pager"><span class="muted">${list.length} creator${list.length===1?"":"s"}</span></div>`;
   if(_acrView==="list"){
-    g.innerHTML = list.length ? `<div class="acr-list"><div class="acr-lh"><span>Creator</span><span>Followers</span><span>Engagement</span><span>Per Reel</span><span>Applied / ✓</span><span>Location</span><span>Profile</span><span>Active</span></div>
+    g.innerHTML = list.length ? `<div class="acr-list"><div class="acr-lh">${[["Creator","name","name"],["Followers","followers","followers_asc"],["Engagement","eng","eng_asc"],["Per Reel","rate","rate_asc"],["Applied / ✓","applied","approved"],["Location","loc","loc"],["Profile","profile","profile_asc"],["Active","seen","seen"]].map(([l,a,b])=>`<span class="acr-hs${_acrSort===a||_acrSort===b?" on":""}" data-acrhs="${a}|${b}" title="Sort by ${l}">${l}${_acrSort===a?(a===b?" ▲":" ▼"):_acrSort===b?" ▲":""}</span>`).join("")}</div>
       ${shown.map(c=>{ const pct = c.total ? Math.round(100*(c.done||0)/c.total) : 0;
         const pic = c.pic ? `<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${esc(String(c.name||"?").slice(0,2).toUpperCase())}'}))">`
                           : `<span class="avatar">${esc(String(c.name||"?").slice(0,2).toUpperCase())}</span>`;
@@ -7660,6 +7666,8 @@ function paintCreators(){
       : `<div class="muted" style="padding:14px">No creators in this view.</div>`;
     g.querySelectorAll("[data-acr]").forEach(el=>{ const open = ()=> adminCreatorProfile(el.dataset.acr, _acrData.find(c=>c.member_id===el.dataset.acr)); el.onclick = open; el.onkeydown = e=>{ if(e.key==="Enter") open(); }; });
     g.querySelectorAll("[data-acrp]").forEach(b=> b.onclick = ()=>{ _acrPage += Number(b.dataset.acrp); paintCreators(); document.getElementById("acrGrid").scrollIntoView({behavior:"smooth",block:"start"}); });
+    g.querySelectorAll("[data-acrhs]").forEach(h=> h.onclick = ()=>{ const [a,b] = h.dataset.acrhs.split("|"); _acrSort = _acrSort===a ? b : a; _acrPage = 0;
+      const sel = document.getElementById("acrSort"); if(sel) sel.value = _acrSort; paintCreators(); });
     return;
   }
   g.innerHTML = list.length ? `<div class="acr-grid">${shown.map(c=>{
@@ -9789,3 +9797,27 @@ else init();
   const scan = ()=> document.querySelectorAll("table.tbl").forEach(addFilter);
   new MutationObserver(()=>{ clearTimeout(scan._t); scan._t = setTimeout(scan, 150); }).observe(document.documentElement, { childList:true, subtree:true });
 })();
+
+
+/* ================= tap any creator's picture → their details (same card everywhere) =================
+ * campaign creator → the campaign Creator profile · Geek OS creator → Creator 360 (Super Admin) / Creator details ·
+ * anyone else → their public Instagram analytics. Pictures that already open something keep doing that. */
+async function openCreatorAnywhere(h, mid){
+  h = pubHandle(h);
+  const x = ((_bpData||{}).creators||[]).find(c=> (mid && false) || (h && pubHandle((c.creator||{}).username || c.applied_profile)===h));
+  if(x && document.getElementById("bpBody")) return bpCreatorProfile(x.participation_id);
+  if(!mid && h){ const r = await sb.from("social_accounts").select("member_id").eq("platform","instagram").ilike("username", h).limit(1).then(r=>r, ()=>({data:null})); mid = r && r.data && r.data[0] && r.data[0].member_id; }
+  if(mid && window.__isAdmin && typeof adminCreatorProfile==="function"){ _ac360Tab = "profile"; return adminCreatorProfile(mid, (typeof _acrData!=="undefined" ? _acrData : []).find(c=>c.member_id===mid) || {}); }
+  if(mid && typeof openDiscoveryCreator==="function") return openDiscoveryCreator({ member_id: mid, handle: h });
+  if(h) return openPublicAnalytics(h, [], "");
+}
+document.addEventListener("click", e=>{
+  const pic = e.target.closest && e.target.closest("img.ap-pic, .cs-top > img, .cs-top > .avatar, .bp-head > .avatar, .bp-head > img, td img, .acr-lc-who > img, .avatar");
+  if(!pic || e.target.closest("[data-bpprof],[data-bpprofile],[data-acr],a,button,.modal .bpp-top,.pas-top,.me-ring,header,.topbar,#userMenu")) return;
+  const box = pic.closest("tr, .card, .bp-card, .cs-card, .acr-lr, li, .row") || pic.parentElement;
+  const m = (box && box.innerText || "").match(/@([A-Za-z0-9._]{2,30})/);
+  const mid = box && (box.querySelector("[data-csmid]")||{}).dataset ? (box.querySelector("[data-csmid]")||{dataset:{}}).dataset.csmid : "";
+  if(!m && !mid) return;
+  e.preventDefault(); e.stopPropagation();
+  openCreatorAnywhere(m ? m[1] : "", mid || null);
+}, true);
