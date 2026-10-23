@@ -118,11 +118,13 @@ Deno.serve(async (req) => {
     // platform's Facebook (Page) connection; saved so the campaign report, the creator row and the cards show it.
     //   { action: "public_stats", handle, links: [instagram post urls] }
     if (action === "public_stats") {
-      const handle = String(body?.handle || "").trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/^@/, "").replace(/[/?].*$/, "").toLowerCase();
-      if (!/^[a-z0-9._]{2,30}$/.test(handle)) return json({ error: "No Instagram username for this creator." }, 400);
+      let handle = String(body?.handle || "").trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/^@/, "").replace(/[/?].*$/, "").toLowerCase();
       const links: string[] = (Array.isArray(body?.links) ? body.links : []).map((x: unknown) => String(x || "").trim()).filter(Boolean).slice(0, 20);
       const codeOf = (u: string) => { const m = /instagram\.com\/(?:[^/]+\/)?(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i.exec(u); return m ? m[1] : null; };
       const codes = [...new Set(links.map(codeOf).filter(Boolean) as string[])];
+      // only a post link (creator not on Geek OS, no username) → find who posted it
+      if (!/^[a-z0-9._]{2,30}$/.test(handle) && links.length) handle = (await postOwner(links[0])) || "";
+      if (!/^[a-z0-9._]{2,30}$/.test(handle)) return json({ error: links.length ? "Couldn't tell whose post this is from the link — add their Instagram username too (e.g. @name)." : "No Instagram username for this creator.", needs_handle: true }, 200);
       const { data: shared } = await admin.schema("api").rpc("ops_discovery_token");
       const src = shared?.platform === "facebook" ? await openRow(shared) : null;
       if (!src?.access_token || !src?.ig_user_id) {
@@ -136,8 +138,23 @@ Deno.serve(async (req) => {
         return { ok: r.ok, j: await r.json().catch(() => ({})) as any };
       };
       let r = await read(true);
-      if (!r.ok && /view_count|nonexisting field|Tried accessing/i.test(String(r.j?.error?.message || ""))) r = await read(false);
+      let withViews = true;
+      if (!r.ok && /view_count|nonexisting field|Tried accessing/i.test(String(r.j?.error?.message || ""))) { withViews = false; r = await read(false); }
       const bd = r.j?.business_discovery;
+      // a campaign post older than their latest 50 → read further back (up to 200 posts)
+      if (bd?.media?.data && codes.length) {
+        const mf = withViews ? "id,permalink,caption,like_count,comments_count,media_type,media_product_type,media_url,thumbnail_url,timestamp,view_count"
+                             : "id,permalink,caption,like_count,comments_count,media_type,media_product_type,media_url,thumbnail_url,timestamp";
+        let after = bd.media?.paging?.cursors?.after;
+        const have = () => new Set((bd.media.data as any[]).map((m) => codeOf(String(m?.permalink || ""))));
+        for (let pg = 0; pg < 3 && after && codes.some((c) => !have().has(c)); pg++) {
+          const f2 = `business_discovery.username(${encodeURIComponent(handle)}){media.after(${encodeURIComponent(after)}).limit(50){${mf}}}`;
+          const j2 = await fj(`${FB_GRAPH}/${encodeURIComponent(String(src.ig_user_id))}?fields=${f2}&access_token=${encodeURIComponent(String(src.access_token))}`, 15000);
+          const more = j2?.business_discovery?.media;
+          if (!Array.isArray(more?.data) || !more.data.length) break;
+          bd.media.data.push(...more.data); after = more?.paging?.cursors?.after;
+        }
+      }
       if (!r.ok || !bd) {
         const m = String(r.j?.error?.message || "");
         const msg = /does not exist|cannot be found|invalid user/i.test(m) || Number(r.j?.error?.code) === 110
@@ -165,7 +182,7 @@ Deno.serve(async (req) => {
       const posts = codes.map((c) => { const m = byCode.get(c);
         return m ? { code: c, permalink: m.permalink, media_type: m.media_product_type || m.media_type, likes: n(m.like_count), comments: n(m.comments_count),
                      views: n(m.view_count), timestamp: m.timestamp ?? null, found: true }
-                 : { code: c, permalink: links.find((l) => codeOf(l) === c) ?? null, found: false, note: "Not among their latest 50 posts (or it's a story) — add the insights screenshot." }; });
+                 : { code: c, permalink: links.find((l) => codeOf(l) === c) ?? null, found: false, note: "Not among their latest 200 posts (or it's a story / a collab posted from another account) — add the insights screenshot." }; });
       const recent = media.slice(0, 12).map((m) => ({ permalink: m.permalink, media_type: m.media_product_type || m.media_type, likes: n(m.like_count),
         comments: n(m.comments_count), views: n(m.view_count), timestamp: m.timestamp ?? null,
         img: (m.media_type === "VIDEO" ? m.thumbnail_url : (m.media_url || m.thumbnail_url)) ?? null, caption: String(m.caption || "").slice(0, 140) }));
@@ -236,6 +253,32 @@ Deno.serve(async (req) => {
       return json({ ok: true, tag, edge: both ? "both" : edge, posts, recent, handles });
     }
 
+
+    // a plain word typed in search (e.g. "blogger") → Instagram has no username search, so we try the usernames
+    // creators usually build from that word (bloggerindia, the.blogger, blogger_official …) and keep the real ones
+    if (action === "name_match") {
+      const w = String(body?.q || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9._]/g, "").slice(0, 24);
+      if (w.length < 3) return json({ error: "Type at least 3 letters." }, 400);
+      const { data: shared } = await admin.schema("api").rpc("ops_discovery_token");
+      const src = shared?.platform === "facebook" ? await openRow(shared) : null;
+      if (!src?.access_token || !src?.ig_user_id) return json({ error: "Instagram search isn't switched on yet.", needs_facebook: true }, 200);
+      const igId = encodeURIComponent(String(src.ig_user_id)), FT = encodeURIComponent(String(src.access_token));
+      const city = String(body?.city || "").toLowerCase().replace(/[^a-z]/g, "").slice(0, 20);
+      const cand = [...new Set([w, w + "india", w + "_india", "the" + w, "the." + w, w + "official", w + "_official", "indian" + w,
+        "its" + w, w + "life", w + "diaries", w + ".in", ...(city ? [city + w, w + city, city + "_" + w] : [])])]
+        .filter((h) => /^[a-z0-9._]{2,30}$/.test(h) && !/^\.|\.$|\.\./.test(h)).slice(0, 14);
+      const got = await Promise.all(cand.map((h) => bdProfile(igId, FT, h).then((p) => [h, p] as const)));
+      if (got.length && got.every(([, p]) => p && (p as any).perm)) return json({ error: "Instagram refused the lookup (permission) — reconnect Facebook in Discovery.", needs_permission: true }, 200);
+      const found = got.filter(([, p]) => p && !(p as any).perm).map(([, p]) => ({ ...(p as any), source: "name_match" }));
+      if (found.length) {
+        const { error: se } = await userClient.schema("api").rpc("save_external_candidates", { p_items: found });
+        if (se) console.error("name_match save:", se.message);
+      }
+      const rateLimited = got.some(([, p]) => p && (p as any).limit);
+      return json({ ok: true, q: w, tried: cand, found: found.length,
+        note: rateLimited ? "Instagram's hourly limit was reached for some names — try again in a while." : undefined,
+        profiles: found.map(({ caption: _c, mentions: _m, ...r }: any) => r).sort((a: any, b: any) => (b.followers || 0) - (a.followers || 0)) });
+    }
 
     if (action === "scout") {
       const city = String(body?.city || "").trim().slice(0, 40);
@@ -323,6 +366,23 @@ Deno.serve(async (req) => {
   }
 });
 
+// whose post is this? 1) instagram.com/<user>/p/<code> links carry it 2) Meta's oEmbed (app token) names the author
+async function postOwner(link: string): Promise<string | null> {
+  const m = /instagram\.com\/([A-Za-z0-9._]{2,30})\/(?:p|reel|reels|tv)\//i.exec(link);
+  if (m && !/^(p|reel|reels|tv|stories|explore)$/i.test(m[1])) return m[1].toLowerCase();
+  const id = Deno.env.get("FB_APP_ID"), sec = Deno.env.get("FB_APP_SECRET");
+  if (!id || !sec) return null;
+  const clean = link.split("?")[0];
+  const j = await fj(`${FB_GRAPH}/instagram_oembed?url=${encodeURIComponent(clean)}&omitscript=true&access_token=${encodeURIComponent(id + "|" + sec)}`);
+  const a = String(j?.author_name || "").trim();
+  if (/^[A-Za-z0-9._]{2,30}$/.test(a)) return a.toLowerCase();
+  const h = String(j?.html || "");
+  const at = /\(@([A-Za-z0-9._]{2,30})\)/.exec(h) || /instagram\.com\/([A-Za-z0-9._]{2,30})\/?\?utm_source=ig_embed/.exec(h);
+  if (at && !/^(p|reel|tv)$/i.test(at[1])) return at[1].toLowerCase();
+  if (j?.error) console.error("oembed:", j.error.message);
+  return null;
+}
+
 // fetch JSON with a time limit so one slow Instagram call can't hang the whole search
 async function fj(url: string, ms = 12000): Promise<any> {
   try { const r = await fetch(url, { signal: AbortSignal.timeout(ms) }); return await r.json().catch(() => ({})); }
@@ -334,7 +394,7 @@ async function bdProfile(igId: string, FT: string, username: string) {
   const fields = `business_discovery.username(${encodeURIComponent(username)}){username,name,biography,followers_count,media_count,profile_picture_url,media.limit(12){caption,permalink,like_count,comments_count}}`;
   const j = await fj(`${FB_GRAPH}/${igId}?fields=${fields}&access_token=${FT}`);
   const bd = j?.business_discovery;
-  if (!bd) return needsPermission(j) ? ({ perm: true } as any) : null;
+  if (!bd) return needsPermission(j) ? ({ perm: true } as any) : [4, 17, 32, 613].includes(Number(j?.error?.code)) ? ({ limit: true } as any) : null;
   const media: any[] = bd?.media?.data ?? [];
   const avg = (k: string) => media.length ? media.reduce((s2: number, m: any) => s2 + (Number(m?.[k]) || 0), 0) / media.length : null;
   const caption = media.map((m: any) => m?.caption || "").join(" ").slice(0, 1200);

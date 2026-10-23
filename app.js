@@ -2647,7 +2647,7 @@ async function renderDxTools(){
     const eng = P && P.followers ? Math.round(1000*((Number(P.avg_likes)||0)+(Number(P.avg_comments)||0))/P.followers)/10 : null;
     tb.innerHTML = `<div class="card igt-head"><div class="igt-title"><h3>📇 Instagram Business Discovery</h3>${conn}</div>
         <p class="muted">Type any public <b>Business or Creator</b> account's username — see their photo, bio, followers, following, posts and their latest posts.</p>
-        <form class="igt-form" id="igtBizForm"><span class="igt-pre">@</span><input id="igtBizQ" placeholder="e.g. virat.kohli" value="${esc(_dxBiz.q)}" autocomplete="off"><button class="btn" type="submit"${_dxBiz.busy?" disabled":""}>${_dxBiz.busy?"Looking up…":"🔎 Search"}</button></form></div>
+        <form class="igt-form" id="igtBizForm"><span class="igt-pre">@</span><input id="igtBizQ" placeholder="username (virat.kohli) or any post / reel link" value="${esc(_dxBiz.q)}" autocomplete="off"><button class="btn" type="submit"${_dxBiz.busy?" disabled":""}>${_dxBiz.busy?"Looking up…":"🔎 Search"}</button></form></div>
       <div id="igtBizOut">${_dxBiz.busy ? skel("cards",4) : !d ? "" : d.error ? igtNeedsFb(d.error) : `
         <div class="card igt-prof"><div class="igt-prof-band"></div>
           <div class="igt-prof-top"><span class="cs-ring igt-prof-pic">${P.profile_picture_url?`<img src="${esc(safeUrl(P.profile_picture_url))}" alt="" referrerpolicy="no-referrer">`:`<span class="avatar">${esc(String(P.username||P.handle||"?").slice(0,2).toUpperCase())}</span>`}</span>
@@ -2661,7 +2661,9 @@ async function renderDxTools(){
         <div class="igt-sec"><span class="igt-bar"></span>Media <span class="muted">latest ${posts.length}</span></div>
         <div class="igt-grid">${posts.map(igtMediaCard).join("") || `<div class="muted">No posts shared.</div>`}</div>`}</div>`;
     const f = document.getElementById("igtBizForm");
-    f.onsubmit = async e=>{ e.preventDefault(); const q = document.getElementById("igtBizQ").value.trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i,"").replace(/^@/,"").replace(/[/?].*$/,"").toLowerCase();
+    f.onsubmit = async e=>{ e.preventDefault(); const raw = document.getElementById("igtBizQ").value.trim();
+      if(/instagram\.com\/(?:[^/]+\/)?(?:p|reel|reels|tv)\//i.test(raw)){ openPublicAnalytics("", [raw]); return; }   // a post / reel link → its analytics
+      const q = raw.replace(/^https?:\/\/(www\.)?instagram\.com\//i,"").replace(/^@/,"").replace(/[/?].*$/,"").toLowerCase();
       if(!/^[a-z0-9._]{2,30}$/.test(q)){ gateToast("Type an Instagram username, e.g. virat.kohli"); return; }
       _dxBiz = { q, data:null, busy:true }; renderDxTools();
       const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:q, media_limit:24 } }).then(r=>r, e=>({error:e}));
@@ -2861,6 +2863,9 @@ function mountCreatorSearch(root, opts){
     // a #hashtag → live public posts from Instagram (Instagram Public Content Access) + the accounts they mention
     const tag = /^#/.test(S.q||"") ? String(S.q).replace(/^#/,"").trim().toLowerCase() : "";
     if(tag && /^[\p{L}\p{N}_]{2,60}$/u.test(tag)) csHashtagPanel($i("Res"), tag, S, ()=>{ run(true); pool(); });
+    // a plain word (e.g. "blogger") → Instagram accounts whose username is built from it, with photo + followers
+    const nmw = String(S.q||"").trim().toLowerCase();
+    if(/^[a-z0-9]{3,24}$/.test(nmw) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csNamePanel($i("Res"), nmw, S, ()=>{ run(true); pool(); });
     // a city and/or a category picked → find more of them live on Instagram (full public profiles)
     const kw = csKeyword(S.q);
     if((kw || S.location || S.categories.length) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csScoutPanel($i("Res"), S, ()=>{ run(true); pool(); });
@@ -3198,7 +3203,14 @@ async function fetchPublicStats(handle, links){
 function erTypical(f){ return f==null ? null : f<1e4 ? 4 : f<5e4 ? 2.5 : f<2e5 ? 2 : f<1e6 ? 1.5 : 1; }
 async function openPublicAnalytics(handle, links, name){
   handle = String(handle||"").replace(/^@/,"").toLowerCase();
-  if(!handle){ gateToast("No Instagram username for this creator."); return; }
+  if(!handle && !(links||[]).length){ gateToast("No Instagram username for this creator."); return; }
+  if(!handle){   // only a post link → Instagram tells us whose post it is
+    gateToast("Finding whose post this is…");
+    const first = await fetchPublicStats("", links);
+    const h2 = first && first.profile && first.profile.handle;
+    if(!h2){ alert((first && first.error) || "Couldn't read that post link."); return; }
+    handle = h2;
+  }
   let m = document.getElementById("paStatsModal"); if(m) m.remove();
   m = el("div","modal-overlay"); m.id = "paStatsModal";
   m.innerHTML = `<div class="modal modal-lg"><div class="modal-head"><strong>📊 Instagram analytics · @${esc(handle)}</strong><button class="icon-btn" id="paStX">✕</button></div>
@@ -3289,6 +3301,27 @@ async function csHashtagPanel(res, tag, S, refresh){
 }
 // City / category → live Instagram: hashtags of that city + category, the creators those posts name, each with full profile
 // a plain search word (not @handle, #hashtag, a link or a username) = what creators post about
+const _csNameDone = {};
+async function csNamePanel(res, w, S, refresh){
+  const key = w + "|" + (S.location||"");
+  res.insertAdjacentHTML("afterbegin", `<div class="card cs-scout" id="csNameBox"><div class="cs-scout-h"><div><b>📸 Instagram accounts named like “${esc(w)}”</b>
+      <div class="muted">Public Business / Creator accounts whose username is built from “${esc(w)}” (e.g. ${esc(w)}india, the${esc(w)}) — with photo, followers and engagement.</div></div></div>
+    <div id="csNameMsg">${_csNameDone[key] ? "" : `<div class="cs-scout-run"><span class="mk-spin sm"></span> Checking Instagram…</div>`}</div></div>`);
+  const paint = d => { const box = document.getElementById("csNameMsg"); if(!box) return;
+    if(!d || d.error){ box.innerHTML = `<div class="muted">${esc((d && d.error) || "Couldn't reach Instagram.")}</div>`; return; }
+    const P = d.profiles||[];
+    box.innerHTML = P.length ? `<div class="cs-grid">${P.map(p=> csIgCard(csIgSeed({ handle:p.handle, name:p.name, profile_picture_url:p.profile_picture_url, followers:p.followers, _done:true,
+          avg_likes:p.avg_likes, bio:p.bio, posts:p.media_count, engagement: p.followers && p.avg_likes!=null ? Math.round(10000*((+p.avg_likes||0)+(+p.avg_comments||0))/p.followers)/100 : null }), {})).join("")}</div>
+        <div class="muted" style="margin-top:6px">✓ Added to your creator search.${d.note?" "+esc(d.note):""}</div>`
+      : `<div class="muted">No public Instagram account named like “${esc(w)}” (tried ${(d.tried||[]).slice(0,6).map(h=>"@"+esc(h)).join(", ")}…). Instagram has no username search for apps — try a #hashtag, a city, or paste handles.${d.note?" "+esc(d.note):""}</div>`;
+    if(typeof csWireCards==="function") csWireCards(box, {}); };
+  if(_csNameDone[key]){ paint(_csNameDone[key]); return; }
+  const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"name_match", q:w, city:S.location||"" } }).then(r=>r, e=>({error:e}));
+  const d = data || { error: error && (typeof fnError==="function" ? await fnError(error) : error.message) };
+  if(d && d.ok) _csNameDone[key] = d;
+  paint(d);
+  if(d && d.found && refresh) setTimeout(refresh, 400);
+}
 function csKeyword(q){
   q = String(q||"").trim();
   if(!q || /^[@#]|instagram\.com|https?:/i.test(q) || q.length > 40) return "";
