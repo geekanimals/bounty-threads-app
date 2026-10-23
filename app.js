@@ -5635,6 +5635,7 @@ function confirmDelete(title, detail){
 }
 let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null, _bpAnalytics = null;
 let _wsMode = false, _ccFilter = "all", _ccQ = "", _ccInvOpen = null, _bpPeople = null;
+let _ccSort = "step", _ccSrc = "", _ccTier = "", _ccPost = "";   // campaign creator list: sort + filters
 // the campaign page runs the whole process itself: one list, every step, every action
 function startCampaignCommand(c){
   _wsMode = true; _ccFilter = "all"; _ccQ = ""; _ccInvOpen = null; _bpPeople = null;
@@ -5824,6 +5825,16 @@ async function ccBlockNoPost(btn){
   if(bad.length) alert(bad.join("\n"));
   loadBarterProcess(true);
 }
+// the campaign's creators (app + sheet) in one list, in the chosen order
+function ccSortedHtml(P, Ion, fP, fI){
+  const items = P.map(x=>({ kind:"p", x, f:fP(x) })).concat(Ion.map(r=>({ kind:"i", i:r.i, f:fI(r.i) })));
+  const num = v => v==null ? -1 : +v;
+  const cmp = { step:(a,b)=> b.f.step-a.f.step, step_asc:(a,b)=> a.f.step-b.f.step, fol_desc:(a,b)=> num(b.f.fol)-num(a.f.fol),
+    fol_asc:(a,b)=> (a.f.fol==null)-(b.f.fol==null) || num(a.f.fol)-num(b.f.fol), name:(a,b)=> a.f.name.localeCompare(b.f.name), views:(a,b)=> b.f.views-a.f.views }[_ccSort];
+  if(cmp && _ccSort!=="step") items.sort(cmp);
+  else if(_ccSort==="step"){ const pFirst = items.filter(t=>t.kind==="p"), iRest = items.filter(t=>t.kind==="i"); return (pFirst.length?bpTrackerHtml(pFirst.map(t=>t.x)):"") + iRest.map(t=>ccInviteRowHtml(t.i, true)).join(""); }
+  return items.map(t=> t.kind==="p" ? bpTrackerHtml([t.x]) : ccInviteRowHtml(t.i, true)).join("");
+}
 function ccMatch(key, r){
   const fail = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
   if(key==="all") return true;
@@ -5860,7 +5871,16 @@ function paintCampaignCommandInner(body){
       const l = document.querySelector("#bpBody .cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); }; }
   const tile = t => `<button type="button" class="cc-tile${_ccFilter===t[0]?" on":""}" data-cctile="${t[0]}" title="${esc(t[2]||t[1])}"><b>${rows.filter(r=>ccMatch(t[0], r)).length}</b><span>${esc(t[1])}</span>${t[2]&&t[0]!=="all"?`<i>${esc(t[2])}</i>`:""}</button>`;
   const secTitle = { bulk:"📥 Bulk upload", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand" }[_bpTab];
-  const P = shown.filter(r=>r.kind==="p").map(r=>r.x), Iall = shown.filter(r=>r.kind==="i");
+  const P0 = shown.filter(r=>r.kind==="p").map(r=>r.x), Iall0 = shown.filter(r=>r.kind==="i");
+  const fP = x=> { const c = x.creator||{}; return { fol: c.followers ?? ((pubOf(c.username||x.applied_profile)||{}).followers), geek: c.followers!=null && !!c.username,
+      posted: (x.posts||[]).length>0, name: String(c.username||c.name||x.applied_profile||"").toLowerCase(), step: bpEffectiveIndex(x)*10,
+      views: (x.posts||[]).reduce((a,p)=> a + (+((p.stats||{}).views)||0), 0) }; };
+  const fI = i=> { const pp = pubOf(i.handle)||{}; return { fol: pp.followers ?? i.followers, geek:false, posted: (i.post_links||[]).length>0,
+      name: String(i.handle||i.name||"").toLowerCase(), step: bkStRank(i.status||"registered")*10/13*12, views: 0 }; };
+  const keep = f=> (!_ccSrc || (_ccSrc==="geek" ? f.geek : !f.geek))
+      && (!_ccPost || (_ccPost==="yes" ? f.posted : !f.posted))
+      && (!_ccTier || (f.fol!=null && (_ccTier==="nano" ? f.fol<1e4 : _ccTier==="micro" ? f.fol>=1e4&&f.fol<5e4 : _ccTier==="mid" ? f.fol>=5e4&&f.fol<2e5 : f.fol>=2e5)));
+  const P = P0.filter(x=> keep(fP(x))), Iall = Iall0.filter(r=> keep(fI(r.i)));
   // sheet creators the brand approved (or who already posted) ARE on the campaign — list them with everyone else,
   // only the still-to-register / still-screening ones stay under "uploaded / invited"
   const inCamp = r => bkStRank(r.i.status||"registered") >= bkStRank("approved");
@@ -5872,16 +5892,19 @@ function paintCampaignCommandInner(body){
     ${secTitle?`<div class="card cc-sec" id="ccSec"><div class="cc-sec-h"><h3>${secTitle}</h3><button class="ci-pop-x" id="ccSecX" aria-label="Close">✕</button></div>
       <div class="ac360-sec">${_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="traits"?`<div id="ctrCamp"></div>`:_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(d.creators||[])}</div></div>`:""}
     <div class="card cc-list">
-      <div class="cc-list-h"><h3>Creators <span class="muted">${shown.length}${_ccFilter==="needs"?" · ⚡ need you":_ccFilter!=="all"?` · ${esc((CC_TILES.find(t=>t[0]===_ccFilter)||[])[1]||"")}`:""}</span></h3>
+      <div class="cc-list-h"><h3>Creators <span class="muted">${P.length+Iall.length}${_ccFilter==="needs"?" · ⚡ need you":_ccFilter!=="all"?` · ${esc((CC_TILES.find(t=>t[0]===_ccFilter)||[])[1]||"")}`:""}</span></h3>
         ${needsYou?`<button type="button" class="bp-needs cc-needs${_ccFilter==="needs"?" on":""}" id="ccNeedsChip">⚡ <b>${needsYou}</b> need${needsYou>1?"":"s"} you${_ccFilter==="needs"?" · showing them ✕":" — tap to see"}</button>`:""}
         <input id="ccQ" type="search" placeholder="🔎 Name, @handle, phone, city…" value="${esc(_ccQ)}">
+        <select id="ccSort" title="Sort">${[["step","Sort: furthest step"],["step_asc","Sort: earliest step"],["fol_desc","Followers: high → low"],["fol_asc","Followers: low → high"],["name","Name A → Z"],["views","Most views"]].map(([v,l])=>`<option value="${v}"${_ccSort===v?" selected":""}>${l}</option>`).join("")}</select>
+        <select id="ccSrc" title="Who">${[["","Everyone"],["geek","On Geek OS"],["sheet","📸 Not yet on Geek"]].map(([v,l])=>`<option value="${v}"${_ccSrc===v?" selected":""}>${l}</option>`).join("")}</select>
+        <select id="ccTier" title="Followers">${[["","Any size"],["nano","Nano · <10K"],["micro","Micro · 10K–50K"],["mid","Mid · 50K–200K"],["macro","Macro · 200K+"]].map(([v,l])=>`<option value="${v}"${_ccTier===v?" selected":""}>${l}</option>`).join("")}</select>
+        <select id="ccPost" title="Posts">${[["","Posted or not"],["yes","Has posted"],["no","Not posted yet"]].map(([v,l])=>`<option value="${v}"${_ccPost===v?" selected":""}>${l}</option>`).join("")}</select>
         ${_ccFilter!=="all"?`<button class="mini-btn ghost" id="ccAll">Show everyone ✕</button>`:""}
         ${window.__isAdmin && ccNoPost().length ? `<button type="button" class="btn sm" id="ccBlockAll" style="background:#dc2626;border-color:#dc2626;color:#fff" title="Got the product but never posted">⛔ Blocklist who didn't post (${ccNoPost().length})</button>` : ""}</div>
       <div class="cc-hint muted">Tap a creator to open everything — every step with its time, contract, address, courier, video, posts with their numbers — and do any action right there. Changing a step asks only for what it needs (courier, video link, the link of every post).</div>
-      ${P.length ? bpTrackerHtml(P) : ""}
-      ${Ion.map(r=>ccInviteRowHtml(r.i, true)).join("")}
+      ${ccSortedHtml(P, Ion, fP, fI)}
       ${I.length ? `<div class="cc-invh">${P.length||Ion.length?"Uploaded / invited — not in the campaign yet":""}</div>` + I.map(r=>ccInviteRowHtml(r.i)).join("") : ""}
-      ${!shown.length?`<div class="muted" style="padding:14px">${rows.length?"Nobody here.":"Nobody on this campaign yet — use 🎯 Find matching creators or 📥 Bulk upload."}</div>`:""}
+      ${!(P.length+Iall.length)?`<div class="muted" style="padding:14px">${rows.length?"Nobody here.":"Nobody on this campaign yet — use 🎯 Find matching creators or 📥 Bulk upload."}</div>`:""}
     </div>`;
   body.querySelectorAll("[data-cctile]").forEach(b=> b.onclick = ()=>{ _ccFilter = _ccFilter===b.dataset.cctile && b.dataset.cctile!=="all" ? "all" : b.dataset.cctile; paintBarterProcess();
     const l = body.querySelector(".cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); });
@@ -5893,6 +5916,7 @@ function paintCampaignCommandInner(body){
   wireBarterProcess();
   wireCcInvites(body);
   const ba = body.querySelector("#ccBlockAll"); if(ba) ba.onclick = ()=> ccBlockNoPost(ba);
+  [["ccSort",v=>_ccSort=v],["ccSrc",v=>_ccSrc=v],["ccTier",v=>_ccTier=v],["ccPost",v=>_ccPost=v]].forEach(([id,set])=>{ const e = body.querySelector("#"+id); if(e) e.onchange = ()=>{ set(e.value); paintBarterProcess(); }; });
   if(_bpTab==="bulk"){ wireBulk(); }
   if(_bpOpen){ const sel = body.querySelector(`[data-ccstep="${_bpOpen}"]`); if(sel) mountInlineSetStep(_bpOpen); }
 }
@@ -9730,3 +9754,38 @@ if(typeof handleOAuthCallback==="function") handleOAuthCallback();
 // Auth gate boots the OS; startApp lives in login.js
 if(window.startApp) startApp();
 else init();
+
+/* ================= every table: click a column to sort, and a filter box above long tables =================
+ * Works on any <table class="tbl"> the app draws (reports, users, creators, invites…) without each page wiring it. */
+(function(){
+  const val = td => { const t = (td && td.innerText || "").trim(); if(!t || t==="—" || t==="-" || /🔒|hidden/.test(t)) return null;
+    const m = t.replace(/,/g,"").match(/^[₹$]?\s*(-?\d+(?:\.\d+)?)\s*(%|k|K|M|L)?\b/);
+    if(m){ let n = +m[1]; const u = m[2]; if(u==="k"||u==="K") n *= 1e3; else if(u==="M") n *= 1e6; else if(u==="L") n *= 1e5; return n; }
+    const d = Date.parse(t); if(!isNaN(d) && /\d{4}|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(t)) return d;
+    return t.toLowerCase(); };
+  document.addEventListener("click", e=>{
+    const th = e.target.closest && e.target.closest("table.tbl thead th"); if(!th || e.target.closest("button,a,input,select")) return;
+    const table = th.closest("table"), tb = table.tBodies[0]; if(!tb) return;
+    const i = [...th.parentNode.children].indexOf(th), dir = th.dataset.sort === "desc" ? "asc" : "desc";
+    th.parentNode.querySelectorAll("th").forEach(h=>{ delete h.dataset.sort; h.classList.remove("srt-a","srt-d"); });
+    th.dataset.sort = dir; th.classList.add(dir==="asc"?"srt-a":"srt-d");
+    const rows = [...tb.rows];
+    rows.sort((a,b)=>{ const x = val(a.cells[i]), y = val(b.cells[i]);
+      if(x==null && y==null) return 0; if(x==null) return 1; if(y==null) return -1;
+      const r = (typeof x==="number" && typeof y==="number") ? x-y : String(x).localeCompare(String(y), undefined, { numeric:true });
+      return dir==="asc" ? r : -r; });
+    rows.forEach(r=> tb.appendChild(r));
+  });
+  const addFilter = table=>{
+    if(table.__flt || !table.tBodies[0] || table.tBodies[0].rows.length < 8) return; table.__flt = true;
+    const box = document.createElement("div"); box.className = "tbl-flt";
+    box.innerHTML = `<input type="search" placeholder="🔎 Filter these rows — name, @handle, city, number…"><span class="muted"></span>`;
+    const holder = table.closest("div[style*='overflow']") || table; holder.parentNode.insertBefore(box, holder);
+    const inp = box.querySelector("input"), cnt = box.querySelector("span");
+    inp.oninput = ()=>{ const q = inp.value.trim().toLowerCase(); let n = 0;
+      [...table.tBodies[0].rows].forEach(r=>{ const ok = !q || r.innerText.toLowerCase().includes(q); r.style.display = ok ? "" : "none"; if(ok) n++; });
+      cnt.textContent = q ? `${n} of ${table.tBodies[0].rows.length}` : ""; };
+  };
+  const scan = ()=> document.querySelectorAll("table.tbl").forEach(addFilter);
+  new MutationObserver(()=>{ clearTimeout(scan._t); scan._t = setTimeout(scan, 150); }).observe(document.documentElement, { childList:true, subtree:true });
+})();
