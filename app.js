@@ -2868,6 +2868,8 @@ function mountCreatorSearch(root, opts){
     if(/^[a-z0-9]{3,24}$/.test(nmw) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csNamePanel($i("Res"), nmw, S, ()=>{ run(true); pool(); });
     // a city and/or a category picked → find more of them live on Instagram (full public profiles)
     const kw = csKeyword(S.q);
+    if((S.q || S.location || S.categories.length) && !/^[@#]|instagram\.com/i.test(S.q||"") && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csMarketPanel($i("Res"), S, ()=>{ run(true); pool(); });
+    S._seeds = rows.filter(r=> r.handle && (r.followers||0) > 0).sort((a,b)=> (b.followers||0)-(a.followers||0)).map(r=> String(r.handle).toLowerCase());
     if((kw || S.location || S.categories.length) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csScoutPanel($i("Res"), S, ()=>{ run(true); pool(); });
     root.querySelectorAll("[data-cspg]").forEach(b=> b.onclick = ()=>{ const k = b.dataset.cspk, n = +b.dataset.cspg;
       if(k==="P") S.pageP = n; else if(k==="E") S.pageE = n; else S.page = n;
@@ -3324,6 +3326,31 @@ async function csFillProfiles(handles, scope){
 }
 // City / category → live Instagram: hashtags of that city + category, the creators those posts name, each with full profile
 // a plain search word (not @handle, #hashtag, a link or a username) = what creators post about
+// Meta's official creator search (Instagram Creator Marketplace): keyword + category + city + follower size
+const _csMarketDone = {};
+async function csMarketPanel(res, S, refresh){
+  const t = CS_TIERS.find(x=>x[0]===S.tier);
+  const body = { action:"marketplace", q:S.q||"", category:(S.categories||[]).join(" "), city:S.location||"",
+    min_followers: S.tier==="custom" ? S.min : (t && t[2]) || "", max_followers: S.tier==="custom" ? S.max : (t && t[3]) || "" };
+  const key = JSON.stringify(body);
+  res.insertAdjacentHTML("afterbegin", `<div class="card cs-scout" id="csMktBox"><div class="cs-scout-h"><div><b>🛍️ Instagram Creator Marketplace</b>
+      <div class="muted">Meta's own creator search — every matching creator with photo, followers and bio, even if they're not on Geek OS.</div></div></div>
+    <div id="csMktMsg">${_csMarketDone[key] ? "" : `<div class="cs-scout-run"><span class="mk-spin sm"></span> Searching Instagram's creator database…</div>`}</div></div>`);
+  const paint = d => { const box = document.getElementById("csMktMsg"); if(!box) return;
+    if(!d || d.error){ box.innerHTML = `<div class="muted">${d && d.needs_review ? "⏳ " : "⚠️ "}${esc((d && d.error) || "Couldn't reach Instagram.")}</div>`; return; }
+    const P = d.profiles||[];
+    box.innerHTML = P.length ? `${d.test_data?`<div class="muted">Meta test data — real creators show once the app review is approved.</div>`:""}<div class="cs-grid">${P.map(p=> csIgCard(csIgSeed({ handle:p.handle, name:p.name, profile_picture_url:p.profile_picture_url, followers:p.followers, posts:p.media_count,
+          avg_likes:p.avg_likes, bio:p.bio, _done:true, engagement: p.followers && p.avg_likes!=null ? Math.round(10000*((+p.avg_likes||0)+(+p.avg_comments||0))/p.followers)/100 : null }), {})).join("")}</div>
+        <div class="muted" style="margin-top:6px">✓ ${P.length} creator(s) added to your search.</div>`
+      : `<div class="muted">No Creator Marketplace creators match “${esc(d.query||"")}”.</div>`;
+    if(typeof csWireCards==="function") csWireCards(box, {}); };
+  if(_csMarketDone[key]){ paint(_csMarketDone[key]); return; }
+  const { data, error } = await sb.functions.invoke("ig-discover", { body }).then(r=>r, e=>({error:e}));
+  const d = data || { error: error && (typeof fnError==="function" ? await fnError(error) : error.message) };
+  _csMarketDone[key] = d;
+  paint(d);
+  if(d && d.found && refresh) setTimeout(refresh, 400);
+}
 const _csNameDone = {};
 async function csNamePanel(res, w, S, refresh){
   const key = w + "|" + (S.location||"");
@@ -3365,7 +3392,7 @@ function csScoutPanel(res, S, refresh){
     msg.innerHTML = `<div class="cs-scout-run"><span class="mk-spin sm"></span> Reading Instagram posts and pulling profiles — about 20–40 seconds…</div>`;
     // never spin forever: give up after 90 seconds
     const { data, error } = await Promise.race([
-      sb.functions.invoke("ig-discover", { body:{ action:"scout", city, category:cat, keyword } }).then(r=>r, e=>({error:e})),
+      sb.functions.invoke("ig-discover", { body:{ action:"scout", city, category:cat, keyword, seeds: (S._seeds||[]).slice(0,12) } }).then(r=>r, e=>({error:e})),
       new Promise(r=>setTimeout(()=>r({ error:{ message:"Instagram is taking too long — please try again in a minute." } }), 90000)) ]);
     go.disabled = false; go.textContent = "🔄 Search again";
     if(error || !data || data.error){ msg.innerHTML = `<div class="muted">${esc((data && data.error) || (error && error.message) || "Couldn't reach Instagram.")}</div>`; return; }
@@ -3377,9 +3404,9 @@ function csScoutPanel(res, S, refresh){
 }
 function csScoutSummary(d){
   const P = d.profiles||[];
-  if(!(d.found||0)) return `<div class="cs-scout-sum">Read <b>${fmtNum(d.posts_read||0)}</b> public post(s) on ${(d.tags||[]).map(t=>"#"+esc(t)).join(", ")} but none of them @mentioned a creator.
+  if(!(d.found||0)) return `<div class="cs-scout-sum">Read <b>${fmtNum(d.posts_read||0)}</b> public post(s) on ${(d.tags||[]).map(t=>"#"+esc(t)).join(", ")}${d.seeds_read?` and the latest posts of ${fmtNum(d.seeds_read)} creators you already have`:""} but none of them @mentioned a new creator.
       <div class="muted">Instagram doesn't tell apps who posted a hashtag post — we can only pick up accounts that are @mentioned in captions. Try a city or a keyword (e.g. "skincare", "Pune"), or paste handles with + Add creators.</div></div>`;
-  return `<div class="cs-scout-sum">✅ Found <b>${fmtNum(d.found||0)}</b> account(s) on ${(d.tags||[]).map(t=>"#"+esc(t)).join(", ")} — <b>${fmtNum(d.with_stats||0)}</b> with full profile, added to the list below.
+  return `<div class="cs-scout-sum">✅ Found <b>${fmtNum(d.found||0)}</b> account(s) on ${(d.tags||[]).map(t=>"#"+esc(t)).join(", ")}${d.from_seeds?` and in the posts of ${fmtNum(d.seeds_read||0)} creators you already have (who they tag / collab with)`:""} — <b>${fmtNum(d.with_stats||0)}</b> with full profile, added to the list below.
       ${(d.no_stats||[]).length?`<span class="muted">${(d.no_stats||[]).length} are personal / private accounts (Instagram shares no numbers for those) — added as handles.</span>`:""}</div>`
     + (P.length ? `<div class="cs-grid">${P.slice(0,24).map(p=> csIgCard(csIgSeed({ handle:p.handle, name:p.name, profile_picture_url:p.profile_picture_url, followers:p.followers, posts:p.media_count,
           avg_likes:p.avg_likes, bio:p.bio, city:p.city, _done:true, engagement: p.followers && p.avg_likes!=null ? Math.round(10000*((+p.avg_likes||0)+(+p.avg_comments||0))/p.followers)/100 : null }), {})).join("")}</div>` : "");

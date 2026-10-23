@@ -280,6 +280,53 @@ Deno.serve(async (req) => {
         profiles: found.map(({ caption: _c, mentions: _m, ...r }: any) => r).sort((a: any, b: any) => (b.followers || 0) - (a.followers || 0)) });
     }
 
+    // Instagram Creator Marketplace (Meta's official creator search): keyword / category / city / follower range →
+    // creators with photo, bio, country, category, followers. Needs instagram_creator_marketplace_discovery
+    // (advanced access after App Review — standard access returns Meta's test data) and the brand onboarded.
+    if (action === "marketplace") {
+      const { data: shared } = await admin.schema("api").rpc("ops_discovery_token");
+      const src = shared?.platform === "facebook" ? await openRow(shared) : null;
+      if (!src?.access_token || !src?.ig_user_id) return json({ error: "Instagram search isn't switched on yet.", needs_facebook: true }, 200);
+      const igId = encodeURIComponent(String(src.ig_user_id));
+      // the Page token (not the user token) is what Creator Marketplace asks for
+      let tokenForCm = String(src.access_token);
+      const pg = await fj(`${FB_GRAPH}/me/accounts?fields=id,access_token,instagram_business_account&limit=50&access_token=${encodeURIComponent(tokenForCm)}`);
+      const pageTok = (pg?.data ?? []).find((p: any) => String(p?.instagram_business_account?.id || "") === String(src.ig_user_id))?.access_token;
+      if (pageTok) tokenForCm = pageTok;
+      const words = [String(body?.q || ""), String(body?.category || ""), String(body?.city || "")].map((x) => x.trim()).filter(Boolean).join(" ").slice(0, 80);
+      const p = new URLSearchParams();
+      p.set("creator_countries", JSON.stringify(["IN"]));
+      if (words) p.set("query", words);
+      const mn = Number(body?.min_followers) || 0, mx = Number(body?.max_followers) || 0;
+      if (mn > 0) p.set("creator_min_followers", String(mn));
+      if (mx > 0) p.set("creator_max_followers", String(mx));
+      p.set("limit", "30");
+      const CMV = "https://graph.facebook.com/v25.0";
+      const ask = (fields: string) => { const q = new URLSearchParams(p); q.set("fields", fields); q.set("access_token", tokenForCm);
+        return fj(`${CMV}/${igId}/creator_marketplace_creators?${q.toString()}`, 20000); };
+      let j = await ask("id,username,profile_picture_url,biography,country,gender,category,is_account_verified,insights.metrics(total_followers)");
+      if (!Array.isArray(j?.data) && Number(j?.error?.code) === 100) j = await ask("id,username,profile_picture_url,biography,country,gender,category,is_account_verified");
+      if (!Array.isArray(j?.data)) {
+        const m = String(j?.error?.message || "Instagram couldn't run the Creator Marketplace search.");
+        const perm = Number(j?.error?.code) === 10 || /permission|eligib|onboard/i.test(m);
+        return json({ error: perm ? `Creator Marketplace isn't open for this app yet (${m}). It needs Meta's approval for instagram_creator_marketplace_discovery.` : m, needs_review: perm }, 200);
+      }
+      const num = (x: any) => { const v = x?.insights?.data?.find?.((d: any) => d?.name === "total_followers"); const n = v?.values?.[0]?.value ?? v?.total_value?.value; return typeof n === "number" ? n : null; };
+      const profiles = (j.data as any[]).filter((c) => c?.username).map((c) => ({
+        handle: String(c.username).toLowerCase(), name: null, bio: String(c.biography || "").slice(0, 300), followers: num(c),
+        profile_picture_url: c.profile_picture_url ?? null, category: c.category ?? null, country: c.country ?? null, verified: !!c.is_account_verified, source: "marketplace" }));
+      // followers missing → fill the top ones from their public profile
+      const need = profiles.filter((x) => x.followers == null).slice(0, 12);
+      const FT = encodeURIComponent(String(src.access_token));
+      const filled = await Promise.all(need.map((x) => bdProfile(igId, FT, x.handle)));
+      filled.forEach((bp: any, i) => { if (bp && !bp.perm && !bp.limit) Object.assign(need[i], { followers: bp.followers, name: bp.name, avg_likes: bp.avg_likes, avg_comments: bp.avg_comments, media_count: bp.media_count, profile_picture_url: need[i].profile_picture_url || bp.profile_picture_url }); });
+      if (profiles.length) {
+        const { error: se } = await userClient.schema("api").rpc("save_external_candidates", { p_items: profiles.map((x) => ({ ...x, caption: x.category || "" })) });
+        if (se) console.error("marketplace save:", se.message);
+      }
+      return json({ ok: true, query: words, found: profiles.length, profiles, test_data: !!j?.is_test_data });
+    }
+
     if (action === "scout") {
       const city = String(body?.city || "").trim().slice(0, 40);
       const category = String(body?.category || "").trim().slice(0, 40);
@@ -328,7 +375,26 @@ Deno.serve(async (req) => {
           }
         }
       }
-      if (!used.length) {
+      // hashtag posts rarely @mention anyone → also read the latest posts of creators we already know for this
+      // search (seeds) and pick up the creators THEY tag / collab with ("snowball")
+      const seeds: string[] = (Array.isArray(body?.seeds) ? body.seeds : []).map((x: unknown) => String(x || "").toLowerCase().replace(/^@/, ""))
+        .filter((h: string) => /^[a-z0-9._]{2,30}$/.test(h)).slice(0, 12);
+      const seedSet = new Set(seeds);
+      let fromSeeds = 0;
+      if (count.size < 15 && seeds.length) {
+        const sp = await Promise.all(seeds.map((h) => bdProfile(igId, FT, h)));
+        sp.forEach((p: any, i) => {
+          if (!p || p.perm || p.limit) return;
+          for (const x of (String(p.caption || "").match(/@([A-Za-z0-9._]{2,30})/g) || [])) {
+            const h = x.slice(1).toLowerCase().replace(/\.+$/, "");
+            if (h.length < 2 || seedSet.has(h) || h === p.handle) continue;
+            if (!count.has(h)) fromSeeds++;
+            count.set(h, (count.get(h) || 0) + 1);
+            if (!seenIn.has(h)) seenIn.set(h, "@" + seeds[i]);
+          }
+        });
+      }
+      if (!used.length && !count.size) {
         return json({ error: lastErr ? `Instagram refused the search: ${lastErr}` : "Instagram has no public posts for these hashtags right now.", needs_permission: permErr, tags }, 200);
       }
       // most-mentioned first; pull the full public profile of each (Business / Creator accounts only — Meta's rule)
@@ -344,7 +410,7 @@ Deno.serve(async (req) => {
           const h = batch[k];
           if (p && (p as any).perm) { bdPerm = true; noStats.push(h); return; }
           if (!p) { noStats.push(h); return; }
-          profiles.push({ ...p, source: "hashtag", city: cityFor(p.bio, city), category: want.join(","), caption: `${p.caption} #${seenIn.get(h)}`.slice(0, 1500) });
+          profiles.push({ ...p, source: "hashtag", city: cityFor(p.bio, city), category: want.join(","), caption: `${p.caption} ${String(seenIn.get(h) || "").startsWith("@") ? "" : "#"}${seenIn.get(h)}`.slice(0, 1500) });
         });
       }
       const items = [...profiles, ...noStats.map((h) => ({ handle: h, source: "hashtag", city: city || null, category: want.join(","), caption: `#${seenIn.get(h)}` }))];
@@ -354,7 +420,7 @@ Deno.serve(async (req) => {
       }
       profiles.sort((a, b) => (b.followers || 0) - (a.followers || 0));
       return json({ ok: true, tags: used, found: ranked.length, with_stats: profiles.length,
-        posts_read: caps.reduce((n, c) => n + (c?.media?.length || 0), 0),
+        posts_read: caps.reduce((n, c) => n + (c?.media?.length || 0), 0), seeds_read: seeds.length, from_seeds: fromSeeds,
         note: bdPerm ? "Handles added. Followers / engagement need Meta's instagram_manage_insights permission — once it's on, reconnect Facebook and search again." : undefined,
         profiles: profiles.map(({ caption: _c, mentions: _m, ...r }) => r), no_stats: noStats });
     }
