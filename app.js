@@ -5608,10 +5608,12 @@ function bpNowBox(x){
     <div class="ci-evrow">${n.video?`<a class="btn sm ghost" href="${esc(safeUrl(n.video))}" target="_blank" rel="noopener">▶ Watch the video</a>`:""}${n.acts.map(a=> bpActBtn(a, P)).join("")}${n.acts.some(a=>a[0]==="bpchat")?"":`<button type="button" class="btn sm ghost" data-bpchat="${esc(P)}">💬 WhatsApp</button>`}</div></div>`;
 }
 // "Joined via <campaign>" — the campaign (or creator upload) that brought a creator onto Geek OS
+// @handle → their Instagram in a new tab (doesn't open the row it sits in)
+function igLink(h){ h = String(h||"").replace(/^@/,""); return h ? `<a class="ig-h" href="https://instagram.com/${encodeURIComponent(h)}" target="_blank" rel="noopener" title="Open @${esc(h)} on Instagram">@${esc(h)} ↗</a>` : ""; }
 function jvBadge(jv, small){
   if(!jv || (!jv.campaign && !jv.how)) return "";
-  const t = `Joined Geek OS via ${jv.campaign||"Creator upload"}${jv.how?` (${jv.how})`:""}${jv.at?` · ${fmtDate(jv.at)}`:""}`;
-  return `<span class="jv-badge${small?" sm":""}" title="${esc(t)}">🚪 ${small?"via ":"Joined via "}<b>${esc(jv.campaign||"Creator upload")}</b>${!small&&jv.how?` · ${esc(jv.how)}`:""}${!small&&jv.at?` · ${esc(fmtDate(jv.at))}`:""}</span>`;
+  const t = `Joined Geek OS via ${jv.campaign||"Creator upload"}${jv.how?` (${jv.how})`:""}${jv.at?` · ${fmtDate(jv.at)}`:""}${jv.campaign?" — tap to open the campaign":""}`;
+  return `<span class="jv-badge${small?" sm":""}${jv.campaign?" jv-link":""}"${jv.campaign?` data-jvcamp="${esc(jv.campaign)}" role="link" tabindex="0"`:""} title="${esc(t)}">🚪 ${small?"via ":"Joined via "}<b>${esc(jv.campaign||"Creator upload")}</b>${!small&&jv.how?` · ${esc(jv.how)}`:""}${!small&&jv.at?` · ${esc(fmtDate(jv.at))}`:""}</span>`;
 }
 // the "more actions" row without the buttons the next-action box already shows
 function bpDedupe(shown, html){
@@ -6715,7 +6717,7 @@ function bpAnalyticsHtml(){
       ${(window._bpRepRows = rows, rows).map((r, ri)=>{ const c=r.creator||{}, s=r.totals||{}, n=v=>v==null?"—":fmtNum(v);
         const h = bpRepHandle(r), pp = pubOf(h), pic = c.profile_picture_url || (pp && pp.profile_picture_url), fol = c.followers ?? (pp && pp.followers), off = bpRepOff(r);
         return `<tr><td><div style="display:flex;gap:10px;align-items:center">${pic?`<img class="ap-pic" style="width:38px;height:38px" src="${esc(safeUrl(pic))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((h||"?").slice(0,2).toUpperCase())}</span>`}
-          <div style="min-width:0"><b>${h?"@"+esc(h):esc(c.name||"—")}</b> ${off?NOT_ON_GEEK:""}${(c.name||(pp&&pp.name))?`<div class="muted" style="font-size:11px">${esc(c.name||pp.name)}</div>`:""}
+          <div style="min-width:0"><b>${h?igLink(h):esc(c.name||"—")}</b> ${off?NOT_ON_GEEK:""}${(c.name||(pp&&pp.name))?`<div class="muted" style="font-size:11px">${esc(c.name||pp.name)}</div>`:""}
           ${pp&&pp.engagement!=null&&!c.followers?`<div class="muted" style="font-size:11px">${esc(pp.engagement)}% avg engagement</div>`:""}${(r.posts||[]).map(p=>p.permalink?` <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener" title="${esc(p.media_type)}">↗</a>`:"").join("")}</div></div></td>
           <td>${n(fol)}</td><td>${(r.posts||[]).length}</td><td>${n(s.views)}</td><td>${pubOnly(r)&&s.reach==null ? (estReach(s.views)!=null ? `<span class="muted" title="Estimated from views × ${Math.round(campReachRatio()*100)}% (reach ÷ views of this campaign's connected creators). Real reach: add their insights screenshot.">≈${fmtNum(estReach(s.views))}</span>` : NA_PUB) : n(s.reach)}</td><td>${s.likes==null&&pubOnly(r)&&(s.views!=null||s.comments!=null)?`<span class="muted" title="The creator hides like counts on Instagram, so Meta doesn't share them">🙈 hidden</span>`:n(s.likes)}</td><td>${n(s.comments)}</td><td>${pubOnly(r)&&s.shares==null?NA_PUB:n(s.shares)}</td><td>${pubOnly(r)&&s.saves==null?NA_PUB:n(s.saves)}</td>
           <td>${r.on_sheet?'<span class="tag good">Done</span> <span class="muted" style="font-size:11px">· bulk sheet, not registered</span>':r.stage==="completed"?'<span class="tag good">Done</span>':r.stage==="published"?'<span class="tag warn">Live</span>':'<span class="tag">Approved — not posted</span>'}${(r.posts||[]).length && (r.posts||[]).every(p=>!p.stats||!Object.keys(p.stats).filter(k=>!["at","source"].includes(k)).length)?'<div class="muted" style="font-size:11px">numbers coming</div>':(r.posts||[]).some(p=>p.stats&&p.stats.source==="public")?'<div class="muted" style="font-size:11px">public numbers</div>':""}</td>
@@ -7665,7 +7667,7 @@ function paintCreators(){
         const pic = c.pic ? `<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${esc(String(c.name||"?").slice(0,2).toUpperCase())}'}))">`
                           : `<span class="avatar">${esc(String(c.name||"?").slice(0,2).toUpperCase())}</span>`;
         return `<div class="acr-lr" data-acr="${esc(c.member_id)}" tabindex="0">
-          <span class="acr-lc-who">${pic}<span><b>${esc(c.name)}</b><span class="muted">${c.ig_username?"@"+esc(c.ig_username):"Instagram not connected"}${(c.ig_accounts||[]).length>1?` · ${(c.ig_accounts||[]).length} accounts`:""}</span>${jvBadge(c.joined_via, true)}</span></span>
+          <span class="acr-lc-who">${pic}<span><b>${esc(c.name)}</b><span class="muted">${c.ig_username?igLink(c.ig_username):"Instagram not connected"}${(c.ig_accounts||[]).length>1?` · ${(c.ig_accounts||[]).length} accounts`:""}</span>${jvBadge(c.joined_via, true)}</span></span>
           <span data-l="Followers"><b>${kNum(c.followers)}</b></span>
           <span data-l="Engagement">${c.engagement!=null?c.engagement+"%":"—"}</span>
           <span data-l="Per Reel">${c.reel_rate?"₹"+kNum(Number(c.reel_rate)):"—"}</span>
@@ -7686,7 +7688,7 @@ function paintCreators(){
                         : `<span class="avatar">${esc(String(c.name||"?").slice(0,2).toUpperCase())}</span>`;
       return `<div class="acr-card" data-acr="${esc(c.member_id)}" tabindex="0">
         <div class="acr-top">${pic}<div style="min-width:0"><div class="acr-name">${esc(c.name)}</div>
-          <div class="muted acr-handle">${c.ig_username?"@"+esc(c.ig_username):'<span class="tag warn">Instagram not connected</span>'}</div>${jvBadge(c.joined_via, true)}
+          <div class="muted acr-handle">${c.ig_username?igLink(c.ig_username):'<span class="tag warn">Instagram not connected</span>'}</div>${jvBadge(c.joined_via, true)}
           ${(c.ig_accounts||[]).length ? `<button type="button" class="acr-igs" data-igaccts="${esc(c.member_id)}" data-igname="${esc(c.name||"")}">📸 ${(c.ig_accounts||[]).length} Instagram ${(c.ig_accounts||[]).length>1?"accounts":"account"} →</button>` : ""}</div>
           ${c.complete?'<span class="tag good">Ready</span>':`<span class="tag warn">${c.done??0}/${c.total??"?"}</span>`}</div>
         <div class="acr-stats"><div><b>${kNum(c.followers)}</b><span>Followers</span></div><div><b>${c.engagement!=null?c.engagement+"%":"—"}</b><span>Engagement</span></div>
@@ -9852,3 +9854,21 @@ document.addEventListener("click", e=>{
     });
   }, true);
 })();
+
+
+/* ================= clickable @handles and "via <campaign>" badges, wherever they are ================= */
+document.addEventListener("click", async e=>{
+  const ig = e.target.closest && e.target.closest("a.ig-h");
+  if(ig){ e.stopPropagation(); return; }                        // the link opens Instagram; the row behind it stays shut
+  const jb = e.target.closest && e.target.closest("[data-jvcamp]");
+  if(!jb) return;
+  e.preventDefault(); e.stopPropagation();
+  const name = jb.dataset.jvcamp;
+  const { data } = await sb.from("campaigns").select("id,name").eq("name", name).limit(1).then(r=>r, ()=>({ data:null }));
+  const c = data && data[0];
+  if(!c){ gateToast(`Couldn't find the campaign “${name}”.`); return; }
+  document.querySelectorAll(".modal-overlay").forEach(m=> m.remove());
+  if(typeof currentPage!=="undefined") currentPage = "campaigns";
+  document.querySelectorAll("[data-page]").forEach(n=> n.classList.toggle("active", n.dataset.page==="campaigns"));
+  openCampaignWorkspace(c.id); window.scrollTo(0,0);
+}, true);
