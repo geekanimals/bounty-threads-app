@@ -5838,7 +5838,12 @@ function paintCampaignCommandInner(body){
       const l = document.querySelector("#bpBody .cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); }; }
   const tile = t => `<button type="button" class="cc-tile${_ccFilter===t[0]?" on":""}" data-cctile="${t[0]}" title="${esc(t[2]||t[1])}"><b>${rows.filter(r=>ccMatch(t[0], r)).length}</b><span>${esc(t[1])}</span>${t[2]&&t[0]!=="all"?`<i>${esc(t[2])}</i>`:""}</button>`;
   const secTitle = { bulk:"📥 Bulk upload", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand" }[_bpTab];
-  const P = shown.filter(r=>r.kind==="p").map(r=>r.x), I = shown.filter(r=>r.kind==="i");
+  const P = shown.filter(r=>r.kind==="p").map(r=>r.x), Iall = shown.filter(r=>r.kind==="i");
+  // sheet creators the brand approved (or who already posted) ARE on the campaign — list them with everyone else,
+  // only the still-to-register / still-screening ones stay under "uploaded / invited"
+  const inCamp = r => bkStRank(r.i.status||"registered") >= bkStRank("approved");
+  const Ion = Iall.filter(inCamp).sort((a,b)=> bkStRank(b.i.status)-bkStRank(a.i.status)), I = Iall.filter(r=> !inCamp(r));
+  { const need = Ion.map(r=> r.i.handle).filter(Boolean).filter(h=> !pubOf(h)); if(need.length) setTimeout(()=> pubFill(need, ()=> paintBarterProcess()), 0); }
   body.innerHTML = `
     ${pb.saved===false?`<div class="ac360-miss">📜 No contract terms or video brief saved yet — creators get the defaults. <a href="#" id="bpGoTerms">Set them now →</a></div>`:""}
     <div class="cc-flow">${CC_TILES.map(tile).join("")}</div>
@@ -5851,7 +5856,8 @@ function paintCampaignCommandInner(body){
         ${_ccFilter!=="all"?`<button class="mini-btn ghost" id="ccAll">Show everyone ✕</button>`:""}</div>
       <div class="cc-hint muted">Tap a creator to open everything — every step with its time, contract, address, courier, video, posts with their numbers — and do any action right there. Changing a step asks only for what it needs (courier, video link, the link of every post).</div>
       ${P.length ? bpTrackerHtml(P) : ""}
-      ${I.length ? `<div class="cc-invh">${P.length?"Uploaded / invited — not in the campaign yet":""}</div>` + I.map(r=>ccInviteRowHtml(r.i)).join("") : ""}
+      ${Ion.map(r=>ccInviteRowHtml(r.i, true)).join("")}
+      ${I.length ? `<div class="cc-invh">${P.length||Ion.length?"Uploaded / invited — not in the campaign yet":""}</div>` + I.map(r=>ccInviteRowHtml(r.i)).join("") : ""}
       ${!shown.length?`<div class="muted" style="padding:14px">${rows.length?"Nobody here.":"Nobody on this campaign yet — use 🎯 Find matching creators or 📥 Bulk upload."}</div>`:""}
     </div>`;
   body.querySelectorAll("[data-cctile]").forEach(b=> b.onclick = ()=>{ _ccFilter = _ccFilter===b.dataset.cctile && b.dataset.cctile!=="all" ? "all" : b.dataset.cctile; paintBarterProcess();
@@ -5867,24 +5873,26 @@ function paintCampaignCommandInner(body){
   if(_bpOpen){ const sel = body.querySelector(`[data-ccstep="${_bpOpen}"]`); if(sel) mountInlineSetStep(_bpOpen); }
 }
 // someone uploaded / invited who isn't in the campaign yet (not registered, or registered and connecting)
-function ccInviteRowHtml(i){
+function ccInviteRowHtml(i, inCamp){
   const open = _ccInvOpen === i.invite_id, st = i.status==="invited" ? "registered" : (i.status||"registered");
+  const pp = i.handle ? pubOf(i.handle) : null, pic = pp && pp.profile_picture_url, fol = (pp && pp.followers) ?? i.followers;
   const who = i.handle ? "@"+i.handle : (i.name || i.phone || i.email || "Creator");
   const links = (i.post_links||[]), miss = (i.needs||[]);
-  const nx = !i.registered ? { turn:"creator", title:"Stuck: not registered yet", text:`Invite sent ${i.invites_sent||1}×${i.last_invited_at?` · last ${fmtDate(i.last_invited_at)}`:""}` }
+  const nx = inCamp && st==="posted" ? { turn:"done", title:"Done ✓", text: i.registered ? "posted — on Geek OS, Instagram not connected yet" : "posted — from the sheet, not on Geek OS yet" }
+           : !i.registered ? { turn:"creator", title:"Stuck: not registered yet", text:`Invite sent ${i.invites_sent||1}×${i.last_invited_at?` · last ${fmtDate(i.last_invited_at)}`:""}` }
            : miss.length ? { turn:"creator", title:`Stuck: ${miss.map(x=>/whatsapp/i.test(x)?"connect WhatsApp":"connect Instagram").join(" + ")}`, text:"Registered on Geek OS — joins the campaign once connected." }
            : { turn:"creator", title:"Joining the campaign…", text:"" };
   const wa = i.last_wa ? (i.last_wa.status==="sent"||i.last_wa.status==="delivered"||i.last_wa.status==="read" ? "WhatsApp ✓" : i.last_wa.status==="failed" ? "WhatsApp ✗" : "WhatsApp …") : "";
   return `<div class="card bp-card cc-inv${open?" open":""}">
     <div class="bp-head" data-ccinvopen="${esc(i.invite_id)}">
-      <span class="avatar">${esc(String(who).replace(/^@/,"").slice(0,2).toUpperCase())}</span>
+      ${pic?`<img class="ap-pic" src="${esc(safeUrl(pic))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc(String(who).replace(/^@/,"").slice(0,2).toUpperCase())}</span>`}
       <div style="flex:1;min-width:0">
         <div class="r-title"><b>${esc(who)}</b>${i.name&&i.handle?` <span class="muted">${esc(i.name)}</span>`:""}
-          ${i.registered?`<span class="tag warn">On Geek OS · ${miss.length?esc(miss.map(x=>/whatsapp/i.test(x)?"connect WhatsApp":"connect Instagram").join(" + ")):"joining"}</span>`:`<span class="tag">Invited · not registered</span>`}
+          ${inCamp ? NOT_ON_GEEK + (i.registered?`<span class="tag warn">On Geek OS · connect Instagram</span>`:"") : i.registered?`<span class="tag warn">On Geek OS · ${miss.length?esc(miss.map(x=>/whatsapp/i.test(x)?"connect WhatsApp":"connect Instagram").join(" + ")):"joining"}</span>`:`<span class="tag">Invited · not registered</span>`}
           ${i.ig_connected?'<span class="tag good">📸 Instagram</span>':""}${links.length?`<span class="tag good">🔗 ${links.length} post link${links.length>1?"s":""}</span>`:""}</div>
-        <div class="r-sub">${esc(bkStLabel(st))} <span class="muted">(from the upload)</span>${wa?` · ${esc(wa)}`:""}${i.profile_pct!=null?` · profile ${i.profile_pct}%`:""}</div>
+        <div class="r-sub">${fol!=null?fmtNum(fol)+" followers · ":""}${esc(bkStLabel(st))} <span class="muted">(from the upload)</span>${wa?` · ${esc(wa)}`:""}${i.profile_pct!=null?` · profile ${i.profile_pct}%`:""}</div>
         <div class="bp-stuck">${bpTurnChip(nx)} <b>${esc(nx.title)}</b>${nx.text?` <span class="muted">${esc(nx.text)}</span>`:""}</div></div>
-      <span class="bp-rowacts">${!i.registered||miss.length?`<button type="button" class="btn sm bp-rowact" data-hubre="${esc(i.invite_id)}" data-ccre="1">↻ Resend invite</button>`:""}<button type="button" class="bp-chatbtn" data-ccinvchat="${esc(i.invite_id)}" title="Messages &amp; WhatsApp">💬</button></span>
+      <span class="bp-rowacts">${(!i.registered||miss.length) && !(inCamp && st==="posted")?`<button type="button" class="btn sm bp-rowact" data-hubre="${esc(i.invite_id)}" data-ccre="1">↻ Resend invite</button>`:""}<button type="button" class="bp-chatbtn" data-ccinvchat="${esc(i.invite_id)}" title="Messages &amp; WhatsApp">💬</button></span>
       <span class="bp-caret">${open?"▲":"▼"}</span></div>
     ${open?`<div class="bp-detail"><div class="cc-invchat" data-invchat="${esc(i.invite_id)}">${skel("list",2)}</div><div class="bp-facts">
         ${[i.phone?`📱 <a href="https://wa.me/${esc(String(i.phone).replace(/\D/g,""))}" target="_blank" rel="noopener">${esc(i.phone)}</a>`:"", i.email?`✉️ ${esc(i.email)}`:"", i.city?`📍 ${esc(i.city)}`:"", i.followers?`👥 ${fmtNum(i.followers)} followers`:""].filter(Boolean).map(x=>`<div>${x}</div>`).join("")}
