@@ -90,7 +90,7 @@ function renderNav(){
       const tab = key.split(":")[1];
       const a = el("a","", `<span class="ic">${ic}</span><span>${esc(label)}</span><b class="nav-badge" data-navcount="${key}"></b>`);
       a.setAttribute("data-page", key);
-      if(currentPage==="admin" && (_adminTab===tab || (tab==="advanced" && typeof ADMIN_ADVANCED!=="undefined" && ADMIN_ADVANCED.some(t=> t[0]===_adminTab)))) a.classList.add("active");
+      if(currentPage==="admin" && (_adminTab===tab || (tab==="settings" && typeof ADMIN_ADVANCED!=="undefined" && ADMIN_ADVANCED.some(t=> t[0]===_adminTab)))) a.classList.add("active");
       a.onclick = ()=>{ _adminTab = tab; currentPage = "admin"; renderShell(); if(window.innerWidth<=760) $("#sidebar").classList.remove("open"); };
       nav.appendChild(a);
     });
@@ -2426,7 +2426,7 @@ function wireApplicantButtons(root, reload){
 async function wireCampaignDelete(c){
   const btn = document.getElementById("wsDel"), note = document.getElementById("wsDelNote");
   if(!btn) return;
-  const back = ()=>{ currentPage = window.__isAdmin ? "admin" : "campaigns"; if(window.__isAdmin) _adminTab = "campaigns"; renderShell(); };
+  const back = ()=>{ currentPage = "campaigns"; renderShell(); };
   if(window.__isAdmin){ btn.onclick = ()=> openCampaignDeleteModal({ mode:"admin", campaign:c, done:back }); return; }
   const { data:r } = await sb.rpc("campaign_delete_status", { p_campaign:c.id }).then(x=>x, ()=>({data:null}));
   if(!document.body.contains(btn)) return;
@@ -8066,6 +8066,13 @@ async function cuLoadList(){
     const { error:e } = await sb.schema("api").rpc("creator_upload_delete", { p_id: b.dataset.cudel }).then(x=>x, e2=>({error:e2}));
     if(e){ gateToast(e.message||String(e)); return; } gateToast("Deleted ✓"); cuLoadList(); });
 }
+// Team & integrations (what was the separate Settings page): invite teammates, members, org profile, social logins
+function adminTeamSettings(body){
+  const t = document.createElement("div"); t.innerHTML = renderSettings();
+  const h = t.querySelector(".page-head, .ph, header"); if(h) h.remove();
+  body.innerHTML = t.innerHTML;
+  try{ renderIntegrations(); wireInviteForm(); loadTeam(); wireOrgProfileForm(); loadOrgProfile(); }catch(e){ console.warn("settings", e); }
+}
 function adminAdvanced(body){
   const T = [["orgs","🏢","Workspaces","Every agency / brand workspace and its members"],["data","🗄","Data browser","Look at any table row by row"],
              ["audit","📜","Audit log","Every change, who made it and when"],["admins","🛡","Super admins","Who has Super Admin access"],
@@ -8262,10 +8269,11 @@ async function adminActivityTimeline(member, row, target){
 }
 
 // the tools that live under ⚙️ Advanced (no tab row any more — the sidebar opens each page)
-const ADMIN_ADVANCED = [["advanced","⚙️ Advanced"],["orgs","Workspaces"],["data","Data browser"],["audit","Audit log"],["admins","Super admins"],["approvals","Account approvals (old view)"],["campaigns","All campaigns (old view)"]];
+// ⚙️ Settings — every platform / team setting on one page (tabs), nothing duplicated from the sidebar
+const ADMIN_ADVANCED = [["settings","👥 Team & integrations"],["admins","🛡 Super admins"],["orgs","🏢 Workspaces"],["audit","📜 Audit log"],["data","🗄 Data browser"],["check","🩺 System check"],["campaigns","🗑 Campaign delete requests"]];
 const ADMIN_TITLES = { overview:"Command centre", applications:"All applications", creators:"Creators", users:"All users", delivery:"WhatsApp & email", bot:"WhatsApp bot",
-  upload:"Creator upload", activity:"Activity", check:"System check", advanced:"Advanced", orgs:"Workspaces", data:"Data browser", audit:"Audit log", admins:"Super admins",
-  approvals:"Account approvals", campaigns:"All campaigns" };
+  upload:"Creator upload", activity:"Activity", check:"Settings", advanced:"Settings", settings:"Settings", orgs:"Settings", data:"Settings", audit:"Settings", admins:"Settings",
+  approvals:"Approvals", campaigns:"Settings" };
 function renderAdmin(){
   let html = pageHead("Super Admin" + (ADMIN_TITLES[_adminTab] ? " · " + ADMIN_TITLES[_adminTab] : ""), "Full cross-workspace control — every record, every change, with timestamps.");
   if(ADMIN_ADVANCED.some(t=> t[0]===_adminTab)) html += `<div class="admin-tabs">${ADMIN_ADVANCED.map(t=>`<button class="${_adminTab===t[0]?'act':''}" data-atab="${t[0]}">${esc(t[1])}</button>`).join("")}</div>`;
@@ -8277,7 +8285,8 @@ function loadAdmin(){
   document.querySelectorAll("[data-atab]").forEach(b=> b.onclick = ()=>{ _adminTab = b.dataset.atab; currentPage="admin"; renderShell(); });
   const body = document.getElementById("adminBody");
   if(!body || !window.sb) return;
-  ({ advanced:adminAdvanced, overview:adminOverview, creators:adminCreators, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, delivery:adminDelivery, bot:adminBotPage, upload:adminCreatorUpload, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+  if(_adminTab==="advanced") _adminTab = "settings";
+  ({ settings:adminTeamSettings, advanced:adminTeamSettings, overview:adminOverview, creators:adminCreators, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, delivery:adminDelivery, bot:adminBotPage, upload:adminCreatorUpload, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
 }
 
 /* System check — live-verifies the deployed database matches the code (tables, columns, RPCs).
@@ -8970,7 +8979,8 @@ function renderIntegrations(){
 
 function renderSettings(){
   const org = (window.Auth && Auth.profile && Auth.profile.org) || "your org";
-  const roleOpts = (typeof ROLE_OPTIONS!=="undefined"?ROLE_OPTIONS:[["creator","Creator"]]).map(r=>`<option value="${r[0]}">${esc(r[1])}</option>`).join("");
+  // teammates — creators join from the app / invites, never from here
+  const roleOpts = [["manager","Team member (manager)"],["owner","Owner — full access"],["brand","Brand client (view their campaigns)"]].map(r=>`<option value="${r[0]}">${esc(r[1])}</option>`).join("");
   let html = pageHead("Settings","Team, roles & social integrations.");
   html += `<div class="card"><h3>Team</h3>
     <p class="muted" style="margin-bottom:12px">Invite teammates to <b>${esc(org)}</b>. When they sign up with the invited email, they join this org automatically — no new workspace.</p>
@@ -9106,7 +9116,7 @@ function wireInviteForm(){
     const f = new FormData(form), msg = document.getElementById("inviteMsg"), err = document.getElementById("inviteErr");
     const btn = form.querySelector("button[type=submit]");
     err.textContent=""; msg.textContent=""; msg.className="lead-msg"; btn.disabled=true; btn.textContent="Sending…";
-    const row = { email:(f.get("email")||"").toLowerCase(), role:f.get("role")||"creator", status:"pending" };
+    const row = { email:(f.get("email")||"").toLowerCase(), role:f.get("role")||"manager", status:"pending" };
     if(window.Auth && Auth.profile){ row.org_id = Auth.profile.org_id; row.org_name = Auth.profile.org; }
     try{
       if(!window.sb) throw new Error("Database not connected.");
