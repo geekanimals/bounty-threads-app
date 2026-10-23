@@ -3225,7 +3225,10 @@ async function openPublicAnalytics(handle, links, name){
   document.body.appendChild(m); m.classList.add("open");
   m.querySelector("#paStX").onclick = ()=> m.remove(); m.onclick = e=>{ if(e.target.id==="paStatsModal") m.remove(); };
   const body = m.querySelector("#paStBody");
-  const [live, kept] = await Promise.all([ fetchPublicStats(handle, links), sb.schema("api").rpc("creator_public_stats", { p_handle: handle }).then(r=>r.data, ()=>null) ]);
+  const liveP = fetchPublicStats(handle, links);
+  const kept = await sb.schema("api").rpc("creator_public_stats", { p_handle: handle }).then(r=>r.data, ()=>null);
+  // saved numbers show straight away, live numbers replace them as soon as Instagram answers (and are saved)
+  const paintA = (live, final)=>{
   const P = (live && live.profile) || (kept && kept.profile) || null;
   const posts = (live && live.posts) || ((kept && kept.posts)||[]).map(x=>({ ...x, found: x.likes!=null || x.views!=null }));
   const recent = (live && live.recent) || [];
@@ -3255,6 +3258,10 @@ async function openPublicAnalytics(handle, links, name){
     <div class="muted" style="font-size:11.5px;margin-top:10px">From their public Instagram profile (Business / Creator accounts only)${live&&live.ok?" — just now":""}. Engagement rate = (avg likes + avg comments) ÷ followers over their latest ${P.posts_read||"posts"} posts. Reach, saves and shares need the creator's own Instagram connected.</div>`;
   wireFb();
   function wireFb(){ const b = body.querySelector("#paStFb"); if(b) b.onclick = ()=>{ try{ localStorage.setItem("geekos_after_ig","discover"); }catch(e){} connectFacebookSearch(); }; }
+    if(!final){ const n = document.createElement("div"); n.className = "muted"; n.style.cssText = "font-size:12px;margin-bottom:6px"; n.textContent = "Showing saved numbers · refreshing live from Instagram…"; body.prepend(n); }
+  };
+  if(kept && kept.profile && kept.profile.followers!=null) paintA(null, false);
+  paintA(await liveP, true);
 }
 
 // every Instagram account one Geek OS creator has connected (Discovery, campaign invite, Super Admin)
@@ -6047,6 +6054,25 @@ async function bppFillFull(pid, x, row){
     + (cm.notes ? row("Notes", esc(cm.notes)) : "");
   if(more){ $("bppMore").innerHTML = more; $("bppMoreCard").hidden = false; }
 }
+function bppPaintPub(m, h, P, live){
+  if(!m.isConnected || !P) return;
+  const pic = m.querySelector("#bppPic"), nm = m.querySelector("#bppNm"), row = m.querySelector("#bppStatsRow"), note = m.querySelector("#bppLive");
+  if(P.profile_picture_url && pic) pic.innerHTML = `<img src="${esc(safeUrl(P.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`;
+  if(P.name && nm && nm.textContent===h) nm.textContent = P.name;
+  const f = P.followers, er = P.engagement!=null ? +P.engagement : (f && P.avg_likes!=null ? Math.round(10000*((+P.avg_likes||0)+(+P.avg_comments||0))/f)/100 : null);
+  if(row) row.innerHTML = `<div><b>${f!=null?fmtNum(f):"—"}</b><span>Followers</span></div><div><b>${er!=null?er+"%":"—"}</b><span>Engagement</span></div>
+    <div><b>${P.avg_likes!=null?fmtNum(Math.round(P.avg_likes)):P.avg_views!=null?fmtNum(Math.round(P.avg_views)):"—"}</b><span>${P.avg_likes!=null?"Avg likes":"Avg views"}</span></div><div><b>${(P.posts??P.media_count)!=null?fmtNum(P.posts??P.media_count):"—"}</b><span>Posts</span></div>`;
+  if(note) note.innerHTML = live ? `📸 From their public Instagram · updated just now` : `📸 From their public Instagram (saved) · refreshing…`;
+}
+async function bppPublic(m, h, links, cr){
+  if(!/^[a-z0-9._]{2,30}$/.test(h)) return;
+  const note = m.querySelector("#bppLive"); if(note) note.textContent = "📸 Reading their public Instagram…";
+  const kept = pubOf(h) || ((await sb.schema("api").rpc("external_profiles", { p_handles:[h] }).then(r=>r.data, ()=>null)) || [])[0];
+  if(kept){ _pubProf[h] = kept; bppPaintPub(m, h, kept, false); }
+  const live = await fetchPublicStats(h, links);
+  if(live && live.profile){ _pubProf[h] = Object.assign({}, kept||{}, live.profile, { posts: live.profile.media_count }); bppPaintPub(m, h, _pubProf[h], true); }
+  else if(note) note.textContent = (live && live.error) ? "📸 " + live.error : "";
+}
 // full creator card from the barter process: who they are, every Instagram account, contact, address, this campaign
 async function bpCreatorProfile(pid){
   const x = ((_bpData||{}).creators||[]).find(c=> c.participation_id===pid); if(!x) return;
@@ -6059,14 +6085,15 @@ async function bpCreatorProfile(pid){
   const posts = x.posts||[];
   m.innerHTML = `<div class="modal modal-lg"><div class="modal-head"><strong>Creator profile</strong><button class="icon-btn" id="bpProfX">✕</button></div>
     <div class="modal-form bpp">
-      <div class="bpp-top">${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((handle||"?").slice(0,2).toUpperCase())}</span>`}
-        <div style="min-width:0;flex:1"><div class="bpp-name">${esc(cr.name||to.name||handle)}</div>
+      <div class="bpp-top"><span id="bppPic">${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((handle||"?").slice(0,2).toUpperCase())}</span>`}</span>
+        <div style="min-width:0;flex:1"><div class="bpp-name"><span id="bppNm">${esc(cr.name||to.name||handle)}</span>${!cr.username&&handle?" "+NOT_ON_GEEK:""}</div>
           ${handle?`<a href="https://instagram.com/${encodeURIComponent(handle)}" target="_blank" rel="noopener">@${esc(handle)} ↗</a>`:""}
           <div class="bpp-cats">${(cr.categories||[]).slice(0,4).map(c=>`<span>${esc(c)}</span>`).join("")}${cr.city?`<span>📍 ${esc(cr.city)}</span>`:""}</div>
           <div id="bppJoined"></div></div>
         <div class="bpp-topacts"><button class="btn sm bpp-wa" data-bpphub="${esc(pid)}">💬 WhatsApp</button>${handle?`<button class="btn sm ghost" id="bppStats">📊 Analytics</button>`:""}${handle?`<a class="btn sm ghost" href="/p.html?u=${encodeURIComponent(handle)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}</div></div>
-      <div class="bpp-stats bpp-stats4"><div><b>${cr.followers!=null?fmtNum(cr.followers):"—"}</b><span>Followers</span></div><div><b>${cr.engagement!=null?cr.engagement+"%":"—"}</b><span>Engagement</span></div>
+      <div class="bpp-stats bpp-stats4" id="bppStatsRow"><div><b>${cr.followers!=null?fmtNum(cr.followers):"—"}</b><span>Followers</span></div><div><b>${cr.engagement!=null?cr.engagement+"%":"—"}</b><span>Engagement</span></div>
         <div><b>${cr.avg_reach?fmtNum(Math.round(cr.avg_reach)):"—"}</b><span>Avg reach</span></div><div><b>${cr.profile_pct!=null?cr.profile_pct+"%":"—"}</b><span>Profile</span></div></div>
+      <div class="muted" id="bppLive" style="font-size:12px;margin:-4px 0 8px"></div>
       ${bpJourneyHtml(x)}
       ${bpNowBox(x)}
       <div class="bpp-card"><div class="bpp-sec">📣 This campaign</div>
@@ -6094,6 +6121,8 @@ async function bpCreatorProfile(pid){
   document.getElementById("bpProfX").onclick = ()=> m.remove(); m.onclick = e=>{ if(e.target.id==="bpProf") m.remove(); };
   const hb = m.querySelector("[data-bpphub]"); if(hb) hb.onclick = ()=>{ m.remove(); openCreatorHub(pid, "whatsapp"); };
   const bs = m.querySelector("#bppStats"); if(bs) bs.onclick = ()=> openPublicAnalytics(handle, posts.map(p2=> p2.permalink).filter(Boolean), cr.name);
+  // not connected on Geek OS → show what we saved from their public Instagram right away, then refresh it live (and save)
+  if(handle && !cr.username) bppPublic(m, pubHandle(handle), posts.map(p2=> p2.permalink).filter(Boolean), cr);
   const hb2 = m.querySelector("[data-bpphub2]"); if(hb2) hb2.onclick = ()=>{ m.remove(); openCreatorHub(pid, "timeline"); };
   wireBpActions(m, ()=>{ m.remove(); loadBarterProcess(true); });
   m.querySelectorAll("[data-bpchat]").forEach(b=> b.onclick = ()=>{ m.remove(); openCreatorHub(pid, "whatsapp"); });
