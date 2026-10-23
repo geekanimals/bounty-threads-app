@@ -5802,6 +5802,28 @@ function ccRows(){
   return P.map(x=>({ kind:"p", id:x.participation_id, x, pp: byP[x.participation_id]||{} }))
     .concat(inv.map(i=>({ kind:"i", id:i.invite_id, i })));
 }
+// creators who got the product but never posted (campaign over, or their video is overdue) — for the blocklist
+function ccNoPost(){
+  const d = _bpData||{}, c = d.campaign||{}, today = new Date().toISOString().slice(0,10);
+  const ended = (c.ends_on && c.ends_on < today) || ["completed","ended","closed"].includes(String(c.status||c.lifecycle_status||"").toLowerCase());
+  return (d.creators||[]).filter(x=> !x.blacklisted && !(x.posts||[]).length
+    && (["content_created","changes_requested","content_submitted","content_approved"].includes(x.stage)
+        || (x.stage==="product_sent" && x.shipment && x.shipment.status==="delivered"))
+    && (ended || (x.due_on && x.due_on < today)));
+}
+async function ccBlockNoPost(btn){
+  const L = ccNoPost(); if(!L.length) return;
+  const names = L.map(x=> (x.creator||{}).username ? "@"+x.creator.username : ((x.creator||{}).name || x.applied_profile || "creator"));
+  const reason = (prompt(`Blocklist ${L.length} creator(s) who got the product but didn't post?\n\n${names.join(", ")}\n\nThey stay blocked until you lift it, and per the contract must re-ship the product. Reason:`, "Received the product, did not post — campaign over")||"").trim();
+  if(!reason) return;
+  btn.disabled = true; let ok = 0; const bad = [];
+  for(let k=0; k<L.length; k++){ btn.textContent = `Blocking ${k+1}/${L.length}…`;
+    const { error } = await sb.schema("api").rpc("blacklist_creator", { p_participation: L[k].participation_id, p_reason: reason }).then(r=>r, e=>({error:e}));
+    if(error) bad.push(names[k] + ": " + (error.message||error)); else ok++; }
+  gateToast(`⛔ ${ok} creator(s) blocklisted${bad.length?` · ${bad.length} failed`:""}`);
+  if(bad.length) alert(bad.join("\n"));
+  loadBarterProcess(true);
+}
 function ccMatch(key, r){
   const fail = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
   if(key==="all") return true;
@@ -5853,7 +5875,8 @@ function paintCampaignCommandInner(body){
       <div class="cc-list-h"><h3>Creators <span class="muted">${shown.length}${_ccFilter==="needs"?" · ⚡ need you":_ccFilter!=="all"?` · ${esc((CC_TILES.find(t=>t[0]===_ccFilter)||[])[1]||"")}`:""}</span></h3>
         ${needsYou?`<button type="button" class="bp-needs cc-needs${_ccFilter==="needs"?" on":""}" id="ccNeedsChip">⚡ <b>${needsYou}</b> need${needsYou>1?"":"s"} you${_ccFilter==="needs"?" · showing them ✕":" — tap to see"}</button>`:""}
         <input id="ccQ" type="search" placeholder="🔎 Name, @handle, phone, city…" value="${esc(_ccQ)}">
-        ${_ccFilter!=="all"?`<button class="mini-btn ghost" id="ccAll">Show everyone ✕</button>`:""}</div>
+        ${_ccFilter!=="all"?`<button class="mini-btn ghost" id="ccAll">Show everyone ✕</button>`:""}
+        ${window.__isAdmin && ccNoPost().length ? `<button type="button" class="btn sm" id="ccBlockAll" style="background:#dc2626;border-color:#dc2626;color:#fff" title="Got the product but never posted">⛔ Blocklist who didn't post (${ccNoPost().length})</button>` : ""}</div>
       <div class="cc-hint muted">Tap a creator to open everything — every step with its time, contract, address, courier, video, posts with their numbers — and do any action right there. Changing a step asks only for what it needs (courier, video link, the link of every post).</div>
       ${P.length ? bpTrackerHtml(P) : ""}
       ${Ion.map(r=>ccInviteRowHtml(r.i, true)).join("")}
@@ -5869,6 +5892,7 @@ function paintCampaignCommandInner(body){
   const goT = body.querySelector("#bpGoTerms"); if(goT) goT.onclick = e=>{ e.preventDefault(); _bpTab="terms"; paintBarterProcess(); };
   wireBarterProcess();
   wireCcInvites(body);
+  const ba = body.querySelector("#ccBlockAll"); if(ba) ba.onclick = ()=> ccBlockNoPost(ba);
   if(_bpTab==="bulk"){ wireBulk(); }
   if(_bpOpen){ const sel = body.querySelector(`[data-ccstep="${_bpOpen}"]`); if(sel) mountInlineSetStep(_bpOpen); }
 }
@@ -6578,7 +6602,7 @@ function bpTrackerHtml(list){
           ${["published","completed"].includes(x.stage)&&posts.length?`<button class="btn sm ghost" data-bpmetrics="${esc(P)}">📈 Add numbers</button>`:""}
           ${x.stage==="published"&&((((_bpData||{}).progress||{})[P]||{}).all_done)?`<button class="btn sm" data-bpdone="${esc(P)}">🏁 Mark complete</button>`:""}
           ${!["dropped","rejected","completed","published","ineligible","brand_declined"].includes(x.stage)?`<button class="btn sm ghost" data-bpreassign="${esc(P)}">↪ Send product to someone else</button>`:""}
-          ${window.__isAdmin&&!x.blacklisted&&!["completed"].includes(x.stage)?`<button class="btn sm ghost" data-bpblack="${esc(P)}">⛔ Blocklist</button>`:""}
+          ${window.__isAdmin&&!x.blacklisted&&!["completed"].includes(x.stage)?`<button class="btn sm ghost" data-bpblack="${esc(P)}" style="color:#dc2626;border-color:rgba(220,38,38,.45)">⛔ Blocklist</button>`:""}
 `)}
           ${window.__isAdmin?`<button class="btn sm ghost bp-del" data-bpremove="${esc(P)}">🗑 Delete from campaign</button>`:""}
         </div>
