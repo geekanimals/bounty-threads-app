@@ -8223,8 +8223,9 @@ async function adminDelivery(body, silent){
         <td style="font-size:12px;max-width:280px">${esc(r.title||r.template||"")}</td><td>${tag(r.status==="skipped" && /^(Waiting for WhatsApp template approval|WhatsApp 24h window closed)/i.test(r.error||"") ? "waiting" : r.status)}${r.attempts>1?` <span class="muted" style="font-size:11px">×${r.attempts}</span>`:""}</td>
         <td style="font-size:12px;max-width:260px" class="muted">${esc(r.error||(r.sent_at?"Sent "+ago(r.sent_at):""))}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">No messages yet.</td></tr>`}
       </tbody></table></div></div>
+    <div class="card" style="margin-top:14px" id="dlvOpt"></div>
     <div class="card" style="margin-top:14px" id="dlvTpl"></div>`;
-  adminWaTemplates(); adminWaSettingsCard(); adminDeliveryDoctor();
+  adminWaTemplates(); adminWaSettingsCard(); adminDeliveryDoctor(); adminOptouts();
   document.getElementById("dlvRetry").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_retry", { p_channel: null });
     document.getElementById("dlvMsg").textContent = e ? e.message : `${k||0} message(s) re-queued`; setTimeout(()=>adminDelivery(body,true), 3000); };
   document.getElementById("dlvTest").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_test", { p_phone: document.getElementById("dlvPhone").value.trim()||null, p_email: document.getElementById("dlvEmail").value.trim()||null });
@@ -8234,6 +8235,34 @@ async function adminDelivery(body, silent){
     if(currentPage!=="admin" || _adminTab!=="delivery" || !b){ clearInterval(_dlvTimer); return; }
     if(document.visibilityState!=="visible" || ["dlvPhone","dlvEmail"].includes(document.activeElement?.id)) return;
     adminDelivery(b, true); }, 20000);
+}
+
+// Super Admin → WhatsApp & email → who said STOP on WhatsApp or clicked unsubscribe in an email
+let _optF = "all";
+async function adminOptouts(){
+  const box = document.getElementById("dlvOpt"); if(!box) return;
+  const { data, error } = await sb.rpc("admin_optouts").then(r=>r, e=>({error:e}));
+  if(error){ box.innerHTML = `<h3 style="margin-top:0">🚫 Opted out</h3><div class="muted">Couldn't load: ${esc(error.message||String(error))}</div>`; return; }
+  const all = data||[], wa = all.filter(x=>x.channel==="whatsapp"), em = all.filter(x=>x.channel==="email");
+  const rows = _optF==="whatsapp" ? wa : _optF==="email" ? em : all;
+  box.innerHTML = `<h3 style="margin-top:0">🚫 Opted out <span class="muted" style="font-size:12px;font-weight:400">· replied STOP on WhatsApp or clicked “Stop update emails” — they get no more campaign updates on that channel (login codes still go)</span></h3>
+    <div class="rp-kpis" style="margin-bottom:10px"><div><b>${wa.length}</b>WhatsApp stopped</div><div><b>${em.length}</b>Email unsubscribed</div>
+      <div><b>${all.reduce((a,x)=>a+Number(x.skipped||0),0)}</b>Messages held back</div></div>
+    <div class="admin-tabs" style="margin-bottom:8px">${[["all","All"],["whatsapp","💬 WhatsApp"],["email","✉️ Email"]].map(t=>`<button class="${_optF===t[0]?"act":""}" data-optf="${t[0]}">${t[1]}</button>`).join("")}</div>
+    <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>When</th><th>Channel</th><th>Who</th><th>Number / email</th><th>How</th><th>Held back</th><th></th></tr></thead><tbody>
+    ${rows.map(x=>`<tr><td style="white-space:nowrap;font-size:12px">${esc(fmtDateTime(x.at))}</td><td>${x.channel==="whatsapp"?"💬 WhatsApp":"✉️ Email"}</td>
+      <td style="font-size:12.5px"><b>${esc(x.name||"—")}</b>${x.handle?` <a class="ig-h" href="https://instagram.com/${encodeURIComponent(x.handle)}" target="_blank" rel="noopener">@${esc(x.handle)}</a>`:""}
+        ${x.on_geek?"":` <span class="tag">Not yet on Geek</span>`}${x.campaign?`<div class="muted">${esc(x.campaign)}</div>`:""}</td>
+      <td style="font-size:12px">${esc(x.to||"")}</td><td style="font-size:12px">${esc(x.via||"")}</td><td>${Number(x.skipped||0)}</td>
+      <td><button class="mini-btn ghost" data-optclr="${esc(x.channel)}|${esc(x.to||"")}" title="Only if they asked to get updates again">Turn back on</button></td></tr>`).join("")
+      || `<tr><td colspan="7" class="muted">Nobody has opted out.</td></tr>`}
+    </tbody></table></div>`;
+  box.querySelectorAll("[data-optf]").forEach(b=> b.onclick = ()=>{ _optF = b.dataset.optf; adminOptouts(); });
+  box.querySelectorAll("[data-optclr]").forEach(b=> b.onclick = async ()=>{
+    const [ch, to] = b.dataset.optclr.split("|");
+    if(!confirm(`Turn ${ch==="whatsapp"?"WhatsApp":"email"} updates back on for ${to}? Only do this if they asked for it.`)) return;
+    const { error:e } = await sb.rpc("admin_optout_clear", { p_channel: ch, p_to: to });
+    if(e){ gateToast(e.message||String(e)); return; } gateToast("Updates are back on ✓"); adminOptouts(); });
 }
 
 // Super Admin → Creator activity: who is on the platform, from where, for how long, doing what.

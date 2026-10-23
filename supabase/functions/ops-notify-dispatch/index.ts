@@ -159,8 +159,11 @@ Deno.serve(async (req) => {
           }
         } catch (_e) { /* mirroring never blocks delivery */ }
       } else if (row.channel === "email") {
-        if (prefs.email_off) { await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped", p_error: "unsubscribed" }); skipped++; continue; }
-        const unsub = unsubLink(prefs.token, "email");
+        // every address has its own unsubscribe token — also people invited from a sheet who have no account yet
+        let addr: any = {};
+        try { const { data: ap } = await api.rpc("ops_email_prefs", { p_email: row.to_address }); addr = ap || {}; } catch (_e) { /* keep member prefs */ }
+        if (prefs.email_off || addr.email_off) { await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped", p_error: "unsubscribed" }); skipped++; continue; }
+        const unsub = unsubLink(prefs.token || addr.token, "email");
         const html = (p.html && String(p.html).includes("<")) ? String(p.html)
           : renderEmailHtml(String(p.subject || ""), String(p.html || ""), link ?? undefined, p.action_label as string, unsub ?? undefined,
                             APP_URL ? `${APP_URL}/assets/geek-icon-192.png` : undefined);
