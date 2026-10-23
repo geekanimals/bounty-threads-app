@@ -44,22 +44,23 @@ Deno.serve(async (req) => {
   }
   const { data: handles } = await api.rpc("ops_discovery_claim", { p_limit: 40 });
   const list: string[] = (handles ?? []) as string[];
-  const items: any[] = [], failed: string[] = [];
+  const items: any[] = [], failed: string[] = [], skipped: string[] = [];
   let blocked = false, lastErr: string | null = null;
   for (const h of list) {
-    if (blocked) { failed.push(h); continue; }
+    if (blocked) { skipped.push(h); continue; }   // not really tried → its try is handed back below
     const fields = `business_discovery.username(${encodeURIComponent(h)}){username,name,biography,followers_count,media_count,profile_picture_url,media.limit(12){caption,permalink,like_count,comments_count}}`;
     try {
       const r = await fetch(`${FB_GRAPH}/${encodeURIComponent(String(tok.ig_user_id))}?fields=${fields}&access_token=${encodeURIComponent(String(tok.access_token))}`);
       const j = await r.json().catch(() => ({}));
       if (r.ok && j?.business_discovery) { items.push(profileFrom(j.business_discovery, h)); continue; }
       lastErr = String(j?.error?.message || `HTTP ${r.status}`).slice(0, 200);
-      failed.push(h);
-      if (needsPermission(j) || Number(j?.error?.code) === 4 || Number(j?.error?.code) === 17) blocked = true;   // permission or rate limit → stop this run
+      const stop = needsPermission(j) || [4, 17, 32, 613].includes(Number(j?.error?.code));   // permission or rate limit → stop this run
+      if (stop) { blocked = true; skipped.push(h); } else failed.push(h);   // only a real "no such public account" counts as failed
     } catch (e) { failed.push(h); lastErr = (e as Error).message; }
   }
+  if (skipped.length) await api.rpc("ops_discovery_release", { p_handles: skipped }).then(() => {}, () => {});
   const { data: saved } = await api.rpc("ops_discovery_save", {
     p_items: items, p_failed: failed, p_needs_permission: blocked && items.length === 0,
     p_error: blocked && items.length === 0 ? `Instagram refused business discovery: ${lastErr}` : (items.length ? null : lastErr) });
-  return new Response(JSON.stringify({ ok: true, tried: list.length, enriched: saved ?? items.length, failed: failed.length }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ ok: true, tried: list.length, enriched: saved ?? items.length, failed: failed.length, skipped: skipped.length, stopped: blocked ? lastErr : null }), { headers: { "Content-Type": "application/json" } });
 });
