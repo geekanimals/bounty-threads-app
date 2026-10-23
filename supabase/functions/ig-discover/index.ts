@@ -258,15 +258,21 @@ Deno.serve(async (req) => {
     // creators usually build from that word (bloggerindia, the.blogger, blogger_official …) and keep the real ones
     if (action === "name_match") {
       const w = String(body?.q || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9._]/g, "").slice(0, 24);
-      if (w.length < 3) return json({ error: "Type at least 3 letters." }, 400);
+      const catKey = String(body?.category || "").toLowerCase().trim();
+      const nouns = catKey ? (CAT_NOUN[catKey] || [catKey.replace(/[^a-z]/g, "")]) : [];
+      if (w.length < 3 && !nouns.length) return json({ error: "Type at least 3 letters." }, 400);
       const { data: shared } = await admin.schema("api").rpc("ops_discovery_token");
       const src = shared?.platform === "facebook" ? await openRow(shared) : null;
       if (!src?.access_token || !src?.ig_user_id) return json({ error: "Instagram search isn't switched on yet.", needs_facebook: true }, 200);
       const igId = encodeURIComponent(String(src.ig_user_id)), FT = encodeURIComponent(String(src.access_token));
       const city = String(body?.city || "").toLowerCase().replace(/[^a-z]/g, "").slice(0, 20);
-      const cand = [...new Set([w, w + "india", w + "_india", "the" + w, "the." + w, w + "official", w + "_official", "indian" + w,
-        "its" + w, w + "life", w + "diaries", w + ".in", ...(city ? [city + w, w + city, city + "_" + w] : [])])]
-        .filter((h) => /^[a-z0-9._]{2,30}$/.test(h) && !/^\.|\.$|\.\./.test(h)).slice(0, 14);
+      // usernames creators really build: word + india/official, and city × category (kolkatafoodie, foodie_kolkata, thedelhiblogger …)
+      const base = w.length >= 3 ? [w, w + "india", w + "_india", "the" + w, "the." + w, w + "official", w + "_official", "indian" + w,
+        "its" + w, w + "life", w + "diaries", w + ".in", ...(city ? [city + w, w + city, city + "_" + w, w + "_" + city, "the" + city + w] : [])] : [];
+      const combo = nouns.flatMap((n) => city ? [city + n, n + city, city + "_" + n, n + "_" + city, "the" + city + n, city + "." + n, n + "." + city]
+                                              : [n + "india", "indian" + n, "the" + n + "india", n + "_india"]);
+      const cand = [...new Set([...base, ...combo])]
+        .filter((h) => /^[a-z0-9._]{2,30}$/.test(h) && !/^\.|\.$|\.\./.test(h)).slice(0, 16);
       const got = await Promise.all(cand.map((h) => bdProfile(igId, FT, h).then((p) => [h, p] as const)));
       if (got.length && got.every(([, p]) => p && (p as any).perm)) return json({ error: "Instagram refused the lookup (permission) — reconnect Facebook in Discovery.", needs_permission: true }, 200);
       const found = got.filter(([, p]) => p && !(p as any).perm).map(([, p]) => ({ ...(p as any), source: "name_match" }));
@@ -375,25 +381,8 @@ Deno.serve(async (req) => {
           }
         }
       }
-      // hashtag posts rarely @mention anyone → also read the latest posts of creators we already know for this
-      // search (seeds) and pick up the creators THEY tag / collab with ("snowball")
-      const seeds: string[] = (Array.isArray(body?.seeds) ? body.seeds : []).map((x: unknown) => String(x || "").toLowerCase().replace(/^@/, ""))
-        .filter((h: string) => /^[a-z0-9._]{2,30}$/.test(h)).slice(0, 12);
-      const seedSet = new Set(seeds);
-      let fromSeeds = 0;
-      if (count.size < 15 && seeds.length) {
-        const sp = await Promise.all(seeds.map((h) => bdProfile(igId, FT, h)));
-        sp.forEach((p: any, i) => {
-          if (!p || p.perm || p.limit) return;
-          for (const x of (String(p.caption || "").match(/@([A-Za-z0-9._]{2,30})/g) || [])) {
-            const h = x.slice(1).toLowerCase().replace(/\.+$/, "");
-            if (h.length < 2 || seedSet.has(h) || h === p.handle) continue;
-            if (!count.has(h)) fromSeeds++;
-            count.set(h, (count.get(h) || 0) + 1);
-            if (!seenIn.has(h)) seenIn.set(h, "@" + seeds[i]);
-          }
-        });
-      }
+      // (Meta removes @mentions from captions it hands to apps, so other creators' posts can't be "snowballed")
+      const fromSeeds = 0, seeds: string[] = [];
       if (!used.length && !count.size) {
         return json({ error: lastErr ? `Instagram refused the search: ${lastErr}` : "Instagram has no public posts for these hashtags right now.", needs_permission: permErr, tags }, 200);
       }
@@ -486,6 +475,16 @@ const CAT_TAGS: Record<string, string[]> = {
   health: ["healthylifestyle", "nutritionist", "wellness"], education: ["education", "studygram", "learning"],
   sports: ["sports", "cricket", "athlete"], business: ["entrepreneur", "business", "startup"],
   entertainment: ["actor", "entertainment", "reels"], spirituality: ["spirituality", "spiritual", "meditation"],
+};
+// category → words creators put in their usernames (for city × category username guesses)
+const CAT_NOUN: Record<string, string[]> = {
+  food: ["foodie", "foodblogger", "food"], fashion: ["fashion", "fashionblogger", "style"], beauty: ["beauty", "makeup", "beautyblogger"],
+  travel: ["traveller", "travelblogger", "travels"], fitness: ["fitness", "fit", "fitnesscoach"], lifestyle: ["blogger", "lifestyle", "diaries"],
+  parenting: ["mom", "mommy", "momblogger"], tech: ["tech", "techie", "gadgets"], comedy: ["comedy", "memes", "funny"],
+  gaming: ["gamer", "gaming"], finance: ["finance", "money"], music: ["music", "singer"], dance: ["dance", "dancer"],
+  photography: ["photography", "clicks", "lens"], pets: ["pets", "dogs", "paws"], "home decor": ["homedecor", "home", "interiors"],
+  auto: ["cars", "rider", "motovlogs"], health: ["health", "wellness"], education: ["edu", "learning"], art: ["art", "artist"],
+  sports: ["sports", "fitness"], business: ["business", "startup"], entertainment: ["entertainment", "reels"], spirituality: ["spiritual", "bhakti"],
 };
 // file the searched city unless the bio clearly says another one (a Mumbai creator tagged in a #delhifood post stays Mumbai)
 const CITY_WORDS = ["delhi", "mumbai", "bangalore", "bengaluru", "hyderabad", "chennai", "kolkata", "pune", "ahmedabad", "jaipur", "lucknow",

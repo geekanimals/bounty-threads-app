@@ -2865,12 +2865,13 @@ function mountCreatorSearch(root, opts){
     if(tag && /^[\p{L}\p{N}_]{2,60}$/u.test(tag)) csHashtagPanel($i("Res"), tag, S, ()=>{ run(true); pool(); });
     // a plain word (e.g. "blogger") → Instagram accounts whose username is built from it, with photo + followers
     const nmw = String(S.q||"").trim().toLowerCase();
-    if(/^[a-z0-9]{3,24}$/.test(nmw) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csNamePanel($i("Res"), nmw, S, ()=>{ run(true); pool(); });
+    if((/^[a-z0-9]{3,24}$/.test(nmw) || (!S.q && (S.categories.length || S.location))) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csNamePanel($i("Res"), nmw, S, ()=>{ run(true); pool(); });
     // a city and/or a category picked → find more of them live on Instagram (full public profiles)
     const kw = csKeyword(S.q);
     if((S.q || S.location || S.categories.length) && !/^[@#]|instagram\.com/i.test(S.q||"") && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csMarketPanel($i("Res"), S, ()=>{ run(true); pool(); });
-    S._seeds = rows.filter(r=> r.handle && (r.followers||0) > 0).sort((a,b)=> (b.followers||0)-(a.followers||0)).map(r=> String(r.handle).toLowerCase());
-    if((kw || S.location || S.categories.length) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csScoutPanel($i("Res"), S, ()=>{ run(true); pool(); });
+    // hashtag "scout" is off: Instagram hands apps hashtag/caption text without the @handles, so it never found anyone —
+    // city / category now go through username matching (csNamePanel) and Creator Marketplace (csMarketPanel)
+    if(false && (kw || S.location || S.categories.length) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csScoutPanel($i("Res"), S, ()=>{ run(true); pool(); });
     root.querySelectorAll("[data-cspg]").forEach(b=> b.onclick = ()=>{ const k = b.dataset.cspk, n = +b.dataset.cspg;
       if(k==="P") S.pageP = n; else if(k==="E") S.pageE = n; else S.page = n;
       run(true); (k==="E" ? root.querySelector(".cs-sec-ig") || root : root).scrollIntoView({behavior:"smooth", block:"start"}); });
@@ -3353,9 +3354,10 @@ async function csMarketPanel(res, S, refresh){
 }
 const _csNameDone = {};
 async function csNamePanel(res, w, S, refresh){
-  const key = w + "|" + (S.location||"");
-  res.insertAdjacentHTML("afterbegin", `<div class="card cs-scout" id="csNameBox"><div class="cs-scout-h"><div><b>📸 Instagram accounts named like “${esc(w)}”</b>
-      <div class="muted">Public Business / Creator accounts whose username is built from “${esc(w)}” (e.g. ${esc(w)}india, the${esc(w)}) — with photo, followers and engagement.</div></div></div>
+  const cat = (S.categories||[])[0] || "", key = w + "|" + (S.location||"") + "|" + cat;
+  const what = w || [S.location, cat].filter(Boolean).join(" ");
+  res.insertAdjacentHTML("afterbegin", `<div class="card cs-scout" id="csNameBox"><div class="cs-scout-h"><div><b>📸 Instagram accounts named like “${esc(what)}”</b>
+      <div class="muted">Public Business / Creator accounts whose username is built from it (e.g. ${w?`${esc(w)}india, the${esc(w)}`:`${esc((S.location||"city").toLowerCase().replace(/[^a-z]/g,""))}foodie, the…blogger`}) — with photo, followers and engagement.</div></div></div>
     <div id="csNameMsg">${_csNameDone[key] ? "" : `<div class="cs-scout-run"><span class="mk-spin sm"></span> Checking Instagram…</div>`}</div></div>`);
   const paint = d => { const box = document.getElementById("csNameMsg"); if(!box) return;
     if(!d || d.error){ box.innerHTML = `<div class="muted">${esc((d && d.error) || "Couldn't reach Instagram.")}</div>`; return; }
@@ -3363,10 +3365,10 @@ async function csNamePanel(res, w, S, refresh){
     box.innerHTML = P.length ? `<div class="cs-grid">${P.map(p=> csIgCard(csIgSeed({ handle:p.handle, name:p.name, profile_picture_url:p.profile_picture_url, followers:p.followers, _done:true,
           avg_likes:p.avg_likes, bio:p.bio, posts:p.media_count, engagement: p.followers && p.avg_likes!=null ? Math.round(10000*((+p.avg_likes||0)+(+p.avg_comments||0))/p.followers)/100 : null }), {})).join("")}</div>
         <div class="muted" style="margin-top:6px">✓ Added to your creator search.${d.note?" "+esc(d.note):""}</div>`
-      : `<div class="muted">No public Instagram account named like “${esc(w)}” (tried ${(d.tried||[]).slice(0,6).map(h=>"@"+esc(h)).join(", ")}…). Instagram has no username search for apps — try a #hashtag, a city, or paste handles.${d.note?" "+esc(d.note):""}</div>`;
+      : `<div class="muted">No public Instagram account named like “${esc(what)}” (tried ${(d.tried||[]).slice(0,6).map(h=>"@"+esc(h)).join(", ")}…). Instagram has no username search for apps — try a #hashtag, a city, or paste handles.${d.note?" "+esc(d.note):""}</div>`;
     if(typeof csWireCards==="function") csWireCards(box, {}); };
   if(_csNameDone[key]){ paint(_csNameDone[key]); return; }
-  const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"name_match", q:w, city:S.location||"" } }).then(r=>r, e=>({error:e}));
+  const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"name_match", q:w, city:S.location||"", category:cat } }).then(r=>r, e=>({error:e}));
   const d = data || { error: error && (typeof fnError==="function" ? await fnError(error) : error.message) };
   if(d && d.ok) _csNameDone[key] = d;
   paint(d);
@@ -3392,7 +3394,7 @@ function csScoutPanel(res, S, refresh){
     msg.innerHTML = `<div class="cs-scout-run"><span class="mk-spin sm"></span> Reading Instagram posts and pulling profiles — about 20–40 seconds…</div>`;
     // never spin forever: give up after 90 seconds
     const { data, error } = await Promise.race([
-      sb.functions.invoke("ig-discover", { body:{ action:"scout", city, category:cat, keyword, seeds: (S._seeds||[]).slice(0,12) } }).then(r=>r, e=>({error:e})),
+      sb.functions.invoke("ig-discover", { body:{ action:"scout", city, category:cat, keyword } }).then(r=>r, e=>({error:e})),
       new Promise(r=>setTimeout(()=>r({ error:{ message:"Instagram is taking too long — please try again in a minute." } }), 90000)) ]);
     go.disabled = false; go.textContent = "🔄 Search again";
     if(error || !data || data.error){ msg.innerHTML = `<div class="muted">${esc((data && data.error) || (error && error.message) || "Couldn't reach Instagram.")}</div>`; return; }
