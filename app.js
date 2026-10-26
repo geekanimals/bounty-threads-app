@@ -574,7 +574,7 @@ async function loadCreatorDashboard(silent){
       ${stat(M.filter(c=>DONE.includes(c.stage)).length,"Completed","mycampaigns")}</div>
     <div class="grid two" style="margin-top:14px">
       <div class="card"><h3 style="margin-top:0">🔔 Latest alerts <span class="muted" style="font-size:12px;font-weight:400">· also on WhatsApp & email</span></h3>
-        ${N.length ? `<div class="list">${N.map(n=>`<div class="row"><span class="dot ${n.read?"":"warn"}"></span><div class="r-main"><div class="r-title">${esc(n.title)}</div><div class="r-sub">${esc(n.body)}</div></div>${n.action_route?`<button class="mini-btn" data-cdgo="${esc(n.action_route)}">${esc(n.action_label||"Open")}</button>`:""}</div>`).join("")}</div>`
+        ${N.length ? `<div class="list">${N.map(n=>`<div class="row"><span class="dot ${n.read?"":"warn"}"></span><div class="r-main"><div class="r-title">${esc(n.title)}</div><div class="r-sub">${escMd(n.body)}</div></div>${n.action_route?`<button class="mini-btn" data-cdgo="${esc(n.action_route)}">${esc(n.action_label||"Open")}</button>`:""}</div>`).join("")}</div>`
           : `<div class="muted" style="padding:6px">No alerts yet.</div>`}</div>
       <div class="card"><h3 style="margin-top:0">🟢 Running campaigns</h3>
         ${running.length ? `<div class="list">${running.slice(0,6).map(c=>`<div class="row" data-cdgo="mycampaigns" style="cursor:pointer"><div class="r-main"><div class="r-title">${esc(c.campaign||"Campaign")}</div><div class="r-sub">${esc(c.brand||"")} · ${esc(String(c.stage||"").replace(/_/g," "))}${c.deadline?` · due ${esc(fmtDate(c.deadline))}`:""}</div></div></div>`).join("")}</div>`
@@ -1790,6 +1790,10 @@ function openCampaignModal(existing, preset){
   const endIn = form.querySelector("input[name=end_date]"), stSel = document.getElementById("cmStatus");
   if(endIn && stSel) endIn.addEventListener("change", ()=>{ const cur = stSel.value, ended = endIn.value && endIn.value < new Date().toISOString().slice(0,10);
     stSel.innerHTML = campStatusOptions(ended && cur==="Live" ? "Completed" : (!ended && cur==="Completed" ? "Live" : cur), endIn.value); });
+  // a new campaign saved as Draft isn't "launched" — the button says what will happen
+  if(stSel && !existing){ const subB = form.querySelector('button[type=submit]');
+    const lbl = ()=>{ if(subB && !subB.disabled) subB.textContent = stSel.value==="Draft" ? "Save as draft" : "Launch Campaign"; };
+    stSel.addEventListener("change", lbl); lbl(); }
   const pending = [];
   const paintFiles = ()=>{
     const box = document.getElementById("cmFileList");
@@ -1895,7 +1899,7 @@ function openCampaignModal(existing, preset){
         // brand new campaign → straight to adding creators: bulk upload (sheet / Word), or pick from Geek OS
         if(made) setTimeout(()=> openBarterProcess(made.id, made.name, null, "bulk"), 350);
       }
-    }catch(ex){ paintFiles(); err.textContent = ex.message||"Couldn't save."; btn.disabled=false; btn.textContent=existing?'Save changes':'Launch Campaign'; }
+    }catch(ex){ paintFiles(); err.textContent = ex.message||"Couldn't save."; btn.disabled=false; btn.textContent=existing?'Save changes':(stSel&&stSel.value==="Draft"?'Save as draft':'Launch Campaign'); }
   };
 }
 
@@ -3957,7 +3961,7 @@ function paintBrandCrm(){
         <input id="bcND" type="date" title="Due date (for tasks)"><button class="btn sm" id="bcNGo">Add</button></div>
       ${N.length?`<div class="hub-tl">${N.map(n=>`<div class="hub-tl-it"><span class="hub-tl-dot ${n.done_at?"me":""}"></span><div style="flex:1;min-width:0">
           <b>${IC[n.kind]||"📝"} ${esc(n.kind[0].toUpperCase()+n.kind.slice(1))}</b>${n.due_on?` <span class="tag ${n.done_at?"good":"warn"}">${n.done_at?"done":"due "+esc(fmtDate(n.due_on))}</span>`:""}
-          <div style="white-space:pre-wrap;font-size:13.5px">${esc(n.body)}</div>
+          <div style="white-space:pre-wrap;font-size:13.5px">${escMd(n.body)}</div>
           <div class="muted" style="font-size:12px">${esc(fmtDateTime(n.at))}${n.by?` · ${esc(n.by)}`:""}
             ${n.kind==="task"?` · <a href="#" data-bcnd="${esc(n.note_id)}" data-v="${n.done_at?"0":"1"}">${n.done_at?"Mark not done":"Mark done"}</a>`:""} · <a href="#" data-bcnx="${esc(n.note_id)}">Delete</a></div></div></div>`).join("")}</div>`:'<div class="muted" style="margin-top:8px">No notes yet — log calls, emails, meetings, deals and tasks here.</div>'}`;
   } else {
@@ -5458,6 +5462,14 @@ function bulkHtml(){
 }
 function bkWaLine(){
   const w = _bk.wa; if(!w || w==="loading") return "";
+  // Settings OFF (or this campaign's switch OFF) = nothing goes out — say so instead of "invites are on"
+  const ms = w.ms;
+  if(ms){
+    const off = [];
+    if(!ms.wa_global) off.push("WhatsApp is OFF in Settings"); else if(!ms.wa_campaign) off.push("WhatsApp is OFF for this campaign");
+    if(!ms.email_global) off.push("email is OFF in Settings"); else if(!ms.email_campaign) off.push("email is OFF for this campaign");
+    if(off.length) return `<div class="bk-wa warn">⏸ <b>${bkEsc(off.join(" · ").replace(/^./, c=>c.toUpperCase()))}</b> — uploading still adds the creators and moves them to their step, but ${off.length>=2?"no message goes out":"nothing goes out on that channel"} while it's OFF (those messages are skipped, not sent later — use Resend after turning it ON).</div>`;
+  }
   if(w.whatsapp) return `<div class="bk-wa ok">✅ WhatsApp + email invites are on <span class="muted">(invite template <code>${bkEsc(w.invite_template||"geek_campaign_access")}</code> · every step update on its own <code>geek_step_*</code> template)</span></div>`;
   return `<div class="bk-wa warn">⚠️ <b>WhatsApp invites are waiting</b> — the WhatsApp template isn't set yet, so invites go by <b>email</b> now and on WhatsApp automatically the moment it's set.
     ${w.is_admin ? `<a href="#" id="bkSetWa">Set the template now →</a>` : `Ask the Geek Super Admin to set it (Super Admin → WhatsApp &amp; email).`}</div>`;
@@ -5582,7 +5594,9 @@ function wireBulk(){
     all.onchange = ()=>{ if(!all.value) return; _bk.rows.forEach(r=> r.status = all.value); paintBulk(); }; }
   const note = $b("bkNote"); if(note) note.oninput = ()=>{ _bk.note = note.value; };
   if(_bk.wa===undefined){ _bk.wa = "loading";
-    sb.schema("api").rpc("wa_invite_ready").then(r=>{ _bk.wa = r && !r.error ? (r.data||{}) : null; paintBulk(); }, ()=>{ _bk.wa = null; }); }
+    Promise.all([sb.schema("api").rpc("wa_invite_ready"),
+                 sb.schema("api").rpc("messaging_status", { p_campaign: (_bpCamp && _bpCamp.id) || null }).then(r=>r, ()=>({ data:null }))])
+      .then(([r, ms])=>{ _bk.wa = r && !r.error ? Object.assign({}, r.data||{}, { ms: (ms && !ms.error && ms.data) || null }) : null; paintBulk(); }, ()=>{ _bk.wa = null; }); }
   const sw = $b("bkSetWa"); if(sw) sw.onclick = e=>{ e.preventDefault(); if(window.__bpClose) window.__bpClose(); _adminTab = "delivery"; currentPage = "admin"; renderShell(); };
   const xl = $b("bkXlsx"); if(xl) xl.onclick = async ()=>{ xl.disabled = true; try{ await bkDownloadXlsx(); }catch(e){ err.textContent = e.message||String(e); } xl.disabled = false; };
   const ct = $b("bkCopyTpl"); if(ct) ct.onclick = async ()=>{ try{ await navigator.clipboard.writeText(ct.dataset.tsv); ct.textContent = "✓ Copied — paste in cell A1"; }catch(e){ err.textContent = "Couldn't copy — use the Excel or CSV template instead."; } };
@@ -5643,6 +5657,7 @@ const BP_ALIAS = { invited:"applied", shortlisted:"applied", accepted:"brand_con
 // Paid campaigns ship nothing: no address / courier steps anywhere on the board
 const BP_SHIP = ["address_confirmed","product_sent","product_delivered"];
 function bpNoShip(){ return !!(_bpCamp && _bpCamp.kind==="paid"); }
+function bpProcName(){ const k = (typeof bkKind==="function") ? bkKind() : "barter"; return k==="paid" ? "Paid process" : k==="barter_paid" ? "Barter + Paid process" : "Barter process"; }
 function bpSteps(){ return bpNoShip() ? BARTER_STEPS.filter(s=> !BP_SHIP.includes(s[0])) : BARTER_STEPS; }
 function bpJourney(){ return bpNoShip() ? BP_JOURNEY.filter(s=> !BP_SHIP.includes(s[0])) : BP_JOURNEY; }
 // what happens next, in plain words, for whoever is looking at the board
@@ -5883,15 +5898,16 @@ function paintBarterProcess(){
   const done = s => list.filter(x=> !failed(x.stage) && bpEffectiveIndex(x) >= bpStageIndex(s)).length;
   const needsYou = list.filter(x=> ["applied","eligible","sent_to_brand","address_confirmed","product_sent","content_submitted","published"].includes(x.stage)).length;
   const tabs = [["tracker",`👥 Creators (${list.length})`],["bulk","📥 Bulk upload"],["terms","📜 Contract & video brief"],["analytics","📈 Analytics"],["outreach","✉️ Outreach message"],["shortlist","📋 List for the brand"]];
+  if(window.__isAdmin){ if(typeof payHtml==="function" && bkKind()!=="barter") tabs.push(["payments","💰 Payments"]); if(typeof msgMapHtml==="function") tabs.push(["messages","💬 Messages"]); }
   const pb = d.playbook||{};
-  body.innerHTML = `<div class="ac360-head"><div style="flex:1;min-width:0"><h3>Barter process</h3>
+  body.innerHTML = `<div class="ac360-head"><div style="flex:1;min-width:0"><h3>${bpProcName()}</h3>
       <div class="muted">${esc(c.name||_bpCamp.name)}${c.brand?` · ${esc(c.brand)}`:""}${c.product?` · ${esc(c.product)}`:""} — every creator, every step, live. Contract and video brief go out on their own.</div></div>
       <button class="ci-pop-x" id="bpX" aria-label="Close">✕</button></div>
     ${pb.saved===false?`<div class="ac360-miss">📜 This campaign has no contract terms or video brief saved yet — creators get the defaults (1 month ad rights, collab, 7 days to post, blacklist + re-ship clauses). <a href="#" id="bpGoTerms">Set them now →</a></div>`:""}
     ${needsYou?`<div class="bp-needs">⚡ <b>${needsYou}</b> creator${needsYou>1?"s need":" needs"} something from you — open them below.</div>`:""}
     <div class="bp-flow">${bpSteps().filter(s=>s[0]!=="changes_requested").map(s=>`<button type="button" class="bp-fstep${_bpStage===s[0]?" on":""}" data-bpstage="${s[0]}" title="Show who reached this step"><b>${done(s[0])}</b><span>${esc(s[1].replace(/^\d+\.\s*/,""))}</span></button>`).join("")}</div>
     <div class="admin-tabs ac360-tabs">${tabs.map(t=>`<button class="${_bpTab===t[0]?"act":""}" data-bptab="${t[0]}">${t[1]}</button>`).join("")}</div>
-    <div class="ac360-sec">${_bpTab==="tracker"?bpStageBanner(list)+bpTrackerHtml(bpStageList(list)):_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(list)}</div>`;
+    <div class="ac360-sec">${_bpTab==="tracker"?bpStageBanner(list)+bpTrackerHtml(bpStageList(list)):_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="outreach"?bpOutreachHtml():_bpTab==="payments"&&typeof payHtml==="function"?`<div id="payBox">${payHtml()}</div>`:_bpTab==="messages"&&typeof msgMapHtml==="function"?`<div id="msgBox">${msgMapHtml()}</div>`:bpShortlistHtml(list)}</div>`;
   body.querySelector("#bpX").onclick = ()=> window.__bpClose && window.__bpClose();
   body.querySelectorAll("[data-bpstage]").forEach(b=> b.onclick = ()=>{ _bpStage = _bpStage===b.dataset.bpstage ? null : b.dataset.bpstage; _bpTab = "tracker"; paintBarterProcess();
     const sec = body.querySelector(".ac360-sec"); if(sec) sec.scrollIntoView({ behavior:"smooth", block:"start" }); });
@@ -5902,7 +5918,11 @@ function paintBarterProcess(){
     if(_bpTab==="analytics"){ _bpAnalytics = null; paintBarterProcess(); await loadBpAnalytics(); return; }
     paintBarterProcess(); });
   wireBarterProcess();
+  body.querySelectorAll("[data-bppayfee]").forEach(b=> b.onclick = e=>{ e.preventDefault(); e.stopPropagation(); if(typeof payHtml!=="function") return; _bpTab = "payments"; paintBarterProcess();
+    setTimeout(()=>{ const r = (typeof payRows==="function" ? payRows() : []).find(x=> x.participation_id===b.dataset.bppayfee); if(r && typeof payFeeModal==="function") payFeeModal(r); }, 900); });
   if(_bpTab==="bulk"){ wireBulk(); if(!_bk.list) loadBulkList(); }
+  if(_bpTab==="payments" && typeof payAfterPaint==="function") payAfterPaint();
+  if(_bpTab==="messages" && typeof msgAfterPaint==="function") msgAfterPaint();
 }
 // ---------- the campaign page: process tiles + ONE list of every creator (applied, invited, uploaded, in the campaign) ----------
 const CC_TILES = [
@@ -6713,7 +6733,7 @@ function bpTrackerHtml(list){
             ${overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':""}
             ${x.blocked_at?`<span class="tag" style="background:rgba(239,68,68,.15);color:#dc2626">⛔ Blocked — call ${esc(x.phone||"them")}</span>`:""}
             ${x.stage==="published"&&x.feedback_requested_at?'<span class="tag warn">Waiting for creator feedback</span>':""}</div>
-          <div class="r-sub">${cr.followers!=null?fmtNum(cr.followers)+" followers · ":""}Step ${bpJIndex(x)+1}/12 · ${esc(((BP_JOURNEY[bpJIndex(x)]||[])[1])||"")}</div>
+          <div class="r-sub">${cr.followers!=null?fmtNum(cr.followers)+" followers · ":""}Step ${bpJIndex(x)+1}/${bpJourney().length} · ${esc(((bpJourney()[bpJIndex(x)]||[])[1])||"")}</div>
           <div class="bp-stuck">${bpTurnChip(nx)} <b>${esc(nx.title)}</b>${nx.text?` <span class="muted">${esc(nx.text)}</span>`:""}</div></div>
         <span class="bp-rowacts">${nx.acts.filter(a=>a[2]).slice(0,1).map(a=> bpActBtn(a, P, true)).join("")}<button type="button" class="bp-chatbtn" data-bpchat="${esc(P)}" title="WhatsApp chat">💬</button></span>
         <span class="bp-caret">${open?"▲":"▼"}</span></div>
@@ -9680,6 +9700,8 @@ function toastStack(){
   if(!wrap){ wrap = el("div",""); wrap.id = "alertToasts"; wrap.setAttribute("aria-live","polite"); document.body.appendChild(wrap); }
   return wrap;
 }
+// notification text written for WhatsApp (*bold* / **bold**) → shown bold in the app, never as raw asterisks
+function escMd(t){ return esc(t==null?"":String(t)).replace(/\*\*([^*\n]+?)\*\*/g,"<b>$1</b>").replace(/\*([^*\s][^*\n]*?)\*/g,"<b>$1</b>"); }
 function gateToast(msg){
   const wrap = toastStack();
   const same = [...wrap.querySelectorAll(".alert-toast.at-msg")].find(x=> x.dataset.msg === String(msg));
@@ -9933,7 +9955,7 @@ function showAlertToast(n){
   while(wrap.children.length >= 4) wrap.firstElementChild.remove();
   const rem = /remind/i.test(String(n.kind||"") + " " + String(n.template_key||"") + " " + String(n.title||""));
   const act = n.kind==="action_required";
-  const t = el("div",`alert-toast ${act?"at-act":rem?"at-rem":""}`, `<div class="at-ic">${act?"⚡":rem?"⏰":"🔔"}</div><div class="at-b"><b>${esc(n.title)}</b><span>${esc(n.body||"")}</span>${n.action_label?`<em>${esc(n.action_label)} →</em>`:""}</div><button class="at-x" aria-label="Dismiss">✕</button>`);
+  const t = el("div",`alert-toast ${act?"at-act":rem?"at-rem":""}`, `<div class="at-ic">${act?"⚡":rem?"⏰":"🔔"}</div><div class="at-b"><b>${esc(n.title)}</b><span>${escMd(n.body||"")}</span>${n.action_label?`<em>${esc(n.action_label)} →</em>`:""}</div><button class="at-x" aria-label="Dismiss">✕</button>`);
   wrap.appendChild(t);
   const kill = ()=>{ t.classList.add("out"); setTimeout(()=>t.remove(), 250); };
   t.onclick = e=>{ if(e.target.closest(".at-x")){ kill(); return; } kill();

@@ -185,7 +185,7 @@
       html+='<div class="'+cls+'" data-nid="'+esc(n.notification_id)+'">'
         + '<div class="ops-alert-h"><b>'+esc(n.title)+'</b><span class="ci-hint">'+fmtDT(n.created_at)+'</span></div>'
         + (n.campaign?'<div><span class="al-camp" data-alc="'+esc(n.campaign_id)+'">📣 '+esc(n.campaign)+(n.brand?' · '+esc(n.brand):'')+'</span>'+(n.kind==="action_required"?(n.acted?' <span class="ci-pill">done</span>':' <span class="ci-pill ci-warn">needs action</span>'):'')+'</div>':'')
-        + '<div class="ci-hint">'+esc(n.body)+'</div>'
+        + '<div class="ci-hint">'+(typeof escMd==="function"?escMd(n.body):esc(n.body))+'</div>'
         + (n.action_route?'<div class="ci-evrow"><button class="btn sm" data-act="'+esc(n.notification_id)+'">'+esc(n.action_label||"Open")+'</button></div>':'')
         + '</div>';
     });
@@ -214,7 +214,7 @@
       var cls="ops-alert"+(n.read?"":" unread")+(n.kind==="action_required"?" act":"");
       return '<div class="'+cls+'" data-nid="'+esc(n.notification_id)+'">'
         + '<div class="ops-alert-h"><b>'+esc(n.title)+'</b><span class="ci-hint">'+fmtDT(n.created_at)+'</span></div>'
-        + '<div class="ci-hint">'+esc(n.body)+'</div>'
+        + '<div class="ci-hint">'+(typeof escMd==="function"?escMd(n.body):esc(n.body))+'</div>'
         + (n.action_route?'<div class="ci-evrow"><button class="btn sm" data-act="'+esc(n.notification_id)+'">'+esc(n.action_label||"Open")+'</button></div>':'')
         + '</div>';
     }).join("")+'</div></div>';
@@ -1005,14 +1005,29 @@
           close(); loadMyCampaigns(); }, function(e){ err.textContent=(e&&e.message)||String(e); btn.disabled=false; btn.textContent="Save & verify"; });
     };
   }
+  // a payment screenshot: shown right here in the app (no pop-up to block), with Open + Download
+  window.ciShowProof=function(path, btn){
+    if(btn) btn.disabled=true;
+    Promise.all([window.sb.storage.from("payment-proofs").createSignedUrl(path, 600),
+                 window.sb.storage.from("payment-proofs").createSignedUrl(path, 600, { download:true })]).then(function(rr){
+      if(btn) btn.disabled=false;
+      var v=rr[0], d=rr[1];
+      if(v.error||!v.data){ alert("Couldn't open the screenshot: "+((v.error&&v.error.message)||"try again")); return; }
+      var url=v.data.signedUrl, dl=(d&&d.data&&d.data.signedUrl)||url, isPdf=/\.pdf$/i.test(path);
+      var ov=document.createElement("div"); ov.className="ci-proof-ov";
+      ov.style.cssText="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px";
+      ov.innerHTML='<div style="background:var(--panel,#fff);color:inherit;border-radius:14px;max-width:min(720px,100%);max-height:100%;overflow:auto;padding:14px 16px">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><b style="flex:1">📎 Payment screenshot</b><button type="button" class="btn sm ghost" data-x>✕</button></div>'
+        +(isPdf?'<div class="muted" style="margin:8px 0 12px">PDF receipt — open or download it below.</div>':'<img src="'+esc(url)+'" alt="Payment screenshot" style="max-width:100%;border-radius:8px;display:block;margin:0 auto 12px">')
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm" href="'+esc(dl)+'" download>⬇ Download</a><a class="btn sm ghost" href="'+esc(url)+'" target="_blank" rel="noopener">Open ↗</a></div></div>';
+      ov.onclick=function(e){ if(e.target===ov || (e.target.closest && e.target.closest("[data-x]"))) ov.remove(); };
+      document.body.appendChild(ov);
+    }, function(){ if(btn) btn.disabled=false; });
+  };
   function wireMine(){
     document.querySelectorAll("#opsMine [data-paydetails]").forEach(function(b){ b.onclick=function(){ openPayDetailsModal(b.getAttribute("data-paydetails")); }; });
     // the payment screenshot the Geek team uploaded — open / download it
-    document.querySelectorAll("#opsMine [data-payproof]").forEach(function(b){ b.onclick=function(){
-      b.disabled=true;
-      window.sb.storage.from("payment-proofs").createSignedUrl(b.getAttribute("data-payproof"), 600, { download:false }).then(function(r){
-        b.disabled=false; if(r.error||!r.data){ alert("Couldn't open the screenshot: "+((r.error&&r.error.message)||"try again")); return; }
-        window.open(r.data.signedUrl, "_blank", "noopener"); }, function(){ b.disabled=false; }); }; });
+    document.querySelectorAll("#opsMine [data-payproof]").forEach(function(b){ b.onclick=function(){ window.ciShowProof(b.getAttribute("data-payproof"), b); }; });
     document.querySelectorAll("#opsMine [data-accept]").forEach(function(b){ b.onclick=function(){ api("respond_to_campaign",{p_participation:b.getAttribute("data-accept"),p_accept:true,p_reason:null}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-reject]").forEach(function(b){ b.onclick=function(){ var reason=prompt("No problem — tell the brand why you're passing (they see this):")||""; if(!reason) return; api("respond_to_campaign",{p_participation:b.getAttribute("data-reject"),p_accept:false,p_reason:reason}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-upload]").forEach(function(b){ b.onclick=function(){ var url=prompt("Paste your content link (e.g. Instagram post URL):")||""; if(!url) return; var note=prompt("Note / question for the Geek team (optional):")||""; api("submit_content",{p_deliverable:b.getAttribute("data-upload"),p_content_url:url,p_note:note}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
@@ -1156,17 +1171,18 @@
       if(!k){ document.getElementById("opsCtBody").innerHTML='<div class="ci-err-inline">Your contract is being prepared — check back in a minute.</div>'; return; }
       var dl=(k.deliverables||[]), cl=(k.clauses||[]);
       var risky=cl.some(function(c){ return c.key==='non_delivery'||c.key==='reship'; });
+      var noProd=!k.product && !k.product_value && !cl.some(function(c){ return c.key==='reship'; });   // a Paid campaign: nothing is shipped
       document.getElementById("opsCtBody").innerHTML=''
-        + '<div class="ci-meta"><span>'+esc(k.brand||'')+' × <b>'+esc(k.campaign||'')+'</b></span><span>Product: <b>'+esc(k.product||"—")+'</b>'+(k.product_value?' (₹'+esc(Number(k.product_value).toLocaleString("en-IN"))+')':'')+'</span>'
+        + '<div class="ci-meta"><span>'+esc(k.brand||'')+' × <b>'+esc(k.campaign||'')+'</b></span><span>'+(noProd?'💰 Paid campaign — nothing is shipped':'Product: <b>'+esc(k.product||"—")+'</b>'+(k.product_value?' (₹'+esc(Number(k.product_value).toLocaleString("en-IN"))+')':''))+'</span>'
         + '<span>Make: <b>'+(dl.length?dl.map(function(x){ return esc(x.quantity||1)+'× '+esc(x.format||x.content_format||"content"); }).join(" + "):'—')+'</b></span>'
-        + '<span>Post within <b>'+esc(k.content_days||7)+' days</b> of delivery</span></div>'
+        + '<span>Post within <b>'+esc(k.content_days||7)+' days</b> of '+(noProd?'the video brief':'delivery')+'</span></div>'
         + (cl.length?'<div class="ct-clauses" id="opsCtScroll">'+cl.map(function(c,i){ return '<div class="ct-clause'+(c.key==='non_delivery'||c.key==='reship'||c.key==='approval'?' warn':'')+'"><b>'+(i+1)+'. '+esc(c.title)+'</b><div>'+esc(c.text)+'</div></div>'; }).join("")
                 +'<div class="ct-end">— End of contract —</div></div>'
               :'<div class="ci-hint" style="margin-top:8px">Ad rights: '+esc(k.ad_rights_months||1)+' month(s) · Collab rights: '+(k.collab_rights?"Yes":"No")+'</div>')
         + '<div class="ct-gate" id="opsCtGate">↓ Read the whole contract — scroll to the end to accept and sign</div>'
         + '<div id="opsCtAccept" style="display:none">'
         +   '<label class="cp-check" style="margin-top:12px"><input type="checkbox" id="opsAsci"> <span>I have read the whole contract, I will follow the <b>ASCI</b> guidelines, and I will <b>post only after the brand approves my video</b> in the app.</span></label>'
-        +   (risky?'<label class="cp-check"><input type="checkbox" id="opsTerms"> <span>I understand that if I receive the product and don\'t submit my video within '+esc(k.content_days||7)+' days, <b>my account is blocked</b> and I <b>must send the product to another creator at my own cost</b>.</span></label>':'')
+        +   (risky?'<label class="cp-check"><input type="checkbox" id="opsTerms"> <span>'+(noProd?'I understand that if I don\'t submit my video within '+esc(k.content_days||7)+' days of the video brief, <b>my account is blocked</b> and <b>no fee is paid</b> for this campaign.':'I understand that if I receive the product and don\'t submit my video within '+esc(k.content_days||7)+' days, <b>my account is blocked</b> and I <b>must send the product to another creator at my own cost</b>.')+'</span></label>':'')
         +   (k.sign_as
               ? '<label class="wa-f"><span>Type your name exactly as on your profile: <b>'+esc(k.sign_as)+'</b></span><input id="opsSig" autocomplete="off" placeholder="'+esc(k.sign_as)+'"></label>'
                 + '<div class="ci-hint" id="opsSigHint">Only the name on your Geek OS profile can sign this contract.</div>'

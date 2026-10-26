@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
             if (!r.ok && !/already exists|duplicate/i.test(raw?.error?.error_user_msg || raw?.error?.message || "")) throw new Error(raw?.error?.error_user_msg || raw?.error?.message || "Meta template create failed");
             await setS(r.ok ? mapStatus(raw?.status) : "submitted", null);
           }
-        } else if (t.status !== "manual") {
+        } else if (t.status !== "manual" && t.status !== "submitted") {   // "submitted" = created in snapto, waiting for Meta — keep it
           await setS("manual", "Create this template in snapto / WhatsApp Manager — category Utility, language English, the exact text shown, footer “Reply STOP to stop WhatsApp updates” — then press Mark approved.");
         }
       } catch (e) { await setS("failed", ((e as Error).message || "template create failed").slice(0, 300)); }

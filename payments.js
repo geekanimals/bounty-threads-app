@@ -12,7 +12,12 @@ const payInr = n => n==null || n==="" ? "—" : "₹" + Math.round(+n).toLocaleS
 const payRpc = (fn, args) => sb.schema("api").rpc(fn, args||{}).then(r=>r, e=>({ error:e }));
 const payErr = e => (e && (e.message || e.error_description)) || String(e);
 
-function payCampKind(){ return ((typeof _wsCampaign!=="undefined" && _wsCampaign) || {}).campaign_type || (_bpCamp && _bpCamp.kind) || ""; }
+function payCampKind(){
+  const w = (typeof _wsCampaign!=="undefined" && _wsCampaign) || null, b = (typeof _bpCamp!=="undefined" && _bpCamp) || null;
+  // the campaign page's own data only counts for that same campaign (a stale page must not decide another campaign's type)
+  if(w && w.campaign_type && (!b || String(w.id)===String(b.id))) return w.campaign_type;
+  return (b && b.kind) || "";
+}
 function payIsPaidCamp(){ return ["paid","barter_paid"].includes(payCampKind()); }
 
 async function loadPayments(){
@@ -102,7 +107,7 @@ function payRowHtml(r){
   return `<div class="pay-row${p.on_hold?" hold":""}" data-payrow="${P}">
     <label class="pay-ck" title="${ready.length?"Select to pay":"Nothing ready to pay"}"><input type="checkbox" data-paysel="${P}"${ready.length?"":" disabled"}${ready.length && ready.every(o=>_pay.sel.has(o.payout_id))?" checked":""}></label>
     <div class="pay-who">${pic}<div><b>${esc(payWho(r))}</b>${r.name?` <span class="muted">${esc(r.name)}</span>`:""}
-      <div class="muted">${c.followers!=null?fmtNum(c.followers)+" followers · ":""}${esc(typeof hubStepLabel==="function" ? hubStepLabel(r.stage) : String(r.stage).replace(/_/g," "))}${signed?" · contract signed ✓":r.contract&&r.contract.issued_at?" · contract sent":p.amount==null?" · <b>contract waiting for the fee</b>":""}</div></div></div>
+      <div class="muted">${c.followers!=null?fmtNum(c.followers)+" followers · ":""}${esc(typeof hubStepLabel==="function" ? hubStepLabel(r.stage).replace(/^\d+\.\s*/,"") : String(r.stage).replace(/_/g," "))}${signed?" · contract signed ✓":r.contract&&r.contract.issued_at?" · contract sent":p.amount==null?" · <b>contract waiting for the fee</b>":""}</div></div></div>
     <div class="pay-fee">${p.amount!=null ? `<b>${payInr(p.amount)}</b> <span class="muted">${esc(payTerms(p, (_pay.data||{}).due_days))}</span>${p.fee_source==="bulk"?' <span class="tag">from sheet</span>':""}` : `<span class="tag warn">Fee not set</span>`}
       ${p.terms_note?`<div class="muted">📝 ${esc(p.terms_note)}</div>`:""}
       ${r.first_fee?`<div class="muted pay-first">First fee with Geek: <b>${payInr(r.first_fee.amount)}</b> · ${esc(r.first_fee.campaign||"")}</div>`:""}
@@ -266,6 +271,7 @@ async function payUploadProof(pid, file){
   return path;
 }
 async function payOpenProof(path){
+  if(typeof window.ciShowProof==="function") return window.ciShowProof(path);
   const { data, error } = await sb.storage.from("payment-proofs").createSignedUrl(path, 600);
   if(error || !data){ gateToast("Couldn't open the screenshot: " + payErr(error)); return; }
   window.open(data.signedUrl, "_blank", "noopener");
