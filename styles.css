@@ -2369,3 +2369,15 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .pay-sum span{display:block;font-size:11px;color:var(--muted,#8b90b8)}.pay-sum b{font-size:15px}
 .pay-quick{display:flex;flex-wrap:wrap;gap:4px;margin:-4px 0 4px}
 @media (max-width:520px){.pay-sum{grid-template-columns:repeat(2,1fr)}}
+/* ===== 💬 Messages per campaign ===== */
+.msg-list{display:flex;flex-direction:column;border:1px solid var(--line,rgba(127,127,127,.2));border-radius:12px;overflow:hidden}
+.msg-row{display:grid;grid-template-columns:28px minmax(180px,1.3fr) minmax(200px,1.2fr) minmax(160px,1fr) 16px;gap:8px;align-items:center;text-align:left;padding:9px 10px;background:none;border:0;border-top:1px solid var(--line,rgba(127,127,127,.15));color:inherit;font:inherit;font-size:13px;cursor:pointer}
+.msg-row:first-child{border-top:0}.msg-row:hover{background:rgba(124,58,237,.06)}
+.msg-n{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:rgba(124,58,237,.12);font-size:11px;font-weight:700}
+.msg-em{color:var(--muted,#8b90b8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msg-sec{font-weight:700;font-size:13px;margin-top:6px}
+.msg-bubble{background:#dcf8c6;color:#111;border-radius:12px 12px 12px 3px;padding:10px 12px;font-size:13.5px;line-height:1.5;max-width:460px}
+.msg-foot{color:#667;font-size:11.5px;margin-top:6px}
+.msg-mail{border:1px solid var(--line,rgba(127,127,127,.2));border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.55}
+.msg-subj{font-weight:700;margin-bottom:6px}
+@media (max-width:820px){.msg-row{grid-template-columns:24px 1fr;}.msg-row>.msg-wa,.msg-row>.msg-em{grid-column:2}.msg-row>.bp-caret{display:none}}

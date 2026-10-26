@@ -451,3 +451,57 @@ async function payFillRates(sel, args, thisPid){
     + `<details class="pay-rates"><summary class="muted">All fees</summary>${L.map(x=>`<div>${payInr(x.amount)} · ${esc(x.campaign||"")}${x.story?" · ⭐ Story":""}${x.advance_pct?` · ${x.advance_pct}% advance`:""} <span class="muted">${esc(fmtDate(x.agreed_at))}${x.deliverables?" · "+esc(x.deliverables):""}</span></div>`).join("")}</details>`;
 }
 window.payFillRates = payFillRates;
+
+/* ================= 💬 Messages — every phase of this campaign: WhatsApp template · email · in-app (Super Admin) ================= */
+let _msgMap = null;   // { camp, data, err }
+const MSG_ST = { approved:["approved","good"], submitted:["with Meta","warn"], queued:["sending to Meta","warn"], draft:["draft — not submitted","warn"],
+                 manual:["create in WhatsApp Manager","warn"], failed:["failed","bad"], rejected:["rejected","bad"], none:["no WhatsApp","" ] };
+async function loadMsgMap(){
+  if(!_bpCamp) return;
+  const { data, error } = await payRpc("campaign_message_map", { p_campaign: _bpCamp.id });
+  _msgMap = { camp: _bpCamp.id, data: error ? null : data, err: error ? payErr(error) : null };
+  const box = document.getElementById("msgBox"); if(box){ box.innerHTML = msgMapHtml(); wireMsgMap(); }
+}
+function msgAfterPaint(){ if(!_msgMap || _msgMap.camp!==(_bpCamp&&_bpCamp.id)) loadMsgMap(); else wireMsgMap(); }
+function msgMapHtml(){
+  if(!_msgMap || _msgMap.camp!==(_bpCamp&&_bpCamp.id)) return skel("list",4);
+  if(_msgMap.err) return `<div class="ci-err-inline">${esc(_msgMap.err)}</div>`;
+  const d = _msgMap.data||{}, sw = d.switches||{}, P = d.phases||[];
+  const onoff = (g, c, n)=> !g ? `<span class="tag bad">${n} OFF in Settings</span>` : !c ? `<span class="tag warn">${n} OFF for this campaign</span>` : `<span class="tag good">${n} ON</span>`;
+  const notLive = P.filter(p=> p.whatsapp && p.whatsapp.template && !p.whatsapp.general && p.whatsapp.status!=="approved").length;
+  return `<div class="msgmap">
+    <div class="muted" style="font-size:13px;margin-bottom:8px">${esc(BK_KIND_LABEL[d.kind]||d.kind||"")} campaign — what the creator gets at every step, on WhatsApp, by email and in the app. Tap a row to see the full message. ${onoff(sw.wa_global, sw.wa, "💬 WhatsApp")} ${onoff(sw.email_global, sw.email, "✉️ Email")}</div>
+    ${notLive?`<div class="pay-note">⏳ <b>${notLive}</b> WhatsApp template${notLive>1?"s are":" is"} not approved yet — until then those messages go on the general update template (or wait a few minutes while Meta reviews), and the email + in-app message go as usual. Open one and tap <b>Submit to Meta</b> (category Utility).</div>`:""}
+    <div class="msg-list">${P.map((p,i)=>{ const w = p.whatsapp||{}, st = MSG_ST[w.general ? "approved" : (w.status||"none")] || [w.status,""];
+      return `<button type="button" class="msg-row" data-msgi="${i}"><span class="msg-n">${i+1}</span><span class="msg-ph"><b>${esc(p.phase)}</b></span>
+        <span class="msg-wa">💬 ${w.template?`<code>${esc(w.template)}</code>`:'<span class="muted">—</span>'} <span class="tag ${st[1]}">${esc(w.general?"general update":st[0])}</span>${w.variant?' <span class="tag">this type</span>':""}</span>
+        <span class="msg-em">✉️ ${esc((p.email||{}).subject||"—")}</span><span class="bp-caret">›</span></button>`; }).join("")}</div></div>`;
+}
+function wireMsgMap(){
+  const box = document.getElementById("msgBox"); if(!box || !_msgMap || !_msgMap.data) return;
+  box.querySelectorAll("[data-msgi]").forEach(b=> b.onclick = ()=> msgOpen(_msgMap.data.phases[+b.dataset.msgi]));
+}
+function msgOpen(p){
+  const w = p.whatsapp||{}, e = p.email||{}, a = p.app||{}, st = MSG_ST[w.general ? "approved" : (w.status||"none")] || [w.status,""];
+  const canSubmit = w.template && !w.general && ["draft","manual","failed","rejected"].includes(w.status);
+  const fmt = t => esc(String(t||"")).replace(/\*([^*\n]+)\*/g,"<b>$1</b>").replace(/\n/g,"<br>");
+  const m = bpModal(`💬 ${esc(p.phase)}`, `<div class="modal-form msg-modal">
+    <div class="msg-sec">💬 WhatsApp ${w.template?`<code>${esc(w.template)}</code>`:""} <span class="tag ${st[1]}">${esc(w.general?"general update template":st[0])}</span></div>
+    <div class="msg-bubble">${fmt(w.text)}${w.template&&!w.general&&w.status!=="none"?`<div class="msg-foot">Reply STOP to stop WhatsApp updates</div>`:""}</div>
+    ${w.template&&!w.general&&w.status!=="none"?`<div class="muted" style="font-size:12px">Category <b>Utility</b> · English · variables {{1}} name · {{2}} campaign · {{3}} brand · {{4}} app link (shown here with sample values).${w.fallback?` Until it is approved this message goes on <b>${esc(w.fallback)}</b>.`:w.held?" Meta is reviewing it — messages for this step wait and go out the moment it is approved.":""}</div>`:""}
+    ${canSubmit?`<div class="ci-evrow"><button type="button" class="btn sm" id="msgSubmit">📤 Submit to Meta (Utility)</button><button type="button" class="btn sm ghost" id="msgCopy">Copy text</button></div>`:""}
+    <div class="msg-sec">✉️ Email</div>
+    <div class="msg-mail"><div class="msg-subj">${esc(e.subject||"")}</div><div>${fmt(e.text)}</div></div>
+    <div class="msg-sec">🔔 In the app</div>
+    <div class="msg-mail"><b>${esc(a.title||"—")}</b><div>${fmt((a.text||"").replace(/\*\*/g,"*"))}</div>${a.button?`<div class="muted" style="margin-top:4px">[ ${esc(a.button)} ]</div>`:""}</div>
+    ${p.exists===false?`<div class="muted" style="font-size:12px">This step has no app / email message.</div>`:""}</div>`);
+  const sb2 = m.querySelector("#msgSubmit");
+  if(sb2) sb2.onclick = async ()=>{
+    if(!await confirmChange(`Submit “${w.template}” to Meta for approval`, "Category Utility, English, the exact text shown. Meta usually reviews within a few minutes to a day; it goes out automatically once approved.")) return;
+    sb2.disabled = true; sb2.textContent = "Submitting…";
+    const { error } = await sb.rpc("admin_step_template_mark", { p_name: w.template, p_status: "queued" }).then(r=>r, e2=>({error:e2}));
+    if(error){ gateToast(payErr(error)); sb2.disabled = false; sb2.textContent = "📤 Submit to Meta (Utility)"; return; }
+    m.remove(); gateToast("Sent to Meta for approval ✓ — the status updates here"); loadMsgMap(); };
+  const cp = m.querySelector("#msgCopy");
+  if(cp) cp.onclick = async ()=>{ try{ await navigator.clipboard.writeText(String(w.text||"")); cp.textContent = "Copied ✓"; }catch(ex){ prompt("Copy:", w.text||""); } };
+}

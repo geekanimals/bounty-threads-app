@@ -1475,6 +1475,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
       <button class="btn" id="ccMatch" data-wspanel="invPanel">🎯 Find matching creators</button>
       <button class="btn ghost" data-ccsec="bulk">📥 Bulk upload</button>
       ${window.__isAdmin && ["paid","barter_paid"].includes(c.campaign_type) ? `<button class="btn ghost" data-ccsec="payments">💰 Payments</button>` : ""}
+      ${window.__isAdmin ? `<button class="btn ghost" data-ccsec="messages">💬 Messages &amp; templates</button>` : ""}
       <button class="btn ghost" data-ccsec="terms">📜 Contract &amp; video brief</button>
       <button class="btn ghost" data-ccsec="outreach">✉️ Outreach message</button>
       <button class="btn ghost" data-ccsec="shortlist">📋 List for the brand</button>
@@ -5758,7 +5759,7 @@ let _ccSort = "step", _ccSrc = "", _ccTier = "", _ccPost = "";   // campaign cre
 // the campaign page runs the whole process itself: one list, every step, every action
 function startCampaignCommand(c){
   _wsMode = true; _ccFilter = "all"; _ccQ = ""; _ccInvOpen = null; _bpPeople = null;
-  _bpCamp = { id: c.id, name: c.name, kind: c.campaign_type || "barter" }; _bpTab = "tracker"; _bpOpen = null; _bpAnalytics = null; _pay = null;
+  _bpCamp = { id: c.id, name: c.name, kind: c.campaign_type || "barter" }; _bpTab = "tracker"; _bpOpen = null; _bpAnalytics = null; _pay = null; _msgMap = null;
   _bk = { rows:null, head:null, map:null, preview:null, list:null, src:"", busy:false, note:"" };
   window.__bpClose = ()=>{ _bpTab = "tracker"; paintBarterProcess(); };
   loadBarterProcess();
@@ -5767,7 +5768,7 @@ function startCampaignCommand(c){
     if(!_wsMode || !document.getElementById("bpBody")){ clearInterval(_bpTimer); return; }
     if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open,.cc-ov,#ccOv")) return;
     const a = document.activeElement; if(a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.tagName==="SELECT")) return;
-    if(document.querySelector("#bpBody .hub-set") || _bpTab==="terms" || _bpTab==="bulk" || _bpTab==="payments") return;   // never wipe a half-filled form
+    if(document.querySelector("#bpBody .hub-set") || _bpTab==="terms" || _bpTab==="bulk" || _bpTab==="payments" || _bpTab==="messages") return;   // never wipe a half-filled form
     loadBarterProcess(true);
   }, 20000);
 }
@@ -5980,6 +5981,7 @@ function paintCampaignCommand(body){
   try{ paintCampaignCommandInner(body); } finally { body.style.minHeight = ""; if(Math.abs(window.scrollY - _y) > 2) window.scrollTo(0, _y); }
   if(_bpTab==="traits" && _bpCamp) mountTraitReport(document.getElementById("ctrCamp"), { campaign:_bpCamp.id });
   if(_bpTab==="payments" && typeof payAfterPaint==="function") payAfterPaint();
+  if(_bpTab==="messages" && typeof msgAfterPaint==="function") msgAfterPaint();
 }
 function paintCampaignCommandInner(body){
   const d = _bpData||{}, rows = ccRows(), pb = d.playbook||{};
@@ -5995,7 +5997,7 @@ function paintCampaignCommandInner(body){
       const l = document.querySelector("#bpBody .cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); }; }
   const TILES = bpNoShip() ? CC_TILES.filter(t=> !BP_SHIP.includes(t[0])) : CC_TILES;
   const tile = t => `<button type="button" class="cc-tile${_ccFilter===t[0]?" on":""}" data-cctile="${t[0]}" title="${esc(t[2]||t[1])}"><b>${rows.filter(r=>ccMatch(t[0], r)).length}</b><span>${esc(t[1])}</span>${t[2]&&t[0]!=="all"?`<i>${esc(t[2])}</i>`:""}</button>`;
-  const secTitle = { payments:"💰 Payments — every creator A–Z (Super Admins only)", bulk:"📥 Bulk upload", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand" }[_bpTab];
+  const secTitle = { messages:"💬 Messages & templates — every step: WhatsApp · email · app", payments:"💰 Payments — every creator A–Z (Super Admins only)", bulk:"📥 Bulk upload", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand" }[_bpTab];
   const P0 = shown.filter(r=>r.kind==="p").map(r=>r.x), Iall0 = shown.filter(r=>r.kind==="i");
   const fP = x=> { const c = x.creator||{}; return { fol: c.followers ?? ((pubOf(c.username||x.applied_profile)||{}).followers), geek: c.followers!=null && !!c.username,
       posted: (x.posts||[]).length>0, name: String(c.username||c.name||x.applied_profile||"").toLowerCase(), step: bpEffectiveIndex(x)*10,
@@ -6015,7 +6017,7 @@ function paintCampaignCommandInner(body){
     ${pb.saved===false?`<div class="ac360-miss">📜 No contract terms or video brief saved yet — creators get the defaults. <a href="#" id="bpGoTerms">Set them now →</a></div>`:""}
     <div class="cc-flow">${TILES.map(tile).join("")}</div>
     ${secTitle?`<div class="card cc-sec" id="ccSec"><div class="cc-sec-h"><h3>${secTitle}</h3><button class="ci-pop-x" id="ccSecX" aria-label="Close">✕</button></div>
-      <div class="ac360-sec">${_bpTab==="payments"?`<div id="payBox">${typeof payHtml==="function"?payHtml():""}</div>`:_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="traits"?`<div id="ctrCamp"></div>`:_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(d.creators||[])}</div></div>`:""}
+      <div class="ac360-sec">${_bpTab==="messages"?`<div id="msgBox">${typeof msgMapHtml==="function"?msgMapHtml():""}</div>`:_bpTab==="payments"?`<div id="payBox">${typeof payHtml==="function"?payHtml():""}</div>`:_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="traits"?`<div id="ctrCamp"></div>`:_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(d.creators||[])}</div></div>`:""}
     <div class="card cc-list">
       <div class="cc-list-h"><h3>Creators <span class="muted">${P.length+Iall.length}${_ccFilter==="needs"?" · ⚡ need you":_ccFilter!=="all"?` · ${esc((CC_TILES.find(t=>t[0]===_ccFilter)||[])[1]||"")}`:""}</span></h3>
         ${needsYou?`<button type="button" class="bp-needs cc-needs${_ccFilter==="needs"?" on":""}" id="ccNeedsChip">⚡ <b>${needsYou}</b> need${needsYou>1?"":"s"} you${_ccFilter==="needs"?" · showing them ✕":" — tap to see"}</button>`:""}
@@ -8342,19 +8344,20 @@ async function adminStepTemplates(box){
   const { data, error } = await sb.rpc("admin_step_templates").then(r=>r, e=>({error:e}));
   if(error){ w.innerHTML = `<div class="muted">Step templates: ${esc(error.message||error)} — run <code>supabase db push</code>.</div>`; return; }
   const L = data||[], tag = st=> ({approved:'<span class="tag good">approved</span>', submitted:'<span class="tag warn">with Meta</span>', queued:'<span class="tag warn">queued</span>',
-    manual:'<span class="tag warn">create in snapto</span>', failed:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">failed</span>', rejected:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">rejected</span>'})[st]||esc(st);
+    manual:'<span class="tag warn">create in snapto</span>', draft:'<span class="tag warn">draft — not submitted</span>', failed:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">failed</span>', rejected:'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">rejected</span>'})[st]||esc(st);
   w.innerHTML = `<h3 style="margin:0 0 4px">Step templates <span class="muted" style="font-size:12px;font-weight:400">· category <b>Utility</b> · English · footer “Reply STOP to stop WhatsApp updates” · {{1}} name · {{2}} campaign · {{3}} brand · {{4}} app link</span></h3>
     <p class="muted" style="font-size:12.5px;margin:0 0 8px">New ones (deadline reminder, posts still pending, restore your post) are sent to Meta on their own when Meta is connected; otherwise create them in snapto with exactly this text, then press Mark approved. Email and the app alert go right away; the WhatsApp waits until the template is approved.</p>
     <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Template</th><th>Used for</th><th>Text</th><th>Status</th><th></th></tr></thead><tbody>
     ${L.map(t=>`<tr><td><code>${esc(t.name)}</code></td><td class="muted" style="font-size:12px">${esc((t.used_for||[]).join(", ").replace(/_/g," "))}</td>
       <td><div class="wa-tpltext">${esc(t.body||"").replace(/\n/g,"<br>")}</div><button class="mini-btn ghost" data-steptcopy="${esc(t.body||"")}">Copy text</button></td>
       <td>${tag(t.status)}${t.error?`<div class="muted" style="font-size:11.5px;max-width:220px">${esc(t.error)}</div>`:""}</td>
-      <td style="white-space:nowrap">${t.status!=="approved"?`<button class="mini-btn" data-stepok="${esc(t.name)}">Mark approved</button>`:`<button class="mini-btn ghost" data-stepre="${esc(t.name)}">Resubmit</button>`}</td></tr>`).join("")}
+      <td style="white-space:nowrap">${["draft","manual","failed","rejected"].includes(t.status)?`<button class="mini-btn" data-stepsub="${esc(t.name)}">📤 Submit to Meta</button> `:""}${t.status!=="approved"?`<button class="mini-btn ghost" data-stepok="${esc(t.name)}">Mark approved</button>`:`<button class="mini-btn ghost" data-stepre="${esc(t.name)}">Resubmit</button>`}</td></tr>`).join("")}
     </tbody></table></div>`;
   w.querySelectorAll("[data-steptcopy]").forEach(b=> b.onclick = async ()=>{ try{ await navigator.clipboard.writeText(b.dataset.steptcopy); b.textContent="✓ copied"; }catch(e){ prompt("Copy:", b.dataset.steptcopy); } });
   const mark = async (n, st)=>{ const { error:e } = await sb.rpc("admin_step_template_mark", { p_name:n, p_status:st }); if(e){ gateToast(e.message); return; } gateToast(st==="approved" ? "Marked approved ✓" : "Queued — sent to Meta on the next run ✓"); adminStepTemplates(box); };
   w.querySelectorAll("[data-stepok]").forEach(b=> b.onclick = ()=>{ if(confirm("Only mark it approved once snapto / Meta shows this exact template as Approved.")) mark(b.dataset.stepok, "approved"); });
   w.querySelectorAll("[data-stepre]").forEach(b=> b.onclick = ()=> mark(b.dataset.stepre, "queued"));
+  w.querySelectorAll("[data-stepsub]").forEach(b=> b.onclick = ()=>{ if(confirm(`Submit ${b.dataset.stepsub} to Meta for approval (category Utility, the exact text shown)?`)) mark(b.dataset.stepsub, "queued"); });
 }
 async function adminDelivery(body, silent){
   if(!silent) body.innerHTML = skel("table",6);
