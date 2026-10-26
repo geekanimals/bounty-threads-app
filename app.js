@@ -1341,7 +1341,7 @@ function campInBucket(c, b){
   if(b==="all") return true;
   if(b==="approval") return c.status==="Approval";
   if(b==="celebrity") return isCelebrityCamp(c);
-  if(b==="paid") return ["paid","barter_paid"].includes(campKind(c)) && !(isCelebrityCamp(c) && campKind(c)!=="barter_paid");
+  if(b==="paid") return ["paid","barter_paid"].includes(campKind(c));
   if(b==="barter") return ["barter","barter_paid"].includes(campKind(c)) && !isCelebrityCamp(c);
   return true;
 }
@@ -1363,7 +1363,7 @@ function wireCampaignGrid(grid, all){
 // Mass Barter / Celebrity Stories pages: their campaigns on top, with a pre-set "New campaign" button
 function campaignSectionHtml(bucket){
   const T = { barter:["🎁 Barter campaigns","+ New barter campaign","Creators get your product in exchange for content."],
-              celebrity:["👑 Celebrity story campaigns","+ New celebrity story campaign","Celebrity / top-creator stories for your brand."] }[bucket];
+              celebrity:["⭐ Story campaigns","+ New Story campaign","Story campaigns — barter, barter + paid or paid (pick the type in the form)."] }[bucket];
   return `<div class="card" style="margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <div><h3 style="margin:0">${T[0]}</h3><div class="muted" style="font-size:13px">${T[2]}</div></div>
       <button class="btn" data-newcamp="${bucket}">${T[1]}</button></div>
@@ -1376,7 +1376,7 @@ async function loadCampaignSection(bucket){
   const { data, error } = await fetchOrgCampaigns();
   if(error){ grid.innerHTML = `<div class="muted">Couldn't load campaigns: ${esc(error.message)}</div>`; return; }
   const all = data||[], list = all.filter(c=>campInBucket(c, bucket));
-  grid.innerHTML = list.length ? campaignCardsHtml(list) : `<div class="muted">No ${bucket==="celebrity"?"celebrity story":"barter"} campaigns yet — create one with the button above.</div>`;
+  grid.innerHTML = list.length ? campaignCardsHtml(list) : `<div class="muted">No ${bucket==="celebrity"?"Story":"barter"} campaigns yet — create one with the button above.</div>`;
   wireCampaignGrid(grid, all);
 }
 
@@ -1408,7 +1408,7 @@ async function loadCampaigns(){
   const pass = c => campInBucket(c, _campFilter);
   const chips = document.getElementById("campTypeChips");
   if(chips){
-    chips.innerHTML = [["all","All"],["paid","💰 Paid"],["barter","🎁 Barter"],["celebrity","👑 Celebrity stories"],["approval","⏳ Awaiting approval"]].map(([k,l])=>{ const keep=_campFilter; _campFilter=k; const n=all.filter(pass).length; _campFilter=keep;
+    chips.innerHTML = [["all","All"],["paid","💰 Paid"],["barter","🎁 Barter"],["celebrity","⭐ Stories"],["approval","⏳ Awaiting approval"]].map(([k,l])=>{ const keep=_campFilter; _campFilter=k; const n=all.filter(pass).length; _campFilter=keep;
       return `<button class="ci-chip${_campFilter===k?" on":""}" data-cfilter="${k}">${l} <span>${n}</span></button>`; }).join("");
     chips.querySelectorAll("[data-cfilter]").forEach(b=> b.onclick = ()=>{ _campFilter = b.dataset.cfilter; loadCampaigns(); });
   }
@@ -1474,6 +1474,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
     <div class="cc-actions">
       <button class="btn" id="ccMatch" data-wspanel="invPanel">🎯 Find matching creators</button>
       <button class="btn ghost" data-ccsec="bulk">📥 Bulk upload</button>
+      ${window.__isAdmin && ["paid","barter_paid"].includes(c.campaign_type) ? `<button class="btn ghost" data-ccsec="payments">💰 Payments</button>` : ""}
       <button class="btn ghost" data-ccsec="terms">📜 Contract &amp; video brief</button>
       <button class="btn ghost" data-ccsec="outreach">✉️ Outreach message</button>
       <button class="btn ghost" data-ccsec="shortlist">📋 List for the brand</button>
@@ -1565,17 +1566,17 @@ async function toggleDeliverable(c, item, checked){
 }
 
 const CAMP_TYPES = [["barter","Barter"],["paid","Paid"],["barter_paid","Barter + Paid"]];
-const BARTER_SUBTYPES = [["celebrity_story","Celebrity story"],["normal_barter","Normal barter"],["pr_package","PR package"]];
+const BARTER_SUBTYPES = [["normal_barter","Normal"],["celebrity_story","Story"],["pr_package","PR package"]];
 const CAMP_PLATFORMS = ["Instagram","YouTube","Facebook","LinkedIn","X / Twitter","Snapchat","Moj / Josh"];
 function campTypeLabel(t, st){
   const T = Object.fromEntries(CAMP_TYPES), S = Object.fromEntries(BARTER_SUBTYPES);
-  return (T[t]||"") + (st && S[st] && t!=="paid" ? " · "+S[st] : "");
+  return (T[t]||"") + (st && S[st] && (t!=="paid" || st==="celebrity_story") ? " · "+S[st] : "");
 }
 // legacy `type` text kept in sync so older screens & reports keep working
 function legacyTypeFor(t, st){
   if(t==="paid") return "Paid Campaign";
   if(t==="barter_paid") return "Hybrid";
-  return { celebrity_story:"Celebrity Story", pr_package:"Product Seeding", normal_barter:"Mass Barter" }[st] || "Mass Barter";
+  return { celebrity_story:"Story", pr_package:"Product Seeding", normal_barter:"Mass Barter" }[st] || "Mass Barter";
 }
 const MAX_CAMP_FILE = 10*1024*1024;
 
@@ -1649,8 +1650,10 @@ function openCampaignModal(existing, preset){
     <form id="campaignForm" class="modal-form">
       <div class="cm-sec">Campaign type</div>
       <div class="cm-seg" id="cmType">${CAMP_TYPES.map(([k,l])=>`<label class="${k===ctype?'act':''}"><input type="radio" name="campaign_type" value="${k}"${k===ctype?' checked':''}> ${l}</label>`).join("")}</div>
-      <div class="mf-row cm-barter"><label>Barter type<select name="barter_subtype">${kv(BARTER_SUBTYPES, ed.barter_subtype||preset.barter_subtype||"normal_barter")}</select></label>
-        <label>Number of creators<input name="creators" type="number" min="0" value="${ed.creators!=null?esc(ed.creators):''}" placeholder="20"></label></div>
+      <div class="cm-typehint muted" id="cmTypeHint"></div>
+      <div class="mf-row"><label>Format<select name="barter_subtype" id="cmSub">${kv(BARTER_SUBTYPES, ed.barter_subtype||preset.barter_subtype||"normal_barter")}</select>
+          <span class="muted cm-hint">⭐ <b>Story</b> works with every type — the type above decides product / fee</span></label>
+        <label class="cm-barter">Number of creators<input name="creators" type="number" min="0" value="${ed.creators!=null?esc(ed.creators):''}" placeholder="20"></label></div>
       <div class="mf-row"><label>Campaign name<input name="name" required maxlength="120" value="${esc(ed.name||'')}" placeholder="Summer Glow Launch"></label>
       <label>Brand<select name="brand_pick" id="cmBrandPick"><option value="">Loading brands…</option></select>
         <input name="brand" id="cmBrandNew" maxlength="120" value="${esc(ed.brand||preset.brand||'')}" placeholder="New brand name — e.g. Lume Cosmetics" hidden></label></div>
@@ -1680,17 +1683,23 @@ function openCampaignModal(existing, preset){
       <label>Status<select name="status" id="cmStatus">${campStatusOptions(ed.status, ed.end_date)}</select>
         <span class="muted cm-hint"><b>Draft</b> — hidden from creators · <b>Live</b> — creators see it and can apply · <b>Shortlist completed</b> — the campaign keeps running for the creators already in it, nobody new can apply · it turns <b>Completed</b> on its own after the end date, or once every creator is done. Progress is counted on its own from where each creator is.</span></label>
       <div class="cm-sec">📜 Contract terms <span class="muted" style="font-weight:400;font-size:12px">— sent to each creator automatically the moment you approve them</span></div>
-      <div class="mf-row"><label>Product the creator gets<input name="ct_product" maxlength="140" value="${esc(ct.product||'')}" placeholder="Momo box (12 pcs)"></label>
-      <label>Content due (days after delivery)<input name="ct_days" type="number" min="1" max="60" value="${esc(ct.content_days??7)}">
+      <div class="mf-row"><label class="cm-barter">Product the creator gets<input name="ct_product" maxlength="140" value="${esc(ct.product||'')}" placeholder="Momo box (12 pcs)"></label>
+      <label><span id="cmDaysLbl">Content due (days after delivery)</span><input name="ct_days" type="number" min="1" max="60" value="${esc(ct.content_days??7)}">
         <span class="muted cm-hint">Reminders every day at 9:00, then 9:00 + 18:30 for the last 3 days</span></label></div>
       <div class="mf-row"><label>Ad rights (months)<input name="ct_months" type="number" min="0" max="24" value="${esc(ct.ad_rights_months??1)}">
         <span class="muted cm-hint">Posts must stay live this long — we check twice a day and remind the creator to restore a missing one</span></label><span></span></div>
       <div class="cm-ctprev" id="cmCtPrev"></div>
       <label class="cp-check"><input type="checkbox" name="ct_collab"${ct.collab_rights===false?'':' checked'}> Collab rights — the creator adds the brand as an Instagram collaborator</label>
       <label class="cp-check"><input type="checkbox" name="ct_black"${ct.blacklist_clause===false?'':' checked'}> <span><b>Non-delivery = blacklist</b> — if they take the product and don't post on time, they're blacklisted from the platform</span></label>
-      <label class="cp-check"><input type="checkbox" name="ct_reship"${ct.reship_clause===false?'':' checked'}> <span><b>Re-ship at their own cost</b> — they must send the product to another creator we name</span></label>
+      <label class="cp-check cm-barter"><input type="checkbox" name="ct_reship"${ct.reship_clause===false?'':' checked'}> <span><b>Re-ship at their own cost</b> — they must send the product to another creator we name</span></label>
       <label>Other terms <span class="muted" style="font-weight:400">(optional)</span><textarea name="ct_extra" rows="2" maxlength="1500" placeholder="e.g. No competitor brands for 30 days after posting">${esc(ct.extra_terms||'')}</textarea></label>
-      <div class="cm-sec">🎬 Video brief <span class="muted" style="font-weight:400;font-size:12px">— sent to the creator automatically when the product is delivered</span></div>
+      <div class="cm-paysec">
+        <div class="cm-sec">💰 Creator payment <span class="muted" style="font-weight:400;font-size:12px">— each creator's fee is NOT set here</span></div>
+        <div class="mf-row"><label>Pay the fee — days after every post is live<select name="pay_due_days">${[3,5,7,10,15,30].map(n=>`<option value="${n}"${n===(+(ct.pay_due_days)||7)?" selected":""}>${n} days</option>`).join("")}</select>
+          <span class="muted cm-hint">Goes into every creator's contract. Can be changed for one creator on the 💰 Payments tab.</span></label><span></span></div>
+        <div class="cm-payinfo">🔒 You agree each creator's fee with them (offline) — a <b>Super Admin</b> sets it per creator on the campaign's <b>💰 Payments</b> tab, with terms like <i>50% advance</i>, or puts it in the bulk-upload sheet (<b>Fee</b>, <b>Advance %</b>, <b>Pay days</b>, <b>Terms</b>, <b>UPI</b> / <b>Account no</b> + <b>IFSC</b> columns). Fees are never shown to the brand, agencies or other creators — each creator sees only their own, in their contract. The contract goes out once their fee is set.</div>
+      </div>
+      <div class="cm-sec">🎬 Video brief <span class="muted" style="font-weight:400;font-size:12px" id="cmVbWhen">— sent to the creator automatically when the product is delivered</span></div>
       <label>What to shoot<textarea name="vb_shoot" rows="2" maxlength="2000" placeholder="Unboxing + first bite, 20–30 sec, vertical 9:16">${esc(vb.what_to_shoot||'')}</textarea></label>
       <label>Key messages<textarea name="vb_msg" rows="2" maxlength="1500" placeholder="Steamed fresh in 10 minutes, 400+ outlets">${esc(vb.key_messages||'')}</textarea></label>
       <div class="mf-row"><label>Do's<textarea name="vb_dos" rows="2" maxlength="1000" placeholder="Natural light, show the box">${esc(vb.dos||'')}</textarea></label>
@@ -1731,6 +1740,17 @@ function openCampaignModal(existing, preset){
   const syncType = ()=>{
     const t = form.querySelector("input[name=campaign_type]:checked").value;
     form.querySelectorAll(".cm-barter").forEach(x=> x.style.display = t==="paid" ? "none" : "");
+    form.querySelectorAll(".cm-paysec").forEach(x=> x.style.display = t==="barter" ? "none" : "");
+    // a paid campaign has nothing to ship: no PR package, no address / courier, the brief goes out on signing
+    const sub = document.getElementById("cmSub"), pr = sub && sub.querySelector('option[value="pr_package"]');
+    if(pr){ pr.hidden = t==="paid"; if(t==="paid" && sub.value==="pr_package") sub.value = "normal_barter"; }
+    const dl = document.getElementById("cmDaysLbl"); if(dl) dl.textContent = t==="paid" ? "Content due (days after signing)" : "Content due (days after delivery)";
+    const vw = document.getElementById("cmVbWhen"); if(vw) vw.textContent = t==="paid" ? "— sent to the creator automatically as soon as they sign (nothing to ship)" : "— sent to the creator automatically when the product is delivered";
+    const th = document.getElementById("cmTypeHint");
+    if(th) th.innerHTML = { barter:"🎁 <b>Barter</b> — contract → address → courier → delivered → video brief → video → approval → post.",
+      barter_paid:"🎁💰 <b>Barter + Paid</b> — the same barter flow, plus a fee for each creator: bank / UPI details are collected and verified, and the fee is paid after the posts are live.",
+      paid:"💰 <b>Paid</b> — no product, no address, no courier: contract → video brief → video → approval → post → fee. Bank / UPI details are collected right after signing." }[t] || "";
+    try{ paintDeliv(); }catch(e){ /* first run: the preview isn't wired yet */ }
     form.querySelectorAll(".cm-paid").forEach(x=> x.style.display = t==="barter" ? "none" : "");
     form.querySelectorAll(".cm-nobarter-creators").forEach(x=> x.style.display = t==="paid" ? "" : "none");
     form.querySelectorAll("#cmType label").forEach(l=> l.classList.toggle("act", l.querySelector("input").checked));
@@ -1753,7 +1773,8 @@ function openCampaignModal(existing, preset){
     document.getElementById("cmDsum").innerHTML = n ? `Each creator: <b>${esc(txt)}</b> · <b>${n}</b> post link${n>1?"s":""} to complete the campaign` : `<span style="color:#dc2626">Tick at least one deliverable.</span>`;
     const days = parseInt(form.querySelector("[name=ct_days]").value)||7, months = Math.max(0, parseInt(form.querySelector("[name=ct_months]").value)||0);
     const tags = [...tagBox.querySelectorAll(".cm-tag"), ...mentBox.querySelectorAll(".cm-tag")].map(x=>x.dataset.tag);
-    document.getElementById("cmCtPrev").innerHTML = `<b>📜 The contract is written from this form:</b> ${n?esc(txt):"—"} within <b>${days} day${days>1?"s":""}</b> of delivery${tags.length?` · must use <b>${esc(tags.join(" "))}</b>`:""} · ad rights <b>${months} month${months===1?"":"s"}</b> (posts stay live)${form.querySelector("[name=ct_collab]").checked?" · collab with the brand":""}${form.querySelector("[name=ct_black]").checked?` · blacklist if no video in ${days} days`:""}.`;
+    const tNow = (form.querySelector("input[name=campaign_type]:checked")||{}).value || "barter", payD = +(form.querySelector("[name=pay_due_days]")||{}).value || 7;
+    document.getElementById("cmCtPrev").innerHTML = `<b>📜 The contract is written from this form:</b> ${tNow!=="barter"?`<b>each creator's own fee</b> (paid ${payD} days after every post is live, or with the advance you agree) · `:""}${n?esc(txt):"—"} within <b>${days} day${days>1?"s":""}</b> of ${tNow==="paid"?"signing":"delivery"}${tags.length?` · must use <b>${esc(tags.join(" "))}</b>`:""} · ad rights <b>${months} month${months===1?"":"s"}</b> (posts stay live)${form.querySelector("[name=ct_collab]").checked?" · collab with the brand":""}${form.querySelector("[name=ct_black]").checked?` · blacklist if no video in ${days} days`:""}.`;
   };
   form.querySelectorAll("[data-dk]").forEach(r=>{
     const ck = r.querySelector("[data-dkc]"), q = r.querySelector("[data-dqn]");
@@ -1761,7 +1782,7 @@ function openCampaignModal(existing, preset){
     q.oninput = ()=>{ if(!ck.checked){ ck.checked = true; } paintDeliv(); };
     r.querySelectorAll("[data-dq]").forEach(b=> b.onclick = ()=>{ q.value = Math.max(1, Math.min(20, (parseInt(q.value)||1) + parseInt(b.dataset.dq))); ck.checked = true; paintDeliv(); });
   });
-  ["deliv_other","ct_days","ct_months","ct_collab","ct_black"].forEach(n=>{ const x = form.querySelector(`[name=${n}]`); if(x){ x.addEventListener("input", paintDeliv); x.addEventListener("change", paintDeliv); } });
+  ["deliv_other","ct_days","ct_months","ct_collab","ct_black","pay_due_days"].forEach(n=>{ const x = form.querySelector(`[name=${n}]`); if(x){ x.addEventListener("input", paintDeliv); x.addEventListener("change", paintDeliv); } });
   [tagBox, mentBox].forEach(b=>{ b.addEventListener("change", paintDeliv); b.addEventListener("keyup", paintDeliv); b.addEventListener("focusout", ()=> setTimeout(paintDeliv, 0)); });
   paintDeliv();
   const endIn = form.querySelector("input[name=end_date]"), stSel = document.getElementById("cmStatus");
@@ -1791,7 +1812,7 @@ function openCampaignModal(existing, preset){
     e.preventDefault();
     const f = new FormData(form), err = document.getElementById("cmErr");
     const btn = form.querySelector("button[type=submit]");
-    const t = f.get("campaign_type"), st = t==="paid" ? null : f.get("barter_subtype");
+    const t = f.get("campaign_type"), st = t==="paid" ? (f.get("barter_subtype")==="celebrity_story" ? "celebrity_story" : null) : f.get("barter_subtype");
     const num = v => { const n = parseFloat(v); return isFinite(n) && n>=0 ? n : null; };
     const csv = v => String(v||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,20);
     err.textContent="";
@@ -1849,7 +1870,9 @@ function openCampaignModal(existing, preset){
       row.contract_terms = { product: txt("ct_product") || null, product_value: t==="paid" ? null : num(f.get("product_value")),
         deliverables: delivText,
         ad_rights_months: Math.min(24, Math.max(0, parseInt(f.get("ct_months"))||0)), content_days: Math.min(60, Math.max(1, parseInt(f.get("ct_days"))||7)),
-        collab_rights: !!f.get("ct_collab"), blacklist_clause: !!f.get("ct_black"), reship_clause: !!f.get("ct_reship"), extra_terms: txt("ct_extra") || null };
+        collab_rights: !!f.get("ct_collab"), blacklist_clause: !!f.get("ct_black"), reship_clause: t!=="paid" && !!f.get("ct_reship"), extra_terms: txt("ct_extra") || null,
+        pay_due_days: t==="barter" ? null : Math.min(90, Math.max(1, parseInt(f.get("pay_due_days"))||7)) };
+      if(t==="paid") row.contract_terms.product = null;
       row.video_brief = { what_to_shoot: txt("vb_shoot") || null, key_messages: txt("vb_msg") || null, dos: txt("vb_dos") || null, donts: txt("vb_donts") || null,
         caption: txt("vb_caption") || null, reference_links: txt("vb_refs") || null, posting_note: txt("vb_note") || null };
       let error;
@@ -2168,7 +2191,7 @@ async function checkedWrite(query, what){
 const STORY_STAGES = ["Requested","Negotiating","Live","Delivered"];
 
 function renderCelebrity(){
-  let html = pageHead("Celebrity Stories","Celebrity barter & paid deals — request to proof.",`<span id="addStoryBtn">+ New Story Deal</span>`);
+  let html = pageHead("Stories","Story campaigns — barter, barter + paid or paid — request to proof.",`<span id="addStoryBtn">+ New Story Deal</span>`);
   html += campaignSectionHtml("celebrity");
   html += `<div class="card" style="margin-top:16px"><h3>Story deal pipeline</h3>
     <div class="kanban" id="storyKanban"><div class="muted" style="padding:12px">Loading…</div></div></div>`;
@@ -3614,7 +3637,7 @@ async function adminCampaigns(body, silent){
       <span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <input id="acQ" type="search" placeholder="🔎 Search campaign, brand, workspace" value="${esc(_acQ)}" style="padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;min-width:220px">
         <select id="acPick"><option value="">All campaigns (${allCamps.length})</option>${(cr.data||[]).slice().sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(c=>`<option value="${esc(c.id)}"${c.id===_acPick?" selected":""}>${esc(c.name)}${c.brand?" — "+esc(c.brand):""}</option>`).join("")}</select>
-        <select id="acType"><option value="">Paid + Barter</option><option value="paid"${tfilter==="paid"?" selected":""}>💰 Paid</option><option value="barter"${tfilter==="barter"?" selected":""}>🎁 Barter</option><option value="celebrity"${tfilter==="celebrity"?" selected":""}>👑 Celebrity stories</option></select>
+        <select id="acType"><option value="">Paid + Barter</option><option value="paid"${tfilter==="paid"?" selected":""}>💰 Paid</option><option value="barter"${tfilter==="barter"?" selected":""}>🎁 Barter</option><option value="celebrity"${tfilter==="celebrity"?" selected":""}>⭐ Stories</option></select>
       <select id="acFilter"><option value="">All statuses</option>${CAMP_STATUSES.map(s=>`<option${s===filter?" selected":""}>${s}</option>`).join("")}</select></span></div>
     ${_acPick && camps[0] ? acPickSummary(camps[0], pipe.filter(p=>p.legacy_campaign_id===_acPick)) : ""}
     ${camps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="tbl"><thead><tr><th>Campaign</th><th>Workspace</th><th>Type</th><th>Status</th><th>Applied</th><th>Pending</th><th>Approved</th><th>Declined</th><th></th></tr></thead><tbody>
@@ -5080,10 +5103,19 @@ function wireMkComposer(){
 let _bk = { rows:null, head:null, map:null, preview:null, list:null, src:"", busy:false, note:"" };
 const BK_FIELDS = [
   ["name","Name", /^(full ?name|name|creator( name)?|influencer( name)?)$/i],
+  // paid campaigns: each creator's fee + terms + bank / UPI (the Fee column needs a Super Admin)
+  ["fee","Fee (₹)", /^(?!.*(advance|%|day|term|note|mode|method|status|upi|account|ifsc|bank|follower|product)).*(fee|amount|commercials?|price|rate|charges?|budget|deal value|payment)/i],
+  ["advance_pct","Advance %", /advance/i],
+  ["pay_days","Pay days", /^(?!.*(content|video|post ?due)).*(pay(ment)? ?(days|after|due)|days? (to|for|till) pay)/i],
+  ["pay_terms","Terms", /(pay(ment)? ?terms|^terms$|payment ?note)/i],
+  ["upi","UPI ID", /(upi|vpa)/i],
+  ["account_no","Account no", /^(?!.*(name|holder|type|insta)).*(a\/c ?(no|number)|account ?(no|number|num)|bank ?(account|a\/c))/i],
+  ["ifsc","IFSC", /ifsc/i],
+  ["account_name","Account holder", /(account ?holder|holder ?name|account ?name|beneficiary|bene ?name|name (as )?(in|on|per) bank)/i],
   ["post_link","Post link", /^(?!.*(track|awb|courier|video|drive)).*((post|reel|story|stories|content|live) ?(link|url)s?|permalink)/i],
   ["video_link","Video link", /^(?!.*(track|awb|courier)).*((video|drive|cut|edit) ?(link|url)s?)/i],
-  ["handle","Instagram", /^(?!.*(track|awb|courier|post|reel|stor|video|drive|permalink)).*(insta|^ig\b|handle|username|profile|account|link|url)/i],
-  ["phone","WhatsApp", /^(?!.*(track|awb|courier|pin|zip|postal|follower)).*(whats ?app|phone|mobile|contact( no| number)?|number|cell|wa\b)/i],
+  ["handle","Instagram", /^(?!.*(track|awb|courier|post|reel|stor|video|drive|permalink|a\/c|account ?(no|num|holder|name)|bank|upi|ifsc|holder)).*(insta|^ig\b|handle|username|profile|account|link|url)/i],
+  ["phone","WhatsApp", /^(?!.*(track|awb|courier|pin|zip|postal|follower|a\/c|account|bank|upi|ifsc)).*(whats ?app|phone|mobile|contact( no| number)?|number|cell|wa\b)/i],
   ["email","Email", /(e-?mail|mail id)/i],
   ["city","City", /(city|location|place|town)/i],
   ["followers","Followers", /(follower|followers|reach|fans)/i],
@@ -5152,7 +5184,10 @@ const BK_GUIDE = [
   ["Post link","Instagram link of every post (space or comma between them) — a row with post links is Posted; Posted without a link waits on Client approved","https://www.instagram.com/reel/…","for Posted"]];
 async function bkDownloadXlsx(){
   await bkLoadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
-  const ws = XLSX.utils.aoa_to_sheet(BK_SAMPLE);
+  // paid campaign: the payment columns ride along (Fee, Advance %, Pay days, Terms, UPI, Account no, IFSC, Account holder)
+  const paid = typeof payIsPaidCamp==="function" && payIsPaidCamp();
+  const PAYH = ["Fee","Advance %","Pay days","Terms","UPI ID","Account no","IFSC","Account holder"];
+  const ws = XLSX.utils.aoa_to_sheet(paid ? BK_SAMPLE.map((r,i)=> r.concat(i===0 ? PAYH : i===1 ? ["15000","50","7","includes 1 story repost","creator@okhdfcbank","","",""] : i===2 ? ["8000","0","5","","","50100123456789","HDFC0001234","Riya Sharma"] : PAYH.map(()=> ""))) : BK_SAMPLE);
   ws["!cols"] = [{wch:16},{wch:30},{wch:16},{wch:22},{wch:11},{wch:18},{wch:34},{wch:14},{wch:9},{wch:11},{wch:30}];
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Creators");
   XLSX.writeFile(wb, "geek-creators-template.xlsx");
@@ -5226,9 +5261,11 @@ async function bkReadSheetLink(url){
   if(!text || /^\s*</.test(text)) throw new Error("Couldn't open the sheet. In Google Sheets tap Share → General access → “Anyone with the link” (Viewer), then try again — or download it as .xlsx / .csv and upload.");
   return bkSplitCsv(text);
 }
+const BK_PAY_KEYS = ["fee","advance_pct","pay_days","pay_terms","upi","account_no","ifsc","account_name"];
+function bkFields(){ return (typeof payIsPaidCamp==="function" && payIsPaidCamp()) ? BK_FIELDS : BK_FIELDS.filter(([k])=> !BK_PAY_KEYS.includes(k)); }
 function bkAutoMap(head){
   const map = {}; const used = new Set();
-  BK_FIELDS.forEach(([k,,re])=>{ const i = head.findIndex((h,ix)=> !used.has(ix) && re.test(String(h||""))); if(i>=0){ map[k]=i; used.add(i); } });
+  bkFields().forEach(([k,,re])=>{ const i = head.findIndex((h,ix)=> !used.has(ix) && re.test(String(h||""))); if(i>=0){ map[k]=i; used.add(i); } });
   return map;
 }
 function bkLooksLikeHeader(row){ return row.some(c=> BK_FIELDS.some(([,,re])=> re.test(String(c||"")))) && !row.some(c=> /@.+\./.test(c) || /\d{8,}/.test(String(c).replace(/\D/g,""))); }
@@ -5261,7 +5298,8 @@ function bkRowData(r){
   return { name:g("name"), handle:g("handle"), phone:g("phone"), email:g("email"), city:g("city"), followers:g("followers"),
            status: r.status||"registered", approved: bkStRank(r.status||"registered")>=4,
            address:g("address"), state:g("state"), pincode:g("pincode"), courier:g("courier"), tracking:g("tracking"),
-           post_link:g("post_link"), video_link:g("video_link") };
+           post_link:g("post_link"), video_link:g("video_link"),
+           fee:g("fee"), advance_pct:g("advance_pct"), pay_days:g("pay_days"), pay_terms:g("pay_terms"), upi:g("upi"), account_no:g("account_no"), ifsc:g("ifsc"), account_name:g("account_name") };
 }
 // the same person on several rows: keep the first row, take the furthest step and every link / missing detail
 function bkSamePerson(a, b){ return !!a && !!b && ((a.phone && a.phone===b.phone) || (a.email && a.email===b.email) || (a.handle && a.handle===b.handle)); }
@@ -5343,7 +5381,8 @@ function bulkHtml(){
       <div class="auth-err" id="bkErr"></div>
       ${rows.length ? `
       <div class="bk-meta"><b>${rows.length}</b> row${rows.length>1?"s":""} from ${bkEsc(_bk.src)} · match the columns:</div>
-      <div class="bk-map">${BK_FIELDS.map(([k,l])=>`<label><span>${l}</span><select data-bkmap="${k}"><option value="">—</option>${_bk.head.map((h,i)=>`<option value="${i}"${_bk.map[k]===i?" selected":""}>${bkEsc(h)}</option>`).join("")}</select></label>`).join("")}</div>
+      ${typeof payIsPaidCamp==="function" && payIsPaidCamp() ? `<div class="bk-paynote">💰 Paid campaign: add <b>Fee</b>, <b>Advance %</b>, <b>Pay days</b>, <b>Terms</b> and <b>UPI</b> / <b>Account no</b> + <b>IFSC</b> + <b>Account holder</b> columns to set each creator's payment as they are uploaded${window.__isAdmin?"":" (fees can only be uploaded by a Super Admin)"}. Their contract carries their own fee — nobody else sees it.</div>` : ""}
+      <div class="bk-map">${bkFields().map(([k,l])=>`<label><span>${l}</span><select data-bkmap="${k}"><option value="">—</option>${_bk.head.map((h,i)=>`<option value="${i}"${_bk.map[k]===i?" selected":""}>${bkEsc(h)}</option>`).join("")}</select></label>`).join("")}</div>
       <div class="bk-setall"><span>Set everyone to</span>${bkStatusSelect('id="bkAllSt"', "", "")}<span class="muted">— or change each row below</span></div>
       <div class="bk-tablewrap"><table class="bk-table"><thead><tr>
         <th>Status</th><th>Name</th><th>Instagram</th><th>WhatsApp</th><th>Email</th><th>City</th><th>Address · courier</th><th>What happens</th></tr></thead><tbody>
@@ -5495,6 +5534,14 @@ function wireBulk(){
     const rows = all.filter((d,i)=> !(pv[i] && (pv[i].no_contact || pv[i].duplicate || pv[i].already && !d._merged)));
     if(!rows.length) return;
     _bk.busy = true; paintBulk();
+    // paid campaign: each row's fee / bank / UPI first — applied as each creator lands (a waiting contract goes out with it)
+    const payRows = all.map((d,i)=> ({ ...d, i: String(i+2) })).filter(d=> d.fee || d.upi || d.account_no);
+    if(payRows.length && typeof payIsPaidCamp==="function" && payIsPaidCamp()){
+      const st = await sb.schema("api").rpc("bulk_stage_payments", { p_campaign:_bpCamp.id, p_rows: payRows }).then(r=>r, e=>({error:e}));
+      if(st.error){ _bk.busy = false; paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = "Payment columns: " + (st.error.message||st.error); return; }
+      const bad = (st.data && st.data.errors) || [];
+      if(bad.length) alert("Some payment details were not used:\n" + bad.slice(0,25).map(x=>`Row ${x.row}: ${x.error}`).join("\n"));
+    }
     const { data, error } = await sb.schema("api").rpc("bulk_import_creators", { p_campaign:_bpCamp.id, p_rows: rows, p_note: _bk.note||null }).then(r=>r, e=>({error:e}));
     _bk.busy = false;
     if(error){ paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = error.message||String(error); return; }
@@ -5532,6 +5579,11 @@ const BARTER_STEPS = [
 ];
 // stages from the invite path map onto the same board
 const BP_ALIAS = { invited:"applied", shortlisted:"applied", accepted:"brand_confirmed" };
+// Paid campaigns ship nothing: no address / courier steps anywhere on the board
+const BP_SHIP = ["address_confirmed","product_sent","product_delivered"];
+function bpNoShip(){ return !!(_bpCamp && _bpCamp.kind==="paid"); }
+function bpSteps(){ return bpNoShip() ? BARTER_STEPS.filter(s=> !BP_SHIP.includes(s[0])) : BARTER_STEPS; }
+function bpJourney(){ return bpNoShip() ? BP_JOURNEY.filter(s=> !BP_SHIP.includes(s[0])) : BP_JOURNEY; }
 // what happens next, in plain words, for whoever is looking at the board
 const BP_NEXT = {
   applied:"Screen this creator against the brief.",
@@ -5557,14 +5609,14 @@ const BP_JOURNEY = [["applied","Applied"],["brand_confirmed","Selected"],["contr
 const BP_J_ALIAS = { invited:"applied", shortlisted:"applied", eligible:"applied", sent_to_brand:"applied", accepted:"brand_confirmed", changes_requested:"content_created" };
 const BP_FAIL = ["dropped","rejected","ineligible","brand_declined"];
 function bpJIndex(x){
-  if(x.stage==="product_sent" && x.shipment && x.shipment.status==="delivered") return 6;
-  const s = BP_J_ALIAS[x.stage] || x.stage, i = BP_JOURNEY.findIndex(j=> j[0]===s); return i<0 ? 0 : i;
+  if(!bpNoShip() && x.stage==="product_sent" && x.shipment && x.shipment.status==="delivered") return 6;
+  const s = BP_J_ALIAS[x.stage] || x.stage, i = bpJourney().findIndex(j=> j[0]===s); return i<0 ? 0 : i;
 }
 function bpJourneyHtml(x){
   const idx = bpJIndex(x), st = x.steps||{}, sh = x.shipment||{}, con = x.contract||{}, failed = BP_FAIL.includes(x.stage);
   const when = k => st[k] || (k==="product_delivered"?sh.delivered_at:null) || (k==="product_sent"?sh.shipped_at:null) || (k==="applied"?x.applied_at:null)
                  || (k==="brand_confirmed"?st.accepted:null) || (k==="contract_sent"?con.issued_at:null) || (k==="contract_signed"?con.signed_at:null);
-  return `<div class="jr bp-jr"><div class="jr-track">${BP_JOURNEY.map((j,i)=>{
+  return `<div class="jr bp-jr"><div class="jr-track">${bpJourney().map((j,i)=>{
       const cls = failed ? (i<idx?"done":"") : (i<idx || x.stage==="completed") ? "done" : i===idx ? "now" : "";
       const at = when(j[0]);
       return `<div class="jr-step ${cls}" title="${esc(j[1])}${at?" · "+esc(fmtDateTime(at)):""}"><i>${cls==="done"?"✓":(i+1)}</i><span>${esc(j[1])}</span></div>`; }).join("")}</div></div>`;
@@ -5581,9 +5633,12 @@ function bpNext(x){
     case "applied": return { turn:"you", title:"Screen this creator", text:"Do they fit the brief?", acts:[["bpscreen","✓ Meets the brief",1],["bpreject","Not a fit"]] };
     case "eligible": return { turn:"you", title:"Add them to the brand's list", text:"They cleared screening.", acts:[["bpsend","📋 Add to the brand's list",1]] };
     case "sent_to_brand": return { turn:"brand", title:"Waiting for the brand", text:"Record what the brand said.", acts:[["bpbrand","✅ Brand confirmed",1],["bpbrandno","Brand passed"]] };
-    case "brand_confirmed": case "accepted": return { turn:"you", title:"Send the contract", text:"Usually goes out on its own — send it now if it hasn't.", acts:[["bpcontract","📜 Send contract now",1]] };
+    case "brand_confirmed": case "accepted": return ["paid","barter_paid"].includes((_bpCamp||{}).kind)
+        ? { turn:"you", title:"Set their fee — the contract goes out with it", text: window.__isAdmin ? "Open 💰 Payments, set this creator's fee & terms; the contract is sent automatically." : "A Super Admin sets the creator's fee; the contract goes out automatically after that.", acts: window.__isAdmin ? [["bppayfee","💰 Set fee",1]] : [] }
+        : { turn:"you", title:"Send the contract", text:"Usually goes out on its own — send it now if it hasn't.", acts:[["bpcontract","📜 Send contract now",1]] };
     case "contract_sent": return { turn:"creator", title:"Stuck: contract not signed", text:"They need to open the app and sign.", acts:[chat,["bpcontract","🔁 Resend contract"]] };
-    case "contract_signed": return { turn:"creator", title:"Stuck: delivery address", text:"They need to confirm where to ship.", acts:[chat] };
+    case "contract_signed": return bpNoShip() ? { turn:"creator", title:"Video brief going out", text:"Nothing to ship on a paid campaign — the brief goes out on its own.", acts:[chat] }
+                                            : { turn:"creator", title:"Stuck: delivery address", text:"They need to confirm where to ship.", acts:[chat] };
     case "address_confirmed": return { turn:"you", title:"Ship the product", text:"Book the courier and add the tracking.", acts:[["bpship","🚚 Add courier & tracking",1]] };
     case "product_sent":
       if(ship.status==="delivered") return { turn:"creator", title:"Making the video", text: x.due_on?`Due ${fmtDate(x.due_on)}.`:"", acts:[chat,["bppost","🔗 Add post / story"]] };
@@ -5643,7 +5698,7 @@ let _ccSort = "step", _ccSrc = "", _ccTier = "", _ccPost = "";   // campaign cre
 // the campaign page runs the whole process itself: one list, every step, every action
 function startCampaignCommand(c){
   _wsMode = true; _ccFilter = "all"; _ccQ = ""; _ccInvOpen = null; _bpPeople = null;
-  _bpCamp = { id: c.id, name: c.name }; _bpTab = "tracker"; _bpOpen = null; _bpAnalytics = null;
+  _bpCamp = { id: c.id, name: c.name, kind: c.campaign_type || "barter" }; _bpTab = "tracker"; _bpOpen = null; _bpAnalytics = null; _pay = null;
   _bk = { rows:null, head:null, map:null, preview:null, list:null, src:"", busy:false, note:"" };
   window.__bpClose = ()=>{ _bpTab = "tracker"; paintBarterProcess(); };
   loadBarterProcess();
@@ -5652,7 +5707,7 @@ function startCampaignCommand(c){
     if(!_wsMode || !document.getElementById("bpBody")){ clearInterval(_bpTimer); return; }
     if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open,.cc-ov,#ccOv")) return;
     const a = document.activeElement; if(a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.tagName==="SELECT")) return;
-    if(document.querySelector("#bpBody .hub-set") || _bpTab==="terms" || _bpTab==="bulk") return;   // never wipe a half-filled form
+    if(document.querySelector("#bpBody .hub-set") || _bpTab==="terms" || _bpTab==="bulk" || _bpTab==="payments") return;   // never wipe a half-filled form
     loadBarterProcess(true);
   }, 20000);
 }
@@ -5708,6 +5763,10 @@ function openBarterProcess(campaignId, campaignName, focusParticipation, tab){
 }
 async function loadBarterProcess(silent){
   const body = document.getElementById("bpBody"); if(!body || !_bpCamp) return;
+  if(_bpCamp.kind===undefined){
+    const k = await sb.from("campaigns").select("campaign_type").eq("id", _bpCamp.id).maybeSingle().then(r=>r, ()=>({data:null}));
+    _bpCamp.kind = (k && k.data && k.data.campaign_type) || "barter";
+  }
   const [t, o, g, pp] = await Promise.all([
     sb.schema("api").rpc("barter_tracker", { p_campaign:_bpCamp.id }).then(r=>r, e=>({error:e})),
     sb.schema("api").rpc("get_outreach", { p_campaign:_bpCamp.id }).then(r=>r, ()=>({data:{}})),
@@ -5769,7 +5828,7 @@ function paintBarterProcess(){
       <button class="ci-pop-x" id="bpX" aria-label="Close">✕</button></div>
     ${pb.saved===false?`<div class="ac360-miss">📜 This campaign has no contract terms or video brief saved yet — creators get the defaults (1 month ad rights, collab, 7 days to post, blacklist + re-ship clauses). <a href="#" id="bpGoTerms">Set them now →</a></div>`:""}
     ${needsYou?`<div class="bp-needs">⚡ <b>${needsYou}</b> creator${needsYou>1?"s need":" needs"} something from you — open them below.</div>`:""}
-    <div class="bp-flow">${BARTER_STEPS.filter(s=>s[0]!=="changes_requested").map(s=>`<button type="button" class="bp-fstep${_bpStage===s[0]?" on":""}" data-bpstage="${s[0]}" title="Show who reached this step"><b>${done(s[0])}</b><span>${esc(s[1].replace(/^\d+\.\s*/,""))}</span></button>`).join("")}</div>
+    <div class="bp-flow">${bpSteps().filter(s=>s[0]!=="changes_requested").map(s=>`<button type="button" class="bp-fstep${_bpStage===s[0]?" on":""}" data-bpstage="${s[0]}" title="Show who reached this step"><b>${done(s[0])}</b><span>${esc(s[1].replace(/^\d+\.\s*/,""))}</span></button>`).join("")}</div>
     <div class="admin-tabs ac360-tabs">${tabs.map(t=>`<button class="${_bpTab===t[0]?"act":""}" data-bptab="${t[0]}">${t[1]}</button>`).join("")}</div>
     <div class="ac360-sec">${_bpTab==="tracker"?bpStageBanner(list)+bpTrackerHtml(bpStageList(list)):_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(list)}</div>`;
   body.querySelector("#bpX").onclick = ()=> window.__bpClose && window.__bpClose();
@@ -5860,6 +5919,7 @@ function paintCampaignCommand(body){
   const _y = window.scrollY, _h = body.offsetHeight; if(_h) body.style.minHeight = _h + "px";
   try{ paintCampaignCommandInner(body); } finally { body.style.minHeight = ""; if(Math.abs(window.scrollY - _y) > 2) window.scrollTo(0, _y); }
   if(_bpTab==="traits" && _bpCamp) mountTraitReport(document.getElementById("ctrCamp"), { campaign:_bpCamp.id });
+  if(_bpTab==="payments" && typeof payAfterPaint==="function") payAfterPaint();
 }
 function paintCampaignCommandInner(body){
   const d = _bpData||{}, rows = ccRows(), pb = d.playbook||{};
@@ -5873,8 +5933,9 @@ function paintCampaignCommandInner(body){
     nb.innerHTML = _ccFilter==="needs" ? `✕ Show everyone` : `⚡ ${needsYou} need${needsYou>1?"":"s"} you — do it now`;
     nb.onclick = ()=>{ _ccFilter = _ccFilter==="needs" ? "all" : "needs"; _bpTab = "tracker"; paintBarterProcess();
       const l = document.querySelector("#bpBody .cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); }; }
+  const TILES = bpNoShip() ? CC_TILES.filter(t=> !BP_SHIP.includes(t[0])) : CC_TILES;
   const tile = t => `<button type="button" class="cc-tile${_ccFilter===t[0]?" on":""}" data-cctile="${t[0]}" title="${esc(t[2]||t[1])}"><b>${rows.filter(r=>ccMatch(t[0], r)).length}</b><span>${esc(t[1])}</span>${t[2]&&t[0]!=="all"?`<i>${esc(t[2])}</i>`:""}</button>`;
-  const secTitle = { bulk:"📥 Bulk upload", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand" }[_bpTab];
+  const secTitle = { payments:"💰 Payments — every creator A–Z (Super Admins only)", bulk:"📥 Bulk upload", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand" }[_bpTab];
   const P0 = shown.filter(r=>r.kind==="p").map(r=>r.x), Iall0 = shown.filter(r=>r.kind==="i");
   const fP = x=> { const c = x.creator||{}; return { fol: c.followers ?? ((pubOf(c.username||x.applied_profile)||{}).followers), geek: c.followers!=null && !!c.username,
       posted: (x.posts||[]).length>0, name: String(c.username||c.name||x.applied_profile||"").toLowerCase(), step: bpEffectiveIndex(x)*10,
@@ -5892,9 +5953,9 @@ function paintCampaignCommandInner(body){
   { const need = Ion.map(r=> r.i.handle).filter(Boolean).filter(h=> !pubOf(h)); if(need.length) setTimeout(()=> pubFill(need, ()=> paintBarterProcess()), 0); }
   body.innerHTML = `
     ${pb.saved===false?`<div class="ac360-miss">📜 No contract terms or video brief saved yet — creators get the defaults. <a href="#" id="bpGoTerms">Set them now →</a></div>`:""}
-    <div class="cc-flow">${CC_TILES.map(tile).join("")}</div>
+    <div class="cc-flow">${TILES.map(tile).join("")}</div>
     ${secTitle?`<div class="card cc-sec" id="ccSec"><div class="cc-sec-h"><h3>${secTitle}</h3><button class="ci-pop-x" id="ccSecX" aria-label="Close">✕</button></div>
-      <div class="ac360-sec">${_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="traits"?`<div id="ctrCamp"></div>`:_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(d.creators||[])}</div></div>`:""}
+      <div class="ac360-sec">${_bpTab==="payments"?`<div id="payBox">${typeof payHtml==="function"?payHtml():""}</div>`:_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="traits"?`<div id="ctrCamp"></div>`:_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(d.creators||[])}</div></div>`:""}
     <div class="card cc-list">
       <div class="cc-list-h"><h3>Creators <span class="muted">${P.length+Iall.length}${_ccFilter==="needs"?" · ⚡ need you":_ccFilter!=="all"?` · ${esc((CC_TILES.find(t=>t[0]===_ccFilter)||[])[1]||"")}`:""}</span></h3>
         ${needsYou?`<button type="button" class="bp-needs cc-needs${_ccFilter==="needs"?" on":""}" id="ccNeedsChip">⚡ <b>${needsYou}</b> need${needsYou>1?"":"s"} you${_ccFilter==="needs"?" · showing them ✕":" — tap to see"}</button>`:""}
@@ -5919,6 +5980,8 @@ function paintCampaignCommandInner(body){
   const goT = body.querySelector("#bpGoTerms"); if(goT) goT.onclick = e=>{ e.preventDefault(); _bpTab="terms"; paintBarterProcess(); };
   wireBarterProcess();
   wireCcInvites(body);
+  body.querySelectorAll("[data-bppayfee]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); _bpTab = "payments"; paintBarterProcess();
+    setTimeout(()=>{ const r = payRows().find(x=> x.participation_id===b.dataset.bppayfee); if(r) payFeeModal(r); else { const sec = document.getElementById("ccSec"); if(sec) sec.scrollIntoView({ behavior:"smooth" }); } }, 900); });
   const ba = body.querySelector("#ccBlockAll"); if(ba) ba.onclick = ()=> ccBlockNoPost(ba);
   [["ccSort",v=>_ccSort=v],["ccSrc",v=>_ccSrc=v],["ccTier",v=>_ccTier=v],["ccPost",v=>_ccPost=v]].forEach(([id,set])=>{ const e = body.querySelector("#"+id); if(e) e.onchange = ()=>{ set(e.value); paintBarterProcess(); }; });
   if(_bpTab==="bulk"){ wireBulk(); }
@@ -6143,6 +6206,7 @@ async function bpCreatorProfile(pid){
   const handle = cr.username || x.applied_profile || "";
   const addr = [to.name, to.line1, to.line2, to.landmark, to.city, to.state, to.postal_code].filter(Boolean).join(", ");
   const posts = x.posts||[];
+  if(window.__isAdmin && ["paid","barter_paid"].includes((_bpCamp||{}).kind) && typeof payFillRates==="function") payFillRates("#bppFees", { p_participation: pid });
   m.innerHTML = `<div class="modal modal-lg"><div class="modal-head"><strong>Creator profile</strong><button class="icon-btn" id="bpProfX">✕</button></div>
     <div class="modal-form bpp">
       <div class="bpp-top"><span id="bppPic">${cr.profile_picture_url?`<img src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((handle||"?").slice(0,2).toUpperCase())}</span>`}</span>
@@ -6160,6 +6224,7 @@ async function bpCreatorProfile(pid){
         ${row("Contract", con.signed_at ? "✓ signed "+esc(fmtDate(con.signed_at))+(con.signature_name?" by "+esc(con.signature_name):"") : con.issued_at ? "sent "+esc(fmtDate(con.issued_at))+" · <b>not signed yet</b>" : "")}
         ${row("Ship to", addr ? esc(addr) + (to.phone?` · 📞 ${esc(to.phone)}`:"") : "")}
         ${row("Courier", ship.courier||ship.status ? esc(ship.courier||"Courier")+(ship.tracking_ref?" · "+esc(ship.tracking_ref):"")+(ship.delivered_at?" · delivered "+esc(fmtDate(ship.delivered_at)):ship.shipped_at?" · sent "+esc(fmtDate(ship.shipped_at)):"") : "")}
+        ${window.__isAdmin && ["paid","barter_paid"].includes((_bpCamp||{}).kind) ? `<div class="bpp-row"><span>💰 Fees with Geek</span><div id="bppFees" class="muted">…</div></div>` : ""}
         ${row("Video due", x.due_on && !["published","completed"].includes(x.stage) ? esc(fmtDate(x.due_on)) : "")}
         ${row("Video", x.submission && x.submission.url ? `<a href="${esc(safeUrl(x.submission.url))}" target="_blank" rel="noopener">▶ open the cut ↗</a>` : "")}
         ${row("Posts", posts.length ? posts.map(p=> (p.permalink?`<a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener">${esc(p.media_type||"post")} ↗</a>`:esc(p.media_type||"post")) + (p.stats&&p.stats.views!=null?` <span class="muted">${esc(fmtNum(p.stats.views))} views</span>`:"")).join(" · ") : "")}
@@ -6318,7 +6383,7 @@ function paintCreatorHub(){
   let sec = "";
   if(_hubC.tab==="overview"){
     const row = (k,v)=> v ? `<div class="bpp-row"><span>${esc(k)}</span><div>${v}</div></div>` : "";
-    sec = `<div class="hub-steps">${BARTER_STEPS.filter(s=> s[0]!=="changes_requested").map((s,i)=>{ const cur = hubStepIdx(d.stage), me = hubStepIdx(s[0]);
+    sec = `<div class="hub-steps">${bpSteps().filter(s=> s[0]!=="changes_requested").map((s,i)=>{ const cur = hubStepIdx(d.stage), me = hubStepIdx(s[0]);
           return `<span class="${me<cur?"done":me===cur?"now":""}" title="${esc(s[2])}">${me<cur?"✓":me===cur?"●":"○"} ${esc(s[1].replace(/^\d+\.\s*/,""))}</span>`; }).join("")}</div>
       ${(d.needs||[]).length?`<div class="hub-warn">⚠️ Still to connect: ${esc(d.needs.join(" + "))}</div>`:""}
       <div class="bpp-sec">Contact</div>
@@ -7752,6 +7817,7 @@ async function adminCreatorProfile(member, row){
   const k = e=>{ if(e.key==="Escape") close(); };
   document.addEventListener("keydown", k); ov.addEventListener("click", e=>{ if(e.target===ov) close(); });
   const { data:d, error } = await sb.rpc("admin_creator_profile", { p_member: member });
+  if(!error && window.__isAdmin && typeof payFillRates==="function") payFillRates("#acRates", { p_member: member });
   const bodyEl = ov.querySelector(".ac360-body");
   if(error){ bodyEl.innerHTML = `<div class="card"><div class="muted">${esc(error.message)}</div><button class="mini-btn ghost" id="acX">Close</button></div>`; ov.querySelector("#acX").onclick = close; return; }
   const D = d||{}, mem = D.member||{}, ig = D.instagram||{}, per = D.personal||{}, con = D.contact||{}, cp = D.commercial_preference||{}, pro = D.professional||{}, req = D.requirements||{};
@@ -7800,6 +7866,7 @@ async function adminCreatorProfile(member, row){
           ${r("Other profiles", (D.managed_profiles||[]).map(m=>`<a href="https://instagram.com/${encodeURIComponent(m.handle)}" target="_blank" rel="noopener">@${esc(m.handle)}</a>${m.followers!=null?` · ${kNum(m.followers)}`:""}${m.category?` · ${esc(m.category)}`:""}`).join("<br>"))}</div>
         <div class="card"><h4>Commercials</h4>
           ${r("Rate card", (D.rate_items||[]).map(i=>`${esc(i.deliverable_type)} — <b>${fmtMoney(i.amount)}</b>`).join("<br>"))}
+          ${window.__isAdmin ? r("💰 Fees agreed with Geek", `<span id="acRates" class="muted">…</span>`) : ""}
           ${r("Open to barter", yn(cp.accepts_barter))}
           ${cp.accepts_barter?r("Barter scope", esc(String(cp.barter_preference||"any relevant brand").replace(/_/g," "))):""}
           ${cp.accepts_barter?r("Min product value", cp.min_product_value!=null?fmtMoney(cp.min_product_value):""):""}

@@ -11,7 +11,7 @@
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function api(fn,args){ return window.sb.schema("api").rpc(fn, args||{}); }
   function safeLink(u){ u=String(u||""); return /^https?:\/\//i.test(u)?u:"#"; }
-  function campTypeLabel(t,st){ var T={barter:"Barter",paid:"Paid",barter_paid:"Barter + Paid"}, S={celebrity_story:"Celebrity story",normal_barter:"Normal barter",pr_package:"PR package"}; return (T[t]||t||"")+(st&&S[st]?" · "+S[st]:""); }
+  function campTypeLabel(t,st){ var T={barter:"Barter",paid:"Paid",barter_paid:"Barter + Paid"}, S={celebrity_story:"Story",normal_barter:"Normal barter",pr_package:"PR package"}; return (T[t]||t||"")+(st&&S[st]?" · "+S[st]:""); }
   // A creator who signed in with WhatsApp/email has no creator identity until the first profile action.
   // Create it once, on demand, then retry the call — instead of surfacing a 403 to the creator.
   var _idBoot=null;
@@ -521,15 +521,15 @@
   function kindOf(c){ return c.campaign_type || ({cash:"paid",hybrid:"barter_paid",barter:"barter"})[c.comp_type] || ""; }
   function isCeleb(c){ return c.barter_subtype==="celebrity_story"; }
   function matchFilter(c){ var t=kindOf(c);
-    if(CAMP_FILTER==="paid") return (t==="paid"||t==="barter_paid") && !(isCeleb(c) && t!=="barter_paid");
+    if(CAMP_FILTER==="paid") return t==="paid"||t==="barter_paid";
     if(CAMP_FILTER==="barter") return (t==="barter"||t==="barter_paid") && !isCeleb(c);
     if(CAMP_FILTER==="celebrity") return isCeleb(c);
     if(CAMP_FILTER==="applied") return !!c.my_stage && PENDING_ST.indexOf(c.my_stage)>=0;
     if(CAMP_FILTER==="approved") return !!c.my_stage && PENDING_ST.indexOf(c.my_stage)<0 && DECL_ST.indexOf(c.my_stage)<0;
     return true; }
   function typeBadge(c){ var t=kindOf(c), L={paid:"💰 Paid",barter:"🎁 Barter",barter_paid:"🎁 Barter + 💰 Paid"};
-    return (isCeleb(c)?'<span class="ci-type ci-type-barter_paid">👑 Celebrity story</span> ':'')+(t?'<span class="ci-type ci-type-'+t+'">'+L[t]+'</span>':'<span class="ci-type">—</span>'); }
-  var CHIPS=[["all","All"],["paid","💰 Paid"],["barter","🎁 Barter"],["celebrity","👑 Celebrity story"],["applied","⏳ Applied"],["approved","✅ Approved"]];
+    return (isCeleb(c)?'<span class="ci-type ci-type-barter_paid">⭐ Story</span> ':'')+(t?'<span class="ci-type ci-type-'+t+'">'+L[t]+'</span>':'<span class="ci-type">—</span>'); }
+  var CHIPS=[["all","All"],["paid","💰 Paid"],["barter","🎁 Barter"],["celebrity","⭐ Story"],["applied","⏳ Applied"],["approved","✅ Approved"]];
   function chipsHtml(){
     var n=function(f){ var keep=CAMP_FILTER; CAMP_FILTER=f; var k=_openCache.filter(matchFilter).length; CAMP_FILTER=keep; return k; };
     return CHIPS.map(function(x){ return '<button class="ci-chip'+(CAMP_FILTER===x[0]?' on':'')+'" data-campf="'+x[0]+'">'+x[1]+(_openCache.length?' <span>'+n(x[0])+'</span>':'')+'</button>'; }).join("");
@@ -574,6 +574,10 @@
       }, 20000);
     }
     try{ var r=await apiCreator("get_my_campaigns"); if(r.error) throw r.error;
+      // the campaign type rules (no product on a paid campaign) + MY payment on paid campaigns
+      var fl=await apiCreator("my_campaign_flows").then(function(x){ return x; }, function(){ return { data:null }; });
+      var flows=(fl && !fl.error && fl.data) || {};
+      (r.data||[]).forEach(function(c){ c._flow=flows[c.participation_id]||null; });
       var sig=JSON.stringify(r.data||[]); if(silent && sig===_mineSig) return; _mineSig=sig;
       await igMediaMap(); renderMine(r.data||[]); }
     catch(e){ if(silent) return; var el=document.getElementById("opsMineBody"); if(el) el.innerHTML='<div class="card ci-err-inline">Couldn\'t load: '+esc((e&&e.message)||e)+'</div>'; }
@@ -789,14 +793,18 @@
     ["address_confirmed","Address"],["product_sent","Shipped"],["product_delivered","Delivered"],["content_created","Brief"],
     ["content_submitted","Video sent"],["content_approved","Approved"],["published","Posted"],["completed","Done"]];
   var J_ALIAS = { invited:"applied", shortlisted:"applied", eligible:"applied", sent_to_brand:"applied", accepted:"brand_confirmed", changes_requested:"content_created" };
+  var SHIP_STEPS=["address_confirmed","product_sent","product_delivered"];
+  function noShip(c){ return !!(c && c._flow && c._flow.needs_product===false); }
+  function jSteps(c){ return noShip(c) ? JOURNEY.filter(function(s){ return SHIP_STEPS.indexOf(s[0])<0; }) : JOURNEY; }
   function jIndex(c){
-    if(c.stage==='product_sent' && c.shipment && c.shipment.status==='delivered') return 6;
-    var s=J_ALIAS[c.stage]||c.stage; for(var i=0;i<JOURNEY.length;i++) if(JOURNEY[i][0]===s) return i; return 0;
+    var J=jSteps(c);
+    if(!noShip(c) && c.stage==='product_sent' && c.shipment && c.shipment.status==='delivered') return 6;
+    var s=J_ALIAS[c.stage]||c.stage; for(var i=0;i<J.length;i++) if(J[i][0]===s) return i; return 0;
   }
   function journeyHtml(c){
     var idx=jIndex(c), st=c.steps||{}, sh=c.shipment||{};
     var when=function(k){ return st[k] || (k==='product_delivered'?sh.delivered_at:null) || (k==='product_sent'?sh.shipped_at:null) || (k==='applied'?c.applied_at:null) || (k==='brand_confirmed'?st.accepted:null); };
-    return '<div class="jr"><div class="jr-track">'+JOURNEY.map(function(s,i){
+    return '<div class="jr"><div class="jr-track">'+jSteps(c).map(function(s,i){
         var cls=i<idx||c.stage==='completed'?'done':i===idx?'now':'';
         var at=when(s[0]);
         return '<div class="jr-step '+cls+'" title="'+esc(s[1])+(at?' · '+fmtDT(at):'')+'"><i>'+(cls==='done'?'✓':(i+1))+'</i><span>'+esc(s[1])+'</span></div>';
@@ -817,8 +825,10 @@
       case 'applied': case 'eligible': case 'shortlisted': return box('⏳','Application received','Geek is checking your profile against the brand\'s brief. You\'ll get a WhatsApp the moment there\'s news.');
       case 'sent_to_brand': return box('📋','With the brand','You\'re on the final list the brand is reviewing.');
       case 'brand_confirmed': case 'accepted': return box('🎉','You\'re selected!','Your contract is being prepared — it will appear here in a moment.');
-      case 'contract_sent': return box('📜','Sign your contract','Product, deliverables, ASCI, ad rights, posting only after approval, and the non-delivery terms. Read it to the end and sign.','<button class="btn sm" data-contract="'+P+'">Read &amp; sign contract</button>','act');
-      case 'contract_signed': return box('📍','Confirm your delivery address','Pick a saved address, edit it, add a new one or use your current location.','<button class="btn sm" data-address="'+P+'">Confirm delivery address</button>','act');
+      case 'contract_sent': return box('📜','Sign your contract',(c._flow&&c._flow.paid?'Your fee and payment terms, deliverables, ASCI, ad rights, posting only after approval, and the non-delivery terms.':'Product, deliverables, ASCI, ad rights, posting only after approval, and the non-delivery terms.')+' Read it to the end and sign.','<button class="btn sm" data-contract="'+P+'">Read &amp; sign contract</button>','act');
+      case 'contract_signed':
+        if(noShip(c)) return box('🎬','Your video brief is on its way','Contract signed ✓ — there is nothing to ship on this campaign, so your video brief opens here in a moment.');
+        return box('📍','Confirm your delivery address','Pick a saved address, edit it, add a new one or use your current location.','<button class="btn sm" data-address="'+P+'">Confirm delivery address</button>','act');
       case 'address_confirmed': return box('📦','Your product is being packed','The courier and tracking number show here the moment it ships. Your <b>video brief</b> is ready — read it now and start planning / practising your video; the deadline starts once the parcel reaches you.', c.video_brief?readBrief:'');
       case 'product_sent':
         if(sh.status==='delivered') return box('✅','Delivered','Your video brief is on its way to you.', c.video_brief?readBrief:'');
@@ -922,7 +932,7 @@
       + (meta.length?'<div class="mc-meta">'+meta.map(function(m){ return '<span>'+m+'</span>'; }).join("")+'</div>':'')
       + (declined?'<div class="mc-banner no"><b>Not selected this time.</b>'+(c.reason_label?' Reason: <b>'+esc(c.reason_label)+'</b>.':'')
           +(c.reason&&c.reason!==c.reason_label?'<div class="mc-note">“'+esc(String(c.reason).replace(/^.*?—\s*/,""))+'”</div>':'')+'</div>'
-        : journeyHtml(c) + nextStepHtml(c))
+        : journeyHtml(c) + nextStepHtml(c) + (approved ? payBoxMine(c) : ''))
       + (shTxt?'<div class="mc-ship">'+shTxt+'</div>':'')
       + ((c.posts||[]).length?postsHtml(c):delivHtml)
       + (vb?fold('vb-'+P,'🎬 Video brief'+(c.deadline&&['content_created','changes_requested'].indexOf(c.stage)>=0?' <span class="ci-pill ci-warn" style="margin-left:6px">Due '+fmtDate(c.deadline)+'</span>':''), vbHint, briefHtml(c), false):'')
@@ -930,7 +940,72 @@
       + (!approved&&!declined&&c.reason?'<div class="ci-hint">Note: '+esc(c.reason)+'</div>':'')
       + '</div>';
   }
+  // 💰 my payment on a paid campaign — only MY fee, my details and their status
+  var INR=function(n){ return '₹'+Math.round(+n||0).toLocaleString('en-IN'); };
+  function payBoxMine(c){
+    var f=c._flow||{}, p=f.payment; if(!f.paid || !p) return '';
+    var P=esc(c.participation_id), days=p.due_days||f.due_days||7;
+    var st={pending:['Add your bank / UPI details','warn'],submitted:['Received — being checked','na'],verifying:['Checking with your bank…','na'],
+            verified:['Verified ✓','ok'],failed:['Couldn\'t verify — please update','warn'],needs_update:['Please update your details','warn']}[p.details_status]||[p.details_status,'na'];
+    var det=p.method==='upi' ? 'UPI <b>'+esc(p.upi_id||'')+'</b>'
+          : p.method==='bank' ? 'Bank account ••••<b>'+esc(p.account_last4||'')+'</b> · '+esc(p.ifsc||'')+(p.bank_name?' · '+esc(p.bank_name):'')
+          : 'not added yet';
+    var fee=p.amount!=null ? '<b>'+INR(p.amount)+'</b> — '+(p.advance_pct>=100 ? 'paid in advance once you sign'
+          : p.advance_pct>0 ? INR(Math.round(p.amount*p.advance_pct/100))+' advance once you sign, the rest '+days+' days after every post is live'
+          : 'paid '+days+' days after every post is live') : 'being finalised by the Geek team — you\'ll see it in your contract';
+    var PART={advance:'Advance',balance:'Balance',full:'Fee'};
+    var pos=(p.payouts||[]).map(function(o){
+      var s={waiting:'Not due yet',due:'Due'+(o.due_at?' by '+fmtDate(o.due_at):''),queued:'Being sent',processing:'Sent — reaching your bank',
+             paid:'Paid ✓'+(o.paid_at?' '+fmtDate(o.paid_at):'')+(o.utr?' · UTR '+esc(o.utr):''),failed:'Delayed — our team is on it',cancelled:'Cancelled'}[o.status]||o.status;
+      return '<div class="mc-row"><span>'+(PART[o.part]||o.part)+' · '+INR(o.amount)+'</span><span>'+s+'</span></div>'; }).join('');
+    var needs=['pending','failed','needs_update'].indexOf(p.details_status)>=0;
+    var busy=(p.payouts||[]).some(function(o){ return o.status==='queued'||o.status==='processing'; });
+    var allPaid=(p.payouts||[]).length && (p.payouts||[]).every(function(o){ return o.status==='paid'; });
+    return '<div class="jr-now mc-pay'+(needs?' act':'')+'"><div class="jr-now-h">💰 <b>Your payment</b> <span class="ci-pill ci-'+st[1]+'">'+esc(st[0])+'</span></div>'
+      + '<div class="jr-now-t">Fee: '+fee+'<br>Paid to: '+det
+      + (p.details_status==='needs_update'&&p.request_reason?'<div class="mc-note">“'+esc(p.request_reason)+'”</div>':'')
+      + (p.details_status==='failed'&&p.verify_message?'<div class="mc-note">'+esc(p.verify_message)+'</div>':'')+'</div>'
+      + (pos?'<div class="mc-grid">'+pos+'</div>':'')
+      + (!busy&&!allPaid?'<div class="ci-evrow"><button class="btn sm'+(needs?'':' ghost')+'" data-paydetails="'+P+'">'+(p.method?'✏️ Update payment details':'🏦 Add payment details')+'</button></div>':'')
+      + '<div class="muted" style="font-size:11.5px;margin-top:4px">Must be in your own name. Your fee is private — only you and the Geek team see it.</div></div>';
+  }
+  function openPayDetailsModal(part){
+    var c=(_mineCache||[]).filter(function(x){ return x.participation_id===part; })[0]||{}, p=((c._flow||{}).payment)||{};
+    var bank=p.method!=='upi';
+    var ov=opsModal('<div class="ci-mh"><h3>Where should we pay you?</h3><button class="wa-x" id="opsMx">×</button></div>'
+      + '<div class="ci-hint">Use a bank account or UPI ID in <b>your own name</b>. We verify it with the bank before any payment.</div>'
+      + '<div class="cm-seg" id="pdM"><label class="'+(bank?'act':'')+'"><input type="radio" name="pdm" value="bank"'+(bank?' checked':'')+'> 🏦 Bank account</label>'
+      +   '<label class="'+(!bank?'act':'')+'"><input type="radio" name="pdm" value="upi"'+(!bank?' checked':'')+'> 📱 UPI ID</label></div>'
+      + '<label class="wa-f"><span>Account holder name (exactly as in the bank)</span><input id="pdName" maxlength="80" autocomplete="name" value="'+esc(p.account_name||'')+'"></label>'
+      + '<div id="pdBank"'+(bank?'':' hidden')+'><label class="wa-f"><span>Account number</span><input id="pdNo" inputmode="numeric" autocomplete="off" maxlength="22" placeholder="'+(p.account_last4?'•••• '+esc(p.account_last4)+' — type the full number to change it':'e.g. 50100123456789')+'"></label>'
+      +   '<label class="wa-f"><span>Type the account number again</span><input id="pdNo2" inputmode="numeric" autocomplete="off" maxlength="22"></label>'
+      +   '<label class="wa-f"><span>IFSC code</span><input id="pdIfsc" maxlength="11" autocomplete="off" style="text-transform:uppercase" value="'+esc(p.ifsc||'')+'" placeholder="HDFC0001234"></label></div>'
+      + '<div id="pdUpi"'+(bank?' hidden':'')+'><label class="wa-f"><span>UPI ID</span><input id="pdUpiId" maxlength="100" autocomplete="off" value="'+esc(p.upi_id||'')+'" placeholder="yourname@okhdfcbank"></label></div>'
+      + '<div class="auth-err" id="pdErr"></div><div class="cp-ob-actions"><button class="btn sm ghost" id="pdCancel">Cancel</button><button class="btn sm" id="pdSave">Save &amp; verify</button></div>');
+    var close=function(){ ov.remove(); };
+    document.getElementById("opsMx").onclick=close; document.getElementById("pdCancel").onclick=close;
+    ov.querySelectorAll('input[name=pdm]').forEach(function(r){ r.onchange=function(){ var b=ov.querySelector('input[name=pdm]:checked').value==='bank';
+      document.getElementById("pdBank").hidden=!b; document.getElementById("pdUpi").hidden=b;
+      ov.querySelectorAll('#pdM label').forEach(function(l){ l.classList.toggle('act', l.querySelector('input').checked); }); }; });
+    document.getElementById("pdSave").onclick=function(){
+      var btn=this, err=document.getElementById("pdErr"), m=ov.querySelector('input[name=pdm]:checked').value;
+      var name=(document.getElementById("pdName").value||"").trim(), no=(document.getElementById("pdNo").value||"").replace(/[\s-]/g,""), no2=(document.getElementById("pdNo2").value||"").replace(/[\s-]/g,"");
+      var ifsc=(document.getElementById("pdIfsc").value||"").trim().toUpperCase(), upi=(document.getElementById("pdUpiId").value||"").trim().toLowerCase();
+      err.textContent="";
+      if(name.length<3){ err.textContent="Type the account holder's full name."; return; }
+      if(m==='bank'){
+        if(!/^\d{9,18}$/.test(no)){ err.textContent="The account number should be 9 to 18 digits."; return; }
+        if(no!==no2){ err.textContent="The two account numbers don't match."; return; }
+        if(!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)){ err.textContent="The IFSC code is 11 characters, like HDFC0001234."; return; }
+      } else if(!/^[a-z0-9._-]{2,255}@[a-z][a-z0-9.-]{1,63}$/.test(upi)){ err.textContent="The UPI ID looks wrong — it is like name@okhdfcbank."; return; }
+      btn.disabled=true; btn.textContent="Saving…";
+      api("save_payment_details",{ p_participation:part, p_method:m, p_account_name:name, p_account_no:m==='bank'?no:null, p_ifsc:m==='bank'?ifsc:null, p_upi:m==='upi'?upi:null })
+        .then(function(r){ if(r.error){ err.textContent=r.error.message||r.error; btn.disabled=false; btn.textContent="Save & verify"; return; }
+          close(); loadMyCampaigns(); }, function(e){ err.textContent=(e&&e.message)||String(e); btn.disabled=false; btn.textContent="Save & verify"; });
+    };
+  }
   function wireMine(){
+    document.querySelectorAll("#opsMine [data-paydetails]").forEach(function(b){ b.onclick=function(){ openPayDetailsModal(b.getAttribute("data-paydetails")); }; });
     document.querySelectorAll("#opsMine [data-accept]").forEach(function(b){ b.onclick=function(){ api("respond_to_campaign",{p_participation:b.getAttribute("data-accept"),p_accept:true,p_reason:null}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-reject]").forEach(function(b){ b.onclick=function(){ var reason=prompt("No problem — tell the brand why you're passing (they see this):")||""; if(!reason) return; api("respond_to_campaign",{p_participation:b.getAttribute("data-reject"),p_accept:false,p_reason:reason}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-upload]").forEach(function(b){ b.onclick=function(){ var url=prompt("Paste your content link (e.g. Instagram post URL):")||""; if(!url) return; var note=prompt("Note / question for the Geek team (optional):")||""; api("submit_content",{p_deliverable:b.getAttribute("data-upload"),p_content_url:url,p_note:note}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });

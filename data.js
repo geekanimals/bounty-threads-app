@@ -82,7 +82,7 @@ const NAV_META = {
   dashboard:{ic:"🏠",label:"Dashboard"}, brands:{ic:"🏢",label:"Brand CRM"},
   portfolio:{ic:"🗂",label:"Portfolio"}, roster:{ic:"🎬",label:"My Roster"},
   campaigns:{ic:"📣",label:"Campaigns"}, marketplace:{ic:"🛒",label:"Marketplace"},
-  barter:{ic:"📦",label:"Mass Barter"}, celebrity:{ic:"👑",label:"Celebrity Stories"},
+  barter:{ic:"📦",label:"Mass Barter"}, celebrity:{ic:"⭐",label:"Stories"},
   creators:{ic:"👥",label:"Creators"}, irm:{ic:"🤝",label:"IRM"},
   mediakit:{ic:"📸",label:"Media Kit"}, admin:{ic:"🛡",label:"Super Admin"},
   listening:{ic:"📡",label:"Listening"}, logistics:{ic:"🚚",label:"Logistics"},
