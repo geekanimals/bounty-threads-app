@@ -1690,7 +1690,7 @@ function openCampaignModal(existing, preset){
         <span class="muted cm-hint">Posts must stay live this long — we check twice a day and remind the creator to restore a missing one</span></label><span></span></div>
       <div class="cm-ctprev" id="cmCtPrev"></div>
       <label class="cp-check"><input type="checkbox" name="ct_collab"${ct.collab_rights===false?'':' checked'}> Collab rights — the creator adds the brand as an Instagram collaborator</label>
-      <label class="cp-check"><input type="checkbox" name="ct_black"${ct.blacklist_clause===false?'':' checked'}> <span><b>Non-delivery = blacklist</b> — if they take the product and don't post on time, they're blacklisted from the platform</span></label>
+      <label class="cp-check"><input type="checkbox" name="ct_black"${ct.blacklist_clause===false?'':' checked'}> <span id="cmBlackLbl"><b>Non-delivery = blacklist</b> — if they take the product and don't post on time, they're blacklisted from the platform</span></label>
       <label class="cp-check cm-barter"><input type="checkbox" name="ct_reship"${ct.reship_clause===false?'':' checked'}> <span><b>Re-ship at their own cost</b> — they must send the product to another creator we name</span></label>
       <label>Other terms <span class="muted" style="font-weight:400">(optional)</span><textarea name="ct_extra" rows="2" maxlength="1500" placeholder="e.g. No competitor brands for 30 days after posting">${esc(ct.extra_terms||'')}</textarea></label>
       <div class="cm-paysec">
@@ -1744,6 +1744,7 @@ function openCampaignModal(existing, preset){
     // a paid campaign has nothing to ship: no PR package, no address / courier, the brief goes out on signing
     const sub = document.getElementById("cmSub"), pr = sub && sub.querySelector('option[value="pr_package"]');
     if(pr){ pr.hidden = t==="paid"; if(t==="paid" && sub.value==="pr_package") sub.value = "normal_barter"; }
+    const bl = document.getElementById("cmBlackLbl"); if(bl) bl.innerHTML = t==="paid" ? "<b>Non-delivery = blacklist</b> — if they sign and don't send the video / post on time, no further fee is paid and they're blacklisted" : "<b>Non-delivery = blacklist</b> — if they take the product and don't post on time, they're blacklisted from the platform";
     const dl = document.getElementById("cmDaysLbl"); if(dl) dl.textContent = t==="paid" ? "Content due (days after signing)" : "Content due (days after delivery)";
     const vw = document.getElementById("cmVbWhen"); if(vw) vw.textContent = t==="paid" ? "— sent to the creator automatically as soon as they sign (nothing to ship)" : "— sent to the creator automatically when the product is delivered";
     const th = document.getElementById("cmTypeHint");
