@@ -8218,7 +8218,7 @@ async function adminMsgSwitches(){
   if(error){ box.innerHTML = `<h3 style="margin-top:0">📣 Automatic messages</h3><div class="muted">${esc(error.message||String(error))} — run <code>supabase db push</code>.</div>`; return; }
   const d = data||{};
   box.innerHTML = `<h3 style="margin-top:0">📣 Automatic messages — whole platform</h3>
-    <p class="muted" style="font-size:12.5px;margin:0 0 10px">This is the master switch. <b>OFF</b> stops every automatic message on that channel for <b>all campaigns</b> (invites, step updates, reminders, alerts; WhatsApp also pauses the bot) and every campaign shows OFF. <b>ON</b> turns that channel back on for every campaign. Messages held while OFF are not sent later. Necessary messages always go: login / OTP codes, account approved / declined, and emails a team member writes by hand.</p>
+    <p class="muted" style="font-size:12.5px;margin:0 0 10px">This is the master switch. <b>OFF</b> stops every automatic message on that channel for <b>all campaigns</b> (invites, step updates, reminders, alerts; WhatsApp also pauses the bot) and every campaign shows OFF. <b>ON</b> turns that channel back on for every campaign. Messages held while OFF are not sent later. <b>OFF means OFF everywhere</b> — every campaign, alerts, account messages, test messages and messages the team types by hand. Only login / OTP codes still go (so people can sign in).</p>
     <div class="msw-row">${mswHtml("wa","💬 WhatsApp", d.wa_on!==false, d.held_wa?`${d.held_wa} held in the last 7 days`:"")}${mswHtml("email","✉️ Email", d.email_on!==false, d.held_email?`${d.held_email} held in the last 7 days`:"")}</div>
     <div class="muted" style="font-size:12px;margin-top:8px">${d.updated_by?`Last changed by ${esc(d.updated_by)} · ${esc(fmtDateTime(d.updated_at))}`:""}${d.campaigns_off?` · ${d.campaigns_off} campaign${d.campaigns_off>1?"s have":" has"} its own switch off`:""}</div>`;
   box.querySelectorAll("[data-msw]").forEach(b=> b.onclick = async ()=>{
@@ -10111,3 +10111,25 @@ document.addEventListener("click", async e=>{
   if(!c){ gateToast(`Couldn't find the campaign “${name}”.`); return; }
   openCampaignForCreator(c.name, null);
 }, true);
+
+/* ================= a tab opened before a deploy keeps running the old code → tell them to reload ================= */
+(function(){
+  const mine = ((document.querySelector('script[src*="app.js?v="]')||{}).src||"").split("v=")[1] || "";
+  if(!mine) return;
+  let shown = false;
+  const check = async ()=>{
+    if(shown || document.visibilityState!=="visible") return;
+    try{
+      const h = await fetch("/app.html?ts=" + Date.now(), { cache:"no-store" }).then(r=> r.ok ? r.text() : "");
+      const live = (h.match(/app\.js\?v=([\w.-]+)/)||[])[1];
+      if(!live || live===mine) return;
+      shown = true;
+      const b = document.createElement("div"); b.className = "upd-bar";
+      b.innerHTML = `🔄 <b>A new version of Geek OS is live.</b> Reload to get the latest changes. <button type="button" class="btn sm">Reload now</button>`;
+      b.querySelector("button").onclick = ()=> location.reload();
+      document.body.appendChild(b);
+    }catch(e){}
+  };
+  setTimeout(check, 20000); setInterval(check, 5*60*1000);
+  document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") check(); });
+})();

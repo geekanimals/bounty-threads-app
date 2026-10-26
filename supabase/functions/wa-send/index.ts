@@ -38,6 +38,11 @@ Deno.serve(async (req) => {
     // Consent gate (WhatsApp Business policy + abuse protection): never message an opted-out number, and only
     // START a conversation (template, outside the 24h window) with a number that verified + opted in via OTP.
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+    // Super Admin → Settings (and the campaign's own switch): WhatsApp OFF means nothing is sent, typed by hand included
+    {
+      const { data: allow } = await admin.schema("api").rpc("messaging_allowed", { p_channel: "whatsapp", p_campaign: campaign_id ?? null });
+      if (allow && (allow as any).ok === false) return json({ error: `WhatsApp is turned off — ${(allow as any).reason || "Settings"}. Turn it on to send.`, paused: true }, 423);
+    }
     const { data: consent } = await admin.from("wa_contacts").select("opt_in_at,opt_out_at,verified_at")
       .eq("phone_e164", conv.contact_phone_e164).maybeSingle();
     if (consent?.opt_out_at) return json({ error: "This contact has opted out of WhatsApp messages." }, 403);
