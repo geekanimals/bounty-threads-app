@@ -60,6 +60,8 @@ Deno.serve(async (req) => {
   let sent = 0, failed = 0;
   const started = Date.now();
   while (Date.now() - started < 45000) {
+    // Super Admin → Settings → WhatsApp OFF also pauses the bot
+    try { const { data: sw } = await api.rpc("ops_messaging_switches"); if (sw && sw.wa_on === false) return new Response(JSON.stringify({ ok: true, paused: "WhatsApp messages are turned off" }), { headers: { "Content-Type": "application/json" } }); } catch (_e) { /* keep going */ }
     const { data: jobs, error } = await api.rpc("ops_bot_claim", { p_limit: 5 });
     if (error) { console.error("bot claim", error.message); break; }
     if (!Array.isArray(jobs) || !jobs.length) break;

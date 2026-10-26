@@ -76,7 +76,16 @@ Deno.serve(async (req) => {
   };
 
   let sent = 0, failed = 0, skipped = 0;
+  // the Super Admin's WhatsApp / email ON-OFF switches, re-checked at send time
+  let sw: any = { wa_on: true, email_on: true };
+  try { const { data: s } = await api.rpc("ops_messaging_switches"); if (s) sw = s; } catch (_e) { /* default on */ }
+  const exempt = (k: string) => /^(test|team_email)$/.test(k || "") || /otp|login|recovery/i.test(k || "");
   for (const row of (rows ?? []) as any[]) {
+    if (!exempt(row.template_key) && ((row.channel === "whatsapp" && sw.wa_on === false) || (row.channel === "email" && sw.email_on === false))) {
+      await api.rpc("ops_outbox_complete", { p_outbox_id: row.outbox_id, p_status: "skipped",
+        p_error: `paused: ${row.channel === "whatsapp" ? "WhatsApp" : "email"} messages are turned off (Settings)` });
+      skipped++; continue;
+    }
     const p = row.payload || {};
     const link = deepLink(p.action_route ?? p.action_url);
     const prefs = await prefsOf(row.recipient_member_id);

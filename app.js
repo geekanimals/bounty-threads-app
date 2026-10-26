@@ -1484,6 +1484,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
       <button class="btn ghost cdel-btn" id="wsDel">${window.__isAdmin?"🗑 Delete":"🗑 Request delete"}</button>
     </div>
     <div id="wsDelNote"></div>
+    <div class="msw-bar" id="ccMsgSw"></div>
     ${ccDetailsHtml(c)}
     <div id="wsHost" class="ws-host" hidden></div>
     <div class="cc-main" id="bpBody">${skel("list",5)}</div>
@@ -1493,6 +1494,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
   document.getElementById("wsBack").onclick = ()=>{ _wsMode = false; currentPage="campaigns"; renderShell(); };
   document.getElementById("wsEdit").onclick = ()=> openCampaignModal(c);
   wireCampaignDelete(c);
+  campMsgSwitches(c.id);
   document.getElementById("ccMatch").onclick = ()=> openInvitePanel(c.id, c.name);
   content.querySelectorAll("[data-ccsec]").forEach(b=> b.onclick = async ()=>{
     _bpTab = _bpTab===b.dataset.ccsec ? "tracker" : b.dataset.ccsec;
@@ -8070,8 +8072,50 @@ async function cuLoadList(){
 function adminTeamSettings(body){
   const t = document.createElement("div"); t.innerHTML = renderSettings();
   const h = t.querySelector(".page-head, .ph, header"); if(h) h.remove();
-  body.innerHTML = t.innerHTML;
+  body.innerHTML = `<div class="card msw-card" id="msgSwCard"></div>` + t.innerHTML;
+  adminMsgSwitches();
   try{ renderIntegrations(); wireInviteForm(); loadTeam(); wireOrgProfileForm(); loadOrgProfile(); }catch(e){ console.warn("settings", e); }
+}
+// one switch: tap to turn ON / OFF
+function mswHtml(key, label, on, sub){
+  return `<button type="button" class="msw ${on?"on":"off"}" data-msw="${key}" role="switch" aria-checked="${on}">
+      <span class="msw-track"><span class="msw-knob"></span></span>
+      <span class="msw-txt"><b>${label}</b><span>${on?"ON — messages go out":"OFF — paused"}</span>${sub?`<small>${sub}</small>`:""}</span></button>`;
+}
+// Super Admin → Settings: stop / start EVERY automatic WhatsApp or email message on the platform
+async function adminMsgSwitches(){
+  const box = document.getElementById("msgSwCard"); if(!box) return;
+  const { data, error } = await sb.rpc("admin_messaging_switches").then(r=>r, e=>({error:e}));
+  if(error){ box.innerHTML = `<h3 style="margin-top:0">📣 Automatic messages</h3><div class="muted">${esc(error.message||String(error))} — run <code>supabase db push</code>.</div>`; return; }
+  const d = data||{};
+  box.innerHTML = `<h3 style="margin-top:0">📣 Automatic messages — whole platform</h3>
+    <p class="muted" style="font-size:12.5px;margin:0 0 10px">Tap to turn off every automatic message on that channel for <b>all campaigns</b> (invites, step updates, reminders, alerts${"; WhatsApp also pauses the bot"}). Messages held while OFF are not sent later. Login / OTP codes and emails a team member writes by hand still go.</p>
+    <div class="msw-row">${mswHtml("wa","💬 WhatsApp", d.wa_on!==false, d.held_wa?`${d.held_wa} held in the last 7 days`:"")}${mswHtml("email","✉️ Email", d.email_on!==false, d.held_email?`${d.held_email} held in the last 7 days`:"")}</div>
+    <div class="muted" style="font-size:12px;margin-top:8px">${d.updated_by?`Last changed by ${esc(d.updated_by)} · ${esc(fmtDateTime(d.updated_at))}`:""}${d.campaigns_off?` · ${d.campaigns_off} campaign${d.campaigns_off>1?"s have":" has"} its own switch off`:""}</div>`;
+  box.querySelectorAll("[data-msw]").forEach(b=> b.onclick = async ()=>{
+    const ch = b.dataset.msw==="wa" ? "whatsapp" : "email", on = !b.classList.contains("on");
+    b.disabled = true;
+    const { data:r, error:e } = await sb.rpc("admin_set_messaging_switch", { p_channel: ch, p_on: on }).then(x=>x, e=>({error:e}));
+    if(e){ b.disabled = false; gateToast(e.message||String(e)); return; }
+    gateToast(`${ch==="whatsapp"?"WhatsApp":"Email"} messages ${on?"turned ON ✓":"turned OFF"}${r&&r.held_now?` · ${r.held_now} waiting message${r.held_now>1?"s":""} stopped`:""}`);
+    adminMsgSwitches(); });
+}
+// Campaign page: stop / start WhatsApp or email for THIS campaign only
+async function campMsgSwitches(campId){
+  const box = document.getElementById("ccMsgSw"); if(!box) return;
+  const { data, error } = await sb.schema("api").rpc("campaign_messaging", { p_campaign: campId }).then(r=>r, e=>({error:e}));
+  if(error){ box.hidden = true; return; }
+  const d = data||{};
+  const sub = (globalOn, held)=> globalOn===false ? "⚠️ Off for every campaign in Settings" : held ? `${held} held` : "";
+  box.hidden = false;
+  box.innerHTML = `<span class="msw-lbl">📣 Messages for this campaign</span>${mswHtml("wa","💬 WhatsApp", d.wa_on!==false, sub(d.global_wa_on, d.held_wa))}${mswHtml("email","✉️ Email", d.email_on!==false, sub(d.global_email_on, d.held_email))}`;
+  box.querySelectorAll("[data-msw]").forEach(b=> b.onclick = async ()=>{
+    const ch = b.dataset.msw==="wa" ? "whatsapp" : "email", on = !b.classList.contains("on");
+    b.disabled = true;
+    const { data:r, error:e } = await sb.schema("api").rpc("set_campaign_messaging", { p_campaign: campId, p_channel: ch, p_on: on }).then(x=>x, e=>({error:e}));
+    if(e){ b.disabled = false; gateToast(e.message||String(e)); return; }
+    gateToast(`${ch==="whatsapp"?"WhatsApp":"Email"} for this campaign ${on?"turned ON ✓":"turned OFF"}${r&&r.held_now?` · ${r.held_now} waiting message${r.held_now>1?"s":""} stopped`:""}`);
+    campMsgSwitches(campId); });
 }
 function adminAdvanced(body){
   const T = [["orgs","🏢","Workspaces","Every agency / brand workspace and its members"],["data","🗄","Data browser","Look at any table row by row"],
