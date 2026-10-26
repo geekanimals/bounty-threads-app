@@ -5182,15 +5182,62 @@ const BK_GUIDE = [
   ["Tracking","Tracking ID or tracking link","D12345678","optional"],
   ["Video link","Link to their video (Drive etc.) — for Video submitted / Client approved","https://drive.google.com/…","optional"],
   ["Post link","Instagram link of every post (space or comma between them) — a row with post links is Posted; Posted without a link waits on Client approved","https://www.instagram.com/reel/…","for Posted"]];
+/* ---- every campaign type has its own bulk upload: statuses, columns, guide and template ----
+   Barter → address + courier columns · Barter + Paid → address + courier + payment columns · Paid → payment columns, no address / courier */
+function bkKind(){ const k = (typeof payCampKind==="function" && payCampKind()) || (_bpCamp && _bpCamp.kind) || "barter"; return ["paid","barter_paid"].includes(k) ? k : "barter"; }
+const BK_KIND_LABEL = { barter:"🎁 Barter", barter_paid:"🎁💰 Barter + Paid", paid:"💰 Paid" };
+const BK_SHIP_ST = ["address_confirmed","courier_sent","courier_delivered"];
+const BK_SHIP_COLS = ["address","state","pincode","courier","tracking"];
+const BK_PAY_GUIDE = [
+  ["Fee","This creator's total fee in ₹ — what you agreed with them. Only a Super Admin can upload it; the brand never sees it","15000","for paid"],
+  ["Advance %","Paid once they sign (0–100). Blank = no advance","50","optional"],
+  ["Pay days","The rest is paid this many days after every post is live. Blank = the campaign's setting","7","optional"],
+  ["Terms","Anything else you agreed — it goes into their contract","includes 1 story repost","optional"],
+  ["UPI ID","Where to pay them (or Account no + IFSC)","name@okhdfcbank","optional"],
+  ["Account no","Bank account number","50100123456789","optional"],
+  ["IFSC","Bank IFSC code","HDFC0001234","with Account no"],
+  ["Account holder","Name on the bank account / UPI (must be the creator's)","Riya Sharma","with UPI / Account no"]];
+const BK_PAY_HEAD = ["Fee","Advance %","Pay days","Terms","UPI ID","Account no","IFSC","Account holder"];
+function bkStatuses(){
+  const k = bkKind(), feeNeed = "Fee (or set it later on 💰 Payments)";
+  if(k==="paid") return BK_STATUSES.filter(s=> !BK_SHIP_ST.includes(s[0])).map(s=>
+      s[0]==="approved" ? [s[0], s[1], "brand said yes → the contract goes out as soon as their fee is set", s[3], feeNeed]
+    : s[0]==="contract_signed" ? [s[0], s[1], "signed → the video brief goes out at once (nothing to ship) · they add bank / UPI", "Video brief + add payment details", ""]
+    : s[0]==="video_brief_sent" ? [s[0], s[1], "the video deadline (campaign's days) starts today + reminders", "Video brief", ""]
+    : s);
+  if(k==="barter_paid") return BK_STATUSES.map(s=>
+      s[0]==="approved" ? [s[0], s[1], "brand said yes → the contract goes out as soon as their fee is set", s[3], feeNeed]
+    : s[0]==="contract_signed" ? [s[0], s[1], "next: the creator confirms the address and adds bank / UPI", s[3], ""] : s);
+  return BK_STATUSES;
+}
+// a paid campaign has no address / courier steps: a sheet that says so lands on the video brief
+function bkDispStatus(k){ return bkKind()==="paid" ? (k==="address_confirmed" ? "contract_signed" : ["courier_sent","courier_delivered","courier_received"].includes(k) ? "video_brief_sent" : k) : k; }
+// what the database gets: on a paid campaign the video brief goes out by itself once signed
+function bkServerStatus(k){ return bkKind()==="paid" && k==="video_brief_sent" ? "contract_signed" : k; }
+function bkGuideRows(){
+  const k = bkKind(), base = k==="paid" ? BK_GUIDE.filter(g=> !["Address","State","PIN code","Courier","Tracking"].includes(g[0])) : BK_GUIDE;
+  return k==="barter" ? base : base.concat(BK_PAY_GUIDE);
+}
+function bkSample(){
+  const k = bkKind();
+  if(k==="barter") return BK_SAMPLE;
+  if(k==="barter_paid"){
+    const pay = [["15000","50","7","includes 1 story repost","asha@okhdfcbank","","","Asha Rao"],["","","","","","","",""],["8000","0","5","","","50100123456789","HDFC0001234","Meera Shah"]];
+    return BK_SAMPLE.map((r,i)=> r.concat(i===0 ? BK_PAY_HEAD : (pay[i-1] || BK_PAY_HEAD.map(()=> ""))));
+  }
+  return [["Name","Instagram","WhatsApp","Email","City","Status","Video link","Post link"].concat(BK_PAY_HEAD),
+    ["Asha Rao","@asha.creates","9876543210","asha@example.com","Mumbai","Approved","","","15000","50","7","includes 1 story repost","asha@okhdfcbank","","","Asha Rao"],
+    ["Rohan Mehta","https://instagram.com/rohan.eats","+91 98111 22233","rohan@example.com","Delhi","","","","","","","","","","",""],
+    ["Meera Shah","meera.styles","9000011111","","Pune","Contract signed","","","8000","0","5","","","50100123456789","HDFC0001234","Meera Shah"],
+    ["Nisha Jain","nisha.home","9123456780","","Jaipur","Video submitted","https://drive.google.com/file/d/abc","","12000","30","7","","nisha@okaxis","","","Nisha Jain"],
+    ["Tara Bose","@tara.eats","9007712345","tara@example.com","Kolkata","Posted","","https://www.instagram.com/reel/ABC123/","20000","50","5","","","123456789012","ICIC0000047","Tara Bose"]];
+}
 async function bkDownloadXlsx(){
   await bkLoadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
-  // paid campaign: the payment columns ride along (Fee, Advance %, Pay days, Terms, UPI, Account no, IFSC, Account holder)
-  const paid = typeof payIsPaidCamp==="function" && payIsPaidCamp();
-  const PAYH = ["Fee","Advance %","Pay days","Terms","UPI ID","Account no","IFSC","Account holder"];
-  const ws = XLSX.utils.aoa_to_sheet(paid ? BK_SAMPLE.map((r,i)=> r.concat(i===0 ? PAYH : i===1 ? ["15000","50","7","includes 1 story repost","creator@okhdfcbank","","",""] : i===2 ? ["8000","0","5","","","50100123456789","HDFC0001234","Riya Sharma"] : PAYH.map(()=> ""))) : BK_SAMPLE);
+  const ws = XLSX.utils.aoa_to_sheet(bkSample());   // the campaign type's own columns
   ws["!cols"] = [{wch:16},{wch:30},{wch:16},{wch:22},{wch:11},{wch:18},{wch:34},{wch:14},{wch:9},{wch:11},{wch:30}];
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Creators");
-  XLSX.writeFile(wb, "geek-creators-template.xlsx");
+  XLSX.writeFile(wb, `geek-creators-template-${bkKind().replace("_","-")}.xlsx`);
 }
 const bkEsc = s => esc(s==null ? "" : String(s));
 
@@ -5262,7 +5309,7 @@ async function bkReadSheetLink(url){
   return bkSplitCsv(text);
 }
 const BK_PAY_KEYS = ["fee","advance_pct","pay_days","pay_terms","upi","account_no","ifsc","account_name"];
-function bkFields(){ return (typeof payIsPaidCamp==="function" && payIsPaidCamp()) ? BK_FIELDS : BK_FIELDS.filter(([k])=> !BK_PAY_KEYS.includes(k)); }
+function bkFields(){ const k = bkKind(); return BK_FIELDS.filter(([f])=> !(k==="barter" && BK_PAY_KEYS.includes(f)) && !(k==="paid" && BK_SHIP_COLS.includes(f))); }
 function bkAutoMap(head){
   const map = {}; const used = new Set();
   bkFields().forEach(([k,,re])=>{ const i = head.findIndex((h,ix)=> !used.has(ix) && re.test(String(h||""))); if(i>=0){ map[k]=i; used.add(i); } });
@@ -5287,7 +5334,7 @@ function bkSetRows(rows, src){
       else if(_bk.map.handle==null && vals.filter(v=>/instagram\.com|^@/.test(v)).length >= Math.max(1, vals.length/3)) _bk.map.handle = i;
     }
   }
-  _bk.rows = body.map(r=> ({ cells: r, status: _bk.map.status!=null ? (bkStatus(r[_bk.map.status])||"registered") : "registered" }));
+  _bk.rows = body.map(r=> ({ cells: r, status: _bk.map.status!=null ? bkDispStatus(bkStatus(r[_bk.map.status])||"registered") : "registered" }));
   _bk.src = src; _bk.preview = null;
 }
 // links typed without https:// (www.instagram.com/…, drive.google.com/…) → full links, so they are read correctly
@@ -5296,7 +5343,7 @@ function bkRowData(r){
   const g0 = k => _bk.map[k]!=null ? String(r.cells[_bk.map[k]]||"").trim() : "";
   const g = k => (k==="post_link"||k==="video_link"||k==="handle") ? bkLink(g0(k)) : g0(k);
   return { name:g("name"), handle:g("handle"), phone:g("phone"), email:g("email"), city:g("city"), followers:g("followers"),
-           status: r.status||"registered", approved: bkStRank(r.status||"registered")>=4,
+           status: bkServerStatus(r.status||"registered"), approved: bkStRank(r.status||"registered")>=4,
            address:g("address"), state:g("state"), pincode:g("pincode"), courier:g("courier"), tracking:g("tracking"),
            post_link:g("post_link"), video_link:g("video_link"),
            fee:g("fee"), advance_pct:g("advance_pct"), pay_days:g("pay_days"), pay_terms:g("pay_terms"), upi:g("upi"), account_no:g("account_no"), ifsc:g("ifsc"), account_name:g("account_name") };
@@ -5333,9 +5380,9 @@ function bkStatusChip(p, r){
   if(p.no_contact) return '<span class="tag warn">⚠ no WhatsApp / email / Instagram</span>';
   if(p.duplicate) return `<span class="tag">Same person as row ${bkEsc((p._dupOf!=null?p._dupOf:0)+1)} — merged into it (furthest step + all links kept)</span>`;
   if(p.already) return `<span class="tag">Already in${p.live_stage?` · ${bkEsc(String(p.live_stage).replace(/_/g," "))}`:""} — nothing new in this row · skipped</span>`;
-  if(p.lands_on && p.lands_on !== ((r && r.status) || "registered") && bkStRank(p.lands_on) < bkStRank((r && r.status) || "registered")){
+  if(p.lands_on && bkDispStatus(p.lands_on) !== ((r && r.status) || "registered") && bkStRank(p.lands_on) < bkStRank(bkServerStatus((r && r.status) || "registered"))){
     const miss = [p.needs_post_link?"Post link":"", p.needs_video?"Video link":"", p.needs_courier?"Courier + Tracking":""].filter(Boolean).join(" + ") || "the details for this step";
-    return `<span class="tag warn">Needs ${bkEsc(miss)} — lands on <b>${bkEsc(bkStLabel(p.lands_on))}</b> until you add ${miss.includes("+")?"them":"it"}</span>`;
+    return `<span class="tag warn">Needs ${bkEsc(miss)} — lands on <b>${bkEsc(bkStLabel(bkDispStatus(p.lands_on)))}</b> until you add ${miss.includes("+")?"them":"it"}</span>`;
   }
   const st = (r && r.status) || "registered";
   const bad = (p.phone_bad?" · number looks wrong":"") + (p.email_bad?" · email looks wrong":"");
@@ -5353,19 +5400,20 @@ function bkStatusChip(p, r){
 }
 function bkStatusSelect(attr, val, extra){
   const r = bkStRank(val), cls = !val ? "" : r<=3 ? "st-pre" : r<=6 ? "st-contract" : r<=9 ? "st-ship" : r<=12 ? "st-video" : "st-done";
-  return `<select class="bk-stsel ${cls}" ${attr}${extra||""}>${BK_STATUSES.map(([k,l],n)=>`<option value="${k}"${k===val?" selected":""}>${n+1}. ${l}</option>`).join("")}</select>`;
+  const L = bkStatuses(), v2 = L.some(x=> x[0]===val) ? val : bkDispStatus(val);
+  return `<select class="bk-stsel ${cls}" ${attr}${extra||""}>${L.map(([k,l],n)=>`<option value="${k}"${k===v2?" selected":""}>${n+1}. ${l}</option>`).join("")}</select>`;
 }
 function bulkHtml(){
   const rows = _bk.rows||[], pv = Array.isArray(_bk.preview) ? _bk.preview : null;
   const skipRow = p => p && (p.no_contact || p.duplicate || p.already);
   const valid = pv ? pv.filter(p=>!skipRow(p)).length : rows.length;
   const nDup = pv ? pv.filter(p=> p && !p.no_contact && (p.duplicate || p.already)).length : 0;
-  rows.forEach(r=>{ const d = bkRowData(r); r._addrMissing = bkNeedsAddr(r.status) && !d.address; });
+  rows.forEach(r=>{ const d = bkRowData(r); r._addrMissing = bkKind()!=="paid" && bkNeedsAddr(r.status) && !d.address; });
   const live = rows.filter((r,i)=> !(pv && skipRow(pv[i])));
-  const byStatus = BK_STATUSES.map(([k,l])=>[l, live.filter(r=>(r.status||"registered")===k).length]).filter(x=>x[1]);
+  const byStatus = bkStatuses().map(([k,l])=>[l, live.filter(r=>(r.status||"registered")===k).length]).filter(x=>x[1]);
   const noAddr = live.filter(r=>r._addrMissing).length;
   return `<div class="card bk-card">
-      <h3 style="margin:0 0 4px">📥 Upload creators in bulk</h3>
+      <h3 style="margin:0 0 4px">📥 Upload creators in bulk <span class="tag">${BK_KIND_LABEL[bkKind()]} campaign</span></h3>
       <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Give every creator a <b>Status</b> — the exact step they are on (see the guide). They get <b>one message for that step</b>: <b>Approved</b> → the invite; a later step → only that step's message. Creators on Geek OS with a complete profile go on that step now; new ones register, connect Instagram and complete their profile (pre-filled from your sheet) and then land on their step. From there the normal flow and reminders carry on.</div>
       ${bkWaLine()}
       ${bkGuideHtml(!rows.length)}
@@ -5376,7 +5424,7 @@ function bulkHtml(){
         <button class="btn sm ghost" id="bkPick">🎯 Pick from Geek OS instead</button>
       </div>
       <details class="bk-paste"><summary>…or paste rows (copy cells from Sheets / Excel / Word)</summary>
-        <textarea id="bkPaste" rows="4" placeholder="Name, Instagram, WhatsApp, Email, City, Status, Address, State, PIN code, Courier, Tracking"></textarea>
+        <textarea id="bkPaste" rows="4" placeholder="${esc(bkSample()[0].join(", "))}"></textarea>
         <button class="btn sm ghost" id="bkPasteGo">Use pasted rows</button></details>
       <div class="auth-err" id="bkErr"></div>
       ${rows.length ? `
@@ -5385,7 +5433,7 @@ function bulkHtml(){
       <div class="bk-map">${bkFields().map(([k,l])=>`<label><span>${l}</span><select data-bkmap="${k}"><option value="">—</option>${_bk.head.map((h,i)=>`<option value="${i}"${_bk.map[k]===i?" selected":""}>${bkEsc(h)}</option>`).join("")}</select></label>`).join("")}</div>
       <div class="bk-setall"><span>Set everyone to</span>${bkStatusSelect('id="bkAllSt"', "", "")}<span class="muted">— or change each row below</span></div>
       <div class="bk-tablewrap"><table class="bk-table"><thead><tr>
-        <th>Status</th><th>Name</th><th>Instagram</th><th>WhatsApp</th><th>Email</th><th>City</th><th>Address · courier</th><th>What happens</th></tr></thead><tbody>
+        <th>Status</th><th>Name</th><th>Instagram</th><th>WhatsApp</th><th>Email</th><th>City</th>${bkKind()!=="paid"?"<th>Address · courier</th>":""}${bkKind()!=="barter"?"<th>💰 Fee · pay to</th>":""}<th>What happens</th></tr></thead><tbody>
         ${rows.map((r,i)=>{ const d = bkRowData(r), p = pv && pv[i];
           const raw = _bk.map.status!=null ? String(r.cells[_bk.map.status]||"").trim() : "";
           const unread = raw && !bkStatus(raw);
@@ -5393,7 +5441,8 @@ function bulkHtml(){
           return `<tr class="${p&&p.no_contact?"bk-bad":p&&(p.duplicate||p.already)?"bk-dup":""}"><td>${bkStatusSelect(`data-bkst="${i}"`, r.status||"registered", p&&p.no_contact?" disabled":"")}${unread?`<div class="muted bk-raw" title="Couldn't read this status — pick it">“${bkEsc(raw.slice(0,24))}”?</div>`:""}</td>
             <td>${bkEsc(d.name)||'<span class="muted">—</span>'}</td><td>${p&&p.handle?"@"+bkEsc(p.handle):bkEsc(d.handle)}</td>
             <td>${p&&p.phone?bkEsc(p.phone):bkEsc(d.phone)}</td><td>${bkEsc(p&&p.email||d.email)}</td><td>${bkEsc(d.city)}</td>
-            <td class="bk-ship">${ship?bkEsc(ship):'<span class="muted">—</span>'}</td>
+            ${bkKind()!=="paid"?`<td class="bk-ship">${ship?bkEsc(ship):'<span class="muted">—</span>'}</td>`:""}
+            ${bkKind()!=="barter"?`<td class="bk-ship">${[d.fee?"₹"+bkEsc(d.fee):"", d.advance_pct?bkEsc(d.advance_pct)+"% adv":"", d.pay_days?bkEsc(d.pay_days)+" days":"", d.upi?"UPI "+bkEsc(d.upi):d.account_no?"a/c ••"+bkEsc(String(d.account_no).replace(/\D/g,"").slice(-4)):""].filter(Boolean).join(" · ")||'<span class="muted">— set later</span>'}</td>`:""}
             <td>${pv?bkStatusChip(p, r):'<span class="muted">checking…</span>'}</td></tr>`; }).join("")}
       </tbody></table></div>
       ${_bk.preview && _bk.preview.error ? `<div class="auth-err">${bkEsc(_bk.preview.error)}</div>` : ""}
@@ -5411,35 +5460,45 @@ function bkWaLine(){
   return `<div class="bk-wa warn">⚠️ <b>WhatsApp invites are waiting</b> — the WhatsApp template isn't set yet, so invites go by <b>email</b> now and on WhatsApp automatically the moment it's set.
     ${w.is_admin ? `<a href="#" id="bkSetWa">Set the template now →</a>` : `Ask the Geek Super Admin to set it (Super Admin → WhatsApp &amp; email).`}</div>`;
 }
+function bkGuideSteps(){
+  const k = bkKind(), pay = k!=="barter";
+  const li = [
+    `<li><b>Download the ${BK_KIND_LABEL[k]} template</b> below (Excel or CSV) — it has exactly the columns this campaign type needs — or copy it straight into a new Google Sheet.</li>`,
+    `<li><b>One creator per row.</b> Keep the first row as the column names.</li>`,
+    `<li>Every row needs <b>at least one of WhatsApp, Email or Instagram</b> — best is WhatsApp + email: the invite goes to both and all later updates go there.</li>`,
+    `<li><b>Status</b> column: write <b>exactly</b> one of the step names below — where that creator is right now (every row can be different; blank = <b>Applied</b>). You can also change it here before and after the upload.</li>`,
+    k==="paid"
+      ? `<li><b>No product, no address, no courier</b> on a Paid campaign: once the contract is signed the <b>video brief</b> goes out at once. <b>Video submitted / Client approved</b> need the <b>Video link</b> · <b>Posted / Done</b> needs the <b>Post link</b> of every post — a row without it is put one step back (the preview shows it).</li>`
+      : `<li><b>Some steps need one more column</b> (see “The row also needs”): <b>Courier sent / delivered</b> → Courier + Tracking · <b>Video submitted / Client approved</b> → Video link · <b>Posted / Done</b> → Post link of every post. A row without it is put one step back until you add it — the preview shows this before you upload.</li>`,
+    pay ? `<li><b>💰 Payment columns</b> (this creator's own deal): <b>Fee</b> (₹, total) · <b>Advance %</b> (paid once they sign) · <b>Pay days</b> (the rest, after every post is live) · <b>Terms</b>. The fee goes into <b>their</b> contract only — the brand and other creators never see it${window.__isAdmin?"":" · only a Super Admin can upload the Fee column"}. No fee yet? The contract waits and goes out the moment you set it on <b>💰 Payments</b>.</li>` : "",
+    pay ? `<li><b>Where to pay</b> (optional — they can also add it in the app): <b>UPI ID</b>, or <b>Account no</b> + <b>IFSC</b>, plus the <b>Account holder</b> name. It must be in the creator's own name; it is stored encrypted and checked automatically.</li>` : "",
+    `<li><b>Messages:</b> each creator gets <b>one</b> message for their step — <b>Approved</b> → the invite; ${k==="paid"?"Contract sent / Contract signed (video brief) / Client approved / Posted":"Contract sent / Contract signed / Address confirmed / Courier sent / Courier delivered / Client approved / Posted"} → that step's message. <b>Posted / Done</b> is the last step. Applied, Screened, Sent to brand and Video submitted send no message.</li>`,
+    k==="paid"
+      ? `<li><b>After that the normal flow runs:</b> from <b>Contract signed / Video brief sent</b> the video deadline is the campaign's own number of days <b>from today</b>, with the usual reminders; once every post is live the payment falls due.</li>`
+      : `<li><b>After that the normal flow runs:</b> next steps, follow-ups and reminders. From <b>Courier delivered / Video brief sent</b> the video deadline is the campaign's own number of days <b>from today</b>, with the usual reminders.${pay?" Once every post is live the payment falls due.":""}</li>`,
+    k==="paid" ? "" : `<li>For <b>Address confirmed</b>, <b>Courier sent</b> and <b>Courier delivered</b> add the <b>Address</b> (+ State, PIN code); for <b>Courier sent / delivered</b> also the <b>Courier</b> and <b>Tracking</b> ID or link.</li>`,
+    `<li><b>New creators</b> (not on Geek OS yet): the step's message carries the app link → they register → <b>connect Instagram</b> → <b>complete the profile</b> (pre-filled from your sheet) → they join the campaign <b>right on their step</b>${pay?" with their fee and payment details from the sheet":""}. No second message.</li>`,
+    `<li>Upload the file — or paste a Google Sheet link (Share → <b>Anyone with the link</b> → Viewer). Column names don't have to match exactly; we match them and you can fix them in the dropdowns.</li>`];
+  return `<ol class="bk-steps">${li.filter(Boolean).join("")}</ol>`;
+}
 function bkGuideHtml(open){
-  const tsv = BK_SAMPLE.map(r=>r.join("\t")).join("\n");
-  return `<details class="bk-guide"${open?" open":""}><summary>📘 How to set up your sheet — with a ready template</summary>
-    <ol class="bk-steps">
-      <li><b>Download a template</b> below (Excel or CSV) — or copy it straight into a new Google Sheet.</li>
-      <li><b>One creator per row.</b> Keep the first row as the column names.</li>
-      <li>Every row needs <b>at least one of WhatsApp, Email or Instagram</b> — best is WhatsApp + email: the invite goes to both and all later updates go there.</li>
-      <li><b>Status</b> column: write <b>exactly</b> one of the step names below — where that creator is right now (every row can be different; blank = <b>Applied</b>). You can also change it here before and after the upload.</li>
-      <li><b>Some steps need one more column</b> (see “The row also needs”): <b>Courier sent / delivered</b> → Courier + Tracking · <b>Video submitted / Client approved</b> → Video link · <b>Posted / Done</b> → Post link of every post. A row without it is put one step back until you add it — the preview shows this before you upload.</li>
-      <li><b>Messages:</b> each creator gets <b>one</b> message for their step — <b>Approved</b> → the invite; Contract sent / Contract signed / Address confirmed / Courier sent / Courier delivered / Client approved / Posted → that step's message. <b>Posted / Done</b> is the last step — the campaign is complete. Applied, Screened, Sent to brand and Video submitted send no message.</li>
-      <li><b>After that the normal flow runs:</b> next steps, follow-ups and reminders. From <b>Courier delivered / Video brief sent</b> the video deadline is the campaign's own number of days <b>from today</b>, with the usual reminders.</li>
-      <li>For <b>Address confirmed</b>, <b>Courier sent</b> and <b>Courier delivered</b> add the <b>Address</b> (+ State, PIN code); for <b>Courier sent / delivered</b> also the <b>Courier</b> and <b>Tracking</b> ID or link.</li>
-      <li><b>New creators</b> (not on Geek OS yet): the step's message carries the app link → they register → <b>connect Instagram</b> (media kit) → <b>complete the profile</b> (name, city, email, WhatsApp, address are <b>pre-filled from your sheet</b>; Instagram followers, name and photo are <b>fetched automatically</b>) → they join the campaign <b>right on their step</b> (earlier steps marked “confirmed offline”). No second message.</li>
-      <li>Upload the file — or paste a Google Sheet link (Share → <b>Anyone with the link</b> → Viewer). Column names don't have to match exactly; we match them and you can fix them in the dropdowns.</li>
-    </ol>
+  const SAMPLE = bkSample(), tsv = SAMPLE.map(r=>r.join("\t")).join("\n");
+  return `<details class="bk-guide"${open?" open":""}><summary>📘 How to set up your sheet — ${BK_KIND_LABEL[bkKind()]} campaign template</summary>
+    ${bkGuideSteps()}
     <div class="bk-mini"><b>Statuses — write exactly this in the sheet:</b></div>
     <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable bk-sttable"><thead><tr><th>#</th><th>Write in Status</th><th>What happens</th><th>The row also needs</th><th>Message to the creator</th></tr></thead><tbody>
-      ${BK_STATUSES.map(([k,l,h,m,nd],n)=>`<tr><td><span class="bk-stn">${n+1}</span></td><td><code>${bkEsc(l)}</code></td><td>${bkEsc(h)}</td><td>${nd?`<b>${bkEsc(nd)}</b>`:'<span class="muted">—</span>'}</td><td>${m==="no message"?'<span class="muted">— no message</span>':`✉️ ${bkEsc(m)}`}</td></tr>`).join("")}
+      ${bkStatuses().map(([k,l,h,m,nd],n)=>`<tr><td><span class="bk-stn">${n+1}</span></td><td><code>${bkEsc(l)}</code></td><td>${bkEsc(h)}</td><td>${nd?`<b>${bkEsc(nd)}</b>`:'<span class="muted">—</span>'}</td><td>${m==="no message"?'<span class="muted">— no message</span>':`✉️ ${bkEsc(m)}`}</td></tr>`).join("")}
     </tbody></table></div>
     <div class="bk-mini">Columns:</div>
     <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable"><thead><tr><th>Column</th><th>What to put</th><th>Example</th><th>Needed?</th></tr></thead><tbody>
-      ${BK_GUIDE.map(g=>`<tr><td><b>${bkEsc(g[0])}</b></td><td>${bkEsc(g[1])}</td><td><code>${bkEsc(g[2])}</code></td><td>${g[3]==="optional"?'<span class="muted">optional</span>':`<span class="tag">${bkEsc(g[3])}</span>`}</td></tr>`).join("")}
+      ${bkGuideRows().map(g=>`<tr><td><b>${bkEsc(g[0])}</b></td><td>${bkEsc(g[1])}</td><td><code>${bkEsc(g[2])}</code></td><td>${g[3]==="optional"?'<span class="muted">optional</span>':`<span class="tag">${bkEsc(g[3])}</span>`}</td></tr>`).join("")}
     </tbody></table></div>
     <div class="bk-mini">Your sheet should look like this:</div>
-    <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-sample"><thead><tr>${BK_SAMPLE[0].map(h=>`<th>${bkEsc(h)}</th>`).join("")}</tr></thead>
-      <tbody>${BK_SAMPLE.slice(1).map(r=>`<tr>${r.map(c=>`<td>${bkEsc(c)||'<span class="muted">—</span>'}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-sample"><thead><tr>${SAMPLE[0].map(h=>`<th>${bkEsc(h)}</th>`).join("")}</tr></thead>
+      <tbody>${SAMPLE.slice(1).map(r=>`<tr>${r.map(c=>`<td>${bkEsc(c)||'<span class="muted">—</span>'}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
     <div class="bk-dl">
       <button class="btn sm" id="bkXlsx">⬇ Excel template (.xlsx)</button>
-      <a class="btn sm ghost" href="data:text/csv;charset=utf-8,${encodeURIComponent(BK_SAMPLE.map(r=>r.map(c=>/[",]/.test(c)?`"${c.replace(/"/g,'""')}"`:c).join(",")).join("\n"))}" download="geek-creators-template.csv">⬇ CSV template</a>
+      <a class="btn sm ghost" href="data:text/csv;charset=utf-8,${encodeURIComponent(SAMPLE.map(r=>r.map(c=>/[",]/.test(c)?`"${c.replace(/"/g,'""')}"`:c).join(",")).join("\n"))}" download="geek-creators-template-${bkKind().replace("_","-")}.csv">⬇ CSV template</a>
       <button class="btn sm ghost" id="bkCopyTpl" data-tsv="${bkEsc(tsv)}">📋 Copy for Google Sheets</button>
     </div>
     <div class="muted bk-mini">Google Sheets: copy → open a new sheet → click cell A1 → paste. · Word: make a table with the same columns, or write one creator per line like <code>Asha Rao – @asha.creates – 9876543210 – asha@example.com</code>.</div>
@@ -5514,7 +5573,7 @@ function wireBulk(){
   const lg = $b("bkLinkGo"); if(lg) lg.onclick = ()=>{ const u = $b("bkLink").value.trim(); if(u){ lg.textContent = "Loading…"; take(()=>bkReadSheetLink(u), "Google Sheet").finally(()=>{ if(lg.isConnected) lg.textContent = "Load sheet"; }); } };
   const pg = $b("bkPasteGo"); if(pg) pg.onclick = ()=>{ const t = $b("bkPaste").value; take(async()=>{ const r = bkSplitCsv(t); return r.length && r[0].length>1 ? r : bkFromLines(t.split("\n")); }, "pasted rows"); };
   document.querySelectorAll("[data-bkmap]").forEach(s=> s.onchange = ()=>{ const k = s.dataset.bkmap; if(s.value==="") delete _bk.map[k]; else _bk.map[k] = +s.value;
-    if(k==="status") _bk.rows.forEach(r=> r.status = _bk.map.status!=null ? (bkStatus(r.cells[_bk.map.status])||"registered") : "registered");
+    if(k==="status") _bk.rows.forEach(r=> r.status = _bk.map.status!=null ? bkDispStatus(bkStatus(r.cells[_bk.map.status])||"registered") : "registered");
     _bk.preview = null; paintBulk(); bkCheck(); });
   document.querySelectorAll("[data-bkst]").forEach(c=> c.onchange = ()=>{ _bk.rows[+c.dataset.bkst].status = c.value; paintBulk(); });
   const all = $b("bkAllSt"); if(all){ all.insertAdjacentHTML("afterbegin", '<option value="" selected>— choose —</option>'); all.value = "";
@@ -6517,7 +6576,7 @@ const HUB_FROM_STAGE = Object.assign({}, typeof BK_FROM_STAGE!=="undefined" ? BK
 function hubSetStepHtml(d){
   if(["rejected","dropped","ineligible","brand_declined","completed"].includes(d.stage)) return "";
   const cur = HUB_FROM_STAGE[d.stage] || "registered", r0 = bkStRank(cur);
-  const opts = BK_STATUSES.filter(s=> bkStRank(s[0]) >= r0);
+  const opts = bkStatuses().filter(s=> bkStRank(s[0]) >= r0);
   const left = d.need!=null ? Math.max(0, (d.need||1) - (d.posts||0)) : null;
   return `<div class="bpp-sec">⚙️ Change their step</div>
     <div class="hub-set" id="hubSet">

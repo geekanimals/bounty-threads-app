@@ -4,8 +4,10 @@
 //   b) validations in progress → GET /v1/fund_accounts/validations/:id → verified / failed / check by hand
 //   c) payouts a Super Admin QUEUED on the Payments tab → POST /v1/payouts (composite, idempotent per payout + attempt)
 //   d) payouts in progress → GET /v1/payouts/:id → paid (UTR) / failed (reason)
-// Keys live in Vault (Super Admin saves them on the Payments tab). RazorpayX only accepts payout + validation calls from
-// allow-listed IPs: api_base is https://api.razorpay.com, or a fixed-IP relay that forwards to it unchanged.
+// Keys: Supabase secrets RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET (that's all). The RazorpayX account number is read from
+// Razorpay itself (GET /v1/banking_balances); RAZORPAYX_ACCOUNT_NUMBER only if you have several accounts.
+// Optional RAZORPAY_API_BASE = a fixed-IP relay (RazorpayX accepts payout calls only from allow-listed IPs).
+// Every run reports the connection (keys OK, account, balance, last error) for the Payments tab.
 // Nothing is sent without keys: details then wait for a Super Admin's manual check. Never logs account numbers.
 // Kicked by the database (new details, queued payouts) and every 15 min by pg_cron. CI_WORKER_SECRET gates calls.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -79,8 +81,32 @@ Deno.serve(async (req) => {
   const api = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } }).schema("api");
   const { data: work, error } = await api.rpc("ops_rzp_work", { p_limit: 20 });
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
-  const w = work as any; const p: Prov = w.provider;
-  const ready = !!(p?.key_id && p?.key_secret && p?.account_number);
+  const w = work as any;
+  const p: Prov = {
+    key_id: (Deno.env.get("RAZORPAY_KEY_ID") || "").trim() || null,
+    key_secret: (Deno.env.get("RAZORPAY_KEY_SECRET") || "").trim() || null,
+    account_number: (Deno.env.get("RAZORPAYX_ACCOUNT_NUMBER") || "").trim() || null,
+    api_base: (Deno.env.get("RAZORPAY_API_BASE") || "").trim() || "https://api.razorpay.com",
+  };
+  // the account money is paid from: read it from Razorpay (the one with the most available balance)
+  let balance: number | null = null, connErr: string | null = null;
+  if (p.key_id && p.key_secret) {
+    try {
+      const { status, j } = await rzp(p, "GET", "/v1/banking_balances?count=20");
+      if (status >= 400) connErr = `Razorpay said ${status}: ${errText(j, status)}`;
+      else {
+        const items = ((j?.items ?? []) as any[]).filter((x) => x?.account_number);
+        const pick = (p.account_number && items.find((x) => String(x.account_number) === p.account_number))
+          || items.sort((a, b) => (b.available_amount ?? b.amount ?? 0) - (a.available_amount ?? a.amount ?? 0))[0];
+        if (pick) { p.account_number = p.account_number || String(pick.account_number); balance = Math.round(Number(pick.available_amount ?? pick.amount ?? 0)) / 100; }
+        else if (!p.account_number) connErr = "No RazorpayX account found for these keys — activate RazorpayX (current account) on this Razorpay account";
+      }
+    } catch (e) { connErr = "Couldn't reach Razorpay: " + String((e as Error)?.message || e).slice(0, 120); }
+  }
+  const ready = !!(p.key_id && p.key_secret && p.account_number);
+  await api.rpc("ops_rzp_report", { p_keys: ready, p_account_last4: p.account_number ? p.account_number.slice(-4) : null, p_balance: balance,
+    p_mode: p.key_id ? (p.key_id.startsWith("rzp_test_") ? "test" : "live") : null,
+    p_error: p.key_id ? connErr : "RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not set" });
   const t = { validated: 0, manual: 0, invalid: 0, polled: 0, paid: 0, sent: 0, failed: 0, errors: 0 };
   const setResult = (pid: string, o: any) => api.rpc("ops_rzp_validation_result",
     { p_participation: pid, p_result: o.result, p_name_at_bank: o.name ?? null, p_bank_name: o.bank ?? null, p_message: o.message ?? null });

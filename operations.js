@@ -957,12 +957,13 @@
     var pos=(p.payouts||[]).map(function(o){
       var s={waiting:'Not due yet',due:'Due'+(o.due_at?' by '+fmtDate(o.due_at):''),queued:'Being sent',processing:'Sent — reaching your bank',
              paid:'Paid ✓'+(o.paid_at?' '+fmtDate(o.paid_at):'')+(o.utr?' · UTR '+esc(o.utr):''),failed:'Delayed — our team is on it',cancelled:'Cancelled'}[o.status]||o.status;
-      return '<div class="mc-row"><span>'+(PART[o.part]||o.part)+' · '+INR(o.amount)+'</span><span>'+s+'</span></div>'; }).join('');
+      return '<div class="mc-row"><span>'+(o.note==='part payment'?'Part payment':(PART[o.part]||o.part))+' · '+INR(o.amount)+'</span><span>'+s
+        +(o.proof_path?' <button class="btn sm ghost" data-payproof="'+esc(o.proof_path)+'">📎 Screenshot</button>':'')+'</span></div>'; }).join('');
     var needs=['pending','failed','needs_update'].indexOf(p.details_status)>=0;
     var busy=(p.payouts||[]).some(function(o){ return o.status==='queued'||o.status==='processing'; });
     var allPaid=(p.payouts||[]).length && (p.payouts||[]).every(function(o){ return o.status==='paid'; });
     return '<div class="jr-now mc-pay'+(needs?' act':'')+'"><div class="jr-now-h">💰 <b>Your payment</b> <span class="ci-pill ci-'+st[1]+'">'+esc(st[0])+'</span></div>'
-      + '<div class="jr-now-t">Fee: '+fee+'<br>Paid to: '+det
+      + '<div class="jr-now-t">Fee: '+fee+(p.amount!=null&&(+p.paid_total||0)>0?'<br>Paid so far: <b>'+INR(p.paid_total)+'</b> · left <b>'+INR(p.left)+'</b>':'')+'<br>Paid to: '+det
       + (p.details_status==='needs_update'&&p.request_reason?'<div class="mc-note">“'+esc(p.request_reason)+'”</div>':'')
       + (p.details_status==='failed'&&p.verify_message?'<div class="mc-note">'+esc(p.verify_message)+'</div>':'')+'</div>'
       + (pos?'<div class="mc-grid">'+pos+'</div>':'')
@@ -1006,6 +1007,12 @@
   }
   function wireMine(){
     document.querySelectorAll("#opsMine [data-paydetails]").forEach(function(b){ b.onclick=function(){ openPayDetailsModal(b.getAttribute("data-paydetails")); }; });
+    // the payment screenshot the Geek team uploaded — open / download it
+    document.querySelectorAll("#opsMine [data-payproof]").forEach(function(b){ b.onclick=function(){
+      b.disabled=true;
+      window.sb.storage.from("payment-proofs").createSignedUrl(b.getAttribute("data-payproof"), 600, { download:false }).then(function(r){
+        b.disabled=false; if(r.error||!r.data){ alert("Couldn't open the screenshot: "+((r.error&&r.error.message)||"try again")); return; }
+        window.open(r.data.signedUrl, "_blank", "noopener"); }, function(){ b.disabled=false; }); }; });
     document.querySelectorAll("#opsMine [data-accept]").forEach(function(b){ b.onclick=function(){ api("respond_to_campaign",{p_participation:b.getAttribute("data-accept"),p_accept:true,p_reason:null}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-reject]").forEach(function(b){ b.onclick=function(){ var reason=prompt("No problem — tell the brand why you're passing (they see this):")||""; if(!reason) return; api("respond_to_campaign",{p_participation:b.getAttribute("data-reject"),p_accept:false,p_reason:reason}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });
     document.querySelectorAll("#opsMine [data-upload]").forEach(function(b){ b.onclick=function(){ var url=prompt("Paste your content link (e.g. Instagram post URL):")||""; if(!url) return; var note=prompt("Note / question for the Geek team (optional):")||""; api("submit_content",{p_deliverable:b.getAttribute("data-upload"),p_content_url:url,p_note:note}).then(function(r){ if(r.error) alert(r.error.message||r.error); loadMyCampaigns(); }); }; });

@@ -72,8 +72,9 @@ function payHtml(){
       <div class="${nodet+unv?"warn":""}"><b>${nodet} · ${unv}</b><span>no details · not verified</span></div>
     </div>
     <div class="pay-prov ${prov.connected?"on":""}">${prov.connected
-      ? `🟢 <b>RazorpayX connected</b>${prov.account?` · account ••${esc(prov.account)}`:""} — bank / UPI details are checked automatically and you can pay selected creators in one go. <button type="button" class="mini-btn ghost" data-paykeys>Change keys</button>`
-      : `⚪ <b>RazorpayX not connected</b> — details are verified by hand for now, and you can still pay with the RazorpayX bulk file (dashboard upload). <button type="button" class="mini-btn" data-paykeys>Connect RazorpayX</button>`}</div>
+      ? `🟢 <b>Razorpay connected</b>${prov.mode==="test"?' <span class="tag warn">test mode</span>':""}${prov.account?` · paying from ••${esc(prov.account)}`:""}${prov.balance!=null?` · balance <b>${payInr(prov.balance)}</b>`:""} — tap <b>💸 Pay</b> on a creator, or select several and pay them in one go. Bank / UPI details are checked automatically.`
+      : `⚪ <b>Razorpay not connected</b>${prov.error?` — ${esc(prov.error)}`:""}. Until then: verify details by hand, pay from your bank / UPI and record it with the UTR + screenshot, or use the RazorpayX bulk file.`}
+      <button type="button" class="mini-btn ghost" data-payping>↻ Check Razorpay</button>${prov.checked_at?` <span class="muted">checked ${esc(typeof fmtDateTime==="function" ? fmtDateTime(prov.checked_at) : prov.checked_at)}</span>`:""}</div>
     <div class="pay-bar">
       <input type="search" id="payQ" placeholder="🔎 @handle, name, UPI…" value="${esc(_pay.q||"")}">
       <select id="payF">${F.map(([k,l])=>`<option value="${k}"${_pay.f===k?" selected":""}>${l}</option>`).join("")}</select>
@@ -84,7 +85,7 @@ function payHtml(){
     <div class="pay-selbar${selOuts.length?" on":""}">
       <label class="cp-check"><input type="checkbox" id="payAll"${selOuts.length && selOuts.length===rows.filter(payMatch).flatMap(payReadyOuts).length?" checked":""}> Select everything ready to pay</label>
       <span><b>${selOuts.length}</b> payment${selOuts.length===1?"":"s"} · <b>${payInr(selTot)}</b></span>
-      <button type="button" class="btn sm" data-payrzp${!selOuts.length||!prov.connected?" disabled":""} title="${prov.connected?"":"Connect RazorpayX first"}">⚡ Pay via RazorpayX</button>
+      <button type="button" class="btn sm" data-payrzp${!selOuts.length||!prov.connected?" disabled":""} title="${prov.connected?"":"Connect RazorpayX first"}">⚡ Pay selected via Razorpay</button>
       <button type="button" class="btn sm ghost" data-payfile${selOuts.length?"":" disabled"}>⬇ RazorpayX bulk file</button>
     </div>
     <div class="pay-list">${shown.length ? shown.map(payRowHtml).join("") : `<div class="muted" style="padding:14px">${rows.length?"Nobody matches.":"No creator is approved on this campaign yet — they appear here as soon as they are."}</div>`}</div>
@@ -105,7 +106,9 @@ function payRowHtml(r){
     <div class="pay-fee">${p.amount!=null ? `<b>${payInr(p.amount)}</b> <span class="muted">${esc(payTerms(p, (_pay.data||{}).due_days))}</span>${p.fee_source==="bulk"?' <span class="tag">from sheet</span>':""}` : `<span class="tag warn">Fee not set</span>`}
       ${p.terms_note?`<div class="muted">📝 ${esc(p.terms_note)}</div>`:""}
       ${r.first_fee?`<div class="muted pay-first">First fee with Geek: <b>${payInr(r.first_fee.amount)}</b> · ${esc(r.first_fee.campaign||"")}</div>`:""}
-      <button type="button" class="mini-btn${p.amount==null?"":" ghost"}" data-payfee="${P}"${anyBusy?" disabled":""}>${p.amount==null?"💰 Set fee & terms":"✏️ Fee & terms"}</button></div>
+      ${p.amount!=null?`<div class="pay-left">Paid <b>${payInr(p.paid_total||0)}</b> · left <b>${payInr(p.left!=null?p.left:p.amount)}</b></div>`:""}
+      <div class="pay-mini"><button type="button" class="mini-btn${p.amount==null?"":" ghost"}" data-payfee="${P}">${p.amount==null?"💰 Set fee & terms":"✏️ Fee & terms"}</button>
+        ${p.amount!=null && +(p.left!=null?p.left:p.amount) > 0 ? `<button type="button" class="mini-btn" data-paypay="${P}">💸 Pay</button>` : ""}</div></div>
     <div class="pay-det">${where} <span class="tag ${det[1]}">${esc(det[0])}</span>${p.details_source&&p.details_source!=="creator"?` <span class="muted">(${esc(p.details_source==="bulk"?"from sheet":"added by team")})</span>`:""}
       ${p.verify_name?`<div class="muted">Name at bank: <b>${esc(p.verify_name)}</b>${p.account_name&&p.verify_name.toLowerCase()!==String(p.account_name).toLowerCase()?` · typed: ${esc(p.account_name)}`:""}</div>`:p.account_name?`<div class="muted">Name: ${esc(p.account_name)}</div>`:""}
       ${p.verify_message&&p.details_status!=="verified"?`<div class="muted">${esc(p.verify_message)}</div>`:""}
@@ -119,7 +122,8 @@ function payRowHtml(r){
     <div class="pay-outs">${po.length ? po.map(o=>{ const s = PAY_PO[o.status]||[o.status,""];
         return `<div class="pay-out"><span>${esc(PAY_PART[o.part]||o.part)} <b>${payInr(o.amount)}</b></span>
           <span class="tag ${s[1]}">${esc(s[0])}${o.status==="due"&&o.due_at?` · by ${esc(fmtDate(o.due_at))}`:o.status==="waiting"?` · ${esc(o.part==="advance"||(o.part==="full"&&+p.advance_pct>=100)?"after signing":"after the posts")}`:""}</span>
-          ${o.utr?`<span class="muted">UTR ${esc(o.utr)}</span>`:""}${o.status==="failed"&&o.failure_reason?`<span class="muted">${esc(o.failure_reason)}</span>`:""}
+          ${o.utr?`<span class="muted">UTR ${esc(o.utr)}</span>`:""}${o.note==="part payment"?`<span class="muted">part payment</span>`:""}
+          ${o.proof_path?`<button type="button" class="mini-btn ghost" data-payproof="${esc(o.proof_path)}">📎 Screenshot</button>`:o.status==="paid"?`<button type="button" class="mini-btn ghost" data-payaddproof="${esc(o.payout_id)}">📎 Add screenshot</button>`:""}${o.status==="failed"&&o.failure_reason?`<span class="muted">${esc(o.failure_reason)}</span>`:""}
           ${o.status==="processing"&&o.provider==="razorpayx_bulk"?`<span class="muted">in the bulk file · ref ${esc(o.ref_code)}</span>`:""}
           <span class="pay-oacts">${["due","failed"].includes(o.status)||(o.status==="processing"&&o.provider==="razorpayx_bulk")?`<button type="button" class="mini-btn ghost" data-paymark="${esc(o.payout_id)}">✅ Paid (UTR)</button>`:""}
             ${(o.status==="processing"&&o.provider==="razorpayx_bulk")||o.status==="failed"?`<button type="button" class="mini-btn ghost" data-payreset="${esc(o.payout_id)}">↺ Back to due</button>`:""}</span></div>`; }).join("")
@@ -160,7 +164,12 @@ function wirePayments(){
   box.querySelectorAll("[data-payreset]").forEach(b=> b.onclick = async ()=>{
     if(!await confirmChange("Put this payment back to “due”", "Only if it was NOT paid through the RazorpayX bulk file (or it failed). It can then be paid again.")) return;
     const { error } = await payRpc("payout_reset", { p_payout: b.dataset.payreset }); gateToast(error ? payErr(error) : "Back to due ✓"); loadPayments(); });
-  box.querySelectorAll("[data-paykeys]").forEach(b=> b.onclick = payKeysModal);
+  box.querySelectorAll("[data-payping]").forEach(b=> b.onclick = async ()=>{ b.disabled = true; b.textContent = "Checking…";
+    const { error } = await payRpc("payments_ping"); if(error){ gateToast(payErr(error)); b.disabled = false; b.textContent = "↻ Check Razorpay"; return; }
+    setTimeout(loadPayments, 6000); });
+  box.querySelectorAll("[data-paypay]").forEach(b=> b.onclick = ()=> payPayModal(rowOf(b.dataset.paypay)));
+  box.querySelectorAll("[data-payproof]").forEach(b=> b.onclick = ()=> payOpenProof(b.dataset.payproof));
+  box.querySelectorAll("[data-payaddproof]").forEach(b=> b.onclick = ()=> payAddProof(b.dataset.payaddproof));
   const up = box.querySelector("[data-payup]"); if(up) up.onclick = payUploadModal;
   const csv = box.querySelector("[data-paycsv]"); if(csv) csv.onclick = payCsv;
   const imp = box.querySelector("[data-payimp]"); if(imp) imp.onclick = payImportModal;
@@ -228,22 +237,96 @@ function payMarkPaidModal(payoutId){
   const r = payRows().find(x=> ((x.payment||{}).payouts||[]).some(o=> o.payout_id===payoutId)) || {}, o = ((r.payment||{}).payouts||[]).find(x=> x.payout_id===payoutId) || {};
   const m = bpModal(`✅ Record a payment — ${esc(payWho(r))}`, `<form class="modal-form" id="pmF">
     <p class="muted" style="margin:0">${esc(PAY_PART[o.part]||"Payment")} of <b>${payInr(o.amount)}</b> paid outside the app (net banking / UPI / RazorpayX dashboard). The creator is told, with the UTR.</p>
-    <div class="mf-row"><label>UTR / transaction reference<input name="utr" required maxlength="40" placeholder="e.g. 425123456789"></label>
-      <label>Paid on<input name="on" type="date" value="${new Date().toISOString().slice(0,10)}"></label></div>
-    <label>Note <span class="muted" style="font-weight:400">(optional, team only)</span><input name="note" maxlength="200" placeholder="from HDFC current account"></label>
+    ${payManualFields()}
     <div class="auth-err" id="pmErr"></div><button class="btn" type="submit">Mark paid</button></form>`);
   const form = m.querySelector("#pmF");
   form.onsubmit = async e=>{ e.preventDefault(); const btn = form.querySelector("button[type=submit]"), err = document.getElementById("pmErr");
+    if(!form.utr.value.trim() && !(form.proof.files||[]).length){ err.textContent = "Add the UTR or a screenshot of the payment."; return; }
     btn.disabled = true; btn.textContent = "Saving…";
-    const { error } = await payRpc("payout_mark_paid", { p_payout: payoutId, p_utr: form.utr.value.trim(), p_paid_on: form.on.value||null, p_note: form.note.value.trim()||null });
+    let path = null; try{ path = await payUploadProof(r.participation_id, form.proof.files[0]); }catch(ex){ err.textContent = payErr(ex); btn.disabled = false; btn.textContent = "Mark paid"; return; }
+    const { error } = await payRpc("payout_mark_paid", { p_payout: payoutId, p_utr: form.utr.value.trim()||null, p_paid_on: form.on.value||null, p_note: form.note.value.trim()||null, p_proof_path: path });
     if(error){ err.textContent = payErr(error); btn.disabled = false; btn.textContent = "Mark paid"; return; }
     m.remove(); _pay.sel.delete(payoutId); gateToast("Recorded as paid ✓ — the creator was told"); loadPayments(); };
+}
+/* ---- the screenshot of a payment: private bucket, Super Admins upload, the creator can open their own ---- */
+function payManualFields(){
+  return `<div class="mf-row"><label>UTR / transaction reference<input name="utr" maxlength="40" placeholder="e.g. 425123456789"></label>
+      <label>Paid on<input name="on" type="date" value="${new Date().toISOString().slice(0,10)}"></label></div>
+    <label>Screenshot of the payment <span class="muted" style="font-weight:400">(image or PDF — the creator can open and download it)</span><input name="proof" type="file" accept="image/*,.pdf"></label>
+    <label>Note <span class="muted" style="font-weight:400">(optional, team only)</span><input name="note" maxlength="200" placeholder="from HDFC current account"></label>
+    <div class="muted" style="font-size:12px">Add the UTR, the screenshot, or both.</div>`;
+}
+async function payUploadProof(pid, file){
+  if(!file) return null;
+  if(file.size > 10*1024*1024) throw new Error("The screenshot must be under 10 MB.");
+  const ext = (String(file.name||"").match(/\.([a-z0-9]{2,5})$/i)||[,"png"])[1].toLowerCase();
+  const path = `${pid}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const { error } = await sb.storage.from("payment-proofs").upload(path, file, { contentType: file.type || "image/png", upsert:false });
+  if(error) throw new Error("Couldn't upload the screenshot: " + (error.message||error));
+  return path;
+}
+async function payOpenProof(path){
+  const { data, error } = await sb.storage.from("payment-proofs").createSignedUrl(path, 600);
+  if(error || !data){ gateToast("Couldn't open the screenshot: " + payErr(error)); return; }
+  window.open(data.signedUrl, "_blank", "noopener");
+}
+function payAddProof(payoutId){
+  const r = payRows().find(x=> ((x.payment||{}).payouts||[]).some(o=> o.payout_id===payoutId)) || {};
+  const m = bpModal(`📎 Payment screenshot — ${esc(payWho(r))}`, `<form class="modal-form" id="paF"><input name="proof" type="file" accept="image/*,.pdf" required>
+    <div class="muted" style="font-size:12px">The creator can open and download it from the campaign in their app.</div>
+    <div class="auth-err" id="paErr"></div><button class="btn" type="submit">Upload</button></form>`);
+  const form = m.querySelector("#paF");
+  form.onsubmit = async e=>{ e.preventDefault(); const btn = form.querySelector("button[type=submit]"), err = document.getElementById("paErr");
+    btn.disabled = true; btn.textContent = "Uploading…";
+    try{ const path = await payUploadProof(r.participation_id, form.proof.files[0]);
+      const { error } = await payRpc("payout_set_proof", { p_payout: payoutId, p_path: path }); if(error) throw error;
+      m.remove(); gateToast("Screenshot added ✓"); loadPayments();
+    }catch(ex){ err.textContent = payErr(ex); btn.disabled = false; btn.textContent = "Upload"; } };
+}
+/* ---- 💸 Pay one creator any amount: Razorpay, or record a manual transfer (UTR + screenshot) ---- */
+function payPayModal(r){
+  const p = r.payment||{}, prov = (_pay.data||{}).provider||{}, left = +(p.left!=null ? p.left : p.amount)||0;
+  const dueNow = (p.payouts||[]).filter(o=> ["due","failed"].includes(o.status)).reduce((a,o)=> a + (+o.amount||0), 0);
+  const canRzp = prov.connected && p.details_status==="verified" && !p.on_hold;
+  const why = !prov.connected ? "Razorpay isn't connected yet" : p.on_hold ? "payments are on hold" : p.details_status!=="verified" ? "bank / UPI details not verified yet" : "";
+  const where = p.method==="upi" ? `UPI ${esc(p.upi_id||"")}` : p.method==="bank" ? `A/c ••${esc(p.account_last4||"")} · ${esc(p.ifsc||"")}` : "no bank / UPI yet";
+  const m = bpModal(`💸 Pay ${esc(payWho(r))}`, `<form class="modal-form" id="ppF">
+    <div class="pay-sum"><div><span>Total fee</span><b>${payInr(p.amount)}</b></div><div><span>Paid</span><b>${payInr(p.paid_total||0)}</b></div>
+      <div><span>Left</span><b>${payInr(left)}</b></div><div><span>Due now</span><b>${payInr(dueNow)}</b></div></div>
+    <div class="muted" style="font-size:12.5px">Pays to: <b>${where}</b>${p.verify_name?` · name at bank ${esc(p.verify_name)}`:""} · ${esc(payTerms(p, (_pay.data||{}).due_days))}</div>
+    <label>Amount to pay now (₹)<input name="amt" type="number" min="1" max="${left}" step="1" required value="${dueNow||left}"></label>
+    <div class="pay-quick">${[["Due now",dueNow],["Everything left",left],["Half of what's left",Math.round(left/2)]].filter(x=>x[1]>0).map(([l,v])=>`<button type="button" class="mini-btn ghost" data-amt="${v}">${l} · ${payInr(v)}</button>`).join("")}</div>
+    <div class="cm-seg" id="ppHow"><label class="${canRzp?"act":""}"><input type="radio" name="how" value="razorpay"${canRzp?" checked":""}${canRzp?"":" disabled"}> ⚡ Pay via Razorpay</label>
+      <label class="${canRzp?"":"act"}"><input type="radio" name="how" value="manual"${canRzp?"":" checked"}> ✅ Paid manually</label></div>
+    ${canRzp?"":`<div class="muted" style="font-size:12px">Razorpay: ${esc(why)}.</div>`}
+    <div id="ppMan"${canRzp?" hidden":""}>${payManualFields()}</div>
+    <div class="auth-err" id="ppErr"></div><button class="btn" type="submit">${canRzp?"⚡ Pay now":"Record payment"}</button></form>`);
+  const form = m.querySelector("#ppF"), sub = form.querySelector("button[type=submit]");
+  form.querySelectorAll("[data-amt]").forEach(b=> b.onclick = ()=>{ form.amt.value = b.dataset.amt; });
+  form.querySelectorAll("input[name=how]").forEach(x=> x.onchange = ()=>{ const man = form.how.value==="manual";
+    m.querySelector("#ppMan").hidden = !man; sub.textContent = man ? "Record payment" : "⚡ Pay now";
+    form.querySelectorAll("#ppHow label").forEach(l=> l.classList.toggle("act", l.querySelector("input").checked)); });
+  form.onsubmit = async e=>{ e.preventDefault(); const err = document.getElementById("ppErr"), amt = Math.round(+form.amt.value||0), how = form.how.value;
+    err.textContent = "";
+    if(amt<=0 || amt>left){ err.textContent = `Enter an amount up to ${payInr(left)}.`; return; }
+    if(how==="manual" && !form.utr.value.trim() && !(form.proof.files||[]).length){ err.textContent = "Add the UTR or a screenshot of the payment."; return; }
+    if(how==="razorpay" && !await confirmChange(`Pay ${payInr(amt)} to ${payWho(r)} through Razorpay`, `To ${p.method==="upi"?"UPI "+p.upi_id:"bank a/c ••"+p.account_last4}. Money leaves your RazorpayX account right away.`)) return;
+    sub.disabled = true; sub.textContent = "Saving…";
+    try{
+      const path = how==="manual" ? await payUploadProof(r.participation_id, form.proof.files[0]) : null;
+      const { data, error } = await payRpc("payout_pay", { p_participation: r.participation_id, p_amount: amt, p_how: how,
+        p_utr: how==="manual" ? (form.utr.value.trim()||null) : null, p_paid_on: how==="manual" ? (form.on.value||null) : null,
+        p_note: how==="manual" ? (form.note.value.trim()||null) : null, p_proof_path: path });
+      if(error) throw error;
+      m.remove(); gateToast(how==="razorpay" ? `⚡ ${payInr(amt)} sent to Razorpay ✓ — the UTR shows here when it lands` : `Recorded ${payInr(amt)} ✓ — the creator was told${data && +data.left>0?` · ${payInr(data.left)} left`:""}`);
+      loadPayments();
+    }catch(ex){ err.textContent = payErr(ex); sub.disabled = false; sub.textContent = how==="manual" ? "Record payment" : "⚡ Pay now"; } };
 }
 /* ---- pay many: RazorpayX API (queued → worker) ---- */
 async function payViaRazorpay(){
   const outs = paySelected(); if(!outs.length) return;
   const tot = outs.reduce((a,o)=> a + (+o.amount||0), 0);
-  if(!await confirmChange(`Pay ${outs.length} creator payment${outs.length>1?"s":""} — ${payInr(tot)} — through RazorpayX`,
+  if(!await confirmChange(`Pay ${outs.length} creator payment${outs.length>1?"s":""} — ${payInr(tot)} — through Razorpay`,
       "Money leaves your RazorpayX account right away (IMPS / UPI). Each creator is told with the UTR once it lands.")) return;
   const { data, error } = await payRpc("payout_queue", { p_payouts: outs.map(o=> o.payout_id) });
   if(error){ gateToast(payErr(error)); return; }
@@ -354,26 +437,6 @@ function payCsv(){
       balance: bal.amount ?? "", balance_status: bal.status||"", balance_due: bal.due_at||"", balance_utr: bal.utr||"", on_hold: p.on_hold ? (p.hold_reason||"yes") : "" }; });
   downloadBlob(toCsv(rows), `payments-${String(_bpCamp.name||"campaign").replace(/[^A-Za-z0-9]+/g,"-").slice(0,40)}-${new Date().toISOString().slice(0,10)}.csv`, "text/csv");
 }
-/* ---- RazorpayX keys (typed by the Super Admin — stored in Vault, never shown back) ---- */
-function payKeysModal(){
-  const m = bpModal("⚡ Connect RazorpayX", `<form class="modal-form" id="pkF" autocomplete="off">
-    <p class="muted" style="margin:0">From the RazorpayX dashboard → <b>Settings → API Keys</b>. Saved encrypted in the database vault — nobody (not even Super Admins) can read them back here.</p>
-    <label>Key ID<input name="kid" required placeholder="rzp_live_…" autocomplete="off" spellcheck="false"></label>
-    <label>Key Secret<input name="ksec" type="password" required autocomplete="new-password" spellcheck="false"></label>
-    <label>RazorpayX account number <span class="muted" style="font-weight:400">(your RazorpayX current account / Lite account — the one money is paid from)</span><input name="acct" required inputmode="numeric" placeholder="7878780080316316"></label>
-    <label>Fixed-IP relay <span class="muted" style="font-weight:400">(optional)</span><input name="relay" type="url" placeholder="https://payouts-relay.yourdomain.com"></label>
-    <div class="pay-note">⚠️ RazorpayX only accepts payout and account-validation calls from <b>allow-listed IP addresses</b>. Our servers don't have a fixed IP, so either add a small fixed-IP relay that forwards to api.razorpay.com (put its address above and allow-list its IP in RazorpayX → Settings → Developer controls), or ask Razorpay support to enable your account for it. Until then, use the <b>RazorpayX bulk file</b> — that works without any of this.</div>
-    <div class="auth-err" id="pkErr"></div><button class="btn" type="submit">Save keys</button></form>`);
-  const form = m.querySelector("#pkF");
-  form.onsubmit = async e=>{ e.preventDefault(); const btn = form.querySelector("button[type=submit]"), err = document.getElementById("pkErr");
-    btn.disabled = true; btn.textContent = "Saving…";
-    const { error } = await sb.rpc("admin_set_payout_keys", { p_key_id: form.kid.value.trim(), p_key_secret: form.ksec.value.trim(),
-      p_account_number: form.acct.value.replace(/\s/g,""), p_api_base: form.relay.value.trim()||null }).then(r=>r, e=>({error:e}));
-    form.ksec.value = "";
-    if(error){ err.textContent = payErr(error); btn.disabled = false; btn.textContent = "Save keys"; return; }
-    m.remove(); gateToast("RazorpayX connected ✓ — waiting details are checked now"); loadPayments(); };
-}
-
 /* ---- a creator's agreed fees on their profile (Super Admins) ---- */
 async function payFillRates(sel, args, thisPid){
   let el = null; for(let i=0; i<15 && !(el = document.querySelector(sel)); i++) await new Promise(r=> setTimeout(r, 200));

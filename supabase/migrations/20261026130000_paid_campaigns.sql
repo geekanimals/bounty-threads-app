@@ -17,8 +17,9 @@
 -- Payment details (bank account or UPI ID): the creator adds them in the app, or the team puts them in the bulk sheet.
 -- Account numbers are stored ENCRYPTED (pgcrypto, key in Supabase Vault). They are checked automatically (RazorpayX account
 -- validation) when the keys are set — otherwise a Super Admin verifies by hand. A Super Admin can ask for new details.
--- Payouts: advance / balance installments. Pay through RazorpayX (API — after a Super Admin queues them), or export the
--- RazorpayX bulk-payout file, upload it on the RazorpayX dashboard and import the UTRs back, or record a manual transfer.
+-- Payouts: advance / balance installments, or any amount at any time (part payments — the rest stays due). Pay through
+-- Razorpay (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET as Supabase secrets; the account number is read from Razorpay), the
+-- RazorpayX bulk-payout file, or record a manual transfer with its UTR and / or a screenshot the creator can download.
 
 create extension if not exists pgcrypto with schema extensions;
 
@@ -127,7 +128,8 @@ drop trigger if exists ci_creator_payment_updated_at on intel.ci_creator_payment
 create trigger ci_creator_payment_updated_at before update on intel.ci_creator_payment
   for each row execute function intel.tg_set_updated_at();
 
--- installments: advance (after signing) + balance (N days after the posts are live), or one "full" payment
+-- installments: advance (after signing) + balance (N days after the posts are live), or one "full" payment;
+-- any amount can also be paid at any time (part payments) — what is left is re-planned automatically
 create table if not exists intel.ci_creator_payout (
   payout_id        uuid primary key default gen_random_uuid(),
   ref_code         text not null unique default ('GEEK' || upper(substr(md5(gen_random_uuid()::text), 1, 10))),
@@ -148,9 +150,9 @@ create table if not exists intel.ci_creator_payout (
   paid_at          timestamptz,
   paid_by          uuid references auth.users(id) on delete set null,
   note             text,
+  proof_path       text,                 -- screenshot / PDF of a manual transfer (storage: payment-proofs) — the creator can open it
   created_at       timestamptz not null default now(),
-  updated_at       timestamptz not null default now(),
-  unique (participation_id, part)
+  updated_at       timestamptz not null default now()
 );
 create index if not exists ci_creator_payout_campaign_idx on intel.ci_creator_payout(campaign_id);
 create index if not exists ci_creator_payout_work_idx on intel.ci_creator_payout(status) where status in ('queued', 'processing');
@@ -194,14 +196,13 @@ revoke all on private.ci_bulk_payment_stage from public, anon, authenticated;
 -- ============================================================================================================
 -- 3) core helpers
 -- ============================================================================================================
--- (re)build the installments from the fee + advance % (never touches one that is queued / processing / paid)
---   0% advance   → one "full" payment, due N days after every post is live
---   100% advance → one "full" payment, due once the contract is signed
---   otherwise    → "advance" (due once signed) + "balance" (due N days after every post is live)
+-- (re)build the installments still to pay from the fee + advance %, minus everything already sent / paid
+--   advance target = fee × advance % (due once the contract is signed) · the rest is due N days after every post is live
+--   0% → one "full" payment after the posts · 100% → one "full" payment after signing · part payments count towards the advance first
 create or replace function intel.ci_payment_build_payouts(p_participation uuid)
 returns void language plpgsql security definer set search_path = '' as $$
-declare v intel.ci_creator_payment%rowtype; v_stage text; v_signed boolean; v_done boolean; v_locked numeric; v_any_locked boolean;
-        v_adv numeric; v_bal numeric; v_old jsonb; r record;
+declare v intel.ci_creator_payment%rowtype; v_stage text; v_signed boolean; v_done boolean; v_locked numeric;
+        v_adv_t numeric; v_adv_left numeric; v_bal_left numeric; v_old jsonb;
 begin
   select * into v from intel.ci_creator_payment where participation_id = p_participation;
   if v.participation_id is null then return; end if;
@@ -214,37 +215,35 @@ begin
    where participation_id = p_participation and status in ('waiting','due','failed','cancelled') and due_at is not null;
   delete from intel.ci_creator_payout where participation_id = p_participation and status in ('waiting','due','failed','cancelled');
   if v.amount is null then return; end if;
-
-  select coalesce(sum(amount), 0), count(*) > 0 into v_locked, v_any_locked from intel.ci_creator_payout
+  select coalesce(sum(amount), 0) into v_locked from intel.ci_creator_payout
    where participation_id = p_participation and status in ('queued','processing','paid');
-  if v_any_locked then
-    -- something already went out (the advance): whatever is left is the balance
-    v_bal := greatest(v.amount - v_locked, 0);
-    if v_bal > 0 and not exists (select 1 from intel.ci_creator_payout where participation_id = p_participation and part = 'balance') then
-      insert into intel.ci_creator_payout(participation_id, campaign_id, part, amount, status, due_at)
-      values (p_participation, v.campaign_id, 'balance', v_bal, case when v_done then 'due' else 'waiting' end,
-              case when v_done then coalesce((v_old->>'balance')::date, current_date + coalesce(v.due_days, 7)) end);
-    end if;
-    return;
-  end if;
-
-  v_adv := round(v.amount * v.advance_pct / 100.0);
-  v_bal := v.amount - v_adv;
-  for r in select * from (values
-      ('advance', case when v_adv > 0 and v_bal > 0 then v_adv end, 'signed'),
-      ('balance', case when v_adv > 0 and v_bal > 0 then v_bal end, 'posted'),
-      ('full',    case when v_adv = 0 then v.amount when v_bal <= 0 then v.amount end, case when v_adv = 0 then 'posted' else 'signed' end)
-    ) x(part, amt, due_on) where amt is not null loop
+  v_adv_t := round(v.amount * v.advance_pct / 100.0);
+  v_adv_left := greatest(v_adv_t - v_locked, 0);
+  v_bal_left := greatest(v.amount - greatest(v_adv_t, v_locked), 0);
+  if v_adv_left > 0 then
     insert into intel.ci_creator_payout(participation_id, campaign_id, part, amount, status, due_at, note)
-    values (p_participation, v.campaign_id, r.part, r.amt,
-            case when (r.due_on = 'signed' and v_signed) or (r.due_on = 'posted' and v_done) then 'due' else 'waiting' end,
-            case when r.due_on = 'signed' and v_signed then coalesce((v_old->>r.part)::date, current_date)
-                 when r.due_on = 'posted' and v_done then coalesce((v_old->>r.part)::date, current_date + coalesce(v.due_days, 7)) end,
-            'due ' || case when r.due_on = 'signed' then 'after the contract is signed' else 'after every post is live' end)
-    on conflict (participation_id, part) do nothing;
-  end loop;
+    values (p_participation, v.campaign_id, case when v_bal_left = 0 and v_locked = 0 then 'full' else 'advance' end, v_adv_left,
+            case when v_signed then 'due' else 'waiting' end,
+            case when v_signed then coalesce((v_old->>'advance')::date, (v_old->>'full')::date, current_date) end,
+            'due after the contract is signed');
+  end if;
+  if v_bal_left > 0 then
+    insert into intel.ci_creator_payout(participation_id, campaign_id, part, amount, status, due_at, note)
+    values (p_participation, v.campaign_id, case when v_adv_t = 0 and v_locked = 0 then 'full' else 'balance' end, v_bal_left,
+            case when v_done then 'due' else 'waiting' end,
+            case when v_done then coalesce((v_old->>'balance')::date, (v_old->>'full')::date, current_date + coalesce(v.due_days, 7)) end,
+            'due after every post is live');
+  end if;
 end $$;
 revoke all on function intel.ci_payment_build_payouts(uuid) from public, anon, authenticated;
+
+-- what is still to pay (fee − everything sent / paid)
+create or replace function intel.ci_payment_left(p_participation uuid)
+returns numeric language sql stable security definer set search_path = '' as $$
+  select greatest(coalesce(p.amount, 0) - coalesce((select sum(o.amount) from intel.ci_creator_payout o
+           where o.participation_id = p.participation_id and o.status in ('queued','processing','paid')), 0), 0)
+    from intel.ci_creator_payment p where p.participation_id = p_participation $$;
+revoke all on function intel.ci_payment_left(uuid) from public, anon, authenticated;
 
 -- set one creator's fee + terms (Super Admin or the bulk sheet). Re-issues an unsigned contract; sends a waiting one.
 create or replace function intel.ci_payment_set_terms(p_participation uuid, p_amount numeric, p_advance_pct int, p_due_days int,
@@ -258,11 +257,8 @@ begin
   perform intel.ci_ensure_payment(p_participation);     -- a pending bulk-sheet row is applied first; what is typed here wins
   select * into v from intel.ci_creator_payment where participation_id = p_participation for update;
   if v.participation_id is null then raise exception 'this campaign has no creator fee (it is a barter campaign)' using errcode = '22023'; end if;
-  if exists (select 1 from intel.ci_creator_payout where participation_id = p_participation and part in ('balance','full') and status in ('queued','processing','paid')) then
-    raise exception 'the fee is already being paid / paid — it can''t be changed now' using errcode = '22023'; end if;
-  if exists (select 1 from intel.ci_creator_payout where participation_id = p_participation and part = 'advance' and status in ('queued','processing','paid'))
-     and p_advance_pct is not null and p_advance_pct <> v.advance_pct then
-    raise exception 'the advance is already paid — only the total fee can change now' using errcode = '22023'; end if;
+  if round(p_amount) < coalesce((select sum(amount) from intel.ci_creator_payout where participation_id = p_participation and status in ('queued','processing','paid')), 0) then
+    raise exception 'the fee can''t be less than what is already paid / being paid' using errcode = '22023'; end if;
   select stage, identity_id into v_stage, v_identity from intel.ci_campaign_participation where participation_id = p_participation;
   select signed_at is not null into v_signed from intel.ci_campaign_contract where participation_id = p_participation;
 
@@ -367,7 +363,7 @@ begin
            due_days = coalesce(s.due_days, due_days), terms_note = coalesce(s.terms_note, terms_note),
            fee_source = 'bulk', fee_set_by = s.created_by, fee_set_at = now()
      where participation_id = p_participation
-       and not exists (select 1 from intel.ci_creator_payout po where po.participation_id = p_participation and po.status in ('queued','processing','paid'));
+       and round(s.amount) >= coalesce((select sum(po.amount) from intel.ci_creator_payout po where po.participation_id = p_participation and po.status in ('queued','processing','paid')), 0);
     perform intel.ci_payment_build_payouts(p_participation);
     insert into intel.ci_creator_rate(participation_id, identity_id, campaign_id, amount, advance_pct, deliverables, kind, story)
     select p_participation, p.identity_id, p.campaign_id, round(s.amount), coalesce(s.advance_pct, 0),
@@ -870,7 +866,7 @@ insert into intel.ci_notification_template(template_key, kind, title, body_md, a
    'All your posts for **{{campaign}}** are live. Thank you! {{amount}} will be paid to your verified account by **{{date}}**.',
    'mycampaigns', 'View', true),
   ('payment_paid', 'info', 'Paid ✓ {{amount}} for {{campaign}}',
-   'We have paid {{amount}} ({{part}}) for **{{campaign}}** to your {{method}}. Reference / UTR: {{ref}}. Thank you for working with Geek!',
+   'We have paid {{amount}} ({{part}}) for **{{campaign}}** to your {{method}}. Reference / UTR: {{ref}}. Open the campaign in the app to see every payment (and the payment screenshot, if added). Thank you for working with Geek!',
    'mycampaigns', 'View', true)
 on conflict (template_key) do update set title = excluded.title, body_md = excluded.body_md, action_route = excluded.action_route,
   action_label = excluded.action_label, active = true;
@@ -886,12 +882,14 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     'upi_id', p.upi_id, 'details_source', p.details_source, 'details_status', p.details_status, 'details_submitted_at', p.details_submitted_at,
     'verify_mode', p.verify_mode, 'verify_name', p.verify_name, 'verify_message', p.verify_message, 'verified_at', p.verified_at,
     'request_reason', p.request_reason, 'requested_at', p.requested_at, 'on_hold', p.on_hold,
+    'paid_total', (select coalesce(sum(o.amount), 0) from intel.ci_creator_payout o where o.participation_id = p.participation_id and o.status = 'paid'),
+    'left', intel.ci_payment_left(p.participation_id),
     'hold_reason', case when p_full then p.hold_reason end,
     'fee_source', case when p_full then p.fee_source end, 'fee_set_at', case when p_full then p.fee_set_at end,
     'payouts', coalesce((select jsonb_agg(jsonb_build_object('payout_id', o.payout_id, 'ref_code', o.ref_code, 'part', o.part, 'amount', o.amount,
         'status', o.status, 'due_at', o.due_at, 'provider', case when p_full then o.provider end, 'utr', o.utr,
-        'failure_reason', case when p_full then o.failure_reason end, 'paid_at', o.paid_at, 'note', o.note)
-        order by case o.part when 'advance' then 1 when 'full' then 2 else 3 end)
+        'failure_reason', case when p_full then o.failure_reason end, 'paid_at', o.paid_at, 'note', o.note, 'proof_path', o.proof_path)
+        order by (o.status = 'paid') desc, o.paid_at nulls last, case o.part when 'advance' then 1 when 'full' then 2 else 3 end)
       from intel.ci_creator_payout o where o.participation_id = p.participation_id), '[]'::jsonb)) end $$;
 revoke all on function intel.ci_payment_public(intel.ci_creator_payment, boolean) from public, anon, authenticated;
 
@@ -955,8 +953,8 @@ begin
     end loop;
   end if;
   return v_flow || jsonb_build_object(
-    'provider', (select jsonb_build_object('connected', exists (select 1 from vault.secrets where name = 'razorpayx_key_id'),
-                   'account', right(coalesce((select decrypted_secret from vault.decrypted_secrets where name = 'razorpayx_account_number' limit 1), ''), 4))),
+    'provider', coalesce((select jsonb_build_object('connected', s.keys_ok, 'account', s.account_last4, 'balance', s.balance, 'mode', s.mode,
+                   'error', s.error, 'checked_at', s.checked_at) from private.ci_rzp_status s where s.id = 1), jsonb_build_object('connected', false)),
     'rows', coalesce((select jsonb_agg(jsonb_build_object(
         'participation_id', p.participation_id, 'stage', p.stage, 'applied_profile', p.applied_profile,
         'creator', intel.ci_public_creator_card(p.identity_id, p.applied_profile),
@@ -1215,7 +1213,7 @@ begin
   select name into v_name from intel.ci_campaign where campaign_id = o.campaign_id;
   perform intel.ci_notify(intel.ci_member_of_identity(v_identity), o.campaign_id, o.participation_id, 'payment_paid',
     jsonb_build_object('campaign', coalesce(v_name, 'your campaign'), 'amount', intel.ci_inr(o.amount),
-                       'part', case o.part when 'advance' then 'advance' when 'balance' then 'balance' else 'full fee' end,
+                       'part', case when o.note = 'part payment' then 'part payment' when o.part = 'advance' then 'advance' when o.part = 'balance' then 'balance' else 'full fee' end,
                        'method', case when v.method = 'upi' then 'UPI ID ' || v.upi_id else 'bank account ending ' || coalesce(v.account_last4, '') end,
                        'ref', coalesce(o.utr, o.ref_code)));
   insert into intel.ci_campaign_event(campaign_id, participation_id, entity, from_status, to_status, actor_member_id, reason)
@@ -1225,22 +1223,101 @@ end $$;
 revoke all on function intel.ci_payout_paid(uuid, text, text, date, uuid, text) from public, anon, authenticated;
 
 -- Super Admin: a transfer made outside the app (bank / UPI app) — UTR required
-create or replace function api.payout_mark_paid(p_payout uuid, p_utr text, p_paid_on date default null, p_note text default null)
+create or replace function api.payout_mark_paid(p_payout uuid, p_utr text, p_paid_on date default null, p_note text default null,
+                                                p_proof_path text default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare o intel.ci_creator_payout%rowtype;
 begin
   perform intel.ci_assert_super_admin('mark a payment as paid');
-  if coalesce(btrim(p_utr), '') = '' then raise exception 'add the UTR / transaction reference' using errcode = '22023'; end if;
+  if coalesce(btrim(p_utr), '') = '' and coalesce(btrim(p_proof_path), '') = '' then
+    raise exception 'add the UTR / transaction reference or a screenshot of the payment' using errcode = '22023'; end if;
   select * into o from intel.ci_creator_payout where payout_id = p_payout;
   if o.payout_id is null then raise exception 'payment not found' using errcode = '22023'; end if;
   if o.status = 'paid' then raise exception 'already paid' using errcode = '22023'; end if;
   if o.status = 'queued' or (o.status = 'processing' and o.provider = 'razorpayx') then
-    raise exception 'this payment is being sent by RazorpayX — wait for it' using errcode = '22023'; end if;
+    raise exception 'this payment is being sent by Razorpay — wait for it' using errcode = '22023'; end if;
+  if nullif(btrim(p_proof_path), '') is not null then
+    update intel.ci_creator_payout set proof_path = btrim(p_proof_path) where payout_id = p_payout; end if;
   perform intel.ci_payout_paid(p_payout, p_utr, 'manual', p_paid_on, auth.uid(), p_note);
   return jsonb_build_object('ok', true);
 end $$;
-revoke all on function api.payout_mark_paid(uuid, text, date, text) from public, anon;
-grant execute on function api.payout_mark_paid(uuid, text, date, text) to authenticated;
+revoke all on function api.payout_mark_paid(uuid, text, date, text, text) from public, anon;
+grant execute on function api.payout_mark_paid(uuid, text, date, text, text) to authenticated;
+
+-- Super Admin: pay ANY amount now (part payment, the rest stays due): through Razorpay, or record a manual transfer
+--   p_how: razorpay | manual (manual needs the UTR or a screenshot)
+create or replace function api.payout_pay(p_participation uuid, p_amount numeric, p_how text, p_utr text default null,
+                                          p_paid_on date default null, p_note text default null, p_proof_path text default null)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v intel.ci_creator_payment%rowtype; v_left numeric; v_locked numeric; v_adv_t numeric; v_part text; v_id uuid; v_amt numeric := round(coalesce(p_amount, 0));
+begin
+  perform intel.ci_assert_super_admin('pay a creator');
+  select * into v from intel.ci_creator_payment where participation_id = p_participation for update;
+  if v.participation_id is null or v.amount is null then raise exception 'set this creator''s fee first' using errcode = '22023'; end if;
+  v_left := intel.ci_payment_left(p_participation);
+  if v_amt <= 0 then raise exception 'enter the amount to pay' using errcode = '22023'; end if;
+  if v_amt > v_left then raise exception 'only % is left to pay — raise the fee first if you agreed more', intel.ci_inr(v_left) using errcode = '22023'; end if;
+  if p_how = 'razorpay' then
+    if v.on_hold then raise exception 'this creator''s payments are on hold' using errcode = '22023'; end if;
+    if v.details_status <> 'verified' then raise exception 'verify the bank / UPI details first' using errcode = '22023'; end if;
+    if not coalesce((select keys_ok from private.ci_rzp_status where id = 1), false) then
+      raise exception 'Razorpay isn''t connected yet — set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET, or pay manually and upload the screenshot' using errcode = '22023'; end if;
+  elsif p_how = 'manual' then
+    if coalesce(btrim(p_utr), '') = '' and coalesce(btrim(p_proof_path), '') = '' then
+      raise exception 'add the UTR / transaction reference or a screenshot of the payment' using errcode = '22023'; end if;
+  else raise exception 'choose Razorpay or manual' using errcode = '22023'; end if;
+  -- which part this covers: the advance first, then the balance
+  select coalesce(sum(amount), 0) into v_locked from intel.ci_creator_payout where participation_id = p_participation and status in ('queued','processing','paid');
+  v_adv_t := round(v.amount * v.advance_pct / 100.0);
+  v_part := case when v_locked = 0 and v_amt = v.amount then 'full' when v_locked < v_adv_t then 'advance' else 'balance' end;
+  insert into intel.ci_creator_payout(participation_id, campaign_id, part, amount, status, due_at, provider, queued_by, queued_at, attempts, note, proof_path)
+  values (p_participation, v.campaign_id, v_part, v_amt, case when p_how = 'razorpay' then 'queued' else 'waiting' end, current_date,
+          case when p_how = 'razorpay' then 'razorpayx' else 'manual' end, auth.uid(), now(), 1,
+          coalesce(nullif(btrim(p_note), ''), case when v_amt < v_left then 'part payment' end), nullif(btrim(p_proof_path), ''))
+  returning payout_id into v_id;
+  if p_how = 'manual' then perform intel.ci_payout_paid(v_id, p_utr, 'manual', p_paid_on, auth.uid(), p_note); end if;
+  perform intel.ci_payment_build_payouts(p_participation);        -- what is left is re-planned
+  insert into public.activity_log(member_id, kind, event, detail)
+  values (auth.uid(), 'security', 'payout_' || p_how, jsonb_build_object('participation_id', p_participation, 'amount', v_amt));
+  if p_how = 'razorpay' then begin perform private.ci_kick_worker('razorpayx-worker'); exception when others then null; end; end if;
+  return jsonb_build_object('ok', true, 'payout_id', v_id, 'amount', v_amt, 'left', intel.ci_payment_left(p_participation));
+end $$;
+revoke all on function api.payout_pay(uuid, numeric, text, text, date, text, text) from public, anon;
+grant execute on function api.payout_pay(uuid, numeric, text, text, date, text, text) to authenticated;
+
+-- Super Admin: attach / replace the screenshot of a payment (also for one paid through Razorpay)
+create or replace function api.payout_set_proof(p_payout uuid, p_path text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+begin
+  perform intel.ci_assert_super_admin('add a payment screenshot');
+  if coalesce(btrim(p_path), '') = '' then raise exception 'upload the screenshot first' using errcode = '22023'; end if;
+  update intel.ci_creator_payout set proof_path = btrim(p_path) where payout_id = p_payout;
+  if not found then raise exception 'payment not found' using errcode = '22023'; end if;
+  return jsonb_build_object('ok', true);
+end $$;
+revoke all on function api.payout_set_proof(uuid, text) from public, anon;
+grant execute on function api.payout_set_proof(uuid, text) to authenticated;
+
+-- payment screenshots: a private bucket — Super Admins upload, the creator can open their own
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('payment-proofs', 'payment-proofs', false, 10485760, array['image/png','image/jpeg','image/webp','image/heic','application/pdf'])
+on conflict (id) do nothing;
+create or replace function public.ci_can_read_payment_proof(p_name text)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select public.is_platform_admin() or exists (select 1 from intel.ci_creator_payout o
+           join intel.ci_campaign_participation p on p.participation_id = o.participation_id
+          where o.proof_path = p_name and intel.ci_member_of_identity(p.identity_id) = auth.uid()) $$;
+revoke all on function public.ci_can_read_payment_proof(text) from public, anon;
+grant execute on function public.ci_can_read_payment_proof(text) to authenticated;
+drop policy if exists "payment proofs: read" on storage.objects;
+create policy "payment proofs: read" on storage.objects for select to authenticated
+  using (bucket_id = 'payment-proofs' and public.ci_can_read_payment_proof(name));
+drop policy if exists "payment proofs: super admin uploads" on storage.objects;
+create policy "payment proofs: super admin uploads" on storage.objects for insert to authenticated
+  with check (bucket_id = 'payment-proofs' and public.is_platform_admin());
+drop policy if exists "payment proofs: super admin changes" on storage.objects;
+create policy "payment proofs: super admin changes" on storage.objects for update to authenticated
+  using (bucket_id = 'payment-proofs' and public.is_platform_admin());
 
 -- which of these can be paid now? (due · details verified · not on hold · amount > 0)
 create or replace function intel.ci_payout_ready(p_payout uuid)
@@ -1255,13 +1332,41 @@ returns text language sql stable security definer set search_path = '' as $$
 revoke all on function intel.ci_payout_ready(uuid) from public, anon, authenticated;
 
 -- Super Admin: send these through RazorpayX (the worker does it; the result comes back with the UTR)
+create table if not exists private.ci_rzp_status (
+  id int primary key default 1 check (id = 1),
+  keys_ok boolean not null default false, account_last4 text, balance numeric, mode text, error text,
+  checked_at timestamptz not null default now()
+);
+alter table private.ci_rzp_status enable row level security;
+revoke all on private.ci_rzp_status from public, anon, authenticated;
+
+create or replace function api.ops_rzp_report(p_keys boolean, p_account_last4 text, p_balance numeric, p_mode text, p_error text)
+returns void language sql security definer set search_path = '' as $$
+  insert into private.ci_rzp_status(id, keys_ok, account_last4, balance, mode, error, checked_at)
+  values (1, coalesce(p_keys, false), p_account_last4, p_balance, p_mode, nullif(btrim(coalesce(p_error, '')), ''), now())
+  on conflict (id) do update set keys_ok = excluded.keys_ok, account_last4 = excluded.account_last4, balance = excluded.balance,
+    mode = excluded.mode, error = excluded.error, checked_at = now() $$;
+revoke all on function api.ops_rzp_report(boolean, text, numeric, text, text) from public, anon, authenticated;
+grant execute on function api.ops_rzp_report(boolean, text, numeric, text, text) to service_role;
+
+-- Super Admin: re-check the Razorpay connection now (the worker reports in a few seconds)
+create or replace function api.payments_ping()
+returns jsonb language plpgsql security definer set search_path = '' as $$
+begin
+  perform intel.ci_assert_super_admin('check Razorpay');
+  begin perform private.ci_kick_worker('razorpayx-worker'); exception when others then null; end;
+  return coalesce((select to_jsonb(s) - 'id' from private.ci_rzp_status s where id = 1), '{}'::jsonb);
+end $$;
+revoke all on function api.payments_ping() from public, anon;
+grant execute on function api.payments_ping() to authenticated;
+
 create or replace function api.payout_queue(p_payouts uuid[])
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare v uuid; v_why text; v_ok int := 0; v_total numeric := 0; v_err jsonb := '[]'::jsonb;
 begin
   perform intel.ci_assert_super_admin('send payments');
-  if not exists (select 1 from vault.secrets where name = 'razorpayx_key_id') then
-    raise exception 'connect RazorpayX first (Payments tab → RazorpayX keys), or use "RazorpayX bulk file"' using errcode = '22023'; end if;
+  if not coalesce((select keys_ok from private.ci_rzp_status where id = 1), false) then
+    raise exception 'Razorpay isn''t connected yet — set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET (Supabase secrets), or pay manually / with the bulk file' using errcode = '22023'; end if;
   if coalesce(cardinality(p_payouts), 0) = 0 or cardinality(p_payouts) > 500 then raise exception 'pick 1 to 500 payments' using errcode = '22023'; end if;
   foreach v in array p_payouts loop
     v_why := intel.ci_payout_ready(v);
@@ -1372,11 +1477,6 @@ returns jsonb language plpgsql security definer set search_path = '' as $$
 declare v_lim int := greatest(1, least(coalesce(p_limit, 20), 50));
 begin
   return jsonb_build_object(
-    'provider', jsonb_build_object(
-      'key_id', (select decrypted_secret from vault.decrypted_secrets where name = 'razorpayx_key_id' limit 1),
-      'key_secret', (select decrypted_secret from vault.decrypted_secrets where name = 'razorpayx_key_secret' limit 1),
-      'account_number', (select decrypted_secret from vault.decrypted_secrets where name = 'razorpayx_account_number' limit 1),
-      'api_base', coalesce((select decrypted_secret from vault.decrypted_secrets where name = 'razorpayx_api_base' limit 1), 'https://api.razorpay.com')),
     'validate', coalesce((select jsonb_agg(jsonb_build_object('participation_id', x.participation_id, 'method', x.method,
             'account_name', x.account_name, 'ifsc', x.ifsc, 'upi_id', x.upi_id,
             'account_no', case when x.account_enc is not null then extensions.pgp_sym_decrypt(x.account_enc, private.payout_key()) end,
@@ -1471,46 +1571,6 @@ end $$;
 revoke all on function api.ops_rzp_payout_update(uuid, text, text, text, text) from public, anon, authenticated;
 grant execute on function api.ops_rzp_payout_update(uuid, text, text, text, text) to service_role;
 
--- Super Admin saves the RazorpayX keys once (Vault; never shown back). api_base = Razorpay, or a fixed-IP relay.
-create or replace function public.admin_set_payout_keys(p_key_id text, p_key_secret text, p_account_number text, p_api_base text default null)
-returns jsonb language plpgsql security definer set search_path = '' as $$
-declare v_id uuid; r record; v_base text := nullif(btrim(coalesce(p_api_base, '')), '');
-begin
-  if not public.is_platform_admin() then raise exception 'not a platform admin' using errcode = '42501'; end if;
-  if coalesce(btrim(p_key_id), '') !~ '^rzp_(live|test)_[A-Za-z0-9]+$' then raise exception 'the Key ID starts with rzp_live_ (or rzp_test_)' using errcode = '22023'; end if;
-  if coalesce(btrim(p_key_secret), '') = '' then raise exception 'paste the Key Secret' using errcode = '22023'; end if;
-  if coalesce(btrim(p_account_number), '') !~ '^[0-9]{6,20}$' then raise exception 'type your RazorpayX account number (digits only)' using errcode = '22023'; end if;
-  if v_base is not null and v_base !~ '^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._/-]*)?$' then raise exception 'the relay address must start with https://' using errcode = '22023'; end if;
-  for r in select * from (values ('razorpayx_key_id', btrim(p_key_id)), ('razorpayx_key_secret', btrim(p_key_secret)),
-                                 ('razorpayx_account_number', btrim(p_account_number)),
-                                 ('razorpayx_api_base', coalesce(regexp_replace(v_base, '/+$', ''), 'https://api.razorpay.com'))) x(k, v) loop
-    v_id := null;
-    select id into v_id from vault.secrets where name = r.k;
-    if v_id is null then perform vault.create_secret(r.v, r.k, 'Geek OS — RazorpayX payouts / account validation');
-    else perform vault.update_secret(v_id, r.v); end if;
-  end loop;
-  insert into public.activity_log(member_id, kind, event, detail) values (auth.uid(), 'security', 'payout_keys_saved', jsonb_build_object('relay', v_base is not null));
-  -- anything waiting for a manual check gets the automatic one now
-  update intel.ci_creator_payment set details_status = 'verifying', verify_attempts = 0, verify_ref = null where details_status = 'submitted';
-  begin perform private.ci_kick_worker('razorpayx-worker'); exception when others then null; end;
-  return jsonb_build_object('ok', true);
-end $$;
-revoke all on function public.admin_set_payout_keys(text, text, text, text) from public, anon;
-grant execute on function public.admin_set_payout_keys(text, text, text, text) to authenticated;
-
-create or replace function public.admin_payout_keys_status()
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-begin
-  if not public.is_platform_admin() then raise exception 'not a platform admin' using errcode = '42501'; end if;
-  return jsonb_build_object('connected', exists (select 1 from vault.secrets where name = 'razorpayx_key_id'),
-    'mode', case when (select decrypted_secret from vault.decrypted_secrets where name = 'razorpayx_key_id' limit 1) like 'rzp_test_%' then 'test' else 'live' end,
-    'account_last4', right(coalesce((select decrypted_secret from vault.decrypted_secrets where name = 'razorpayx_account_number' limit 1), ''), 4),
-    'relay', coalesce((select decrypted_secret from vault.decrypted_secrets where name = 'razorpayx_api_base' limit 1), 'https://api.razorpay.com') <> 'https://api.razorpay.com',
-    'updated_at', (select updated_at from vault.secrets where name = 'razorpayx_key_id'));
-end $$;
-revoke all on function public.admin_payout_keys_status() from public, anon;
-grant execute on function public.admin_payout_keys_status() to authenticated;
-
 -- ============================================================================================================
 -- 10) every morning (9:00 IST): Super Admins hear about payments that are due; the worker runs every 15 min when needed
 -- ============================================================================================================
@@ -1536,7 +1596,7 @@ revoke all on function intel.ci_payment_due_alerts() from public, anon, authenti
 
 do $$ begin
   if exists (select 1 from pg_extension where extname = 'pg_cron') then
-    perform cron.unschedule(jobid) from cron.job where jobname in ('ci-payment-due', 'ci-payout-verify', 'ci-razorpayx');
+    perform cron.unschedule(jobid) from cron.job where jobname in ('ci-payment-due', 'ci-razorpayx-worker', 'ci-razorpayx');
     perform cron.schedule('ci-payment-due', '30 3 * * *', $c$select intel.ci_payment_due_alerts()$c$);
     perform cron.schedule('ci-razorpayx', '*/15 * * * *',
       $c$select private.ci_kick_worker('razorpayx-worker') where exists (select 1 from intel.ci_creator_payment where details_status = 'verifying' and verify_attempts < 5)
