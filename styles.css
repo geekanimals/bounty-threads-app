@@ -2472,3 +2472,8 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .bpx-steps span{overflow-wrap:normal;word-break:normal}
 @media (min-width:721px){.bpx-row{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 330px}}
 .modal.bpx-prev{width:min(1100px,96vw);max-width:none}
+/* every pop-up fits the screen and scrolls inside (long forms like Add a brand) — header stays on top */
+.modal-overlay.open{padding:16px;overflow-y:auto}
+.modal{max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto;overscroll-behavior:contain}
+.modal>.modal-head{position:sticky;top:0;z-index:2;background:var(--panel);border-radius:16px 16px 0 0}
+@media(max-width:600px){.modal-overlay.open{padding:0;place-items:end center}.modal,.modal.modal-lg{max-height:94vh;max-height:94dvh}}
