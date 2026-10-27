@@ -1665,7 +1665,10 @@ function wireTagBox(box){
 
 function openCampaignModal(existing, preset){
   preset = preset || {};
-  const ed = existing || {};
+  // preset.mode "request": a brand login asks for a campaign with the very same form (nothing is created — the Geek team gets it)
+  // preset.prefill: a brand's request opened by the Super Admin → the form comes pre-filled (preset.requestId is marked converted)
+  const isReq = preset.mode === "request";
+  const ed = existing || preset.prefill || {};
   const ip = (ed.ideal_profile && typeof ed.ideal_profile==="object") ? ed.ideal_profile : {};
   const ct = (ed.contract_terms && typeof ed.contract_terms==="object") ? ed.contract_terms : {};
   const vb = (ed.video_brief && typeof ed.video_brief==="object") ? ed.video_brief : {};
@@ -1679,8 +1682,10 @@ function openCampaignModal(existing, preset){
   let m = document.getElementById("campaignModal"); if(m) m.remove();
   m = el("div","modal-overlay"); m.id="campaignModal";
   m.innerHTML = `<div class="modal modal-lg">
-    <div class="modal-head"><strong>${existing?'Edit Campaign':'New Campaign'}</strong><button class="icon-btn" id="cmClose">✕</button></div>
+    <div class="modal-head"><strong>${isReq?'➕ Request a new campaign':existing?'Edit Campaign':preset.requestId?'New Campaign — from the brand\'s request':'New Campaign'}</strong><button class="icon-btn" id="cmClose">✕</button></div>
     <form id="campaignForm" class="modal-form">
+      ${isReq?`<p class="muted" style="margin:0;font-size:13px">Fill in what you need — the same details the Geek team uses to run the campaign. They get it right away and set it up with you.</p>`:""}
+      ${preset.requestId?`<div class="cm-typehint" style="display:block">📝 Pre-filled from <b>${esc(preset.brand||"the brand")}</b>'s request — check everything, then launch.</div>`:""}
       <div class="cm-sec">Campaign type</div>
       <div class="cm-seg" id="cmType">${CAMP_TYPES.map(([k,l])=>`<label class="${k===ctype?'act':''}"><input type="radio" name="campaign_type" value="${k}"${k===ctype?' checked':''}> ${l}</label>`).join("")}</div>
       <div class="cm-typehint muted" id="cmTypeHint"></div>
@@ -1688,7 +1693,7 @@ function openCampaignModal(existing, preset){
           <span class="muted cm-hint">⭐ <b>Story</b> works with every type — the type above decides product / fee</span></label>
         <label class="cm-barter">Number of creators<input name="creators" type="number" min="0" value="${ed.creators!=null?esc(ed.creators):''}" placeholder="20"></label></div>
       <div class="mf-row"><label>Campaign name<input name="name" required maxlength="120" value="${esc(ed.name||'')}" placeholder="Summer Glow Launch"></label>
-      <label>Brand<select name="brand_pick" id="cmBrandPick"><option value="">Loading brands…</option></select>
+      <label${isReq?' hidden':''}>Brand<select name="brand_pick" id="cmBrandPick"><option value="">Loading brands…</option></select>
         <input name="brand" id="cmBrandNew" maxlength="120" value="${esc(ed.brand||preset.brand||'')}" placeholder="New brand name — e.g. Lume Cosmetics" hidden></label></div>
       <div class="mf-row cm-barter"><label>Barter product link<input name="product_link" type="url" value="${esc(ed.product_link||'')}" placeholder="https://brand.com/product"></label>
       <label>Barter product value (₹)<input name="product_value" type="number" min="0" value="${ed.product_value!=null?esc(ed.product_value):''}" placeholder="1499"></label></div>
@@ -1713,7 +1718,7 @@ function openCampaignModal(existing, preset){
       <div id="cmFileList" class="cm-files"></div>
       <div class="mf-row"><label>Start date<input name="start_date" type="date" value="${esc(ed.start_date||'')}"></label>
       <label>End date<input name="end_date" type="date" value="${esc(ed.end_date||'')}"></label></div>
-      <label>Status<select name="status" id="cmStatus">${campStatusOptions(ed.status, ed.end_date)}</select>
+      <label${isReq?' hidden':''}>Status<select name="status" id="cmStatus">${campStatusOptions(ed.status, ed.end_date)}</select>
         <span class="muted cm-hint"><b>Draft</b> — hidden from creators · <b>Live</b> — creators see it and can apply · <b>Shortlist completed</b> — the campaign keeps running for the creators already in it, nobody new can apply · it turns <b>Completed</b> on its own after the end date, or once every creator is done. Progress is counted on its own from where each creator is.</span></label>
       <div class="cm-sec">📜 Contract terms <span class="muted" style="font-weight:400;font-size:12px">— sent to each creator automatically the moment you approve them</span></div>
       <div class="mf-row"><label class="cm-barter">Product the creator gets<input name="ct_product" maxlength="140" value="${esc(ct.product||'')}" placeholder="Momo box (12 pcs)"></label>
@@ -1757,7 +1762,7 @@ function openCampaignModal(existing, preset){
       <label>Audience notes <span class="muted" style="font-weight:400">(team only — not checked)</span><input name="ip_aud" value="${esc(ip.audience_notes||'')}" placeholder="e.g. 18–34, 60% female, metro India"></label>
       <div class="muted" style="font-size:12px;margin-top:-2px">A creator must meet <b>every</b> field you fill in here to apply — anyone who doesn't sees exactly which one doesn't match. Type <b>Any</b> (or leave it empty) to allow everyone for that field.</div>
       <div class="auth-err" id="cmErr"></div>
-      <button class="btn" type="submit">${existing?'Save changes':'Launch Campaign'}</button>
+      <button class="btn" type="submit">${isReq?'Send to the Geek team':existing?'Save changes':'Launch Campaign'}</button>
     </form></div>`;
   document.body.appendChild(m); m.classList.add("open");
   // brand: pick one from the Brand CRM, or add a new one (it becomes a brand record when the campaign is saved)
@@ -1844,7 +1849,7 @@ function openCampaignModal(existing, preset){
   if(endIn && stSel) endIn.addEventListener("change", ()=>{ const cur = stSel.value, ended = endIn.value && endIn.value < new Date().toISOString().slice(0,10);
     stSel.innerHTML = campStatusOptions(ended && cur==="Live" ? "Completed" : (!ended && cur==="Completed" ? "Live" : cur), endIn.value); });
   // a new campaign saved as Draft isn't "launched" — the button says what will happen
-  if(stSel && !existing){ const subB = form.querySelector('button[type=submit]');
+  if(stSel && !existing && !isReq){ const subB = form.querySelector('button[type=submit]');
     const lbl = ()=>{ if(subB && !subB.disabled) subB.textContent = stSel.value==="Draft" ? "Save as draft" : "Launch Campaign"; };
     stSel.addEventListener("change", lbl); lbl(); }
   const pending = [];
@@ -1929,7 +1934,7 @@ function openCampaignModal(existing, preset){
       }
       const creators = t==="paid" ? parseInt(f.get("creators_paid")) : parseInt(f.get("creators"));
       const pick = String(f.get("brand_pick")||""), newBrand = String(f.get("brand")||"").trim();
-      if(!pick || (pick==="__new" && !newBrand)){ throw new Error(pick==="__new" ? "Type the new brand's name." : "Pick the brand (or ➕ Add a new brand)."); }
+      if(!isReq && (!pick || (pick==="__new" && !newBrand))){ throw new Error(pick==="__new" ? "Type the new brand's name." : "Pick the brand (or ➕ Add a new brand)."); }
       const row = { name:f.get("name"), brand: pick==="__new" ? newBrand : (((_brandCache||[]).find(b=>b.brand_id===pick)||{}).name || newBrand), campaign_type:t, barter_subtype:st, type:legacyTypeFor(t, st),
         objective:f.get("objective"), status:f.get("status"),
         budget: t==="barter" ? null : num(f.get("budget")),
@@ -1947,6 +1952,12 @@ function openCampaignModal(existing, preset){
       if(t==="paid") row.contract_terms.product = null;
       row.video_brief = { what_to_shoot: txt("vb_shoot") || null, key_messages: txt("vb_msg") || null, dos: txt("vb_dos") || null, donts: txt("vb_donts") || null,
         caption: txt("vb_caption") || null, reference_links: txt("vb_refs") || null, posting_note: txt("vb_note") || null };
+      if(isReq){                          // a brand's request: send the whole form to the Geek team, create nothing
+        row.brand_id = preset.brand_id || null; row.brand = preset.brand || row.brand; delete row.status;
+        const { error:re } = await sb.schema("api").rpc("brand_campaign_request", { p:{ brand_id: preset.brand_id || null, name: row.name, form: row } }).then(r=>r, er=>({error:er}));
+        if(re) throw re;
+        m.remove(); gateToast("✓ Sent — the Geek team has your request and will get back to you"); if(preset.onDone) preset.onDone(); return;
+      }
       let error;
       const save = r => existing ? sb.from("campaigns").update(r).eq("id", existing.id) : sb.from("campaigns").insert(r);
       if(!existing && window.Auth&&Auth.profile){ row.org_name=Auth.profile.org; row.org_id=Auth.profile.org_id; }
@@ -1957,6 +1968,7 @@ function openCampaignModal(existing, preset){
       }
       if(error) throw error;
       if(window.Tracker) Tracker.security(existing?"campaign_edit":"campaign_create", { campaign: row.name, type: t });
+      if(!existing && preset.requestId) sb.schema("api").rpc("admin_campaign_request_converted", { p_request: preset.requestId, p_campaign_name: row.name }).then(()=>{}, ()=>{});
       m.classList.remove("open");
       if(existing && document.getElementById("wsBack") && _wsCampaign && _wsCampaign.id===existing.id) openCampaignWorkspace(existing.id); else { await loadCampaigns(); loadCampaignSection("barter"); loadCampaignSection("celebrity"); }
       if(!existing){                      // brand new campaign → show who matches it, ready to invite
@@ -1965,7 +1977,7 @@ function openCampaignModal(existing, preset){
         // brand new campaign → straight to adding creators: bulk upload (sheet / Word), or pick from Geek OS
         if(made) setTimeout(()=> openBarterProcess(made.id, made.name, null, "bulk"), 350);
       }
-    }catch(ex){ paintFiles(); err.textContent = ex.message||"Couldn't save."; btn.disabled=false; btn.textContent=existing?'Save changes':(stSel&&stSel.value==="Draft"?'Save as draft':'Launch Campaign'); }
+    }catch(ex){ paintFiles(); err.textContent = ex.message||"Couldn't save."; btn.disabled=false; btn.textContent=isReq?'Send to the Geek team':existing?'Save changes':(stSel&&stSel.value==="Draft"?'Save as draft':'Launch Campaign'); }
   };
 }
 
@@ -4006,7 +4018,9 @@ async function bcPaintPortal(b){
           <div class="muted" style="font-size:12.5px">${esc([fmtDate(q.created_at), q.by?"by "+q.by:"", q.campaign_type?campTypeLabel(q.campaign_type):"", q.creators_needed?q.creators_needed+" creators":"", q.budget, q.starts_on&&q.ends_on?q.starts_on+" → "+q.ends_on:"", q.cities].filter(Boolean).join(" · "))}</div>
           ${q.product?`<div style="font-size:13px">🎁 ${esc(q.product)}</div>`:""}${q.deliverables?`<div style="font-size:13px">📦 ${esc(q.deliverables)}</div>`:""}
           ${q.brief?`<div style="font-size:13px;white-space:pre-wrap;margin-top:4px">${esc(q.brief)}</div>`:""}${q.admin_note?`<div class="muted" style="font-size:12.5px;margin-top:4px">Note to brand: ${esc(q.admin_note)}</div>`:""}</div>
-        <select data-bcrq="${esc(q.request_id)}">${Object.entries(RS).map(([k,l])=>`<option value="${k}"${q.status===k?" selected":""}>${l}</option>`).join("")}</select></div>`).join("")
+        <span style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">${q.form?`<button class="mini-btn ghost" data-bcrqv="${esc(q.request_id)}">📄 Full brief</button>`:""}
+          ${q.status!=="converted"?`<button class="mini-btn" data-bcrqmk="${esc(q.request_id)}">🚀 Create campaign</button>`:q.campaign_id?'<span class="tag good">Campaign made</span>':""}
+          <select data-bcrq="${esc(q.request_id)}">${Object.entries(RS).map(([k,l])=>`<option value="${k}"${q.status===k?" selected":""}>${l}</option>`).join("")}</select></span></div>`).join("")
         :'<div class="muted">No requests yet — the brand sends them from its dashboard (➕ Request a new campaign).</div>'}</div>
     <div class="bpp-card"><div class="bpp-sec">👥 Team access</div>
       ${Lg.length?Lg.map(x=>`<div class="bc-contact"><div><b>${esc(x.name||x.email)}</b>${x.facebook?` <span class="tag good">📘 ${esc(x.facebook)}</span>`:""}
@@ -4019,6 +4033,30 @@ async function bcPaintPortal(b){
         :'<div class="muted">None yet.</div>'}</div>`;
   const nt = document.getElementById("bcNotify"); if(nt) nt.onchange = async ()=>{ const { error:e } = await sb.schema("api").rpc("admin_brand_notify", { p_brand:b.brand_id, p_on:nt.checked }).then(r=>r, er=>({error:er}));
     gateToast(e ? (e.message||String(e)) : nt.checked ? "Email alerts on ✓" : "Email alerts off"); if(e) nt.checked = !nt.checked; };
+  const reqOf = id => Q.find(q=> q.request_id===id) || {};
+  const asForm = q => Object.assign({}, q.form || {}, { name: (q.form&&q.form.name) || q.name, brand: b.name, brand_id: b.brand_id,
+      campaign_type: (q.form&&q.form.campaign_type) || q.campaign_type || "barter", brief: (q.form&&q.form.brief) || q.brief || "",
+      start_date: (q.form&&q.form.start_date) || q.starts_on || "", end_date: (q.form&&q.form.end_date) || q.ends_on || "",
+      creators: (q.form&&q.form.creators) || q.creators_needed || null, deliverables: (q.form&&q.form.deliverables) || q.deliverables || "" });
+  box.querySelectorAll("[data-bcrqmk]").forEach(x=> x.onclick = ()=>{ const q = reqOf(x.dataset.bcrqmk);
+    document.getElementById("bcModal")?.remove(); currentPage = "campaigns"; renderShell();
+    setTimeout(()=> openCampaignModal(null, { prefill: asForm(q), requestId: q.request_id, brand: b.name }), 150); });
+  box.querySelectorAll("[data-bcrqv]").forEach(x=> x.onclick = ()=>{ const q = reqOf(x.dataset.bcrqv), f = q.form || {}, ct = f.contract_terms || {}, vb = f.video_brief || {}, ip = f.ideal_profile || {};
+    const r = (k,v)=> (v!=null && v!=="" && !(Array.isArray(v)&&!v.length)) ? `<div class="bpp-row"><span>${esc(k)}</span><div style="white-space:pre-wrap">${esc(Array.isArray(v)?v.join(", "):v)}</div></div>` : "";
+    bpModal(`📄 ${esc(q.name)} — ${esc(b.name)}'s request`, `<div class="modal-form">
+      ${r("Type", f.campaign_type?campTypeLabel(f.campaign_type, f.barter_subtype):"")}${r("Objective", f.objective)}${r("Creators", f.creators)}${r("Budget (₹)", f.budget)}
+      ${r("Product link", f.product_link)}${r("Product value (₹)", f.product_value)}${r("Deliverables", f.deliverables)}${r("Hashtags & mentions", f.hashtags)}
+      ${r("Dates", (f.start_date||f.end_date)?`${f.start_date||"—"} → ${f.end_date||"—"}`:"")}${r("Brief", f.brief)}
+      ${(f.attachments||[]).length?`<div class="bpp-row"><span>Files</span><div>${f.attachments.map(a=>`<a href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener">📎 ${esc(a.name)}</a>`).join("<br>")}</div></div>`:""}
+      <div class="bpp-sec">📜 Contract terms</div>${r("Product the creator gets", ct.product)}${r("Content due (days)", ct.content_days)}${r("Ad rights (months)", ct.ad_rights_months)}
+      ${r("Collab rights", ct.collab_rights?"Yes":ct.collab_rights===false?"No":"")}${r("Non-delivery = blacklist", ct.blacklist_clause?"Yes":ct.blacklist_clause===false?"No":"")}${r("Other terms", ct.extra_terms)}${r("Pay fee (days after posts)", ct.pay_due_days)}
+      <div class="bpp-sec">🎬 Video brief</div>${r("What to shoot", vb.what_to_shoot)}${r("Key messages", vb.key_messages)}${r("Do's", vb.dos)}${r("Don'ts", vb.donts)}${r("Caption", vb.caption)}${r("References", vb.reference_links)}${r("Posting note", vb.posting_note)}
+      <div class="bpp-sec">✅ Who can apply</div>${r("Followers", (ip.min_followers!=null||ip.max_followers!=null)?`${ip.min_followers!=null?fmtNum(ip.min_followers):"Any"} – ${ip.max_followers!=null?fmtNum(ip.max_followers):"Any"}`:"")}
+      ${r("Locations", ip.locations)}${r("Gender", ip.gender)}${r("Categories", ip.categories)}${r("Min engagement %", ip.min_engagement)}${r("Age", (ip.age_min||ip.age_max)?`${ip.age_min||"Any"} – ${ip.age_max||"Any"}`:"")}
+      ${r("Pet", ip.pet)}${r("Pet type", ip.pet_type)}${r("Married", ip.marital)}${r("Open to barter", ip.barter)}${r("Audience notes", ip.audience_notes)}
+      ${q.status!=="converted"?`<button class="btn" id="bcRqMake">🚀 Create this campaign</button>`:""}</div>`);
+    const mk = document.getElementById("bcRqMake"); if(mk) mk.onclick = ()=>{ document.getElementById("bpModal")?.remove(); document.getElementById("bcModal")?.remove(); currentPage = "campaigns"; renderShell();
+      setTimeout(()=> openCampaignModal(null, { prefill: asForm(q), requestId: q.request_id, brand: b.name }), 150); }; });
   box.querySelectorAll("[data-bcrq]").forEach(x=> x.onchange = async ()=>{
     const note = (x.value==="declined"||x.value==="converted") ? (prompt("Note for the brand (optional):", "")||"") : "";
     const { error:e } = await sb.schema("api").rpc("admin_campaign_request_set", { p_request:x.dataset.bcrq, p_status:x.value, p_note:note||null }).then(r=>r, er=>({error:er}));
@@ -4027,6 +4065,88 @@ async function bcPaintPortal(b){
     const { data:r, error:e } = await sb.functions.invoke("brand-login", { body:{ action: x.value==="removed" ? "team_remove" : "team_role", brand_id:b.brand_id, member_id:x.dataset.bcrole, role:x.value } }).then(r=>r, er=>({error:er}));
     const msg = (r && r.error) || (e && (typeof fnError==="function" ? await fnError(e) : e.message));
     gateToast(msg || "Access changed ✓"); bcPaintPortal(b); });
+}
+// Brand CRM → 💳 Billing (Super Admin): raise a payment request, mark paid by hand, bill history, downloads, seller details
+async function bcPaintBilling(b, C){
+  const box = document.getElementById("bcBilling"); if(!box) return;
+  const [ir, sr] = await Promise.all([ sb.schema("api").rpc("brand_invoices", { p_brand: b.brand_id }).then(r=>r, e=>({error:e})),
+                                      sb.schema("api").rpc("admin_billing_settings", { p:null }).then(r=>r, e=>({error:e})) ]);
+  if(!document.getElementById("bcBilling")) return;
+  if(ir.error){ box.innerHTML = `<div class="ci-err-inline">${esc(ir.error.message||String(ir.error))}${/brand_invoices/.test(ir.error.message||"")?" — run <code>supabase db push</code>.":""}</div>`; return; }
+  const d = ir.data||{}, L = d.invoices||[], S = sr.data||{}, on = (S.online||{});
+  const BB = window.BrandBilling, inr = BB ? BB.inr : (v=>"₹"+fmtNum(v));
+  box.innerHTML = `<div class="bpp-stats"><div><b>${esc(inr(d.due))}</b><span>To collect</span></div><div><b>${esc(inr(d.paid))}</b><span>Paid</span></div><div><b>${L.length}</b><span>Bills</span></div>
+      <div><b>${on.on_ok?"✅ On":"—"}</b><span>Razorpay online pay${on.mode?" · "+esc(on.mode):""}</span></div></div>
+    ${!on.on_ok?`<div class="muted" style="font-size:12.5px;margin:6px 0 10px">Online payment turns on once the Razorpay keys are set on the server (${on.error?esc(on.error):"not checked yet"}). Until then the brand pays by bank / UPI and you mark the bill paid.</div>`:""}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"><button class="btn sm" id="bcBillNew">➕ Request payment</button><button class="btn sm ghost" id="bcBillSet">⚙️ Billing details</button><button class="btn sm ghost" id="bcBillChk">↻ Check Razorpay</button></div>
+    ${L.length?`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Bill</th><th>For</th><th>Issued</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>
+      ${L.map(i=>`<tr><td><b>${esc(i.invoice_no)}</b></td><td>${esc(i.title)}${i.campaign?`<div class="muted" style="font-size:12px">${esc(i.campaign)}</div>`:""}</td><td>${esc(fmtDate(i.issued_on))}</td><td>${i.due_on?esc(fmtDate(i.due_on)):"—"}</td>
+        <td><b>${esc(inr(i.total))}</b></td><td>${i.status==="paid"?`<span class="tag good">Paid · ${i.paid_via==="razorpay"?"Razorpay":"by hand"}</span><div class="muted" style="font-size:11.5px">${esc(fmtDate(i.paid_at))}${i.paid_ref?" · "+esc(i.paid_ref):""}</div>`
+          :i.status==="cancelled"?'<span class="tag">Cancelled</span>':`<span class="tag ${i.overdue?"bad":"warn"}">${i.overdue?"Overdue":"Requested"}</span>${i.rzp_link_url?'<div class="muted" style="font-size:11.5px">pay link sent</div>':""}`}</td>
+        <td style="white-space:nowrap"><button class="mini-btn ghost" data-bbp="${esc(i.invoice_id)}">⬇ ${i.status==="paid"?"Receipt":"Bill"}</button>
+          ${i.status==="requested"?`<button class="mini-btn ghost" data-bbe="${esc(i.invoice_id)}">Edit</button> <button class="mini-btn" data-bbm="${esc(i.invoice_id)}">✓ Mark paid</button> <button class="mini-btn ghost" data-bbl="${esc(i.invoice_id)}">🔗 Pay link</button> <button class="mini-btn ghost" data-bbx="${esc(i.invoice_id)}">Cancel</button>`:""}
+          ${i.status==="paid"&&i.paid_via==="manual"?`<button class="mini-btn ghost" data-bbu="${esc(i.invoice_id)}">Undo</button>`:""}</td></tr>`).join("")}</tbody></table></div>`
+      :'<div class="muted">No bills yet — tap ➕ Request payment. The brand gets an alert and can pay online from its Billing page.</div>'}`;
+  const reload = ()=> bcPaintBilling(b, C), byId = id => L.find(x=> x.invoice_id===id);
+  const fnMsg = async x => (x.data&&x.data.error) || (x.error && (typeof fnError==="function" ? await fnError(x.error) : x.error.message));
+  box.querySelectorAll("[data-bbp]").forEach(x=> x.onclick = ()=> BB && BB.print(byId(x.dataset.bbp)));
+  const form = inv => { inv = inv || {}; const items = (inv.items&&inv.items.length) ? inv.items : [{ description:"Influencer campaign management", qty:1, rate:"" }];
+    const row = (it)=>`<div class="bb-it"><input name="desc" maxlength="300" value="${esc(it.description||"")}" placeholder="What it's for"><input name="qty" type="number" min="0" step="any" value="${esc(it.qty??1)}" title="Qty"><input name="rate" type="number" min="0" step="0.01" value="${esc(it.rate??"")}" placeholder="Rate ₹"><button type="button" class="mini-btn ghost" data-bbrm>✕</button></div>`;
+    const m = bpModal(inv.invoice_id?`Edit bill ${esc(inv.invoice_no)}`:`➕ Request payment from ${esc(b.name)}`, `<form class="modal-form" id="bbF">
+      <div class="mf-row"><label>Campaign<select name="campaign_id"><option value="">— General (no campaign) —</option>${(C||[]).map(c=>`<option value="${esc(c.id)}"${c.id && (c.id===inv.legacy_campaign_id || c.id===inv.campaign_id)?" selected":""}>${esc(c.name)}</option>`).join("")}</select></label>
+        <label>Bill title<input name="title" maxlength="200" required value="${esc(inv.title||"Campaign services")}"></label></div>
+      <div class="bb-sec">Lines</div><div id="bbItems">${items.map(row).join("")}</div><button type="button" class="btn sm ghost" id="bbAdd">➕ Add a line</button>
+      <div class="mf-row"><label>GST %<input name="gst_pct" type="number" min="0" max="28" step="0.01" value="${esc(inv.gst_pct??S.default_gst??18)}"></label><label>Due date<input name="due_on" type="date" value="${esc(inv.due_on||"")}"></label></div>
+      <label>Notes on the bill <span class="muted" style="font-weight:400">(optional)</span><textarea name="notes" rows="2" maxlength="1000" placeholder="e.g. 50% advance for the Diwali campaign">${esc(inv.notes||"")}</textarea></label>
+      <div class="bb-tot" id="bbTot"></div><div class="auth-err" id="bbErr"></div>
+      <button class="btn" type="submit">${inv.invoice_id?"Save bill":"Send payment request"}</button>
+      <div class="muted" style="font-size:12px">The brand's team gets an alert (and an email if alerts are on). They pay from Billing → Pay now (Razorpay) — it's marked paid automatically.</div></form>`);
+    const f = m.querySelector("#bbF"), itemsBox = m.querySelector("#bbItems");
+    const calc = ()=>{ let sub = 0; itemsBox.querySelectorAll(".bb-it").forEach(r=>{ sub += (parseFloat(r.querySelector("[name=qty]").value)||0) * (parseFloat(r.querySelector("[name=rate]").value)||0); });
+      const g = parseFloat(f.gst_pct.value)||0; m.querySelector("#bbTot").innerHTML = `Subtotal <b>${esc(inr(sub))}</b> · GST ${esc(g)}% <b>${esc(inr(sub*g/100))}</b> · Total <b>${esc(inr(sub*(1+g/100)))}</b>`; };
+    const wire = ()=>{ itemsBox.querySelectorAll("[data-bbrm]").forEach(x=> x.onclick = ()=>{ if(itemsBox.children.length>1){ x.closest(".bb-it").remove(); calc(); } }); itemsBox.querySelectorAll("input").forEach(x=> x.oninput = calc); };
+    m.querySelector("#bbAdd").onclick = ()=>{ itemsBox.insertAdjacentHTML("beforeend", row({ qty:1 })); wire(); };
+    f.gst_pct.oninput = calc; wire(); calc();
+    f.onsubmit = async e=>{ e.preventDefault(); const btn = f.querySelector("button[type=submit]"); btn.disabled = true;
+      const p = { invoice_id: inv.invoice_id||null, brand_id: b.brand_id, campaign_id: f.campaign_id.value||null, title: f.title.value, gst_pct: f.gst_pct.value, due_on: f.due_on.value||null, notes: f.notes.value,
+        items: Array.from(itemsBox.querySelectorAll(".bb-it")).map(r=>({ description: r.querySelector("[name=desc]").value, qty: r.querySelector("[name=qty]").value, rate: r.querySelector("[name=rate]").value })) };
+      const { error } = await sb.schema("api").rpc("admin_invoice_save", { p }).then(r=>r, er=>({error:er}));
+      if(error){ m.querySelector("#bbErr").textContent = error.message||String(error); btn.disabled = false; return; }
+      m.remove(); gateToast(inv.invoice_id ? "Bill saved ✓" : "✓ Payment request sent to "+b.name); reload(); }; };
+  document.getElementById("bcBillNew").onclick = ()=> form(null);
+  box.querySelectorAll("[data-bbe]").forEach(x=> x.onclick = ()=> form(byId(x.dataset.bbe)));
+  box.querySelectorAll("[data-bbm]").forEach(x=> x.onclick = ()=>{ const i = byId(x.dataset.bbm);
+    const m = bpModal(`✓ Mark ${esc(i.invoice_no)} paid`, `<form class="modal-form" id="bbMF"><div class="muted" style="font-size:13px">For a payment made outside Razorpay — bank transfer, UPI or cheque.</div>
+      <div class="mf-row"><label>Amount received (₹)<input name="amt" type="number" min="0" step="0.01" value="${esc(i.total)}"></label><label>Paid on<input name="on" type="date" value="${new Date().toISOString().slice(0,10)}"></label></div>
+      <label>Reference (UTR / UPI ref / cheque no)<input name="ref" maxlength="120" placeholder="e.g. UTR 4321…"></label><label>Note <span class="muted" style="font-weight:400">(optional)</span><input name="note" maxlength="500"></label>
+      <div class="auth-err" id="bbMErr"></div><button class="btn" type="submit">Mark paid & send the receipt</button></form>`);
+    m.querySelector("#bbMF").onsubmit = async e=>{ e.preventDefault(); const f = e.target;
+      const { error } = await sb.schema("api").rpc("admin_invoice_mark", { p_invoice:i.invoice_id, p_action:"paid", p_ref:f.ref.value||null, p_amount: parseFloat(f.amt.value)||null, p_paid_on: f.on.value||null, p_note: f.note.value||null }).then(r=>r, er=>({error:er}));
+      if(error){ m.querySelector("#bbMErr").textContent = error.message||String(error); return; } m.remove(); gateToast("✓ Marked paid — the brand gets the receipt"); reload(); }; });
+  box.querySelectorAll("[data-bbx]").forEach(x=> x.onclick = async ()=>{ if(!confirm("Cancel this bill? The brand won't be able to pay it.")) return;
+    const { error } = await sb.schema("api").rpc("admin_invoice_mark", { p_invoice:x.dataset.bbx, p_action:"cancel" }).then(r=>r, er=>({error:er})); gateToast(error ? error.message : "Bill cancelled"); reload(); });
+  box.querySelectorAll("[data-bbu]").forEach(x=> x.onclick = async ()=>{ if(!confirm("Undo the manual 'paid'? The bill goes back to unpaid.")) return;
+    const { error } = await sb.schema("api").rpc("admin_invoice_mark", { p_invoice:x.dataset.bbu, p_action:"unpay" }).then(r=>r, er=>({error:er})); gateToast(error ? error.message : "Back to unpaid"); reload(); });
+  box.querySelectorAll("[data-bbl]").forEach(x=> x.onclick = async ()=>{ x.disabled = true;
+    const r = await sb.functions.invoke("brand-billing", { body:{ action:"pay", invoice_id:x.dataset.bbl } }); const msg = await fnMsg(r); x.disabled = false;
+    if(msg){ gateToast(msg); return; } if(r.data.paid){ gateToast("Already paid ✓"); reload(); return; }
+    try{ await navigator.clipboard.writeText(r.data.url); gateToast("Razorpay pay link copied ✓ — send it to the brand"); }catch(e){ prompt("Razorpay pay link:", r.data.url); } reload(); });
+  document.getElementById("bcBillChk").onclick = async ()=>{ const r = await sb.functions.invoke("brand-billing", { body:{ action:"status" } }); const msg = await fnMsg(r);
+    if(!msg) await sb.functions.invoke("brand-billing", { body:{ action:"check" } }).then(()=>{}, ()=>{});
+    gateToast(msg || (r.data&&r.data.ok ? "Razorpay connected ✓ ("+r.data.mode+")" : "Razorpay: "+((r.data&&r.data.error)||"not connected"))); reload(); };
+  document.getElementById("bcBillSet").onclick = ()=>{
+    const m = bpModal("⚙️ Billing details (printed on every bill)", `<form class="modal-form" id="bbSF">
+      <div class="mf-row"><label>Legal name<input name="legal_name" maxlength="160" value="${esc(S.legal_name||"")}"></label><label>Trade name<input name="trade_name" maxlength="120" value="${esc(S.trade_name||"")}"></label></div>
+      <div class="mf-row"><label>GSTIN<input name="gstin" maxlength="15" value="${esc(S.gstin||"")}"></label><label>PAN<input name="pan" maxlength="10" value="${esc(S.pan||"")}"></label></div>
+      <label>Address<textarea name="address" rows="2" maxlength="500">${esc(S.address||"")}</textarea></label>
+      <div class="mf-row"><label>Email<input name="email" type="email" maxlength="120" value="${esc(S.email||"")}"></label><label>Phone<input name="phone" maxlength="20" value="${esc(S.phone||"")}"></label></div>
+      <div class="mf-row"><label>SAC code<input name="sac_code" maxlength="10" value="${esc(S.sac_code||"")}"></label><label>Default GST %<input name="default_gst" type="number" min="0" max="28" step="0.01" value="${esc(S.default_gst??18)}"></label></div>
+      <div class="mf-row"><label>Bill number prefix<input name="invoice_prefix" maxlength="12" value="${esc(S.invoice_prefix||"GEEK")}"></label><span></span></div>
+      <label>How to pay by bank / UPI <span class="muted" style="font-weight:400">(printed on unpaid bills — no account numbers are stored by Geek OS unless you type them here)</span><textarea name="bank_note" rows="3" maxlength="600">${esc(S.bank_note||"")}</textarea></label>
+      <div class="auth-err" id="bbSErr"></div><button class="btn" type="submit">Save</button></form>`);
+    m.querySelector("#bbSF").onsubmit = async e=>{ e.preventDefault(); const p = {}; new FormData(e.target).forEach((v,k)=> p[k] = String(v));
+      const { error } = await sb.schema("api").rpc("admin_billing_settings", { p }).then(r=>r, er=>({error:er}));
+      if(error){ m.querySelector("#bbSErr").textContent = error.message||String(error); return; } m.remove(); gateToast("Billing details saved ✓"); reload(); }; };
 }
 // one brand's CRM page: everything about it
 let _bc = { id:null, data:null, tab:"overview" };
@@ -4048,7 +4168,7 @@ async function bcReload(){
 function paintBrandCrm(){
   const body = document.getElementById("bcBodyM"), d = _bc.data; if(!body || !d) return;
   const b = d.brand||{}, T = d.totals||{}, C = d.campaigns||[], K = d.contacts||[], N = d.notes||[], P = d.creators||[], L = d.logins||[];
-  const tabs = [["overview","Overview"],["campaigns",`Campaigns (${C.length})`],["creators",`Creators (${P.length})`],["notes",`Notes & tasks (${N.length})`],["logins",`Logins (${L.length})`]].concat(d.is_admin?[["portal","🏢 Brand portal"]]:[]);
+  const tabs = [["overview","Overview"],["campaigns",`Campaigns (${C.length})`],["creators",`Creators (${P.length})`],["notes",`Notes & tasks (${N.length})`],["logins",`Logins (${L.length})`]].concat(d.is_admin?[["portal","🏢 Brand portal"],["billing","💳 Billing"]]:[]);
   const row = (k,v)=> v ? `<div class="bpp-row"><span>${esc(k)}</span><div>${v}</div></div>` : "";
   const STAT = { active:"Active client", lead:"Lead", paused:"Paused", archived:"Archived" };
   let sec = "";
@@ -4091,6 +4211,9 @@ function paintBrandCrm(){
   } else if(_bc.tab==="portal"){
     sec = `<div id="bcPortal">${skel("list",3)}</div>`;
     setTimeout(()=> bcPaintPortal(b), 0);
+  } else if(_bc.tab==="billing"){
+    sec = `<div id="bcBilling">${skel("list",3)}</div>`;
+    setTimeout(()=> bcPaintBilling(b, C), 0);
   } else {
     sec = `<p class="muted" style="font-size:13px;margin:0 0 10px">The brand's own team signs in at the <b>Brand login</b> page and sees only ${esc(b.name)}'s campaigns.</p>
       ${L.length?L.map(x=>`<div class="bc-contact"><div><b>${esc(x.name||x.email)}</b> <span class="tag ${x.status==="active"?"good":"warn"}">${esc(x.status||"")}</span>

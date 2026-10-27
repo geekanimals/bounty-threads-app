@@ -2522,3 +2522,9 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .bpx-teamf input,.bpx-teamf select,.bpx-kv select{padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-size:13px}
 @media (max-width:640px){.bpx-teamf{grid-template-columns:1fr}}
 .btn:disabled,.btn[disabled]{opacity:.45;cursor:not-allowed;filter:saturate(.6)}
+/* billing */
+.bb-sec{font-weight:700;font-size:13px;margin-top:4px}
+.bb-it{display:grid;grid-template-columns:1fr 80px 130px auto;gap:8px;margin-bottom:6px}
+.bb-it input{padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-size:13px;min-width:0}
+@media (max-width:600px){.bb-it{grid-template-columns:1fr 70px 100px auto}}
+.bb-tot{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px}

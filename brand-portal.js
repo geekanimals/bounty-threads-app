@@ -41,7 +41,7 @@
   // ------------------------------------------------------------------ pages
   function shell(inner){ return BP.preview ? previewTabs()+inner : inner; }
   function previewTabs(){
-    return '<div class="bpx-ptabs">'+[["dashboard","🏠 Dashboard"],["approvals","✅ Approvals"],["campaigns","📣 Campaigns"],["creators","⭐ Saved creators"],["reports","📊 Reports"],["settings","⚙️ Settings"]].map(function(t){
+    return '<div class="bpx-ptabs">'+[["dashboard","🏠 Dashboard"],["approvals","✅ Approvals"],["campaigns","📣 Campaigns"],["creators","⭐ Saved creators"],["reports","📊 Reports"],["billing","💳 Billing"],["settings","⚙️ Settings"]].map(function(t){
       return '<button class="bpx-chip'+(BP.page===t[0]?' on':'')+'" data-bpxgo="'+t[0]+'">'+t[1]+'</button>'; }).join("")+'</div>';
   }
   function render(page){
@@ -51,6 +51,7 @@
       campaigns:["Campaigns","Every campaign we run for you — open one to see each creator and where they are."],
       reports:["Reports","Campaign results — download them as Excel (CSV) or PDF."],
       creators:["Saved creators","Creators you ⭐ saved — to use again in your next campaign."],
+      billing:["Billing","Bills from the Geek team — pay online, and download every bill and receipt."],
       settings:["Settings","Your login and your Facebook business."]}[page] || ["Dashboard",""];
     return shell((BP.preview?'':pageHead(head[0], head[1]))+'<div id="bpxBody">'+skel(page==="campaigns"&&BP.open?"list":"dash", 4)+'</div>');
   }
@@ -66,6 +67,7 @@
     if(page==="reports") return paintReports(body);
     if(page==="settings") return paintSettings(body);
     if(page==="creators") return paintSaved(body);
+    if(page==="billing") return paintBilling(body);
     return paintDash(body);
   }
   function go(page, campaign){
@@ -456,21 +458,41 @@
   // ---------- 📝 request a new campaign
   function openRequest(){
     if(BP.preview){ gateToast("The brand sends requests from their own login."); return; }
-    var m = bpModal("➕ Request a new campaign", '<form class="modal-form" id="bpxRq">'
-      +'<p class="muted" style="margin:0;font-size:13px">Tell us what you need — the Geek team gets it right away and sets the campaign up with you.</p>'
-      +'<label>Campaign name<input name="name" required maxlength="160" placeholder="e.g. Winter Detan Push"></label>'
-      +'<div class="mf-row"><label>Product<input name="product" maxlength="200" placeholder="What creators get / promote"></label>'
-      +'<label>Type<select name="campaign_type"><option value="barter">🎁 Barter (product)</option><option value="paid">💰 Paid</option><option value="barter_paid">🎁 + 💰 Barter + Paid</option></select></label></div>'
-      +'<div class="mf-row"><label>Creators needed<input name="creators_needed" inputmode="numeric" maxlength="6" placeholder="e.g. 50"></label><label>Budget (optional)<input name="budget" maxlength="120" placeholder="e.g. ₹2 L, or product only"></label></div>'
-      +'<div class="mf-row"><label>Start<input name="starts_on" type="date"></label><label>End<input name="ends_on" type="date"></label></div>'
-      +'<label>Cities / audience (optional)<input name="cities" maxlength="300" placeholder="e.g. Delhi, Mumbai · women 18–30"></label>'
-      +'<label>Deliverables (optional)<input name="deliverables" maxlength="400" placeholder="e.g. 1 Reel + 2 Stories"></label>'
-      +'<label>Brief<textarea name="brief" rows="5" maxlength="6000" placeholder="What should the creators show and say? Any do\'s and don\'ts, links, references…"></textarea></label>'
-      +'<div class="auth-err" id="bpxRqErr"></div><button class="btn" type="submit">Send to the Geek team</button></form>');
-    m.querySelector("#bpxRq").onsubmit = async function(e){ e.preventDefault(); var f = new FormData(e.target), p = {}; f.forEach(function(v,k){ p[k] = String(v); });
-      var b = e.target.querySelector("button[type=submit]"); b.disabled = true; b.textContent = "Sending…";
-      var r = await api("brand_campaign_request", { p:p }); if(r.error){ m.querySelector("#bpxRqErr").textContent = r.error.message; b.disabled = false; b.textContent = "Send to the Geek team"; return; }
-      m.remove(); gateToast("✓ Sent — the Geek team will get back to you"); refresh(); };
+    var b = ((BP.data&&BP.data.brands)||[])[0] || {};
+    // the very same form the Super Admin uses to create a campaign — in request mode (nothing is created)
+    openCampaignModal(null, { mode:"request", brand_id:b.brand_id, brand:b.name, onDone: refresh });
+  }
+
+  // ---------- 💳 billing (both sides use BrandBilling for the bill / receipt)
+  async function paintBilling(body){
+    // back from Razorpay: ask it right away whether the bill was paid
+    var qs = new URLSearchParams(location.search), back = qs.get("rzpbill");
+    if(back){ history.replaceState({}, "", location.pathname); body.innerHTML = '<div class="card">Checking your payment with Razorpay…</div>';
+      await sb.functions.invoke("brand-billing", { body:{ action:"check", invoice_id:back } }).then(function(){}, function(){}); }
+    var r = await api("brand_invoices", { p_brand: BP.preview || null });
+    if(r.error){ body.innerHTML = '<div class="card"><div class="ci-err-inline">'+esc(r.error.message)+(/brand_invoices/.test(r.error.message||"")?' — run <code>supabase db push</code>.':'')+'</div></div>'; return; }
+    var d = r.data, L = d.invoices||[], open = L.filter(function(i){ return i.status==="requested"; });
+    if(back){ var bi = L.find(function(i){ return i.invoice_id===back; }); if(bi) gateToast(bi.status==="paid" ? "✅ Payment received — thank you! The receipt is ready." : "Payment not completed yet — you can try again."); }
+    // links already sent to Razorpay: a quiet check in the background
+    if(open.some(function(i){ return i.rzp_link_id; }) && !BP.billChecked){ BP.billChecked = true;
+      sb.functions.invoke("brand-billing", { body:{ action:"check" } }).then(function(x){ if(x && x.data && (x.data.checked||[]).some(function(c){ return c.status==="paid"; })) go("billing"); }, function(){}); }
+    body.innerHTML = '<div class="bpx-kpis">'+kpi("⏳", "₹"+n(d.due), "To pay", open.length+" bill"+(open.length===1?"":"s")+" open")+kpi("✅", "₹"+n(d.paid), "Paid", L.filter(function(i){ return i.status==="paid"; }).length+" bills")
+        +kpi("🧾", L.length, "Bills in total", "")+'</div>'
+      +'<div class="card" style="margin-top:16px"><div class="bpx-h"><h3>🧾 Bills</h3>'+(d.online?'<span class="tag good">Online payment on · Razorpay</span>':'<span class="tag">Pay by bank / UPI — details on the bill</span>')+'</div>'
+      +(L.length?'<div style="overflow-x:auto"><table class="tbl bpx-tbl"><thead><tr><th>Bill</th><th>For</th><th>Issued</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>'
+        +L.map(function(i){ var st = i.status==="paid" ? '<span class="tag good">Paid'+(i.paid_at?' · '+date(i.paid_at):'')+'</span>' : i.status==="cancelled" ? '<span class="tag">Cancelled</span>' : '<span class="tag '+(i.overdue?'bad':'warn')+'">'+(i.overdue?'Overdue':'To pay')+'</span>';
+          return '<tr><td><b>'+esc(i.invoice_no)+'</b></td><td>'+esc(i.title)+(i.campaign?'<div class="muted" style="font-size:12px">'+esc(i.campaign)+'</div>':'')+'</td><td>'+date(i.issued_on)+'</td><td>'+date(i.due_on)+'</td>'
+            +'<td><b>₹'+n(i.total)+'</b></td><td>'+st+'</td><td style="white-space:nowrap">'
+            +(i.status==="requested"&&d.can_pay&&!BP.preview?'<button class="btn sm" data-bpxpay="'+esc(i.invoice_id)+'">Pay now</button> ':'')
+            +'<button class="mini-btn ghost" data-bpxbill="'+esc(i.invoice_id)+'">⬇ '+(i.status==="paid"?'Receipt':'Bill')+'</button></td></tr>'; }).join("")+'</tbody></table></div>'
+        : '<div class="muted">No bills yet. When the Geek team sends a payment request, it shows up here — you get an alert too.</div>')+'</div>';
+    body.querySelectorAll("[data-bpxbill]").forEach(function(b){ b.onclick = function(){ var i = L.find(function(x){ return x.invoice_id===b.dataset.bpxbill; }); if(i) window.BrandBilling.print(i); }; });
+    body.querySelectorAll("[data-bpxpay]").forEach(function(b){ b.onclick = async function(){ b.disabled = true; b.textContent = "Opening Razorpay…";
+      var x = await sb.functions.invoke("brand-billing", { body:{ action:"pay", invoice_id:b.dataset.bpxpay } });
+      var m = (x.data&&x.data.error) || (x.error && (typeof fnError==="function" ? await fnError(x.error) : x.error.message));
+      if(m){ gateToast(m); b.disabled = false; b.textContent = "Pay now"; return; }
+      if(x.data.paid){ gateToast("This bill is already paid ✓"); go("billing"); return; }
+      location.href = x.data.url; }; });
   }
 
   // ---------- 👥 team logins
@@ -539,11 +561,62 @@
   }
 
   window.BrandPortal = {
-    pages:["dashboard","approvals","campaigns","creators","reports","settings"],
+    pages:["dashboard","approvals","campaigns","creators","reports","billing","settings"],
     handles: function(page){ return currentRole==="brand" && !window.__isAdmin && this.pages.indexOf(page)>=0; },
     render: function(page){ BP.host = null; BP.preview = null; return render(page); },
     mount: function(page){ return mount(page); },
     fbReturn: fbReturn, fbStart: fbStart, preview: preview,
     reset: function(){ BP.data = null; BP.camp = {}; BP.an = {}; }
   };
+})();
+
+/* 🧾 Bills & receipts — printed the same way for the brand and the Super Admin (Save as PDF from the print dialog) */
+window.BrandBilling = (function(){
+  var e = function(v){ return String(v==null?"":v).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); };
+  var inr = function(v){ return "₹" + (Number(v)||0).toLocaleString("en-IN", { minimumFractionDigits:2, maximumFractionDigits:2 }); };
+  var d = function(x){ if(!x) return "—"; try{ return new Date(x).toLocaleDateString("en-IN",{ day:"2-digit", month:"short", year:"numeric" }); }catch(er){ return x; } };
+  // amount in words, Indian style (lakh / crore)
+  function words(num){
+    var a = ["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
+    var b = ["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
+    var two = function(n){ return n < 20 ? a[n] : b[Math.floor(n/10)] + (n%10 ? " " + a[n%10] : ""); };
+    var three = function(n){ return (n >= 100 ? a[Math.floor(n/100)] + " Hundred" + (n%100 ? " " : "") : "") + (n%100 ? two(n%100) : ""); };
+    var r = Math.floor(num), p = Math.round((num - r) * 100), out = [];
+    var cr = Math.floor(r / 1e7); r %= 1e7; var lk = Math.floor(r / 1e5); r %= 1e5; var th = Math.floor(r / 1000); r %= 1000;
+    if(cr) out.push(three(cr) + " Crore"); if(lk) out.push(two(lk) + " Lakh"); if(th) out.push(two(th) + " Thousand"); if(r) out.push(three(r));
+    return "Rupees " + (out.join(" ") || "Zero") + (p ? " and " + two(p) + " Paise" : "") + " Only";
+  }
+  function html(i){
+    var s = i.seller || {}, by = i.buyer || {}, paid = i.status === "paid", cancelled = i.status === "cancelled";
+    var rows = (i.items||[]).map(function(x, k){ var amt = (Number(x.qty)||0) * (Number(x.rate)||0);
+      return '<tr><td>'+(k+1)+'</td><td>'+e(x.description)+'</td><td>'+e(s.sac_code||"")+'</td><td class="r">'+e(x.qty)+'</td><td class="r">'+inr(x.rate)+'</td><td class="r">'+inr(amt)+'</td></tr>'; }).join("");
+    return '<!doctype html><html><head><meta charset="utf-8"><title>'+e(i.invoice_no)+' — '+(paid?'Receipt':'Invoice')+'</title><style>'
+      +'body{font:13px/1.45 Inter,Arial,sans-serif;color:#111;margin:0;padding:32px;background:#fff}.wrap{max-width:820px;margin:0 auto;position:relative}'
+      +'.top{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #111;padding-bottom:14px}.top h1{margin:0;font-size:22px;letter-spacing:.04em}'
+      +'.m{color:#555}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}.box{border:1px solid #ddd;border-radius:8px;padding:10px 12px}.box b.t{display:block;font-size:11px;letter-spacing:.06em;color:#777;margin-bottom:4px}'
+      +'table{width:100%;border-collapse:collapse;margin-top:8px}th,td{border-bottom:1px solid #e5e5e5;padding:7px 6px;text-align:left;vertical-align:top}th{background:#f4f4f6;font-size:12px}.r{text-align:right}'
+      +'.tot{margin-left:auto;width:320px;margin-top:10px}.tot div{display:flex;justify-content:space-between;padding:4px 0}.tot .g{border-top:2px solid #111;font-weight:800;font-size:15px;margin-top:4px;padding-top:6px}'
+      +'.stamp{position:absolute;top:330px;right:30px;transform:rotate(-12deg);border:3px solid '+(paid?'#12b76a':'#999')+';color:'+(paid?'#12b76a':'#999')+';font-weight:900;font-size:26px;padding:4px 14px;border-radius:8px;opacity:.85}'
+      +'.foot{margin-top:28px;color:#777;font-size:11px;border-top:1px solid #eee;padding-top:10px}@media print{.np{display:none}body{padding:0}}</style></head><body><div class="wrap">'
+      +'<div class="np" style="margin-bottom:16px"><button onclick="print()" style="padding:9px 16px;font-weight:700;border-radius:8px;border:0;background:#5b5bf0;color:#fff;cursor:pointer">Save as PDF / Print</button></div>'
+      +(paid?'<div class="stamp">PAID</div>':cancelled?'<div class="stamp">CANCELLED</div>':'')
+      +'<div class="top"><div><h1>'+(paid?'PAYMENT RECEIPT':'INVOICE')+'</h1><div class="m">'+e(i.invoice_no)+'</div></div>'
+      +'<div style="text-align:right"><b>'+e(s.legal_name||"Geek")+'</b>'+(s.trade_name?'<div class="m">'+e(s.trade_name)+'</div>':'')+(s.address?'<div class="m" style="white-space:pre-line">'+e(s.address)+'</div>':'')
+      +(s.gstin?'<div>GSTIN: <b>'+e(s.gstin)+'</b></div>':'')+(s.pan?'<div class="m">PAN: '+e(s.pan)+'</div>':'')+(s.email||s.phone?'<div class="m">'+e([s.email,s.phone].filter(Boolean).join(" · "))+'</div>':'')+'</div></div>'
+      +'<div class="grid"><div class="box"><b class="t">BILL TO</b><b>'+e(by.name||i.brand||"")+'</b>'+(by.address?'<div class="m" style="white-space:pre-line">'+e(by.address)+'</div>':'')+(by.gstin?'<div>GSTIN: '+e(by.gstin)+'</div>':'')+'</div>'
+      +'<div class="box"><b class="t">DETAILS</b><div>Date: <b>'+d(i.issued_on)+'</b></div>'+(i.due_on?'<div>Due: <b>'+d(i.due_on)+'</b></div>':'')+(i.campaign?'<div>Campaign: <b>'+e(i.campaign)+'</b></div>':'')+'<div>For: '+e(i.title)+'</div></div></div>'
+      +'<table><thead><tr><th>#</th><th>Description</th><th>SAC</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th></tr></thead><tbody>'+rows+'</tbody></table>'
+      +'<div class="tot"><div><span>Subtotal</span><span>'+inr(i.subtotal)+'</span></div><div><span>GST @ '+e(Number(i.gst_pct))+'%</span><span>'+inr(i.gst_amount)+'</span></div>'
+      +'<div class="g"><span>Total</span><span>'+inr(i.total)+'</span></div></div>'
+      +'<div class="m" style="margin-top:6px"><b>Amount in words:</b> '+e(words(Number(i.total)||0))+'</div>'
+      +(paid?'<div class="box" style="margin-top:14px;border-color:#12b76a"><b class="t">PAYMENT RECEIVED</b>'+inr(i.paid_amount||i.total)+' on '+d(i.paid_at)+' · '+(i.paid_via==="razorpay"?'Online (Razorpay)':'Bank transfer / UPI / cheque')+(i.paid_ref?' · Ref '+e(i.paid_ref):'')+(i.paid_note?'<div class="m">'+e(i.paid_note)+'</div>':'')+'</div>'
+        : !cancelled ? '<div class="box" style="margin-top:14px"><b class="t">HOW TO PAY</b>Pay online from your Geek OS dashboard → Billing → <b>Pay now</b> (Razorpay: UPI, cards, net banking).'+(s.bank_note?'<div style="white-space:pre-line;margin-top:4px">'+e(s.bank_note)+'</div>':'')+'</div>' : '')
+      +(i.notes?'<div class="m" style="margin-top:12px;white-space:pre-line"><b>Notes:</b> '+e(i.notes)+'</div>':'')
+      +'<div class="foot">This is a computer-generated '+(paid?'receipt':'invoice')+' and needs no signature. · Geek OS</div></div></body></html>';
+  }
+  function print(i){
+    var w = window.open("", "_blank"); if(!w){ if(window.gateToast) gateToast("Allow pop-ups to download the bill."); return; }
+    w.document.open(); w.document.write(html(i)); w.document.close(); setTimeout(function(){ try{ w.focus(); w.print(); }catch(er){} }, 500);
+  }
+  return { print:print, html:html, inr:inr, words:words };
 })();
