@@ -39,8 +39,24 @@ const CAMPAIGN_INVITE = (function(){
   if(t && /^[0-9a-f-]{36}$/i.test(t)){ try{ localStorage.setItem("geek_cinv", t); }catch(e){} return t; }
   try{ return localStorage.getItem("geek_cinv"); }catch(e){ return null; }
 })();
+// Tapped "Apply" on the public /explore.html page: ?apply=<campaign id>. Kept until the creator is signed in
+// (WhatsApp → Instagram connect), then Open Campaigns opens that campaign for them.
+const EXPLORE_APPLY = (function(){
+  const t = new URLSearchParams(location.search).get("apply");
+  if(t && /^[0-9a-f-]{36}$/i.test(t)){ try{ localStorage.setItem("geek_apply", t); }catch(e){} return t; }
+  return null;
+})();
 async function paintCampaignInvite(){
-  const box = document.getElementById("cinvBanner"); if(!box || !CAMPAIGN_INVITE || !window.sb) return;
+  const box = document.getElementById("cinvBanner");
+  if(box && !CAMPAIGN_INVITE && EXPLORE_APPLY && window.sb){
+    let nm = "";
+    try{ const { data } = await sb.rpc("explore_campaigns"); const c = (data||[]).find(x=> String(x.campaign_id)===EXPLORE_APPLY); if(c) nm = c.name; }catch(e){}
+    const e = s => String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    if(box.isConnected) box.innerHTML = `<div class="auth-note" style="border:1px solid rgba(108,92,231,.35);background:rgba(108,92,231,.08);margin:4px 0 10px">
+      🎯 To apply${nm?` to <b>${e(nm)}</b>`:""}, sign in with your WhatsApp number, then connect Instagram. The campaign opens for you right after.</div>`;
+    return;
+  }
+  if(!box || !CAMPAIGN_INVITE || !window.sb) return;
   try{
     const { data } = await sb.rpc("invite_preview", { p_token: CAMPAIGN_INVITE });
     if(!data || !box.isConnected) return;

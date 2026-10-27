@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Campaigns · Geek OS</title>
+  <meta name="description" content="Live brand campaigns for creators on Geek OS. Explore the briefs and apply with your WhatsApp number.">
+  <link rel="icon" href="/assets/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/geek-icon-32.png">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="/api/config"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <style>
+    :root{--bg:#f6f7fb;--panel:#fff;--soft:#f1f2fa;--ink:#0f1222;--muted:#6b7192;--line:#e9ecf5;--brand:#5b5bf0;--brand-2:#8f6bff;--good:#12b76a;--warn:#b54708;--chip:#eef0fb;--shadow:0 8px 30px rgba(20,22,60,.08)}
+    @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0b0d1a;--panel:#12142a;--soft:#1a1d38;--ink:#eef0ff;--muted:#8b90b8;--line:#242848;--chip:#1b1e3a;--warn:#fdb022;--shadow:0 10px 40px rgba(0,0,0,.4)}}
+    :root[data-theme="dark"]{--bg:#0b0d1a;--panel:#12142a;--soft:#1a1d38;--ink:#eef0ff;--muted:#8b90b8;--line:#242848;--chip:#1b1e3a;--warn:#fdb022;--shadow:0 10px 40px rgba(0,0,0,.4)}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    a{color:var(--brand)}
+    .wrap{max-width:1120px;margin:0 auto;padding:0 16px}
+    header.top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+    header.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;height:60px}
+    .logo{display:flex;align-items:center;gap:8px;font-weight:800;text-decoration:none;color:var(--ink)}
+    .logo img{width:28px;height:28px;border-radius:8px}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:10px;padding:10px 16px;font:600 14px Inter,sans-serif;cursor:pointer;background:linear-gradient(120deg,var(--brand),var(--brand-2));color:#fff;text-decoration:none;white-space:nowrap}
+    .btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line)}
+    .btn.sm{padding:7px 12px;font-size:13px}
+    .hero{padding:36px 0 18px}
+    .hero h1{margin:0 0 8px;font-size:clamp(26px,4.4vw,38px);line-height:1.15;letter-spacing:-.02em}
+    .hero p{margin:0;color:var(--muted);max-width:640px}
+    .steps{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+    .steps span{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px}
+    .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:18px 0 14px}
+    .chip{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:6px 12px;font:500 13px Inter,sans-serif;cursor:pointer}
+    .chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+    .bar input{flex:1;min-width:180px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;padding-bottom:40px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow);cursor:pointer;min-width:0}
+    .card:hover{border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}
+    .card h3{margin:0;font-size:16px;line-height:1.3}
+    .brand{color:var(--muted);font-size:13px}
+    .type{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:3px 9px;background:var(--chip)}
+    .meta{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12.5px;color:var(--muted)}
+    .snip{font-size:13px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+    .foot{margin-top:auto;display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .more{font-size:13px;font-weight:600;color:var(--brand)}
+    .empty{background:var(--panel);border:1px dashed var(--line);border-radius:16px;padding:28px;text-align:center;color:var(--muted)}
+    .skel{height:190px;border-radius:16px;background:linear-gradient(90deg,var(--panel),var(--soft),var(--panel));background-size:200% 100%;animation:sh 1.2s infinite}
+    @keyframes sh{to{background-position:-200% 0}}
+    .pop{position:fixed;inset:0;z-index:20;background:rgba(10,12,30,.55);display:flex;align-items:flex-end;justify-content:center}
+    @media (min-width:700px){.pop{align-items:center;padding:24px}}
+    .pop-box{background:var(--panel);width:100%;max-width:720px;max-height:92vh;border-radius:18px 18px 0 0;display:flex;flex-direction:column;overflow:hidden}
+    @media (min-width:700px){.pop-box{border-radius:18px}}
+    .pop-head{display:flex;justify-content:space-between;gap:12px;padding:18px 18px 12px;border-bottom:1px solid var(--line)}
+    .pop-head h2{margin:0;font-size:19px}
+    .x{border:0;background:var(--soft);color:var(--ink);width:34px;height:34px;border-radius:10px;cursor:pointer;font-size:15px;flex:none}
+    .pop-body{padding:6px 18px 18px;overflow:auto}
+    .sec{font-weight:700;font-size:13px;margin:16px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+    .row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
+    .row span:first-child{color:var(--muted)}
+    .row span:last-child{text-align:right;overflow-wrap:anywhere}
+    .pre{white-space:pre-wrap;line-height:1.55;font-size:14px;overflow-wrap:anywhere}
+    ul.list{margin:0;padding-left:18px;font-size:14px}
+    ul.list li{margin:3px 0}
+    .tags{display:flex;flex-wrap:wrap;gap:6px}
+    .tags span{background:var(--chip);border-radius:8px;padding:2px 8px;font-size:13px}
+    .pop-foot{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+    .pop-foot .muted{font-size:12.5px;color:var(--muted);flex:1;min-width:200px}
+    footer{color:var(--muted);font-size:12.5px;text-align:center;padding:10px 0 30px}
+  </style>
+</head>
+<body>
+  <header class="top"><div class="wrap">
+    <a class="logo" href="/"><img src="/assets/geek-icon-192.png" alt="">Geek OS</a>
+    <a class="btn sm ghost" id="signIn" href="/app.html">Sign in</a>
+  </div></header>
+  <main class="wrap">
+    <section class="hero">
+      <h1>Live brand campaigns for creators</h1>
+      <p>Look through every campaign that's open right now — no sign-in needed. Found one that fits? Tap <b>Apply</b>, sign in with your WhatsApp number, connect Instagram, and your application goes straight to the brand.</p>
+      <div class="steps"><span>1 · Explore campaigns</span><span>2 · Sign in with WhatsApp</span><span>3 · Connect Instagram</span><span>4 · Apply</span></div>
+    </section>
+    <div class="bar" id="bar">
+      <button class="chip on" data-f="all">All</button><button class="chip" data-f="paid">💰 Paid</button><button class="chip" data-f="barter">🎁 Barter</button>
+      <input id="q" type="search" placeholder="Search brand, product, city…" aria-label="Search campaigns">
+    </div>
+    <div class="grid" id="grid"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+  </main>
+  <footer>Geek OS by Geek Animals · <a href="/app.html">Creator sign-in</a></footer>
+<script>
+(function(){
+  var URL_ = (window.GEEK_CONFIG && GEEK_CONFIG.supabaseUrl) || "https://edibibytqfrrxfztukpm.supabase.co";
+  var KEY = (window.GEEK_CONFIG && GEEK_CONFIG.supabaseKey) || "sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf";
+  var sb = window.supabase.createClient(URL_, KEY);
+  var ALL = [], F = "all", Q = "";
+  var esc = function(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); };
+  var kind = function(c){ return c.campaign_type || ({cash:"paid",hybrid:"barter_paid",barter:"barter"})[c.comp_type] || ""; };
+  var TL = {paid:"💰 Paid", barter:"🎁 Barter", barter_paid:"🎁 Barter + 💰 Paid"};
+  var badge = function(c){ var k = kind(c); return (c.barter_subtype==="celebrity_story"?'<span class="type">⭐ Story</span> ':'') + (k?'<span class="type">'+TL[k]+'</span>':''); };
+  var date = function(d){ try{ return new Date(d+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"}); }catch(e){ return d; } };
+  var money = function(v){ return "₹"+Number(v).toLocaleString("en-IN"); };
+
+  function applyUrl(id){ return "/app.html?apply=" + encodeURIComponent(id); }
+  function apply(id){ try{ localStorage.setItem("geek_apply", id); }catch(e){} location.href = applyUrl(id); }
+
+  function match(c){
+    var k = kind(c);
+    if(F==="paid" && !(k==="paid"||k==="barter_paid")) return false;
+    if(F==="barter" && !(k==="barter"||k==="barter_paid")) return false;
+    if(!Q) return true;
+    return [c.name,c.brand,c.product,c.category,(c.cities||[]).join(" "),c.brief].join(" ").toLowerCase().indexOf(Q) >= 0;
+  }
+  function paint(){
+    var g = document.getElementById("grid"), list = ALL.filter(match);
+    if(!list.length){ g.innerHTML = '<div class="empty" style="grid-column:1/-1">'+(ALL.length?"Nothing matches — try another filter.":"No campaigns are open right now. New ones are added often — check back soon.")+'</div>'; return; }
+    g.innerHTML = list.map(function(c){
+      var m = [];
+      if(c.product_value) m.push("🎁 Worth <b>"+esc(money(c.product_value))+"</b>");
+      if(c.ends_on) m.push("🗓 Till <b>"+esc(date(c.ends_on))+"</b>");
+      if((c.cities||[]).length) m.push("📍 "+esc(c.cities.slice(0,2).join(", ")));
+      if(c.platforms) m.push("📱 "+esc(String(c.platforms).split(",")[0]));
+      return '<div class="card" tabindex="0" role="button" data-id="'+esc(c.campaign_id)+'">'
+        + '<div><h3>'+esc(c.name||"Campaign")+'</h3><div class="brand">'+esc(c.brand||"")+'</div></div>'
+        + '<div>'+badge(c)+'</div>'
+        + (m.length?'<div class="meta">'+m.map(function(x){ return "<span>"+x+"</span>"; }).join("")+'</div>':'')
+        + (c.brief?'<div class="snip">'+esc(c.brief)+'</div>':'')
+        + '<div class="foot"><span class="more">View details →</span><button class="btn sm" data-apply="'+esc(c.campaign_id)+'">Apply</button></div></div>';
+    }).join("");
+    g.querySelectorAll("[data-apply]").forEach(function(b){ b.onclick = function(e){ e.stopPropagation(); apply(b.getAttribute("data-apply")); }; });
+    g.querySelectorAll("[data-id]").forEach(function(card){
+      var o = function(){ var c = ALL.filter(function(x){ return String(x.campaign_id)===card.getAttribute("data-id"); })[0]; if(c) openPop(c); };
+      card.onclick = o; card.onkeydown = function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); o(); } };
+    });
+  }
+  function openPop(c){
+    closePop();
+    var row = function(k,v){ return v ? '<div class="row"><span>'+k+'</span><span>'+v+'</span></div>' : ""; };
+    var txt = function(k,v){ return v ? '<div class="sec">'+k+'</div><div class="pre">'+esc(v)+'</div>' : ""; };
+    var b = c.video_brief || {}, t = c.terms || {}, k = kind(c), noProd = k==="paid";
+    var tags = [].concat(c.hashtags||[], (c.mentions||[]).map(function(m){ return String(m).charAt(0)==="@" ? m : "@"+m; }));
+    var refs = b.reference_links ? String(b.reference_links).split(/[\s,]+/).filter(Boolean).map(function(u){ return /^https?:\/\//i.test(u) ? '<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>' : esc(u); }).join("<br>") : "";
+    var terms = [];
+    if(t.content_days) terms.push("Post within <b>"+esc(t.content_days)+" days</b> of "+(noProd?"getting the video brief":"receiving the product"));
+    terms.push("Submit your video in the app first — post <b>only after the brand approves it</b>");
+    if(t.ad_rights_months) terms.push("Ad rights: the brand may use your content for <b>"+esc(t.ad_rights_months)+" month"+(t.ad_rights_months>1?"s":"")+"</b>");
+    if(t.collab_rights) terms.push("Add the brand as an Instagram <b>collaborator</b> on the post");
+    if(k && k!=="barter") terms.push("<b>Paid:</b> your fee is agreed with you one to one and written into your own contract");
+    terms.push("Disclose the collaboration (Paid partnership / #ad) as per ASCI");
+    var who = (c.who_can_apply||[]).filter(Boolean);
+    var html = '<div class="pop-box" role="dialog" aria-modal="true" aria-label="'+esc(c.name||"Campaign")+'">'
+      + '<div class="pop-head"><div style="min-width:0"><h2>'+esc(c.name||"Campaign")+'</h2><div class="brand">'+esc(c.brand||"")+'</div><div style="margin-top:8px">'+badge(c)+'</div></div><button class="x" id="popX" aria-label="Close">✕</button></div>'
+      + '<div class="pop-body">'
+      + '<div class="sec">Overview</div>'
+      + row("Product", c.product ? esc(c.product) : "")
+      + row("Product value", c.product_value ? esc(money(c.product_value)) : "")
+      + row("Product link", c.product_link ? '<a href="'+esc(c.product_link)+'" target="_blank" rel="noopener">Open</a>' : "")
+      + row("Category", c.category ? esc(c.category) : "")
+      + row("Platforms", c.platforms ? esc(c.platforms) : "")
+      + row("Deliverables", c.deliverables_text ? esc(c.deliverables_text) : "")
+      + row("Cities", (c.cities||[]).length ? esc(c.cities.join(", ")) : "")
+      + row("Languages", (c.languages||[]).length ? esc(c.languages.join(", ")) : "")
+      + row("Dates", (c.starts_on||c.ends_on) ? esc((c.starts_on?date(c.starts_on):"Now")+" – "+(c.ends_on?date(c.ends_on):"open")) : "")
+      + row("Creators needed", c.creators_needed ? esc(c.creators_needed) : "")
+      + '<div class="sec">Who can apply</div>'
+      + (who.length ? '<ul class="list">'+who.map(function(w){ return "<li>"+esc(w)+"</li>"; }).join("")+'</ul>' : '<div class="pre">Open to every creator — no extra criteria.</div>')
+      + txt("Brief", c.brief)
+      + (tags.length ? '<div class="sec">Hashtags &amp; mentions</div><div class="tags">'+tags.map(function(x){ return "<span>"+esc(x)+"</span>"; }).join("")+'</div>' : "")
+      + txt("What to shoot", b.what_to_shoot) + txt("Key messages", b.key_messages) + txt("Do's", b.dos) + txt("Don'ts", b.donts) + txt("Caption to use", b.caption)
+      + (refs ? '<div class="sec">References</div><div class="pre">'+refs+'</div>' : "")
+      + txt("Posting note", b.posting_note)
+      + '<div class="sec">Terms</div><ul class="list">'+terms.map(function(x){ return "<li>"+x+"</li>"; }).join("")+'</ul>'
+      + '</div>'
+      + '<div class="pop-foot"><span class="muted">Next: sign in with your WhatsApp number and connect Instagram. We check the criteria against your profile before you apply.</span><button class="btn" id="popApply">Apply now</button></div></div>';
+    var p = document.createElement("div"); p.className = "pop"; p.id = "pop"; p.innerHTML = html; document.body.appendChild(p);
+    document.body.style.overflow = "hidden";
+    p.onclick = function(e){ if(e.target===p) closePop(); };
+    document.getElementById("popX").onclick = closePop;
+    document.getElementById("popApply").onclick = function(){ apply(c.campaign_id); };
+    try{ history.replaceState({}, "", "#c=" + c.campaign_id); }catch(e){}
+  }
+  function closePop(){ var p = document.getElementById("pop"); if(p){ p.remove(); document.body.style.overflow = ""; try{ history.replaceState({}, "", location.pathname + location.search); }catch(e){} } }
+  document.addEventListener("keydown", function(e){ if(e.key==="Escape") closePop(); });
+
+  document.querySelectorAll("#bar [data-f]").forEach(function(b){ b.onclick = function(){ F = b.getAttribute("data-f"); document.querySelectorAll("#bar [data-f]").forEach(function(x){ x.classList.toggle("on", x===b); }); paint(); }; });
+  var tq = null; document.getElementById("q").oninput = function(e){ clearTimeout(tq); tq = setTimeout(function(){ Q = e.target.value.trim().toLowerCase(); paint(); }, 200); };
+
+  sb.auth.getSession().then(function(r){ if(r && r.data && r.data.session){ var s = document.getElementById("signIn"); s.textContent = "Open my account"; } }, function(){});
+  sb.rpc("explore_campaigns").then(function(r){
+    if(r.error){ document.getElementById("grid").innerHTML = '<div class="empty" style="grid-column:1/-1">Couldn\'t load the campaigns right now — please refresh in a moment.</div>'; return; }
+    ALL = r.data || []; paint();
+    var h = /#c=([0-9a-f-]{36})/i.exec(location.hash||""); if(h){ var c = ALL.filter(function(x){ return String(x.campaign_id)===h[1]; })[0]; if(c) openPop(c); }
+  }, function(){ document.getElementById("grid").innerHTML = '<div class="empty" style="grid-column:1/-1">Couldn\'t load the campaigns right now — please refresh in a moment.</div>'; });
+})();
+</script>
+</body>
+</html>

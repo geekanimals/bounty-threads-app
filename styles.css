@@ -2394,3 +2394,11 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .ci-elig-ic{font-weight:800;min-width:14px}.ci-elig-row.ok .ci-elig-ic{color:#047857}.ci-elig-row.no .ci-elig-ic{color:#b42318}
 .ci-terms{margin:4px 0 0;padding-left:18px;line-height:1.55;font-size:13.5px}.ci-terms li{margin:2px 0}
 .mc-full .ci-pop-sec{margin-top:12px}
+/* Creator upload — the message that will go out */
+.cu-brand{max-width:560px}
+.cu-msg{margin:4px 0 12px}
+.cu-msg-h{font-size:13px;font-weight:600;margin-bottom:6px}
+.cu-msg-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.cu-msg-c{border:1px solid var(--line);border-radius:12px;padding:10px;min-width:0}
+.cu-msg-t{font-size:12px;font-weight:600;margin-bottom:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.cu-msg-b{font-size:13px;line-height:1.5;background:var(--soft,#f6f7f9);border-radius:10px;padding:10px;overflow-wrap:anywhere}

@@ -591,7 +591,7 @@
   }
   function renderOpen(all){
     var el=document.getElementById("opsOpenBody"); if(!el) return;
-    _openCache=all||[]; paintChips();
+    _openCache=all||[]; paintChips(); setTimeout(applyHandoff, 60);
     var full=_openCache.filter(matchFilter), pages=Math.max(1,Math.ceil(full.length/PAGE_SIZE));
     if(CAMP_PAGE>pages) CAMP_PAGE=pages;
     var list=full.slice((CAMP_PAGE-1)*PAGE_SIZE, CAMP_PAGE*PAGE_SIZE);
@@ -621,6 +621,15 @@
       var open=function(){ var c=_openCache.filter(function(x){ return String(x.campaign_id)===card.getAttribute("data-cdetail"); })[0]; if(c) openCampaignPopup(c); };
       card.onclick=open; card.onkeydown=function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); open(); } };
     });
+  }
+  // came from the public /explore.html page (tapped Apply before signing in) → open that campaign once
+  function applyHandoff(){
+    var id=null; try{ id=localStorage.getItem("geek_apply"); }catch(e){}
+    if(!id || !document.getElementById("opsOpenBody")) return;
+    try{ localStorage.removeItem("geek_apply"); }catch(e){}
+    var c=_openCache.filter(function(x){ return String(x.campaign_id)===String(id); })[0];
+    if(c) openCampaignPopup(c);
+    else if(window.gateToast) window.gateToast("That campaign isn't taking applications any more — here are the ones that are open.");
   }
   // ---- who can apply: the campaign's criteria checked against MY profile ----
   function eligListHtml(e){

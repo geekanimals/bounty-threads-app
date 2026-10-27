@@ -8215,14 +8215,17 @@ async function adminWaTemplates(){
 }
 // Super Admin → 🤖 WhatsApp bot (its own page in the sidebar)
 // 📥 Creator upload — creators not tied to a campaign: saved to the creator pool + discovery, invited to register
-let _cu = { head:null, rows:null, map:null, src:"", send:true, q:"", st:"all", list:null, busy:false, brand:"" };
+let _cu = { head:null, rows:null, map:null, src:"", send:true, q:"", st:"all", list:null, busy:false, brand:"", camp:"" };
 const CU_FIELDS = [["name","Name"],["handle","Instagram"],["phone","WhatsApp"],["email","Email"],["city","City"],["state","State"],["followers","Followers"],["category","Category"]];
 async function adminCreatorUpload(body){
   body.innerHTML = `<div class="card cu">
       <h3 style="margin-top:0">📥 Creator upload</h3>
-      <p class="muted" style="font-size:13px;margin:0 0 12px">Add creators who aren't on a campaign yet. Each new creator is saved to your creator pool (and Discovery), gets a WhatsApp + email to <b>register on Geek OS</b>, a reminder on day 2 and day 5, and shows as <b>Joined</b> the moment they register. Anyone already on Geek OS is matched by WhatsApp, email or Instagram and isn't messaged.</p>
+      <p class="muted" style="font-size:13px;margin:0 0 12px">Add creators who aren't on Geek OS yet. Each one is saved to your creator pool (and Discovery) and gets a WhatsApp + email inviting them to <b>explore the live campaigns</b> at <a href="/explore.html" target="_blank" rel="noopener">/explore.html</a> — no login needed to look. When they tap <b>Apply</b> they sign in with WhatsApp, connect Instagram, and the normal campaign flow carries on. They show as <b>Joined</b> the moment they sign in. Anyone already on Geek OS is matched by WhatsApp, email or Instagram and isn't messaged.</p>
       <label class="cu-brand">For brand <span class="muted" style="font-weight:400">(optional — the register message names the brand, and they show on its Brand CRM page)</span>
         <select id="cuBrand"><option value="">— No brand —</option></select></label>
+      <label class="cu-brand">Not selected for campaign <span class="muted" style="font-weight:400">(optional — the message tells them they weren't selected for this campaign, and invites them to explore the others. Everyone in the sheet who hasn't joined gets it.)</span>
+        <select id="cuCamp"><option value="">— None (just an invite) —</option></select></label>
+      <div class="cu-msg" id="cuMsg"></div>
       <div class="cu-in">
         <label class="btn sm">📄 Choose Excel / CSV<input type="file" id="cuFile" accept=".xlsx,.xls,.csv,.txt,.ods" hidden></label>
         <input id="cuLink" placeholder="…or paste a Google Sheet link" style="flex:1;min-width:200px"><button class="btn sm ghost" id="cuLinkGo">Load sheet</button>
@@ -8242,8 +8245,27 @@ async function adminCreatorUpload(body){
   const st = document.getElementById("cuSt"); st.value = _cu.st; st.onchange = ()=>{ _cu.st = st.value; cuLoadList(); };
   loadBrandCache().then(list=>{ const sel = document.getElementById("cuBrand"); if(!sel) return;
     sel.innerHTML = `<option value="">— No brand —</option>${list.map(b=>`<option value="${esc(b.brand_id)}"${_cu.brand===b.brand_id?" selected":""}>${esc(b.name)}</option>`).join("")}`;
-    sel.onchange = ()=>{ _cu.brand = sel.value; cuLoadList(); }; });
-  cuPaintPrev(); cuLoadList();
+    sel.onchange = ()=>{ _cu.brand = sel.value; cuLoadList(); cuMsgPreview(); }; });
+  sb.rpc("admin_campaigns", { p_status: null }).then(r=>{ const sel = document.getElementById("cuCamp"); if(!sel || r.error) return;
+    sel.innerHTML = `<option value="">— None (just an invite) —</option>${(r.data||[]).map(c=>`<option value="${esc(c.id)}"${_cu.camp===c.id?" selected":""}>${esc(c.name)}</option>`).join("")}`;
+    sel.onchange = ()=>{ _cu.camp = sel.value; cuMsgPreview(); cuPaintPrev(); }; }, ()=>{});
+  cuMsgPreview(); cuPaintPrev(); cuLoadList();
+}
+// the exact message that will go out (WhatsApp template + email), shown before sending
+async function cuMsgPreview(){
+  const box = document.getElementById("cuMsg"); if(!box) return;
+  const { data:t, error } = await sb.schema("api").rpc("creator_upload_preview", { p_brand: _cu.brand || null, p_campaign: _cu.camp || null }).then(r=>r, e=>({error:e}));
+  if(!document.getElementById("cuMsg")) return;
+  if(error){ box.innerHTML = `<div class="muted" style="font-size:12px">${esc(error.message||String(error))}${/creator_upload_preview/.test(error.message||"")?" — run <code>supabase db push</code>.":""}</div>`; return; }
+  const link = `${location.origin}/explore.html`, wa = String(t.whatsapp_text||"").replace("{{link}}", link);
+  const fmt = x => esc(x).replace(/\*([^*\n]+)\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
+  box.innerHTML = `<div class="cu-msg-h">Message that will be sent <span class="muted" style="font-weight:400">(sample name “Asha” — each creator gets their own first name)</span></div>
+    <div class="cu-msg-g"><div class="cu-msg-c"><div class="cu-msg-t">💬 WhatsApp · template <code>${esc(t.template)}</code> · Utility
+        ${t.template_live?`<span class="tag ok">Approved</span>`:`<span class="tag warn">Waiting for Meta</span>`}</div>
+      <div class="cu-msg-b">${fmt(wa)}<div class="muted" style="font-size:11px;margin-top:6px">Reply STOP to stop WhatsApp updates</div></div>
+      ${t.template_live?"":`<div class="muted" style="font-size:11px;margin-top:4px">Until Meta approves it, WhatsApp goes on the approved <code>geek_join_invite</code> template (same link to the live campaigns).</div>`}</div>
+    <div class="cu-msg-c"><div class="cu-msg-t">✉️ Email · ${esc(t.subject||"")}</div>
+      <div class="cu-msg-b">${fmt(t.email_text||"")}<div style="margin-top:8px"><span class="btn sm" style="pointer-events:none">Explore campaigns</span></div></div></div></div>`;
 }
 function cuSetRows(rows, src){
   if(!rows || !rows.length) throw new Error("No rows found in that file.");
@@ -8266,7 +8288,7 @@ function cuPaintPrev(){
       <div class="cu-map">${CU_FIELDS.map(([k,l])=>`<label>${esc(l)}<select data-cumap="${k}"><option value="">—</option>${_cu.head.map((h,i)=>`<option value="${i}"${_cu.map[k]===i?" selected":""}>${esc(h)}</option>`).join("")}</select></label>`).join("")}</div>
       <div style="overflow-x:auto;max-height:340px"><table class="tbl"><thead><tr><th>#</th>${CU_FIELDS.map(f=>`<th>${esc(f[1])}</th>`).join("")}</tr></thead><tbody>
         ${R.slice(0,200).map((x,i)=>`<tr${x.phone||x.email||x.handle?"":` style="opacity:.45"`}><td>${i+1}</td>${CU_FIELDS.map(([k])=>`<td>${esc(k==="handle"?String(x[k]).replace(/^https?:\/\/(www\.)?instagram\.com\//i,"@").replace(/\/$/,""):x[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
-      <div class="cu-go"><label class="cp-check"><input type="checkbox" id="cuSend"${_cu.send?" checked":""}> Send the “register on Geek OS” message now (WhatsApp + email)</label>
+      <div class="cu-go"><label class="cp-check"><input type="checkbox" id="cuSend"${_cu.send?" checked":""}> Send the ${_cu.camp?"“not selected — explore more campaigns”":"“explore live campaigns”"} invite now (WhatsApp + email)</label>
         <button class="btn" id="cuUp"${ok&&!_cu.busy?"":" disabled"}>${_cu.busy?"Adding…":`Add ${ok} creator${ok===1?"":"s"}`}</button><button class="btn ghost sm" id="cuClear">Clear</button></div></div>`;
   box.querySelectorAll("[data-cumap]").forEach(s=> s.onchange = ()=>{ if(s.value==="") delete _cu.map[s.dataset.cumap]; else _cu.map[s.dataset.cumap] = +s.value; cuPaintPrev(); });
   document.getElementById("cuSend").onchange = e=>{ _cu.send = e.target.checked; };
@@ -8274,11 +8296,11 @@ function cuPaintPrev(){
   document.getElementById("cuUp").onclick = async ()=>{
     const rows = _cu.rows.map(cuRow).filter(x=> x.phone || x.email || x.handle); if(!rows.length) return;
     _cu.busy = true; cuPaintPrev();
-    const { data, error } = await sb.schema("api").rpc("creator_upload", { p_rows: rows, p_send: _cu.send, p_brand: _cu.brand || null }).then(r=>r, e=>({error:e}));
+    const { data, error } = await sb.schema("api").rpc("creator_upload_v2", { p_rows: rows, p_send: _cu.send, p_brand: _cu.brand || null, p_campaign: _cu.camp || null }).then(r=>r, e=>({error:e}));
     _cu.busy = false;
     if(error){ cuPaintPrev(); document.getElementById("cuErr").textContent = error.message||String(error); return; }
     const d = data||{}; _cu.rows = null; cuPaintPrev();
-    gateToast(`✓ ${d.added||0} new creator${d.added===1?"":"s"} added${d.invited?` · ${d.invited} invited to register`:""}${d.updated?` · ${d.updated} already uploaded (details updated)`:""}${d.already_on_geek?` · ${d.already_on_geek} already on Geek OS`:""}${d.skipped?` · ${d.skipped} skipped`:""}`);
+    gateToast(`✓ ${d.added||0} new creator${d.added===1?"":"s"} added${d.invited?` · ${d.invited} invited to explore campaigns`:""}${d.updated?` · ${d.updated} already uploaded (details updated)`:""}${d.already_on_geek?` · ${d.already_on_geek} already on Geek OS`:""}${d.skipped?` · ${d.skipped} skipped`:""}`);
     cuLoadList();
   };
 }
@@ -10049,6 +10071,13 @@ async function bootOS(){
   ]);
   if(window.__profileGate && !GATE_OPEN_PAGES.includes(currentPage)) currentPage = "mediakit";
   // came from a campaign invite → whatever is still pending first (profile), then the campaign itself
+  // tapped Apply on the public /explore.html page → Open Campaigns, where that campaign pops open (after the profile, if pending)
+  let __exploreApply = null; try{ __exploreApply = localStorage.getItem("geek_apply"); }catch(e){}
+  if(new URLSearchParams(location.search).get("apply")) history.replaceState({}, "", location.pathname);
+  if(__exploreApply && currentRole==="creator" && !window.__inviteGo && !window.__osBooted){
+    currentPage = window.__profileGate ? "mediakit" : "opencampaigns";
+    if(window.__profileGate) setTimeout(()=> gateToast("🎯 Finish connecting your profile — then open Open Campaigns and the campaign you picked opens right away."), 900);
+  }
   if(window.__inviteGo && !window.__osBooted && !new URLSearchParams(location.search).get("go")){
     currentPage = window.__profileGate ? "profile" : "mycampaigns";
     const nm = window.__inviteGo.campaign ? `“${window.__inviteGo.campaign}”` : "Your campaign";
