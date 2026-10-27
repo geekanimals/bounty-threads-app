@@ -1709,20 +1709,20 @@ function openCampaignModal(existing, preset){
       <label>Reference links<input name="vb_refs" maxlength="600" value="${esc(vb.reference_links||'')}" placeholder="https://instagram.com/reel/…"></label></div>
       <label>Posting note <span class="muted" style="font-weight:400">(optional)</span><input name="vb_note" maxlength="400" value="${esc(vb.posting_note||'')}" placeholder="Post between 6–9 pm, tag the brand in the story"></label>
       <div class="cm-sec">✅ Eligibility — who can apply <span class="muted" style="font-weight:400;font-size:12px">— creators see these, and can apply / be invited only if they match every one</span></div>
-      <div class="mf-row"><label>Min followers<input name="ip_min" type="number" min="0" value="${esc(ip.min_followers??'')}" placeholder="10000"></label>
-      <label>Max followers<input name="ip_max" type="number" min="0" value="${esc(ip.max_followers??'')}" placeholder="500000"></label></div>
-      <div class="mf-row"><label>Location(s)<input name="ip_loc" value="${esc(list(ip.locations))}" placeholder="Delhi NCR, Mumbai"></label>
+      <div class="mf-row"><label>Min followers<input name="ip_min" inputmode="numeric" value="${esc(ip.min_followers??'')}" placeholder="Any (e.g. 1000)"></label>
+      <label>Max followers<input name="ip_max" inputmode="numeric" value="${esc(ip.max_followers??'')}" placeholder="Any (e.g. 500000)"></label></div>
+      <div class="mf-row"><label>Location(s)<input name="ip_loc" value="${esc(list(ip.locations))}" placeholder="Any (e.g. Jaipur, Mumbai)"></label>
       <label>Gender<select name="ip_gender">${kv([["","Any"],["female","Female"],["male","Male"],["other","Other"]], ip.gender||"")}</select></label></div>
-      <div class="mf-row"><label>Category<input name="ip_cat" value="${esc(list(ip.categories))}" placeholder="Beauty, Lifestyle"></label>
-      <label>Avg engagement (min %)<input name="ip_eng" type="number" min="0" max="100" step="0.1" value="${esc(ip.min_engagement??'')}" placeholder="2.5"></label></div>
-      <div class="mf-row"><label>Creator age from<input name="ip_age_min" type="number" min="13" max="90" value="${esc(ip.age_min??'')}" placeholder="18"></label>
-      <label>Creator age to<input name="ip_age_max" type="number" min="13" max="90" value="${esc(ip.age_max??'')}" placeholder="35"></label></div>
+      <div class="mf-row"><label>Category<input name="ip_cat" value="${esc(list(ip.categories))}" placeholder="Any (e.g. Beauty, Lifestyle)"></label>
+      <label>Avg engagement (min %)<input name="ip_eng" inputmode="decimal" value="${esc(ip.min_engagement??'')}" placeholder="Any (e.g. 2.5)"></label></div>
+      <div class="mf-row"><label>Creator age from<input name="ip_age_min" inputmode="numeric" value="${esc(ip.age_min??'')}" placeholder="Any (e.g. 18)"></label>
+      <label>Creator age to<input name="ip_age_max" inputmode="numeric" value="${esc(ip.age_max??'')}" placeholder="Any (e.g. 35)"></label></div>
       <div class="mf-row"><label>Pet<select name="ip_pet">${kv([["","Any"],["yes","Must have a pet"],["no","No pet"]], ip.pet||"")}</select></label>
-      <label>Pet type<input name="ip_pet_type" value="${esc(ip.pet_type||'')}" placeholder="e.g. dog, cat"></label></div>
+      <label>Pet type<input name="ip_pet_type" value="${esc(ip.pet_type||'')}" placeholder="Any (e.g. dog, cat)"></label></div>
       <div class="mf-row"><label>Married / unmarried<select name="ip_marital">${kv([["","Any"],["married","Married"],["single","Unmarried"]], ip.marital||"")}</select></label>
       <label>Open to barter<select name="ip_barter">${kv([["","Any"],["yes","Must be open to barter"]], ip.barter||"")}</select></label></div>
       <label>Audience notes <span class="muted" style="font-weight:400">(team only — not checked)</span><input name="ip_aud" value="${esc(ip.audience_notes||'')}" placeholder="e.g. 18–34, 60% female, metro India"></label>
-      <div class="muted" style="font-size:12px;margin-top:-2px">A creator must meet <b>every</b> field you fill in here to apply — anyone who doesn't sees exactly which one doesn't match. Leave a field empty to allow anyone.</div>
+      <div class="muted" style="font-size:12px;margin-top:-2px">A creator must meet <b>every</b> field you fill in here to apply — anyone who doesn't sees exactly which one doesn't match. Type <b>Any</b> (or leave it empty) to allow everyone for that field.</div>
       <div class="auth-err" id="cmErr"></div>
       <button class="btn" type="submit">${existing?'Save changes':'Launch Campaign'}</button>
     </form></div>`;
@@ -1830,10 +1830,23 @@ function openCampaignModal(existing, preset){
     const pl = f.get("product_link");
     if(pl && !/^https?:\/\//i.test(pl)){ err.textContent = "Product link must start with https://"; return; }
     const ideal = {};
+    // eligibility: "Any" / empty = everyone; anything else must be a proper number
+    const isAny = v => /^\s*(any|anyone|all|everyone|no limit|-)?\s*$/i.test(String(v||""));
+    for(const [k,lbl,lo,hi] of [["ip_min","Min followers",0,1e10],["ip_max","Max followers",0,1e10],["ip_eng","Avg engagement",0,100],["ip_age_min","Creator age from",13,90],["ip_age_max","Creator age to",13,90]]){
+      const v = String(f.get(k)||"").replace(/[,\s]/g,"");
+      if(isAny(v)){ f.set(k, ""); continue; }
+      const n = parseFloat(v);
+      if(!/^\d+(\.\d+)?$/.test(v) || n<lo || n>hi){ err.textContent = `${lbl}: write a number${hi<=100?` between ${lo} and ${hi}`:""}, or Any.`; return; }
+      f.set(k, k==="ip_min" && n===0 ? "" : String(n));   // "at least 0 followers" = anyone
+    }
+    if(isAny(f.get("ip_pet_type"))) f.set("ip_pet_type", "");
+    if(isAny(f.get("ip_cat")) || csv(f.get("ip_cat")).some(x=> isAny(x))) f.set("ip_cat", "");
     if(num(f.get("ip_min"))!=null) ideal.min_followers = num(f.get("ip_min"));
     if(num(f.get("ip_max"))!=null) ideal.max_followers = num(f.get("ip_max"));
     if(ideal.min_followers!=null && ideal.max_followers!=null && ideal.max_followers < ideal.min_followers){ err.textContent = "Max followers must be more than min followers."; return; }
-    if(csv(f.get("ip_loc")).length) ideal.locations = csv(f.get("ip_loc"));
+    // Location "Any" is saved as ["Any"] so the campaign's own cities aren't used as a rule either
+    if(csv(f.get("ip_loc")).some(x=> isAny(x))) ideal.locations = ["Any"];
+    else if(csv(f.get("ip_loc")).length) ideal.locations = csv(f.get("ip_loc"));
     if(f.get("ip_gender")) ideal.gender = f.get("ip_gender");
     if(csv(f.get("ip_cat")).length) ideal.categories = csv(f.get("ip_cat"));
     if(num(f.get("ip_eng"))!=null) ideal.min_engagement = num(f.get("ip_eng"));
