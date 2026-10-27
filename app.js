@@ -1329,7 +1329,7 @@ function campaignCardsHtml(list){
       ${(c.start_date||c.end_date)?`<div class="muted" style="font-size:13px">🗓 ${esc(c.start_date)||"—"} → ${esc(c.end_date)||"—"}</div>`:""}
       <div class="bar" style="margin-top:8px" data-cprog="${esc(c.id)}" title="How far the approved creators are: contract → courier → video → every post up"><span style="width:${prog}%"></span></div>
       <div class="camp-foot"><span class="muted" data-cprog="${esc(c.id)}" data-creators="${creators}">${esc(campProgLine(c))}</span>
-      <span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini-btn" data-opencamp="${esc(c.id)}">Open</button><button class="mini-btn" data-bpcamp="${esc(c.id)}">🔁 Process</button><button class="mini-btn" data-bkcamp="${esc(c.id)}">📥 Bulk upload</button><button class="mini-btn" data-invcamp="${esc(c.id)}">🎯 Invite</button><button class="mini-btn ghost" data-editcamp="${esc(c.id)}">Edit</button></span></div></div>`;
+      <span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini-btn" data-opencamp="${esc(c.id)}">Open</button><button class="mini-btn ghost" data-editcamp="${esc(c.id)}">Edit</button></span></div></div>`;
   }).join("");
 }
 
@@ -1583,6 +1583,38 @@ const MAX_CAMP_FILE = 10*1024*1024;
 
 // Campaign status is just Draft → Live → Completed. "Completed" is offered only for a campaign whose end date has
 // passed (to add an old campaign); live ones complete themselves after the end date. Older words map onto these.
+// ✨ read the brief / video brief and pull out who the brand wants (city, gender, followers, age, married, pet)
+const ELIG_CITIES = ["Delhi","New Delhi","Delhi NCR","Mumbai","Navi Mumbai","Thane","Bengaluru","Bangalore","Hyderabad","Chennai","Kolkata","Pune","Ahmedabad",
+  "Jaipur","Lucknow","Chandigarh","Indore","Gurugram","Gurgaon","Noida","Ghaziabad","Kochi","Goa","Surat","Bhopal","Nagpur","Patna","Kanpur","Ludhiana","Coimbatore",
+  "Visakhapatnam","Vadodara","Dehradun","Guwahati","Bhubaneswar","Ranchi","Raipur","Mysuru","Mysore","Udaipur","Jodhpur","Amritsar","Varanasi","Agra","Nashik",
+  "Mangaluru","Mangalore","Thiruvananthapuram","Madurai","Vijayawada","Rajkot","Srinagar","Jammu","Shimla","Siliguri","Aurangabad","Kota","Ajmer","Meerut","Allahabad","Prayagraj"];
+function eligFromBrief(text){
+  const t = String(text||""), lo = t.toLowerCase(), out = {};
+  const kn = (n, u)=>{ n = parseFloat(String(n).replace(/,/g,"")); u = String(u||"").toLowerCase();
+    return Math.round(n * (u==="k" ? 1e3 : (u==="l"||u.startsWith("lakh")||u.startsWith("lac")) ? 1e5 : u==="m" ? 1e6 : 1)); };
+  // followers: "10k-50k followers", "min 5k followers", "1,000+ followers", "under 100k followers"
+  let m = lo.match(/(\d[\d,.]*)\s*(k|l|lakh|lac|m)?\s*(?:-|–|to)\s*(\d[\d,.]*)\s*(k|l|lakh|lac|m)?\s*\+?\s*followers?/);
+  if(m){ out.min_followers = kn(m[1], m[2]||m[4]); out.max_followers = kn(m[3], m[4]); }
+  else if((m = lo.match(/(?:under|below|up to|upto|less than|max(?:imum)?)\s*(\d[\d,.]*)\s*(k|l|lakh|lac|m)?\s*followers?/))) out.max_followers = kn(m[1], m[2]);
+  else if((m = lo.match(/(\d[\d,.]*)\s*(k|l|lakh|lac|m)?\s*\+?\s*(?:or more\s*)?followers?/))) out.min_followers = kn(m[1], m[2]);
+  // age: "age 18-30", "18 to 25 years", "25+ years old"
+  if((m = lo.match(/(?:age[d]?\s*(?:group)?\s*:?\s*)?(\d{2})\s*(?:-|–|to)\s*(\d{2})\s*(?:yrs?|years?|y\/o)?/)) && (/age|yrs?|years?|y\/o/.test(m[0]) || /age/.test(lo))){
+    const a = +m[1], b = +m[2]; if(a>=13 && b<=90 && a<b){ out.age_min = a; out.age_max = b; } }
+  // gender
+  const fem = /\b(female|women|woman|girls?|ladies|moms?|mothers?|mommy|she\/her)\b/.test(lo), mal = /\b(male|men|man|boys?|dads?|fathers?|he\/him)\b/.test(lo);
+  if(fem && !mal) out.gender = "female"; else if(mal && !fem) out.gender = "male";
+  // married / unmarried
+  if(/\b(unmarried|single)\b/.test(lo)) out.marital = "single"; else if(/\b(married|couples?|newly ?weds?)\b/.test(lo)) out.marital = "married";
+  // pet
+  if((m = lo.match(/\b(dog|cat|pet)\s*(?:parents?|owners?|lovers?|moms?|dads?)\b/))){ out.pet = "yes"; if(m[1]!=="pet") out.pet_type = m[1]; }
+  // city — only when the brief says WHERE the creators should be ("based in", "from", "creators in", "location:")
+  const seg = []; const re = /(?:based (?:in|out of)|located in|creators? (?:in|from)|influencers? (?:in|from)|from|cit(?:y|ies)\s*:|locations?\s*:)\s*([^.\n;]{2,80})/gi; let r;
+  while((r = re.exec(t))) seg.push(r[1]);
+  const cities = [];
+  seg.forEach(x=> ELIG_CITIES.forEach(c=>{ if(new RegExp("\\b"+c.replace(/ /g,"\\s+")+"\\b","i").test(x) && !cities.includes(c)) cities.push(c); }));
+  if(cities.length) out.locations = cities.filter(c=> !(c==="Delhi" && cities.includes("Delhi NCR")) && !(c==="Delhi" && cities.includes("New Delhi")));
+  return out;
+}
 function campStatusPick(st){ return ({Sourcing:"Live","In Production":"Live",Approval:"Approval"})[st] || st || "Live"; }
 function campStatusOptions(cur, endDate){
   const today = new Date().toISOString().slice(0,10), ended = !!endDate && endDate < today;
@@ -1709,6 +1741,7 @@ function openCampaignModal(existing, preset){
       <label>Reference links<input name="vb_refs" maxlength="600" value="${esc(vb.reference_links||'')}" placeholder="https://instagram.com/reel/…"></label></div>
       <label>Posting note <span class="muted" style="font-weight:400">(optional)</span><input name="vb_note" maxlength="400" value="${esc(vb.posting_note||'')}" placeholder="Post between 6–9 pm, tag the brand in the story"></label>
       <div class="cm-sec">✅ Eligibility — who can apply <span class="muted" style="font-weight:400;font-size:12px">— creators see these, and can apply / be invited only if they match every one</span></div>
+      <div class="muted" id="cmEligAuto" style="font-size:12px;margin:-2px 0 6px"></div>
       <div class="mf-row"><label>Min followers<input name="ip_min" inputmode="numeric" value="${esc(ip.min_followers??'')}" placeholder="Any (e.g. 1000)"></label>
       <label>Max followers<input name="ip_max" inputmode="numeric" value="${esc(ip.max_followers??'')}" placeholder="Any (e.g. 500000)"></label></div>
       <div class="mf-row"><label>Location(s)<input name="ip_loc" value="${esc(list(ip.locations))}" placeholder="Any (e.g. Jaipur, Mumbai)"></label>
@@ -1787,6 +1820,26 @@ function openCampaignModal(existing, preset){
   ["deliv_other","ct_days","ct_months","ct_collab","ct_black","pay_due_days"].forEach(n=>{ const x = form.querySelector(`[name=${n}]`); if(x){ x.addEventListener("input", paintDeliv); x.addEventListener("change", paintDeliv); } });
   [tagBox, mentBox].forEach(b=>{ b.addEventListener("change", paintDeliv); b.addEventListener("keyup", paintDeliv); b.addEventListener("focusout", ()=> setTimeout(paintDeliv, 0)); });
   paintDeliv();
+  { const srcs = ["brief","vb_shoot","vb_msg","vb_dos","vb_donts","vb_note"].map(n=> form.querySelector(`[name=${n}]`)).filter(Boolean);
+    const put = (name, v, label, show)=>{ const el = form.querySelector(`[name=${name}]`); if(!el || v==null || v==="" ) return null;
+      if(String(el.value||"").trim() && el.dataset.auto!=="1") return null;       // never overwrite what the team typed
+      el.value = v; el.dataset.auto = "1"; el.dispatchEvent(new Event("change",{bubbles:true})); return `${label}: ${show!=null?show:v}`; };
+    const readBrief = ()=>{
+      const e = eligFromBrief(srcs.map(x=> x.value).join("\n")), got = [];
+      got.push(put("ip_loc", (e.locations||[]).join(", "), "Location"));
+      got.push(put("ip_gender", e.gender, "Gender", e.gender && e.gender[0].toUpperCase()+e.gender.slice(1)));
+      got.push(put("ip_min", e.min_followers, "Min followers", e.min_followers!=null?fmtNum(e.min_followers):null));
+      got.push(put("ip_max", e.max_followers, "Max followers", e.max_followers!=null?fmtNum(e.max_followers):null));
+      got.push(put("ip_age_min", e.age_min, "Age from")); got.push(put("ip_age_max", e.age_max, "Age to"));
+      got.push(put("ip_marital", e.marital, "Married / unmarried", e.marital==="single"?"Unmarried":e.marital?"Married":null));
+      got.push(put("ip_pet", e.pet, "Pet", e.pet?"Must have a pet":null)); got.push(put("ip_pet_type", e.pet_type, "Pet type"));
+      const note = document.getElementById("cmEligAuto"), g = got.filter(Boolean);
+      if(note && g.length) note.innerHTML = `✨ Filled from the brief — <b>${esc(g.join(" · "))}</b>. Check it; change or type <b>Any</b> if it's wrong.`;
+    };
+    srcs.forEach(x=> x.addEventListener("blur", readBrief));
+    // a value the team types themselves is theirs — the brief never changes it again
+    ["ip_loc","ip_gender","ip_min","ip_max","ip_age_min","ip_age_max","ip_marital","ip_pet","ip_pet_type"].forEach(n=>{ const el = form.querySelector(`[name=${n}]`);
+      if(el) el.addEventListener("input", ()=>{ el.dataset.auto = "0"; }); }); }
   const endIn = form.querySelector("input[name=end_date]"), stSel = document.getElementById("cmStatus");
   if(endIn && stSel) endIn.addEventListener("change", ()=>{ const cur = stSel.value, ended = endIn.value && endIn.value < new Date().toISOString().slice(0,10);
     stSel.innerHTML = campStatusOptions(ended && cur==="Live" ? "Completed" : (!ended && cur==="Completed" ? "Live" : cur), endIn.value); });
@@ -9818,11 +9871,11 @@ function confirmChange(what, detail){
   });
 }
 // every status button / step dropdown the team uses goes through the question first (creators never see it)
-const CC_CLICK = { "data-apvsign":"Approve this signup", "data-apvsignno":"Decline this signup", "data-apvcamp":"Approve this campaign",
-  "data-apvcampno":"Send this campaign back as a draft", "data-apvok":"Approve this video", "data-apvdel":"Mark the parcel as delivered — the video brief goes out right away",
-  "data-apvmk":"Approve this application", "data-apvmkno":"Decline this application", "data-papprove":"Approve this creator", "data-pdecline":"Decline this creator",
-  "data-bpscreen":"Mark as meets the brief", "data-bpreject":"Mark as not a fit", "data-bpsend":"Add to the brand's list", "data-bpbrand":"Brand confirmed",
-  "data-bpbrandno":"Brand passed", "data-bpcontract":"Send the contract", "data-bpdeliv":"Mark the parcel as delivered — the video brief goes out right away",
+const CC_CLICK = { "data-apvsign":"Approve this signup", "data-apvcamp":"Approve this campaign",
+  "data-apvok":"Approve this video", "data-apvdel":"Mark the parcel as delivered — the video brief goes out right away",
+  "data-apvmk":"Approve this application", "data-papprove":"Approve this creator", 
+  "data-bpscreen":"Mark as meets the brief", "data-bpsend":"Add to the brand's list", "data-bpbrand":"Brand confirmed",
+  "data-bpcontract":"Send the contract", "data-bpdeliv":"Mark the parcel as delivered — the video brief goes out right away",
   "data-bpapprove":"Approve this video", "data-acgo":"Put this campaign Live", "data-deliver":"Mark the shipment as delivered" };
 const CC_CHANGE = { "data-bkset":"Move this creator to", "data-hubset":"Move this creator to", "data-acstatus":"Change the campaign status to" };
 function ccIsTeam(){ const r = window.Auth && Auth.profile && Auth.profile.role; return !!r && r!=="creator"; }
