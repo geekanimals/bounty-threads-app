@@ -8260,10 +8260,9 @@ async function cuMsgPreview(){
   const link = `${location.origin}/explore.html`, wa = String(t.whatsapp_text||"").replace("{{link}}", link);
   const fmt = x => esc(x).replace(/\*([^*\n]+)\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
   box.innerHTML = `<div class="cu-msg-h">Message that will be sent <span class="muted" style="font-weight:400">(sample name “Asha” — each creator gets their own first name)</span></div>
-    <div class="cu-msg-g"><div class="cu-msg-c"><div class="cu-msg-t">💬 WhatsApp · template <code>${esc(t.template)}</code> · Utility
-        ${t.template_live?`<span class="tag good">Approved</span>`:`<span class="tag warn">Waiting for Meta</span>`}</div>
+    <div class="cu-msg-g"><div class="cu-msg-c"><div class="cu-msg-t">💬 WhatsApp · template <code>${esc(t.wa_template||t.template)}</code> · Utility <span class="tag good">Approved</span></div>
       <div class="cu-msg-b">${fmt(wa)}<div class="muted" style="font-size:11px;margin-top:6px">Reply STOP to stop WhatsApp updates</div></div>
-      ${t.template_live?"":`<div class="muted" style="font-size:11px;margin-top:4px">Until Meta approves it, WhatsApp goes on the approved <code>geek_join_invite</code> template (same link to the live campaigns).</div>`}</div>
+      ${t.template_live?"":`<div class="muted" style="font-size:11px;margin-top:4px">The “not selected” template <code>${esc(t.template)}</code> is waiting for Meta — until it's approved, this message goes (same link). The email already says “not selected”.</div>`}</div>
     <div class="cu-msg-c"><div class="cu-msg-t">✉️ Email · ${esc(t.subject||"")}</div>
       <div class="cu-msg-b">${fmt(t.email_text||"")}<div style="margin-top:8px"><span class="btn sm" style="pointer-events:none">Explore campaigns</span></div></div></div></div>`;
 }
