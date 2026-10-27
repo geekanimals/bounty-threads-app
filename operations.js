@@ -476,7 +476,7 @@
     var sb2=document.getElementById("opsSendBrand"); if(sb2) sb2.onclick=function(){ api("send_shortlist_to_brand",{p_campaign:sb2.getAttribute("data-camp")}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); };
     // funnel: brand confirm/decline
     document.querySelectorAll("#opsDetail [data-brand-ok]").forEach(function(b){ b.onclick=function(){ api("brand_decide_participation",{p_participation:b.getAttribute("data-brand-ok"),p_confirm:true,p_reason:null}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
-    document.querySelectorAll("#opsDetail [data-brand-no]").forEach(function(b){ b.onclick=function(){ var reason=prompt("Reason for declining this creator:")||""; if(!reason) return; api("brand_decide_participation",{p_participation:b.getAttribute("data-brand-no"),p_confirm:false,p_reason:reason}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
+    document.querySelectorAll("#opsDetail [data-brand-no]").forEach(function(b){ b.onclick=async function(){ var pk = window.openReasonModal ? await window.openReasonModal("The brand passed — tell the creator why") : null; var reason = pk ? pk.message : (prompt("Reason for declining this creator (sent to them):")||""); if(!reason) return; api("brand_decide_participation",{p_participation:b.getAttribute("data-brand-no"),p_confirm:false,p_reason:reason}).then(function(r){ if(r.error){alert(r.error.message||r.error);} else openCampaignDetail(campId); }); }; });
     // funnel: issue contract
     document.querySelectorAll("#opsDetail [data-issue]").forEach(function(b){ b.onclick=function(){ openIssueContractModal(b.getAttribute("data-issue"), campId); }; });
     // phase 4: manual delivery status
@@ -602,7 +602,9 @@
     // compact cards — tap a card for every detail in a pop-up (Apply works from both)
     el.innerHTML='<div class="ci-cgrid">'+list.map(function(c){
       var act=c.my_stage ? spill(c.my_stage)
-        : '<button class="btn sm" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Apply</button>';
+        : (c.eligibility&&c.eligibility.eligible===false
+            ? '<button class="btn sm ghost" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'" title="See which criteria don\'t match">Not eligible</button>'
+            : '<button class="btn sm" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Apply</button>');
       var meta=[];
       if(c.product_value) meta.push('🎁 Worth <b>₹'+esc(Number(c.product_value).toLocaleString("en-IN"))+'</b>');
       if(c.ends_on) meta.push('🗓 Till <b>'+fmtDate(c.ends_on)+'</b>');
@@ -619,6 +621,50 @@
       var open=function(){ var c=_openCache.filter(function(x){ return String(x.campaign_id)===card.getAttribute("data-cdetail"); })[0]; if(c) openCampaignPopup(c); };
       card.onclick=open; card.onkeydown=function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); open(); } };
     });
+  }
+  // ---- who can apply: the campaign's criteria checked against MY profile ----
+  function eligListHtml(e){
+    var cr=(e&&e.criteria)||[]; if(!cr.length) return '<div class="muted">Open to every creator — no extra criteria.</div>';
+    return '<div class="ci-elig">'+cr.map(function(x){ return '<div class="ci-elig-row '+(x.ok?'ok':'no')+'"><span class="ci-elig-ic">'+(x.ok?'✓':'✗')+'</span><span><b>'+esc(x.need)+'</b><span class="muted"> · '+esc(x.have)+'</span></span></div>'; }).join("")+'</div>';
+  }
+  function eligPopup(name, e){
+    var old=document.getElementById("ciElig"); if(old) old.remove();
+    var no=((e&&e.criteria)||[]).filter(function(x){ return !x.ok; });
+    var fixable=no.some(function(x){ return /not in your profile|not set in your profile|no city|no categories|not connected/i.test(x.have||""); });
+    var ov=document.createElement("div"); ov.className="ci-pop"; ov.id="ciElig";
+    ov.innerHTML='<div class="ci-pop-box" role="alertdialog" aria-modal="true" aria-label="Not eligible">'
+      +'<div class="ci-pop-head"><div style="min-width:0"><h3>You are not eligible for this campaign</h3><div class="muted">'+esc(name||"")+'</div></div><button class="ci-pop-x" data-x aria-label="Close">✕</button></div>'
+      +'<div class="ci-pop-body"><p style="margin:0 0 10px">The brand requires the criteria below. Your profile doesn\'t match '+(no.length===1?'this one':'these')+':</p>'
+      +'<div class="ci-elig">'+no.map(function(x){ return '<div class="ci-elig-row no"><span class="ci-elig-ic">✗</span><span><b>'+esc(x.need)+'</b><br><span class="muted">'+esc(x.have)+'</span></span></div>'; }).join("")+'</div>'
+      +(fixable?'<div class="ci-hint" style="margin-top:10px">Some details are just missing from your profile — add them in <b>Creator Profile</b> and check again.</div>':'')
+      +'<div class="muted" style="font-size:12.5px;margin-top:10px">Other campaigns may suit you — new ones open every week.</div></div>'
+      +'<div class="ci-pop-foot"><button class="btn ghost" data-x>Close</button>'+(fixable?'<button class="btn" data-prof>Update my profile</button>':'')+'</div></div>';
+    document.body.appendChild(ov);
+    var close=function(){ ov.remove(); };
+    ov.addEventListener("click",function(ev){ if(ev.target===ov) close(); });
+    ov.querySelectorAll("[data-x]").forEach(function(b){ b.onclick=close; });
+    var pb=ov.querySelector("[data-prof]"); if(pb) pb.onclick=function(){ close(); var cp=document.getElementById("ciPop"); if(cp) cp.remove(); document.body.style.overflow="";
+      if(typeof currentPage!=="undefined" && typeof renderShell==="function"){ currentPage="profile"; renderShell(); } };
+  }
+  // the whole brief the team entered (video brief, caption, tags, references, posting note) + terms
+  function fullBriefHtml(c){
+    var b=c.video_brief||{}, t=c.terms||{}, out='';
+    var line=function(k,v){ return v?'<div class="ci-pop-sec">'+k+'</div><div style="white-space:pre-wrap;line-height:1.55">'+esc(v)+'</div>':''; };
+    var vb=line('What to shoot', b.what_to_shoot) + line('Key messages', b.key_messages) + line("Do's", b.dos) + line("Don'ts", b.donts)
+      + line('Caption to use', b.caption)
+      + (b.reference_links?'<div class="ci-pop-sec">References</div><div>'+String(b.reference_links).split(/[\s,]+/).filter(Boolean).map(function(u){ return /^https?:\/\//i.test(u)?'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>':esc(u); }).join('<br>')+'</div>':'')
+      + line('Posting note', b.posting_note);
+    if(vb) out+='<div class="ci-pop-sec" style="font-size:13px">🎬 Video brief</div>'+vb;
+    var k=kindOf(c), noProd=k==='paid', terms=[];
+    if(t.content_days) terms.push('Post within <b>'+esc(t.content_days)+' days</b> of '+(noProd?'getting the video brief':'receiving the product'));
+    terms.push('Submit your video in the app first — post <b>only after the brand approves it</b>');
+    if(t.ad_rights_months) terms.push('Ad rights: the brand may use your content for <b>'+esc(t.ad_rights_months)+' month'+(t.ad_rights_months>1?'s':'')+'</b>; keep the posts live for that time');
+    if(t.collab_rights) terms.push('Add the brand as an Instagram <b>collaborator</b> on the post');
+    if(k!=='barter') terms.push('<b>Paid:</b> your fee is agreed with you one to one and written into your own contract');
+    if(t.blacklist_clause) terms.push('Not delivering after you '+(noProd?'sign':'receive the product')+' blocks your account'+(t.reship_clause&&!noProd?' and you must re-ship the product':''));
+    terms.push('Disclose the collaboration (Paid partnership / #ad) as per ASCI');
+    out+='<div class="ci-pop-sec">📜 Terms</div><ul class="ci-terms">'+terms.map(function(x){ return '<li>'+x+'</li>'; }).join("")+'</ul>';
+    return out;
   }
   function openCampaignPopup(c){
     var old=document.getElementById("ciPop"); if(old) old.remove();
@@ -642,9 +688,13 @@
       + (c.brief?'<div class="ci-pop-sec">Brief</div><div style="white-space:pre-wrap;line-height:1.55">'+esc(c.brief)+'</div>':'')
       + (tags.length?'<div class="ci-pop-sec">Must include in caption</div><div>'+esc(tags.join(" "))+'</div>':'')
       + ((c.attachments||[]).length?'<div class="ci-pop-sec">Files</div><div>'+(c.attachments||[]).map(function(a){ return '<a href="'+esc(safeLink(a.url))+'" target="_blank" rel="noopener">📎 '+esc(a.name||"file")+'</a>'; }).join("<br>")+'</div>':'')
+      + fullBriefHtml(c)
+      + '<div class="ci-pop-sec">✅ Who can apply</div>' + eligListHtml(c.eligibility)
       + '</div>'
       + '<div class="ci-pop-foot"><button class="btn ghost" id="ciPopClose">Close</button>'
-      + (c.my_stage?spill(c.my_stage):'<button class="btn" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Apply now</button>')+'</div></div>';
+      + (c.my_stage?spill(c.my_stage):(c.eligibility&&c.eligibility.eligible===false
+          ? '<button class="btn ghost" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Not eligible — see why</button>'
+          : '<button class="btn" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Apply now</button>'))+'</div></div>';
     var ov=document.createElement("div"); ov.className="ci-pop"; ov.id="ciPop"; ov.innerHTML=html;
     document.body.appendChild(ov); document.body.style.overflow="hidden";
     var close=function(){ ov.remove(); document.body.style.overflow=""; document.removeEventListener("keydown",esck); };
@@ -690,6 +740,10 @@
   }
   async function applyToCampaign(btn){
     var id=btn.getAttribute("data-apply"), name=btn.getAttribute("data-name")||"this campaign";
+    // every criterion the brand set must match before applying
+    var el=null; try{ var er=await apiCreator("my_campaign_eligibility",{p_campaign:id}); if(er && !er.error) el=er.data; }catch(_e){}
+    if(!el){ var cc=(_openCache||[]).filter(function(x){ return String(x.campaign_id)===String(id); })[0]; el=cc&&cc.eligibility; }
+    if(el && el.eligible===false){ eligPopup(name, el); return; }
     var prof=await pickApplyProfile(name); if(prof===undefined) return;
     btn.disabled=true; btn.textContent="Applying…";
     try{
@@ -700,7 +754,11 @@
       btn.textContent="Applied"+(prof?" as @"+prof:"");
       loadMyCampaigns(); if(typeof updateAlertsBadge==="function") updateAlertsBadge();
     }catch(e){
-      alert((e&&e.message)||e); btn.disabled=false; btn.textContent="Apply";
+      var msg=(e&&e.message)||String(e);
+      if(/not eligible/i.test(msg)){ var e2=null; try{ var r2=await apiCreator("my_campaign_eligibility",{p_campaign:id}); e2=r2&&r2.data; }catch(_x){}
+        if(e2 && e2.eligible===false) eligPopup(name, e2); else alert(msg); }
+      else alert(msg);
+      btn.disabled=false; btn.textContent="Apply";
     }
   }
   // live Instagram numbers for the creator's own posts (freshest source: the synced media list)
@@ -918,7 +976,8 @@
       + (c.brief?'<div class="mc-sec">Brief</div><div class="mc-text">'+esc(c.brief)+'</div>':'')
       + (c.deliverables_text?'<div class="mc-sec">What to make</div><div class="mc-text">'+esc(c.deliverables_text)+'</div>':'')
       + (tags.length?'<div class="mc-sec">Must include in your caption</div><div class="mc-tags">'+tags.map(function(t){ return '<span>'+esc(t)+'</span>'; }).join("")+'</div>':'')
-      + ((c.attachments||[]).length?'<div class="mc-sec">Files from the brand</div><div>'+(c.attachments||[]).map(function(a){ return '<a href="'+esc(safeLink(a.url))+'" target="_blank" rel="noopener">📎 '+esc(a.name||"file")+'</a>'; }).join("<br>")+'</div>':'');
+      + ((c.attachments||[]).length?'<div class="mc-sec">Files from the brand</div><div>'+(c.attachments||[]).map(function(a){ return '<a href="'+esc(safeLink(a.url))+'" target="_blank" rel="noopener">📎 '+esc(a.name||"file")+'</a>'; }).join("<br>")+'</div>':'')
+      + '<div class="mc-full">'+fullBriefHtml({ video_brief:null, terms:c.terms, campaign_type:c.campaign_type, _flow:c._flow, comp_type:c.comp_type })+'</div>';
     var delivHtml = dl.length && !(c.posts||[]).length ? '<div class="mc-dchips">'+dl.map(function(d){
           var s=DSTAT[d.status]||[d.status||'—','na'];
           return '<span class="mc-dchip"><b>'+esc(vlabel("content_formats",d.format))+(d.quantity>1?' ×'+d.quantity:'')+'</b><i class="ci-'+s[1]+'">'+esc(s[0])+'</i></span>'; }).join("")+'</div>' : '';

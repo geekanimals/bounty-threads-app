@@ -1708,7 +1708,7 @@ function openCampaignModal(existing, preset){
       <div class="mf-row"><label>Caption to use<input name="vb_caption" maxlength="600" value="${esc(vb.caption||'')}" placeholder="Best momos in town 🥟"></label>
       <label>Reference links<input name="vb_refs" maxlength="600" value="${esc(vb.reference_links||'')}" placeholder="https://instagram.com/reel/…"></label></div>
       <label>Posting note <span class="muted" style="font-weight:400">(optional)</span><input name="vb_note" maxlength="400" value="${esc(vb.posting_note||'')}" placeholder="Post between 6–9 pm, tag the brand in the story"></label>
-      <div class="cm-sec">Ideal influencer profile <span class="muted" style="font-weight:400;font-size:12px">— used to screen & discover creators; never shown to creators</span></div>
+      <div class="cm-sec">✅ Eligibility — who can apply <span class="muted" style="font-weight:400;font-size:12px">— creators see these, and can apply / be invited only if they match every one</span></div>
       <div class="mf-row"><label>Min followers<input name="ip_min" type="number" min="0" value="${esc(ip.min_followers??'')}" placeholder="10000"></label>
       <label>Max followers<input name="ip_max" type="number" min="0" value="${esc(ip.max_followers??'')}" placeholder="500000"></label></div>
       <div class="mf-row"><label>Location(s)<input name="ip_loc" value="${esc(list(ip.locations))}" placeholder="Delhi NCR, Mumbai"></label>
@@ -1721,8 +1721,8 @@ function openCampaignModal(existing, preset){
       <label>Pet type<input name="ip_pet_type" value="${esc(ip.pet_type||'')}" placeholder="e.g. dog, cat"></label></div>
       <div class="mf-row"><label>Married / unmarried<select name="ip_marital">${kv([["","Any"],["married","Married"],["single","Unmarried"]], ip.marital||"")}</select></label>
       <label>Open to barter<select name="ip_barter">${kv([["","Any"],["yes","Must be open to barter"]], ip.barter||"")}</select></label></div>
-      <label>Audience data<input name="ip_aud" value="${esc(ip.audience_notes||'')}" placeholder="e.g. 18–34, 60% female, metro India"></label>
-      <div class="muted" style="font-size:12px;margin-top:-2px">Matching creators must meet <b>every</b> field you fill in here — leave a field empty to allow anyone.</div>
+      <label>Audience notes <span class="muted" style="font-weight:400">(team only — not checked)</span><input name="ip_aud" value="${esc(ip.audience_notes||'')}" placeholder="e.g. 18–34, 60% female, metro India"></label>
+      <div class="muted" style="font-size:12px;margin-top:-2px">A creator must meet <b>every</b> field you fill in here to apply — anyone who doesn't sees exactly which one doesn't match. Leave a field empty to allow anyone.</div>
       <div class="auth-err" id="cmErr"></div>
       <button class="btn" type="submit">${existing?'Save changes':'Launch Campaign'}</button>
     </form></div>`;
@@ -2555,17 +2555,24 @@ function openReasonModal(title){
     m.innerHTML = `<div class="modal"><div class="modal-head"><strong>${esc(title||"Reason")}</strong><button class="icon-btn" id="rmClose">✕</button></div>
       <form id="reasonForm" class="modal-form">
         <label>Reason<select name="code" required><option value="">Pick a reason…</option>${reasons.map(r=>`<option value="${esc(r.code)}">${esc(r.label)}</option>`).join("")}</select></label>
-        <label>Note <span class="muted" style="font-weight:400">(optional — helps us match better next time)</span><textarea name="note" rows="2" maxlength="500"></textarea></label>
+        <label>Message to the creator <span class="muted" style="font-weight:400">— why they weren't selected</span><textarea name="note" rows="3" maxlength="400" required placeholder="e.g. The brand needs creators based in Jaipur for this campaign."></textarea></label>
+        <div class="muted" style="font-size:12px;margin-top:-4px">📨 Sent as it is on <b>WhatsApp</b>, by <b>email</b> and in the app: “You were not selected for this campaign. Reason: …”</div>
         <div class="auth-err" id="rmErr"></div>
-        <button class="btn" type="submit">Decline</button></form></div>`;
+        <button class="btn" type="submit">Decline &amp; send message</button></form></div>`;
     document.body.appendChild(m); m.classList.add("open");
+    // picking a reason fills in a ready message (edit it as you like)
+    { const sel = m.querySelector('select[name="code"]'), ta = m.querySelector('textarea[name="note"]'); let auto = "";
+      sel.onchange = ()=>{ const r = reasons.find(x=> x.code===sel.value); if(!r) return;
+        if(!ta.value.trim() || ta.value===auto){ auto = r.code==="other" ? "" : `${r.label}.`; ta.value = auto; } }; }
     const done = v=>{ m.remove(); resolve(v); };
     document.getElementById("rmClose").onclick = ()=> done(null);
     m.onclick = e=>{ if(e.target.id==="reasonModal") done(null); };
     document.getElementById("reasonForm").onsubmit = e=>{
       e.preventDefault(); const f = new FormData(e.target);
       if(!f.get("code")){ document.getElementById("rmErr").textContent = "Pick a reason."; return; }
-      done({ code:f.get("code"), note:String(f.get("note")||"").trim() });
+      const msg = String(f.get("note")||"").trim();
+      if(msg.length < 5){ document.getElementById("rmErr").textContent = "Write the message the creator will get."; return; }
+      done({ code:f.get("code"), note:msg, message:msg });
     };
   });
 }
@@ -2581,7 +2588,7 @@ function idealProfileHtml(ip){
     ["Pet", ip.pet==="yes" ? "Must have a pet"+(ip.pet_type?` (${ip.pet_type})`:"") : ip.pet==="no" ? "No pet" : ""],
     ["Marital status", ip.marital==="married" ? "Married" : ip.marital==="single" ? "Unmarried" : ""],
     ["Barter", ip.barter==="yes" ? "Must be open to barter" : ""], ["Audience", ip.audience_notes||""]].filter(r=>r[1]);
-  return `<div class="cd-block"><div class="cd-l">Ideal influencer</div><div class="cd-body">${rows.map(r=>`<div><b>${esc(r[0])}:</b> ${esc(r[1])}</div>`).join("")}
+  return `<div class="cd-block"><div class="cd-l">✅ Eligibility (who can apply)</div><div class="cd-body">${rows.map(r=>`<div><b>${esc(r[0])}:</b> ${esc(r[1])}</div>`).join("")}
     ${ip.min_followers!=null||(ip.locations||[]).length||(ip.categories||[]).length?`<button class="mini-btn" style="margin-top:8px" id="wsFindCreators">🔎 Find matching creators</button>`:""}</div></div>`;
 }
 document.addEventListener("click", e=>{
@@ -2973,6 +2980,7 @@ function csPagerHtml(d, pk, size){
 }
 function csWireCards(scope, opts){
   scope.querySelectorAll("[data-csinv]").forEach(b=> b.onclick = ()=> csInvite(b, opts));
+  if(opts && opts.campaign) csMarkEligibility(scope, opts.campaign.id);
   scope.querySelectorAll("[data-csprof]").forEach(b=> b.onclick = ()=> openDiscoveryCreator(_csRowsById[b.dataset.csprof] || { member_id:b.dataset.csprof }));
   scope.querySelectorAll("[data-cslive]").forEach(b=> b.onclick = async ()=>{ const h = b.dataset.cslive; b.disabled = true; b.textContent = "Fetching…";
     const { data:lk, error:le } = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h } }).then(r=>r, e=>({error:e}));
@@ -3452,6 +3460,17 @@ function csScoutSummary(d){
           avg_likes:p.avg_likes, bio:p.bio, city:p.city, _done:true, engagement: p.followers && p.avg_likes!=null ? Math.round(10000*((+p.avg_likes||0)+(+p.avg_comments||0))/p.followers)/100 : null }), {})).join("")}</div>` : "");
 }
 function kfmtN(n){ n = Number(n)||0; return n>=1e7 ? (n/1e6).toFixed(0)+"M" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e4 ? Math.round(n/1e3)+"K" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(Math.round(n)); }
+// invite from a campaign: only creators who meet the campaign's criteria — the others say why not
+async function csMarkEligibility(scope, campaignId){
+  const btns = [...scope.querySelectorAll("[data-csinv][data-csmid]")].filter(b=> b.dataset.csmid);
+  if(!btns.length || !campaignId) return;
+  const ids = [...new Set(btns.map(b=> b.dataset.csmid))];
+  const { data, error } = await sb.schema("api").rpc("campaign_eligibility_bulk", { p_campaign: campaignId, p_members: ids }).then(r=>r, e=>({ error:e }));
+  if(error || !data) return;
+  btns.forEach(b=>{ const e = data[b.dataset.csmid]; if(!e || e.eligible!==false) return;
+    const why = (e.unmet||[]).join(" · ");
+    b.outerHTML = `<span class="tag" title="${esc(why)}">Not eligible</span><div class="muted cs-noelig" style="font-size:11.5px;margin-top:4px">${esc(why)}</div>`; });
+}
 async function csInvite(b, opts){
   const handle = b.dataset.csinv, mid = b.dataset.csmid || null;
   if(!opts.campaign) return inviteFromDiscovery(handle, mid);
@@ -7001,7 +7020,7 @@ function wireBpActions(root, again){
   body.querySelectorAll("[data-bpsend]").forEach(b=> b.onclick = ()=> call("advance_participation", { p_participation:b.dataset.bpsend, p_to:"sent_to_brand", p_reason:"added to the brand's list" }, b, "📋 Add to the brand's list"));
   body.querySelectorAll("[data-bpbrand]").forEach(b=> b.onclick = ()=> call("brand_decide_participation", { p_participation:b.dataset.bpbrand, p_confirm:true, p_reason:null }, b, "✅ Brand confirmed"));
   body.querySelectorAll("[data-bpbrandno]").forEach(b=> b.onclick = async ()=>{
-    const r = (prompt("What did the brand say?")||"").trim(); if(!r) return;
+    const pick = await openReasonModal("The brand passed — tell the creator why"); if(!pick) return; const r = pick.message;
     call("brand_decide_participation", { p_participation:b.dataset.bpbrandno, p_confirm:false, p_reason:r }, b, "Brand passed"); });
   body.querySelectorAll("[data-bpcontract]").forEach(b=> b.onclick = ()=> call("bp_send_contract", { p_participation:b.dataset.bpcontract }, b, b.innerHTML));
   body.querySelectorAll("[data-bpclauses]").forEach(a=> a.onclick = e=>{ e.preventDefault(); openBpClauses(a.dataset.bpclauses); });
