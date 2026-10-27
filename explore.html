@@ -69,12 +69,50 @@
     .pop-foot{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
     .pop-foot .muted{font-size:12.5px;color:var(--muted);flex:1;min-width:200px}
     footer{color:var(--muted);font-size:12.5px;text-align:center;padding:10px 0 30px}
+    /* app-style sidebar: only Campaigns works without signing in — everything else goes to the WhatsApp sign-in */
+    .shell{display:flex;min-height:100vh}
+    .side{width:240px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:18px 12px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px}
+    .side .logo{padding:0 8px 14px}
+    .side .who{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:6px 10px 2px;text-transform:uppercase}
+    .nav{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:var(--ink);text-decoration:none;font-weight:500;font-size:14.5px;border:0;background:none;cursor:pointer;font-family:inherit;text-align:left;width:100%}
+    .nav:hover{background:var(--soft)}
+    .nav.on{background:linear-gradient(120deg,var(--brand),var(--brand-2));color:#fff}
+    .nav .lk{margin-left:auto;font-size:12px;opacity:.55}
+    .side .cta{margin-top:auto}
+    .main{flex:1;min-width:0}
+    header.top .wrap .mlogo{display:none}
+    @media (max-width:860px){
+      .shell{display:flex;flex-direction:column}
+      .main{display:contents}
+      header.top{order:1}.side{order:2}main.wrap{order:3;width:100%}footer{order:4}
+      .side{position:static;width:auto;height:auto;flex-direction:row;overflow-x:auto;padding:8px 12px;border-right:0;border-bottom:1px solid var(--line);gap:6px}
+      .side .logo,.side .who,.side .cta{display:none}
+      .nav{width:auto;white-space:nowrap;padding:7px 12px;font-size:13.5px;border:1px solid var(--line)}
+      .nav .lk{display:none}
+      header.top .wrap .mlogo{display:flex}
+    }
   </style>
 </head>
 <body>
+<div class="shell">
+  <nav class="side" aria-label="Geek OS">
+    <a class="logo" href="/explore.html"><img src="/assets/geek-icon-192.png" alt="">Geek OS</a>
+    <div class="who">Creator</div>
+    <button class="nav" data-login>🏠 Dashboard<span class="lk">🔒</span></button>
+    <button class="nav" data-login>📸 Media Kit<span class="lk">🔒</span></button>
+    <button class="nav" data-login>🧬 Creator Profile<span class="lk">🔒</span></button>
+    <button class="nav" data-login>📷 Instagram<span class="lk">🔒</span></button>
+    <button class="nav" data-login>💬 Messages<span class="lk">🔒</span></button>
+    <a class="nav on" href="/explore.html" aria-current="page">📣 Campaigns</a>
+    <button class="nav" data-login>🎯 My Campaigns<span class="lk">🔒</span></button>
+    <button class="nav" data-login>📊 Reports<span class="lk">🔒</span></button>
+    <button class="btn cta" data-login>Sign in with WhatsApp</button>
+  </nav>
+  <div class="main">
   <header class="top"><div class="wrap">
-    <a class="logo" href="/"><img src="/assets/geek-icon-192.png" alt="">Geek OS</a>
-    <a class="btn sm ghost" id="signIn" href="/app.html">Sign in</a>
+    <a class="logo mlogo" href="/explore.html"><img src="/assets/geek-icon-192.png" alt="">Geek OS</a>
+    <span></span>
+    <button class="btn sm ghost" id="signIn" data-login>Sign in</button>
   </div></header>
   <main class="wrap">
     <section class="hero">
@@ -88,7 +126,9 @@
     </div>
     <div class="grid" id="grid"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
   </main>
-  <footer>Geek OS by Geek Animals · <a href="/app.html">Creator sign-in</a></footer>
+  <footer>Geek OS by Geek Animals · <a href="/app.html?from=explore" data-login>Creator sign-in</a></footer>
+  </div>
+</div>
 <script>
 (function(){
   var URL_ = (window.GEEK_CONFIG && GEEK_CONFIG.supabaseUrl) || "https://edibibytqfrrxfztukpm.supabase.co";
@@ -103,6 +143,9 @@
   var money = function(v){ return "₹"+Number(v).toLocaleString("en-IN"); };
 
   function applyUrl(id){ return "/app.html?apply=" + encodeURIComponent(id); }
+  // anything other than looking at campaigns → the WhatsApp sign-in (then Instagram connect)
+  function toLogin(e){ if(e) e.preventDefault(); location.href = "/app.html?from=explore"; }
+  document.querySelectorAll("[data-login]").forEach(function(b){ b.addEventListener("click", toLogin); });
   function apply(id){ try{ localStorage.setItem("geek_apply", id); }catch(e){} location.href = applyUrl(id); }
 
   function match(c){

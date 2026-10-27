@@ -56,6 +56,11 @@ async function paintCampaignInvite(){
       🎯 To apply${nm?` to <b>${e(nm)}</b>`:""}, sign in with your WhatsApp number, then connect Instagram. The campaign opens for you right after.</div>`;
     return;
   }
+  if(box && !CAMPAIGN_INVITE && new URLSearchParams(location.search).get("from")==="explore"){
+    box.innerHTML = `<div class="auth-note" style="border:1px solid rgba(108,92,231,.35);background:rgba(108,92,231,.08);margin:4px 0 10px">
+      🔒 Sign in with your WhatsApp number to continue, then connect Instagram. You can keep <a href="/explore.html">exploring live campaigns</a> without signing in.</div>`;
+    return;
+  }
   if(!box || !CAMPAIGN_INVITE || !window.sb) return;
   try{
     const { data } = await sb.rpc("invite_preview", { p_token: CAMPAIGN_INVITE });
