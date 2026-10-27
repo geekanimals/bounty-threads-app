@@ -9,8 +9,35 @@ const SUPABASE_KEY = (window.GEEK_CONFIG && GEEK_CONFIG.supabaseKey) || "sb_publ
 // the live public domain (APP_URL on Vercel), else wherever the app is open
 window.appOrigin = function(){ return (window.GEEK_CONFIG && GEEK_CONFIG.appUrl) || location.origin; };
 
+// Which door this tab is (creator · agency · brand · Super Admin). Each door keeps its OWN login, so the same browser
+// can be signed in as a creator in one tab, a brand in another and the Super Admin in a third — signing in or out in
+// one never touches the others. The door comes from the link (?door=… or /brand, /agency, /superadmin) and is
+// remembered for this tab (sessionStorage), so refreshes, deep links and the Facebook / Instagram round trips keep it.
+const GEEK_DOOR = (function(){
+  let d = null;
+  try{
+    const q = (new URLSearchParams(location.search).get("door") || "").toLowerCase(), p = location.pathname.toLowerCase();
+    if(q === "superadmin" || /^\/superadmin\/?$/.test(p)) d = "admin";
+    else if(q === "agency" || /^\/agency\/?$/.test(p)) d = "owner";
+    else if(q === "brand" || /^\/brand\/?$/.test(p)) d = "brand";
+    else if(q === "creator") d = "creator";
+    if(d) sessionStorage.setItem("geek_tab_door", d); else d = sessionStorage.getItem("geek_tab_door");
+  }catch(e){}
+  return ["admin","owner","brand","creator"].includes(d) ? d : "creator";
+})();
+window.GEEK_DOOR = GEEK_DOOR;
+const SB_KEY_BASE = (function(){ try{ return "sb-" + new URL(SUPABASE_URL).hostname.split(".")[0] + "-auth-token"; }catch(e){ return "sb-auth-token"; } })();
+const SB_STORAGE_KEY = GEEK_DOOR === "creator" ? SB_KEY_BASE : SB_KEY_BASE + "-" + GEEK_DOOR;
+// one-time move: before doors had their own logins everything shared one; hand it to the first non-creator door that opens
+try{
+  if(SB_STORAGE_KEY !== SB_KEY_BASE && !localStorage.getItem(SB_STORAGE_KEY) && localStorage.getItem(SB_KEY_BASE) && !localStorage.getItem("geek_doors_split")){
+    localStorage.setItem(SB_STORAGE_KEY, localStorage.getItem(SB_KEY_BASE)); localStorage.removeItem(SB_KEY_BASE);
+  }
+  localStorage.setItem("geek_doors_split", "1");
+}catch(e){}
+
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true }
+  auth: { persistSession: true, autoRefreshToken: true, storageKey: SB_STORAGE_KEY }
 });
 
 // If a tab's login quietly lapsed (laptop slept, token couldn't refresh), the next call goes out WITHOUT a login

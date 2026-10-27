@@ -12,6 +12,7 @@
 //   <site>/brand       → Brand login         (/brand/index.html  → app.html?door=brand)
 //   <site>/superadmin  → Super Admin login
 const LOGIN_DOOR = (function(){
+  if(window.GEEK_DOOR) return window.GEEK_DOOR;      // auth.js: this tab's door (kept across refreshes and sign-in round trips)
   const q = (new URLSearchParams(location.search).get("door") || "").toLowerCase(), p = location.pathname.toLowerCase();
   if(q === "superadmin" || /^\/superadmin\/?$/.test(p)) return "admin";
   if(q === "agency" || /^\/agency\/?$/.test(p)) return "owner";
@@ -105,6 +106,19 @@ function loginView(role, mode){
     body = `<div id="cinvBanner"></div>
       <p class="auth-lead">Sign in with your <b>WhatsApp</b> number — no password. Next you connect Instagram and we build your media kit automatically.</p>
       ${otpFormHtml(false)}`;
+  } else if(role === "brand" && mode !== "wa" && mode !== "signup"){
+    // brand logins are made by the Geek Super Admin (Brand CRM → Login): Facebook Login for Business, or email & password
+    body = `<p class="auth-lead">Sign in to see your campaigns, approve creators and videos, and download reports.</p>
+      <button type="button" class="btn auth-submit auth-fb" id="fbBrandGo">${FB_BTN}</button>
+      <div class="muted" style="font-size:12px;margin:6px 0 2px;text-align:center">Use the Facebook account that manages your brand's Business Manager / Page.</div>
+      <div class="auth-or"><span>or with the login the Geek team sent you</span></div>
+      <form id="authForm" class="auth-form">
+        <label>Email<input name="email" type="email" placeholder="marketing@brand.com" required autocomplete="email"></label>
+        <label>Password<input name="password" type="password" placeholder="••••••••" minlength="6" required autocomplete="current-password"></label>
+        <div class="auth-err" id="authErr"></div>
+        <button class="btn auth-submit" type="submit">Sign in →</button>
+      </form>
+      <div class="muted" style="text-align:center;font-size:12px;margin-top:10px">No login yet? Ask your Geek account manager. · <a href="#" id="useWaBrand">Sign in with WhatsApp</a></div>`;
   } else if(role === "admin" || mode === "password"){
     body = `
       ${role==="admin" ? `<div class="auth-note">Super Admin sign-in. Only accounts approved as platform admins can enter.</div>`
@@ -165,6 +179,8 @@ function mountLogin(mode="login", role){
   paintCampaignInvite();
 
   const up = document.getElementById("usePassword"); if(up) up.onclick = e=>{ e.preventDefault(); mountLogin("password"); };
+  const fbg = document.getElementById("fbBrandGo"); if(fbg) fbg.onclick = ()=> startBrandFacebook(fbg);
+  const uwb = document.getElementById("useWaBrand"); if(uwb) uwb.onclick = e=>{ e.preventDefault(); mountLogin("wa"); };
   const bw = document.getElementById("backToWa"); if(bw) bw.onclick = e=>{ e.preventDefault(); mountLogin("login"); };
   const waDoor = document.getElementById("waDoorForm");
   if(waDoor){
@@ -221,7 +237,11 @@ function mountLogin(mode="login", role){
         await Auth.signIn({ email:f.get("email"), password:f.get("password") });
         if(_loginRole === "admin"){
           const { data:isAdmin } = await sb.rpc("is_platform_admin");
-          if(isAdmin !== true){ await sb.auth.signOut(); throw new Error("This account is not a Super Admin."); }
+          if(isAdmin !== true){ await sb.auth.signOut({ scope:"local" }); throw new Error("This account is not a Super Admin."); }
+        }
+        if(_loginRole === "brand"){
+          const { data:me } = await sb.from("members").select("role").eq("id", (await sb.auth.getUser()).data.user.id).maybeSingle();
+          if(me && me.role && me.role !== "brand"){ await sb.auth.signOut({ scope:"local" }); throw new Error("This isn't a brand login. Use the login page for your account type."); }
         }
       }
       if(window.Tracker) Tracker.security("login", { method: "password", door: _loginRole });
@@ -237,8 +257,41 @@ function mountLogin(mode="login", role){
 }
 
 // Gate: show OS only if session exists, else login.
+// back from "Continue with Facebook" on the brand door: code → brand-fb-login → one-time token → session
+async function finishBrandFacebook(){
+  const q = new URLSearchParams(location.search), st = q.get("state") || "", code = q.get("code");
+  if(!/^fbbrand:login:/.test(st)) return null;
+  history.replaceState({}, "", location.pathname);
+  let saved = ""; try{ saved = sessionStorage.getItem("geek_fb_brand") || ""; sessionStorage.removeItem("geek_fb_brand"); }catch(e){}
+  if(saved !== st.split(":")[2] + ":login") return "That Facebook sign-in expired — please try again.";
+  if(!code) return q.get("error_description") || "Facebook sign-in was cancelled.";
+  try{
+    const r = await sb.functions.invoke("brand-fb-login", { body:{ action:"login", code, redirect_uri: location.origin + "/app.html" } });
+    const m = (r.data && r.data.error) || (r.error && (typeof fnError==="function" ? await fnError(r.error) : (r.error.message||String(r.error))));
+    if(m) return m;
+    const v = await sb.auth.verifyOtp({ token_hash: r.data.token_hash, type:"magiclink" }); if(v.error) return v.error.message;
+    if(window.Tracker) Tracker.security("login", { method:"facebook", door:"brand" });
+    return "";
+  }catch(e){ return e.message || String(e); }
+}
+async function startBrandFacebook(btn){
+  const err = document.getElementById("authErr");
+  if(btn){ btn.disabled = true; btn.textContent = "Opening Facebook…"; }
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(12))).map(x=> x.toString(16).padStart(2,"0")).join("");
+  try{ sessionStorage.setItem("geek_fb_brand", nonce + ":login"); }catch(e){}
+  try{
+    const r = await sb.functions.invoke("brand-fb-login", { body:{ action:"url", redirect_uri: location.origin + "/app.html", state: "fbbrand:login:" + nonce } });
+    const m = (r.data && r.data.error) || (r.error && (typeof fnError==="function" ? await fnError(r.error) : (r.error.message||String(r.error))));
+    if(m) throw new Error(m);
+    location.href = r.data.url;
+  }catch(e){ if(err) err.textContent = e.message || String(e); if(btn){ btn.disabled = false; btn.innerHTML = FB_BTN; } }
+}
+const FB_BTN = `<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.7 4.5-4.7 1.3 0 2.7.2 2.7.2v3h-1.5c-1.5 0-2 .9-2 1.9V12h3.4l-.5 3.5h-2.9v8.4A12 12 0 0 0 24 12z"/></svg> Continue with Facebook`;
+
 async function startApp(){
   if(window.__igLoggingIn){ return; } // Instagram callback is finishing — don't flash login
+  const fbErr = await finishBrandFacebook();
+  if(fbErr){ mountLogin("login"); const e = document.getElementById("authErr"); if(e) e.textContent = fbErr; return; }
   const session = await Auth.currentSession();
   if(session){ bootOS(); }
   else { mountLogin(INVITE_TOKEN && !ADMIN_DOOR ? "signup" : "login"); }

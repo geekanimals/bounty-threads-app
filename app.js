@@ -3919,7 +3919,7 @@ function paintBrands(){
         <span data-l="Campaigns"><b>${esc(b.campaigns||0)}</b></span><span data-l="Active">${b.active?`<span class="tag good">${esc(b.active)} live</span>`:'<span class="muted">0</span>'}</span>
         <span data-l="Creators"><b>${esc(b.creators||0)}</b>${b.uploaded?` <span class="muted" title="Uploaded for this brand">+${esc(b.uploaded)}</span>`:""}</span><span data-l="Posted">${esc(b.posted||0)}</span>
         <span data-l="Login">${b.logins?`<span class="tag good">🔑 ${esc(b.logins)}</span>`:'<span class="muted">—</span>'}</span>
-        <span class="bc-acts">${window.__isAdmin?`<button class="mini-btn ghost" data-bcup="${esc(b.brand_id)}" title="Upload creators for this brand">📥 Upload creators</button>`:""}${window.__isAdmin?`<button class="mini-btn ghost" data-bclogin="${esc(b.brand_id)}" title="Make a login for the brand">🔑 Login</button>`:""}<button class="mini-btn" data-bcopen2="${esc(b.brand_id)}">Open →</button></span></div>`).join("")}</div>`
+        <span class="bc-acts">${window.__isAdmin?`<button class="mini-btn ghost" data-bcup="${esc(b.brand_id)}" title="Upload creators for this brand">📥 Upload creators</button>`:""}${window.__isAdmin?`<button class="mini-btn ghost" data-bclogin="${esc(b.brand_id)}" title="Make a login for the brand">🔑 Login</button><button class="mini-btn ghost" data-bcview="${esc(b.brand_id)}" data-bcviewname="${esc(b.name||"")}" title="See exactly what the brand login sees">👁 View as brand</button>`:""}<button class="mini-btn" data-bcopen2="${esc(b.brand_id)}">Open →</button></span></div>`).join("")}</div>`
     : `<div class="card"><div class="muted" style="padding:10px">${q?"No brand matches.":"No brands yet — ➕ Add brand, or create a campaign (its brand is added here)."}</div></div>`;
   body.querySelectorAll("[data-bcopen]").forEach(r=> r.onclick = e=>{ if(e.target.closest("button,a")) return; openBrandCrm(r.dataset.bcopen); });
   body.querySelectorAll("[data-bcopen2]").forEach(b=> b.onclick = ()=> openBrandCrm(b.dataset.bcopen2));
@@ -3964,7 +3964,7 @@ function openBrandForm(b, done){
 function openBrandLogin(brandId, after){
   const b = (_brandCache||[]).find(x=> x.brand_id===brandId) || {};
   const m = bpModal(`🔑 Login for ${b.name||"this brand"}`, `<form class="modal-form" id="blForm">
-      <p class="muted" style="font-size:13px;margin:0">Makes a Geek OS account for the brand's team. They sign in at the <b>Brand login</b> page and see only <b>${esc(b.name||"this brand")}</b>'s campaigns — creators, contracts, videos to approve, posts and reports.</p>
+      <p class="muted" style="font-size:13px;margin:0">Makes a Geek OS login for the brand's team. They sign in at the <b>Brand login</b> page (email &amp; password, or <b>Continue with Facebook</b> once they link it) and see only <b>${esc(b.name||"this brand")}</b>'s campaigns — progress, creators, videos and creators to approve, posts, analytics and downloadable reports. No phone numbers, emails, addresses or fees of creators. Use <b>👁 View as brand</b> to see exactly what they see.</p>
       <div class="mf-row"><label>Their email<input name="email" type="email" required maxlength="120" placeholder="marketing@brand.com"></label>
         <label>Name<input name="name" maxlength="80" placeholder="Brand team"></label></div>
       <div class="auth-err" id="blErr"></div><button class="btn" type="submit">Create login</button></form><div id="blOut"></div>`);
@@ -3980,7 +3980,7 @@ function openBrandLogin(brandId, after){
 function showBrandCreds(box, d, brandName){
   if(!box) return;
   const url = d.login_url || (location.origin + "/brand/");
-  const text = `Your Geek OS login for ${brandName||"your brand"}\nLink: ${url}\nEmail: ${d.email}\nPassword: ${d.password}\n(On the login page tap "Sign in with email & password". You can change the password after signing in.)`;
+  const text = `Your Geek OS login for ${brandName||"your brand"}\nLink: ${url}\nEmail: ${d.email}\nPassword: ${d.password}\n(Sign in with this email & password. In Settings you can change the password and link your Facebook business — after that "Continue with Facebook" signs you in.)`;
   box.innerHTML = `<div class="bl-creds"><div class="bl-ok">✓ Login ready — share it with the brand. The password is shown only now.</div>
       <div class="bpp-row"><span>Link</span><div><a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></div></div>
       <div class="bpp-row"><span>Email</span><div><b>${esc(d.email||"")}</b></div></div>
@@ -8261,7 +8261,7 @@ async function cuMsgPreview(){
   const fmt = x => esc(x).replace(/\*([^*\n]+)\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
   box.innerHTML = `<div class="cu-msg-h">Message that will be sent <span class="muted" style="font-weight:400">(sample name “Asha” — each creator gets their own first name)</span></div>
     <div class="cu-msg-g"><div class="cu-msg-c"><div class="cu-msg-t">💬 WhatsApp · template <code>${esc(t.template)}</code> · Utility
-        ${t.template_live?`<span class="tag ok">Approved</span>`:`<span class="tag warn">Waiting for Meta</span>`}</div>
+        ${t.template_live?`<span class="tag good">Approved</span>`:`<span class="tag warn">Waiting for Meta</span>`}</div>
       <div class="cu-msg-b">${fmt(wa)}<div class="muted" style="font-size:11px;margin-top:6px">Reply STOP to stop WhatsApp updates</div></div>
       ${t.template_live?"":`<div class="muted" style="font-size:11px;margin-top:4px">Until Meta approves it, WhatsApp goes on the approved <code>geek_join_invite</code> template (same link to the live campaigns).</div>`}</div>
     <div class="cu-msg-c"><div class="cu-msg-t">✉️ Email · ${esc(t.subject||"")}</div>
@@ -9247,6 +9247,7 @@ async function handleOAuthCallback(){
   const q = new URLSearchParams(location.search);
   const code = q.get("code"), state = q.get("state");
   if(!code || !state) return;
+  if(/^fbbrand:/.test(state)) return;            // brand Facebook sign-in / link — login.js and brand-portal.js finish it
   const expected = localStorage.getItem("geekos_oauth_state");
   const platform = (state.split(":")[0]) || "";
   // Clean the URL immediately so the code isn't left in the address bar.
@@ -9470,6 +9471,13 @@ function wireInviteForm(){
 }
 
 function renderContent(){
+  // a brand login gets its own portal: only its campaigns, approvals, reports and settings
+  if(window.BrandPortal && BrandPortal.handles(currentPage)){
+    $("#content").innerHTML = BrandPortal.render(currentPage); BrandPortal.mount(currentPage);
+    if(/^fbbrand:link:/.test(new URLSearchParams(location.search).get("state")||"")) BrandPortal.fbReturn();
+    return;
+  }
+  if(currentRole==="brand" && window.BrandPortal && !window.__isAdmin){ currentPage = "dashboard"; return renderContent(); }
   const fn = PAGES[currentPage] || (()=>renderPlaceholder(NAV_META[currentPage]?.label||"Module",""));
   $("#content").innerHTML = fn();
   const card = document.getElementById("openAiFromCard");
@@ -10322,3 +10330,7 @@ document.addEventListener("click", async e=>{
   setTimeout(check, 20000); setInterval(check, 5*60*1000);
   document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") check(); });
 })();
+
+// Brand CRM → 👁 View as brand (Super Admin preview of the brand portal)
+document.addEventListener("click", e=>{ const b = e.target.closest && e.target.closest("[data-bcview]"); if(!b || !window.BrandPortal) return;
+  e.preventDefault(); e.stopPropagation(); BrandPortal.preview(b.dataset.bcview, b.dataset.bcviewname); }, true);

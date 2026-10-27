@@ -58,11 +58,10 @@ const NAV_SECTIONS = {
     ["Workspace", ["settings"]]
   ],
   brand: [
-    ["Today",     ["dashboard","approvals","messages"]],
-    ["Campaigns", ["campaigns","barter","logistics","campaignops"]],
-    ["Creators",  ["discover","creators","irm"]],
-    ["Insights",  ["reports","listening"]],
-    ["Brand",     ["brandsetup","settings"]]
+    ["Today",     ["dashboard","approvals"]],
+    ["Campaigns", ["campaigns"]],
+    ["Insights",  ["reports"]],
+    ["Account",   ["settings"]]
   ]
 };
 // Super Admin: the platform first (straight into each admin tab), then their own workspace
