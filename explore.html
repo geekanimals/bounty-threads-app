@@ -169,7 +169,7 @@
         + '<div>'+badge(c)+'</div>'
         + (m.length?'<div class="meta">'+m.map(function(x){ return "<span>"+x+"</span>"; }).join("")+'</div>':'')
         + (c.brief?'<div class="snip">'+esc(c.brief)+'</div>':'')
-        + '<div class="foot"><span class="more">View details →</span><button class="btn sm" data-apply="'+esc(c.campaign_id)+'">Apply</button></div></div>';
+        + '<div class="foot"><span class="more">View details →</span>'+(c.applications_closed?'<span class="type">🔒 Applications closed</span>':'<button class="btn sm" data-apply="'+esc(c.campaign_id)+'">Apply</button>')+'</div></div>';
     }).join("");
     g.querySelectorAll("[data-apply]").forEach(function(b){ b.onclick = function(e){ e.stopPropagation(); apply(b.getAttribute("data-apply")); }; });
     g.querySelectorAll("[data-id]").forEach(function(card){
@@ -215,12 +215,12 @@
       + txt("Posting note", b.posting_note)
       + '<div class="sec">Terms</div><ul class="list">'+terms.map(function(x){ return "<li>"+x+"</li>"; }).join("")+'</ul>'
       + '</div>'
-      + '<div class="pop-foot"><span class="muted">Next: sign in with your WhatsApp number and connect Instagram. We check the criteria against your profile before you apply.</span><button class="btn" id="popApply">Apply now</button></div></div>';
+      + '<div class="pop-foot"><span class="muted">Next: sign in with your WhatsApp number and connect Instagram. We check the criteria against your profile before you apply.</span>'+(c.applications_closed?'<span class="type">🔒 Applications closed — the brand has picked its creators</span>':'<button class="btn" id="popApply">Apply now</button>')+'</div></div>';
     var p = document.createElement("div"); p.className = "pop"; p.id = "pop"; p.innerHTML = html; document.body.appendChild(p);
     document.body.style.overflow = "hidden";
     p.onclick = function(e){ if(e.target===p) closePop(); };
     document.getElementById("popX").onclick = closePop;
-    document.getElementById("popApply").onclick = function(){ apply(c.campaign_id); };
+    var pa = document.getElementById("popApply"); if(pa) pa.onclick = function(){ apply(c.campaign_id); };
     try{ history.replaceState({}, "", "#c=" + c.campaign_id); }catch(e){}
   }
   function closePop(){ var p = document.getElementById("pop"); if(p){ p.remove(); document.body.style.overflow = ""; try{ history.replaceState({}, "", location.pathname + location.search); }catch(e){} } }

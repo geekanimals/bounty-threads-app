@@ -602,6 +602,7 @@
     // compact cards — tap a card for every detail in a pop-up (Apply works from both)
     el.innerHTML='<div class="ci-cgrid">'+list.map(function(c){
       var act=c.my_stage ? spill(c.my_stage)
+        : c.applications_closed ? '<span class="tag">🔒 Applications closed</span>'
         : (c.eligibility&&c.eligibility.eligible===false
             ? '<button class="btn sm ghost" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'" title="See which criteria don\'t match">Not eligible</button>'
             : '<button class="btn sm" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Apply</button>');
@@ -701,7 +702,7 @@
       + '<div class="ci-pop-sec">✅ Who can apply</div>' + eligListHtml(c.eligibility)
       + '</div>'
       + '<div class="ci-pop-foot"><button class="btn ghost" id="ciPopClose">Close</button>'
-      + (c.my_stage?spill(c.my_stage):(c.eligibility&&c.eligibility.eligible===false
+      + (c.my_stage?spill(c.my_stage):c.applications_closed?'<span class="tag">🔒 Applications closed — the brand has picked its creators</span>':(c.eligibility&&c.eligibility.eligible===false
           ? '<button class="btn ghost" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Not eligible — see why</button>'
           : '<button class="btn" data-apply="'+esc(c.campaign_id)+'" data-name="'+esc(c.name||"")+'">Apply now</button>'))+'</div></div>';
     var ov=document.createElement("div"); ov.className="ci-pop"; ov.id="ciPop"; ov.innerHTML=html;
