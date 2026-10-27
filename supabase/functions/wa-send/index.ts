@@ -46,6 +46,11 @@ Deno.serve(async (req) => {
     const { data: consent } = await admin.from("wa_contacts").select("opt_in_at,opt_out_at,verified_at")
       .eq("phone_e164", conv.contact_phone_e164).maybeSingle();
     if (consent?.opt_out_at) return json({ error: "This contact has opted out of WhatsApp messages." }, 403);
+    // Super Admin paused this creator's messages (WhatsApp + email together)
+    {
+      const { data: paused } = await admin.schema("api").rpc("ops_contact_paused", { p_addr: conv.contact_phone_e164 });
+      if (paused === true) return json({ error: "Messages to this creator are paused by a Super Admin. Resume them on the creator to send.", paused: true }, 423);
+    }
 
     const openWindow = conv.session_expires_at && new Date(conv.session_expires_at) > new Date();
     if (!openWindow && !(consent?.verified_at && consent?.opt_in_at)) {

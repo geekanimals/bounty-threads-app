@@ -5556,7 +5556,7 @@ function bkListHtml(){
         <div class="bk-act">
           ${x.participation_id?`<button class="mini-btn" data-bkopen="${bkEsc(x.participation_id)}">Open</button>`:""}
           <label class="bk-chg" title="Where this creator is right now — updates on its own as they move; pick a later step to move them forward (never back)">${bkStatusSelect(`data-bkset="${bkEsc(x.invite_id)}"`, bkLiveStatus(x), "")}</label>
-          ${x.status!=="joined"?`<button class="mini-btn ghost" data-bkre="${bkEsc(x.invite_id)}">Resend</button><button class="mini-btn ghost" data-bkdel="${bkEsc(x.invite_id)}">Remove</button>`:""}
+          ${msgPauseBtn({ invite:x.invite_id, phone:x.phone, email:x.email })}${x.status!=="joined"?`<button class="mini-btn ghost" data-bkre="${bkEsc(x.invite_id)}">Resend</button><button class="mini-btn ghost" data-bkdel="${bkEsc(x.invite_id)}">Remove</button>`:""}
         </div></div>`; }).join("")}`;
 }
 function paintBulk(){
@@ -6104,6 +6104,7 @@ function ccInviteRowHtml(i, inCamp){
         <button class="btn sm ghost" data-ccinvpost="${esc(i.invite_id)}">📲 Add post / story + numbers</button>
         ${i.handle?`<button class="btn sm ghost" data-ccinvstats="${esc(i.invite_id)}">📊 Instagram analytics</button>`:""}
         <button class="btn sm ghost" data-ccinvlinks="${esc(i.invite_id)}">🔗 Links / courier</button>
+        ${msgPauseBtn({ invite:i.invite_id, part:i.participation_id||undefined, phone:i.phone, email:i.email })}
         <button class="btn sm ghost bp-del" data-ccinvdel="${esc(i.invite_id)}">🗑 Delete</button>
       </div></div>`:""}
   </div>`;
@@ -6322,7 +6323,7 @@ async function bpCreatorProfile(pid){
       <div class="bpp-card"><div class="bpp-sec">🧬 Profile, skills &amp; equipment</div><div id="bppPro"><div class="muted">Loading…</div></div></div>
       <div class="bpp-card" id="bppMoreCard" hidden><div class="bpp-sec">💼 Work &amp; preferences</div><div id="bppMore"></div></div>
       <div class="bpp-card"><div class="bpp-sec">📸 Instagram accounts</div><div id="bppAccts">${skel("list",1)}</div></div>
-      <div class="hub-foot"><button class="btn sm ghost" data-bpphub2="${esc(pid)}">🗂 Full history &amp; emails</button>${window.__isAdmin?`<button class="btn sm ghost bp-del" data-bpremove="${esc(pid)}">🗑 Delete from campaign</button>`:""}</div>
+      <div class="hub-foot"><button class="btn sm ghost" data-bpphub2="${esc(pid)}">🗂 Full history &amp; emails</button>${msgPauseBtn({ part:pid, phone:x.phone })}${window.__isAdmin?`<button class="btn sm ghost bp-del" data-bpremove="${esc(pid)}">🗑 Delete from campaign</button>`:""}</div>
     </div></div>`;
   document.body.appendChild(m); m.classList.add("open");
   document.getElementById("bpProfX").onclick = ()=> m.remove(); m.onclick = e=>{ if(e.target.id==="bpProf") m.remove(); };
@@ -6478,7 +6479,7 @@ function paintCreatorHub(){
       ${hubSetStepHtml(d)}
       <div id="hubPro"></div>
       ${window.__isAdmin?`<div class="bpp-sec">📈 Activity &amp; cookies</div><div id="hubAct"></div>`:""}
-      <div class="hub-foot"><button class="btn ghost sm" data-hubbp>🔁 Open in Barter process</button>${h?`<a class="btn ghost sm" href="/p.html?u=${encodeURIComponent(h)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}${window.__isAdmin?`<button class="btn ghost sm bp-del" data-bpremove="${esc(d.participation_id)}">🗑 Delete from campaign</button>`:""}</div>`;
+      <div class="hub-foot"><button class="btn ghost sm" data-hubbp>🔁 Open in Barter process</button>${h?`<a class="btn ghost sm" href="/p.html?u=${encodeURIComponent(h)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}${msgPauseBtn({ part:d.participation_id })}${window.__isAdmin?`<button class="btn ghost sm bp-del" data-bpremove="${esc(d.participation_id)}">🗑 Delete from campaign</button>`:""}</div>`;
   } else if(_hubC.tab==="timeline"){
     const T = d.timeline||[], A = d.alerts||[];
     const nice = x=> String(x||"").replace(/_/g," ");
@@ -6733,7 +6734,7 @@ function bpTrackerHtml(list){
             ${overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':""}
             ${x.blocked_at?`<span class="tag" style="background:rgba(239,68,68,.15);color:#dc2626">⛔ Blocked — call ${esc(x.phone||"them")}</span>`:""}
             ${x.stage==="published"&&x.feedback_requested_at?'<span class="tag warn">Waiting for creator feedback</span>':""}</div>
-          <div class="r-sub">${cr.followers!=null?fmtNum(cr.followers)+" followers · ":""}Step ${bpJIndex(x)+1}/${bpJourney().length} · ${esc(((bpJourney()[bpJIndex(x)]||[])[1])||"")}</div>
+          <div class="r-sub">${cr.followers!=null?fmtNum(cr.followers)+" followers · ":""}Step ${bpJIndex(x)+1}/${bpJourney().length} · ${esc(((bpJourney()[bpJIndex(x)]||[])[1])||"")}${msgPauseChip({ part:P, phone:x.phone })}</div>
           <div class="bp-stuck">${bpTurnChip(nx)} <b>${esc(nx.title)}</b>${nx.text?` <span class="muted">${esc(nx.text)}</span>`:""}</div></div>
         <span class="bp-rowacts">${nx.acts.filter(a=>a[2]).slice(0,1).map(a=> bpActBtn(a, P, true)).join("")}<button type="button" class="bp-chatbtn" data-bpchat="${esc(P)}" title="WhatsApp chat">💬</button></span>
         <span class="bp-caret">${open?"▲":"▼"}</span></div>
@@ -6790,7 +6791,7 @@ function bpTrackerHtml(list){
           ${!["dropped","rejected","completed","published","ineligible","brand_declined"].includes(x.stage)?`<button class="btn sm ghost" data-bpreassign="${esc(P)}">↪ Send product to someone else</button>`:""}
           ${window.__isAdmin&&!x.blacklisted&&!["completed"].includes(x.stage)?`<button class="btn sm ghost" data-bpblack="${esc(P)}" style="color:#dc2626;border-color:rgba(220,38,38,.45)">⛔ Blocklist</button>`:""}
 `)}
-          ${window.__isAdmin?`<button class="btn sm ghost bp-del" data-bpremove="${esc(P)}">🗑 Delete from campaign</button>`:""}
+          ${msgPauseBtn({ part:P, phone:x.phone })}${window.__isAdmin?`<button class="btn sm ghost bp-del" data-bpremove="${esc(P)}">🗑 Delete from campaign</button>`:""}
         </div>
         ${_wsMode&&!fail(x.stage)&&x.stage!=="completed"?`<div class="cc-stepbox" data-ccstep="${esc(P)}"></div>`:""}</div>`:""}</div>`; }).join("");
 }
@@ -7981,7 +7982,7 @@ async function adminCreatorProfile(member, row){
     bodyEl.innerHTML = `<div class="ac360-head">${pic}<div style="min-width:0;flex:1"><h3>${esc(name)}</h3>
         <div class="muted">${ig.username?`<a href="https://instagram.com/${encodeURIComponent(ig.username)}" target="_blank" rel="noopener">@${esc(ig.username)}</a> · ${kNum(ig.followers)} followers · `:""}${esc(mem.status||"")} · joined ${esc(fmtDate(mem.joined_at))}</div>
         <div class="ac360-prog">${D.identity_id?(req.complete?'<span class="tag good">✅ Profile complete — campaign ready</span>':`<span class="tag warn">Profile ${req.done??0}/${req.total??"?"}</span>`):'<span class="tag warn">No profile yet</span>'}
-          ${wa?`<a class="mini-btn ghost" href="https://wa.me/${esc(wa.replace(/\D/g,""))}" target="_blank" rel="noopener">💬 WhatsApp</a>`:""}${!synthetic&&con.email?`<a class="mini-btn ghost" href="mailto:${esc(con.email)}">✉️ Email</a>`:""}</div>
+          ${wa?`<a class="mini-btn ghost" href="https://wa.me/${esc(wa.replace(/\D/g,""))}" target="_blank" rel="noopener">💬 WhatsApp</a>`:""}${!synthetic&&con.email?`<a class="mini-btn ghost" href="mailto:${esc(con.email)}">✉️ Email</a>`:""}${msgPauseBtn({ member })}${msgPauseChip({ member })}</div>
         <div class="act-strip" id="ac360Strip"></div></div>
         <button class="mini-btn ghost au-del" id="ac360Del" title="Delete this user and all their data">🗑 Delete user</button>
         <button class="ci-pop-x" id="acX" aria-label="Close">✕</button></div>
@@ -9700,6 +9701,58 @@ function toastStack(){
   if(!wrap){ wrap = el("div",""); wrap.id = "alertToasts"; wrap.setAttribute("aria-live","polite"); document.body.appendChild(wrap); }
   return wrap;
 }
+/* ---------- ⏸ pause one creator's messages (Super Admin): ONE switch = WhatsApp + email together ---------- */
+let _msgPause = null, _msgPauseLoading = null;
+const mpDigits = v => String(v||"").replace(/\D/g,"").slice(-10);
+function msgPauseLoad(force){
+  if(!window.__isAdmin || !window.sb) return Promise.resolve(null);
+  if(_msgPause && !force) return Promise.resolve(_msgPause);
+  if(_msgPauseLoading && !force) return _msgPauseLoading;
+  _msgPauseLoading = sb.schema("api").rpc("admin_msg_pauses").then(r=>{
+    const d = (r && !r.error && r.data) || {}, rows = d.rows || [];
+    _msgPause = { m:new Set(rows.map(x=>x.member).filter(Boolean)), p:new Set(rows.map(x=>mpDigits(x.phone)).filter(Boolean)),
+                  e:new Set(rows.map(x=>String(x.email||"").toLowerCase()).filter(Boolean)),
+                  parts:new Set(d.participations||[]), inv:new Set(d.invites||[]), rows };
+    msgPaintAll(); return _msgPause;
+  }, ()=> null).finally(()=>{ _msgPauseLoading = null; });
+  return _msgPauseLoading;
+}
+function msgPausedFor(o){
+  const z = _msgPause; if(!z || !o) return false;
+  return !!((o.member && z.m.has(o.member)) || (o.part && z.parts.has(o.part)) || (o.invite && z.inv.has(o.invite))
+         || (o.phone && z.p.has(mpDigits(o.phone))) || (o.email && z.e.has(String(o.email).toLowerCase())));
+}
+function msgPauseBtn(o){
+  if(!window.__isAdmin) return "";
+  if(!_msgPause) msgPauseLoad();
+  const on = msgPausedFor(o);
+  return `<button type="button" class="btn sm ghost msg-pause${on?" on":""}" data-msgpause="${esc(JSON.stringify(o))}" title="One switch for WhatsApp + email">${on?"▶ Resume messages":"⏸ Pause messages"}</button>`;
+}
+function msgPauseChip(o){ return window.__isAdmin && msgPausedFor(o) ? ` <span class="tag warn" data-msgchip="${esc(JSON.stringify(o))}">⏸ Messages paused</span>` : (window.__isAdmin ? `<span data-msgchip="${esc(JSON.stringify(o))}"></span>` : ""); }
+function msgPaintAll(){
+  document.querySelectorAll("[data-msgpause]").forEach(b=>{ let o; try{ o = JSON.parse(b.dataset.msgpause); }catch(e){ return; }
+    const on = msgPausedFor(o); b.classList.toggle("on", on); b.textContent = on ? "▶ Resume messages" : "⏸ Pause messages"; });
+  document.querySelectorAll("[data-msgchip]").forEach(c=>{ let o; try{ o = JSON.parse(c.dataset.msgchip); }catch(e){ return; }
+    const on = msgPausedFor(o); c.className = on ? "tag warn" : ""; c.textContent = on ? "⏸ Messages paused" : ""; });
+}
+document.addEventListener("click", async e=>{
+  const b = e.target.closest && e.target.closest("[data-msgpause]"); if(!b) return;
+  e.preventDefault(); e.stopPropagation();
+  let o; try{ o = JSON.parse(b.dataset.msgpause); }catch(err){ return; }
+  const pause = !msgPausedFor(o);
+  const ok = typeof confirmChange==="function" ? await confirmChange(pause ? "Pause all messages to this creator?" : "Resume messages to this creator?",
+      pause ? "WhatsApp and email both stop for them — campaign updates, reminders, payment messages, the team chat and the bot. Login / OTP codes still go. Messages skipped while paused are not sent later."
+            : "WhatsApp and email both start again for them (Settings and the campaign's own switches still apply).")
+    : confirm(pause ? "Pause WhatsApp + email for this creator?" : "Resume WhatsApp + email for this creator?");
+  if(!ok) return;
+  b.disabled = true;
+  const { data, error } = await sb.schema("api").rpc("admin_msg_pause", { p: Object.assign({}, o, { on: pause }) }).then(r=>r, er=>({ error: er }));
+  b.disabled = false;
+  if(error){ gateToast("Couldn't change it: " + (error.message||error)); return; }
+  await msgPauseLoad(true);
+  gateToast(pause ? `⏸ Messages paused for ${(data&&data.name)||"this creator"} — WhatsApp + email${data&&data.stopped_now?` · ${data.stopped_now} waiting message${data.stopped_now>1?"s":""} stopped`:""}`
+                  : `▶ Messages resumed for ${(data&&data.name)||"this creator"}`);
+}, true);
 // notification text written for WhatsApp (*bold* / **bold**) → shown bold in the app, never as raw asterisks
 function escMd(t){ return esc(t==null?"":String(t)).replace(/\*\*([^*\n]+?)\*\*/g,"<b>$1</b>").replace(/\*([^*\s][^*\n]*?)\*/g,"<b>$1</b>"); }
 function gateToast(msg){

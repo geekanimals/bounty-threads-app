@@ -69,6 +69,15 @@ Deno.serve(async (req) => {
       const ctx = job.ctx || {};
       ctx.app_url = ENV_APP_URL || ctx.app_url || null;
       const q = String(job.question || "");
+      // a creator whose messages a Super Admin paused gets no bot replies either
+      try {
+        const { data: paused } = await api.rpc("ops_contact_paused", { p_addr: job.phone });
+        if (paused === true) {
+          await api.rpc("ops_bot_done", { p_job: job.job_id, p_status: "skipped", p_reply: null, p_refs: [], p_reason: "messages paused for this creator",
+            p_handoff: false, p_intent: "paused", p_campaign: null, p_images: 0 });
+          continue;
+        }
+      } catch (_e) { /* check is best-effort */ }
       // menu first: a new chat gets the welcome + 5 options; the bot answers once an option is picked
       const turn = botTurn(q, ctx, job.session || null);
       if (!turn.send || !turn.draft) {
