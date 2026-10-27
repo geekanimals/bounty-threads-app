@@ -215,7 +215,7 @@
       + txt("Posting note", b.posting_note)
       + '<div class="sec">Terms</div><ul class="list">'+terms.map(function(x){ return "<li>"+x+"</li>"; }).join("")+'</ul>'
       + '</div>'
-      + '<div class="pop-foot"><span class="muted">Next: sign in with your WhatsApp number and connect Instagram. We check the criteria against your profile before you apply.</span>'+(c.applications_closed?'<span class="type">🔒 Applications closed — the brand has picked its creators</span>':'<button class="btn" id="popApply">Apply now</button>')+'</div></div>';
+      + '<div class="pop-foot"><span class="muted">'+(c.applications_closed?'This campaign is live but not taking new creators. Explore the others — new ones are added often.':'Next: sign in with your WhatsApp number and connect Instagram. We check the criteria against your profile before you apply.')+'</span>'+(c.applications_closed?'<span class="type">🔒 Applications closed — the brand has picked its creators</span>':'<button class="btn" id="popApply">Apply now</button>')+'</div></div>';
     var p = document.createElement("div"); p.className = "pop"; p.id = "pop"; p.innerHTML = html; document.body.appendChild(p);
     document.body.style.overflow = "hidden";
     p.onclick = function(e){ if(e.target===p) closePop(); };

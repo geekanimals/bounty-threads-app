@@ -2471,3 +2471,4 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .bpx-camp .bpx-steps{grid-template-columns:repeat(3,1fr)}
 .bpx-steps span{overflow-wrap:normal;word-break:normal}
 @media (min-width:721px){.bpx-row{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 330px}}
+.modal.bpx-prev{width:min(1100px,96vw);max-width:none}

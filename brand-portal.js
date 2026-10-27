@@ -77,7 +77,7 @@
     var sum = function(k){ return C.reduce(function(a,c){ return a+count(c,k); },0); };
     var fb = d.facebook;
     body.innerHTML =
-      '<div class="bpx-hello"><div><div class="muted" style="font-size:13px">Welcome'+(d.me&&d.me.name?', '+esc(d.me.name):'')+'</div><h2>'+esc(brandName())+'</h2></div>'
+      '<div class="bpx-hello"><div><div class="muted" style="font-size:13px">'+(BP.preview?'Brand dashboard':'Welcome'+(d.me&&d.me.name?', '+esc(d.me.name):''))+'</div><h2>'+esc(brandName())+'</h2></div>'
       +(fb?'<span class="tag good">✓ Facebook business linked</span>':'<button class="btn sm ghost" data-bpxfb>🔗 Link Facebook business</button>')+'</div>'
       +'<div class="bpx-kpis">'
       + kpi("📣", live.length, "Live campaigns", C.length+" in total")
@@ -175,7 +175,7 @@
     }
     if(BP.tab==="analytics") return paintAnalytics(box, id);
     var R = d.creators||[], F = BP.cf || "all";
-    var keys = [["all","All"],["to_approve","To approve"],["approved","Approved"],["shipped","In progress"],["video_review","Video review"],["posted","Posted"],["not_selected","Not selected"]];
+    var keys = [["all","All"],["to_approve","To approve"],["approved","Approved"],["shipped","In progress"],["video_review","Video review"],["posted","Posted"],["invited","Invited (sheet)"],["not_selected","Not selected"]];
     var match = function(x){ var s = (x.status||{}).key; return F==="all" ? s!=="not_selected" : F==="shipped" ? (s==="shipped"||s==="making"||s==="posting") : s===F; };
     var L = R.filter(match);
     box.innerHTML = '<div class="bpx-tabs" style="margin-top:0">'+keys.map(function(k2){ return '<button class="bpx-chip'+(F===k2[0]?' on':'')+'" data-bpxcf="'+k2[0]+'">'+k2[1]+'</button>'; }).join("")+'</div>'
@@ -244,8 +244,6 @@
     (d.creators||[]).forEach(function(x){ var c = x.creator||{}, r = byU[(c.username||"").toLowerCase()]||{}, q = r.totals||{};
       rows.push([c.name||"", c.username?"@"+c.username:"", c.followers, c.city, (x.status||{}).label, (x.video||{}).url||"", (x.posts||[]).map(function(p){ return p.permalink; }).filter(Boolean).join(" "),
         q.views, q.reach, q.likes, q.comments, q.shares, q.saves]); });
-    ((a&&a.creators)||[]).filter(function(r){ return r.on_sheet; }).forEach(function(r){ var c = r.creator||{}, q = r.totals||{};
-      rows.push([c.name||"", c.username?"@"+c.username:"", c.followers, "", "Posted", "", (r.posts||[]).map(function(p){ return p.permalink; }).filter(Boolean).join(" "), q.views, q.reach, q.likes, q.comments, q.shares, q.saves]); });
     csvDownload(d.campaign.name+" - report", rows);
   }
   async function campPdf(id){

@@ -9798,7 +9798,9 @@ function showEmailGate(){
 
 // Super Admin: label, Admin panel first in the nav, and land on the command centre after sign-in
 function markSuperAdmin(){
-  window.__isAdmin = true;
+  const wasAdmin = window.__isAdmin; window.__isAdmin = true;
+  // a deep link straight to Brand CRM painted before we knew this is the Super Admin → paint it again with the admin buttons
+  if(!wasAdmin && currentPage==="brands") setTimeout(()=>{ if(currentPage==="brands") renderContent(); }, 0);
   // links in WhatsApp / email use the live domain set as APP_URL on Vercel (unless the APP_URL secret overrides it)
   try{ const gc = window.GEEK_CONFIG; if(gc && gc.appUrlFromEnv && gc.appUrl) sb.rpc("admin_sync_app_url", { p_url: gc.appUrl }).then(()=>{}, ()=>{}); }catch(e){}
   const wrap = document.querySelector(".role-switch");

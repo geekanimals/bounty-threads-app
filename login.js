@@ -264,7 +264,7 @@ async function finishBrandFacebook(){
   history.replaceState({}, "", location.pathname);
   let saved = ""; try{ saved = sessionStorage.getItem("geek_fb_brand") || ""; sessionStorage.removeItem("geek_fb_brand"); }catch(e){}
   if(saved !== st.split(":")[2] + ":login") return "That Facebook sign-in expired — please try again.";
-  if(!code) return q.get("error_description") || "Facebook sign-in was cancelled.";
+  if(!code) return q.get("error") === "access_denied" || /permission/i.test(q.get("error_description")||"") ? "Facebook sign-in was cancelled — tap Continue with Facebook to try again." : (q.get("error_description") || "Facebook sign-in was cancelled.");
   try{
     const r = await sb.functions.invoke("brand-fb-login", { body:{ action:"login", code, redirect_uri: location.origin + "/app.html" } });
     const m = (r.data && r.data.error) || (r.error && (typeof fnError==="function" ? await fnError(r.error) : (r.error.message||String(r.error))));
