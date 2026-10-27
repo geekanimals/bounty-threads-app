@@ -3989,6 +3989,45 @@ function showBrandCreds(box, d, brandName){
         <a class="btn sm ghost" href="mailto:${encodeURIComponent(d.email||"")}?subject=${encodeURIComponent("Your Geek OS login")}&body=${encodeURIComponent(text)}">✉️ Email it</a></div></div>`;
   document.getElementById("blCopy").onclick = ()=>{ try{ navigator.clipboard.writeText(text); gateToast("Copied ✓"); }catch(e){} };
 }
+// Brand CRM → 🏢 Brand portal (Super Admin): email alerts on/off, campaign requests, team access, saved creators
+async function bcPaintPortal(b){
+  const box = document.getElementById("bcPortal"); if(!box) return;
+  const { data:d, error } = await sb.schema("api").rpc("admin_brand_portal", { p_brand: b.brand_id }).then(r=>r, e=>({error:e}));
+  if(!document.getElementById("bcPortal")) return;
+  if(error){ box.innerHTML = `<div class="ci-err-inline">${esc(error.message||String(error))}${/admin_brand_portal/.test(error.message||"")?" — run <code>supabase db push</code>.":""}</div>`; return; }
+  const RL = { owner:"Admin (owner)", approver:"Approver", viewer:"View only", removed:"Removed" };
+  const RS = { new:"New", in_review:"In review", converted:"Converted", declined:"Declined" };
+  const Q = d.requests||[], Lg = d.logins||[], F = d.saved||[];
+  box.innerHTML = `<div class="bpp-card"><div class="bpp-sec">🔔 Alerts for ${esc(b.name)}'s team</div>
+      <label class="cp-check" style="font-size:14px"><input type="checkbox" id="bcNotify"${d.notify_email?" checked":""}> <b>Email alerts</b> — “N creators waiting for approval”, “N new videos ready for review” (at most one email an hour), “Campaign report ready”</label>
+      <div class="muted" style="font-size:12.5px;margin-top:4px">In-app alerts (the 🔔 in their dashboard) always go. Email also needs the email switch ON in Settings.</div></div>
+    <div class="bpp-card"><div class="bpp-sec">📝 Campaign requests (${Q.length})</div>
+      ${Q.length?Q.map(q=>`<div class="bc-contact" style="align-items:flex-start"><div style="min-width:0;flex:1"><b>${esc(q.name)}</b> <span class="tag ${q.status==="new"?"warn":q.status==="converted"?"good":""}">${esc(RS[q.status]||q.status)}</span>
+          <div class="muted" style="font-size:12.5px">${esc([fmtDate(q.created_at), q.by?"by "+q.by:"", q.campaign_type?campTypeLabel(q.campaign_type):"", q.creators_needed?q.creators_needed+" creators":"", q.budget, q.starts_on&&q.ends_on?q.starts_on+" → "+q.ends_on:"", q.cities].filter(Boolean).join(" · "))}</div>
+          ${q.product?`<div style="font-size:13px">🎁 ${esc(q.product)}</div>`:""}${q.deliverables?`<div style="font-size:13px">📦 ${esc(q.deliverables)}</div>`:""}
+          ${q.brief?`<div style="font-size:13px;white-space:pre-wrap;margin-top:4px">${esc(q.brief)}</div>`:""}${q.admin_note?`<div class="muted" style="font-size:12.5px;margin-top:4px">Note to brand: ${esc(q.admin_note)}</div>`:""}</div>
+        <select data-bcrq="${esc(q.request_id)}">${Object.entries(RS).map(([k,l])=>`<option value="${k}"${q.status===k?" selected":""}>${l}</option>`).join("")}</select></div>`).join("")
+        :'<div class="muted">No requests yet — the brand sends them from its dashboard (➕ Request a new campaign).</div>'}</div>
+    <div class="bpp-card"><div class="bpp-sec">👥 Team access</div>
+      ${Lg.length?Lg.map(x=>`<div class="bc-contact"><div><b>${esc(x.name||x.email)}</b>${x.facebook?` <span class="tag good">📘 ${esc(x.facebook)}</span>`:""}
+          <div class="muted" style="font-size:12.5px">${esc(x.email||"")} · ${x.last_sign_in?"last sign-in "+esc(fmtDateTime(x.last_sign_in)):"never signed in"}</div></div>
+          <select data-bcrole="${esc(x.member_id)}">${Object.entries(RL).map(([k,l])=>`<option value="${k}"${x.role===k?" selected":""}>${l}</option>`).join("")}</select></div>`).join("")
+        :'<div class="muted">No login yet — make one in the Logins tab.</div>'}
+      <div class="muted" style="font-size:12.5px;margin-top:4px">Approver approves creators and videos · View only can't approve · Admin also adds teammates (max 5 logins).</div></div>
+    <div class="bpp-card"><div class="bpp-sec">⭐ Creators they saved (${F.length})</div>
+      ${F.length?F.map(f=>{ const c = f.creator||{}; return `<div class="bc-contact"><div><b>${c.username?"@"+esc(c.username):esc(c.name||"Creator")}</b><div class="muted" style="font-size:12.5px">${esc([c.followers!=null?fmtNum(c.followers)+" followers":"", c.city, f.campaigns].filter(Boolean).join(" · "))}</div></div><span class="muted" style="font-size:12px">${esc(fmtDate(f.added_at))}</span></div>`; }).join("")
+        :'<div class="muted">None yet.</div>'}</div>`;
+  const nt = document.getElementById("bcNotify"); if(nt) nt.onchange = async ()=>{ const { error:e } = await sb.schema("api").rpc("admin_brand_notify", { p_brand:b.brand_id, p_on:nt.checked }).then(r=>r, er=>({error:er}));
+    gateToast(e ? (e.message||String(e)) : nt.checked ? "Email alerts on ✓" : "Email alerts off"); if(e) nt.checked = !nt.checked; };
+  box.querySelectorAll("[data-bcrq]").forEach(x=> x.onchange = async ()=>{
+    const note = (x.value==="declined"||x.value==="converted") ? (prompt("Note for the brand (optional):", "")||"") : "";
+    const { error:e } = await sb.schema("api").rpc("admin_campaign_request_set", { p_request:x.dataset.bcrq, p_status:x.value, p_note:note||null }).then(r=>r, er=>({error:er}));
+    gateToast(e ? (e.message||String(e)) : "Request updated ✓ — the brand is told"); bcPaintPortal(b); });
+  box.querySelectorAll("[data-bcrole]").forEach(x=> x.onchange = async ()=>{
+    const { data:r, error:e } = await sb.functions.invoke("brand-login", { body:{ action: x.value==="removed" ? "team_remove" : "team_role", brand_id:b.brand_id, member_id:x.dataset.bcrole, role:x.value } }).then(r=>r, er=>({error:er}));
+    const msg = (r && r.error) || (e && (typeof fnError==="function" ? await fnError(e) : e.message));
+    gateToast(msg || "Access changed ✓"); bcPaintPortal(b); });
+}
 // one brand's CRM page: everything about it
 let _bc = { id:null, data:null, tab:"overview" };
 async function openBrandCrm(id, tab){
@@ -4009,7 +4048,7 @@ async function bcReload(){
 function paintBrandCrm(){
   const body = document.getElementById("bcBodyM"), d = _bc.data; if(!body || !d) return;
   const b = d.brand||{}, T = d.totals||{}, C = d.campaigns||[], K = d.contacts||[], N = d.notes||[], P = d.creators||[], L = d.logins||[];
-  const tabs = [["overview","Overview"],["campaigns",`Campaigns (${C.length})`],["creators",`Creators (${P.length})`],["notes",`Notes & tasks (${N.length})`],["logins",`Logins (${L.length})`]];
+  const tabs = [["overview","Overview"],["campaigns",`Campaigns (${C.length})`],["creators",`Creators (${P.length})`],["notes",`Notes & tasks (${N.length})`],["logins",`Logins (${L.length})`]].concat(d.is_admin?[["portal","🏢 Brand portal"]]:[]);
   const row = (k,v)=> v ? `<div class="bpp-row"><span>${esc(k)}</span><div>${v}</div></div>` : "";
   const STAT = { active:"Active client", lead:"Lead", paused:"Paused", archived:"Archived" };
   let sec = "";
@@ -4049,6 +4088,9 @@ function paintBrandCrm(){
           <div style="white-space:pre-wrap;font-size:13.5px">${escMd(n.body)}</div>
           <div class="muted" style="font-size:12px">${esc(fmtDateTime(n.at))}${n.by?` · ${esc(n.by)}`:""}
             ${n.kind==="task"?` · <a href="#" data-bcnd="${esc(n.note_id)}" data-v="${n.done_at?"0":"1"}">${n.done_at?"Mark not done":"Mark done"}</a>`:""} · <a href="#" data-bcnx="${esc(n.note_id)}">Delete</a></div></div></div>`).join("")}</div>`:'<div class="muted" style="margin-top:8px">No notes yet — log calls, emails, meetings, deals and tasks here.</div>'}`;
+  } else if(_bc.tab==="portal"){
+    sec = `<div id="bcPortal">${skel("list",3)}</div>`;
+    setTimeout(()=> bcPaintPortal(b), 0);
   } else {
     sec = `<p class="muted" style="font-size:13px;margin:0 0 10px">The brand's own team signs in at the <b>Brand login</b> page and sees only ${esc(b.name)}'s campaigns.</p>
       ${L.length?L.map(x=>`<div class="bc-contact"><div><b>${esc(x.name||x.email)}</b> <span class="tag ${x.status==="active"?"good":"warn"}">${esc(x.status||"")}</span>

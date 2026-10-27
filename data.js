@@ -59,7 +59,7 @@ const NAV_SECTIONS = {
   ],
   brand: [
     ["Today",     ["dashboard","approvals"]],
-    ["Campaigns", ["campaigns"]],
+    ["Campaigns", ["campaigns","creators"]],
     ["Insights",  ["reports"]],
     ["Account",   ["settings"]]
   ]

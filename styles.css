@@ -2477,3 +2477,48 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .modal{max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto;overscroll-behavior:contain}
 .modal>.modal-head{position:sticky;top:0;z-index:2;background:var(--panel);border-radius:16px 16px 0 0}
 @media(max-width:600px){.modal-overlay.open{padding:0;place-items:end center}.modal,.modal.modal-lg{max-height:94vh;max-height:94dvh}}
+/* brand portal v2 */
+.bpx-note{margin-bottom:14px;background:color-mix(in srgb,var(--brand) 7%,var(--panel));font-size:13.5px}
+.bpx-wsel{display:flex;align-items:center;gap:8px;min-width:0}
+.bpx-sel{display:flex;align-items:center;cursor:pointer}
+.bpx-sel input,.bpx-selall input{width:17px;height:17px;accent-color:var(--brand);cursor:pointer}
+.bpx-bulk{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.bpx-selall{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
+.bpx-bulkrow{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px}
+.bpx-who-link{cursor:pointer}
+.bpx-who-link:hover b{color:var(--brand);text-decoration:underline}
+.modal.bpx-pv{width:min(760px,96vw)}
+.bpx-player{background:#000;border-radius:12px;overflow:hidden;aspect-ratio:16/9;width:100%}
+.bpx-player.tall{aspect-ratio:9/14;max-width:420px;margin:0 auto}
+.bpx-player iframe,.bpx-player video{width:100%;height:100%;border:0;display:block}
+@media (max-width:600px){.bpx-player{aspect-ratio:9/14}}
+.modal.bpx-cardm{width:min(760px,96vw)}
+.bpx-ch{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.bpx-ch .bpx-avw,.bpx-ch .bpx-av{width:56px;height:56px}
+.bpx-kpis-sm{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+.bpx-kpis-sm .bpx-kpi{padding:10px 12px;box-shadow:none}
+.bpx-kpis-sm .bpx-kpi b{font-size:18px}
+.bpx-audg{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.bpx-aud{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.bpx-audr{display:grid;grid-template-columns:minmax(60px,1fr) 2fr 46px;gap:8px;align-items:center}
+.bpx-audr i{height:7px;border-radius:99px;background:var(--line);overflow:hidden;display:block}
+.bpx-audr em{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--brand-2))}
+.bpx-audr span:last-child{text-align:right;color:var(--muted)}
+.bpx-recent{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:6px}
+.bpx-recent a{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--chip);display:block}
+.bpx-recent img{width:100%;height:100%;object-fit:cover}
+.bpx-recent span{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,.65));color:#fff;font-size:11px;padding:10px 6px 4px}
+.bpx-top{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.bpx-topc{border:1px solid var(--line);border-radius:12px;overflow:hidden;color:var(--ink);text-decoration:none;display:flex;flex-direction:column;background:var(--panel)}
+.bpx-topc:hover{border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}
+.bpx-topi{position:relative;aspect-ratio:4/5;background:linear-gradient(135deg,var(--chip),color-mix(in srgb,var(--brand) 15%,var(--chip)))}
+.bpx-topi img{width:100%;height:100%;object-fit:cover;display:block}
+.bpx-rank{position:absolute;top:8px;left:8px;background:#0f1222;color:#fff;font-weight:800;font-size:12px;border-radius:8px;padding:2px 7px}
+.bpx-type{position:absolute;top:8px;right:8px;background:rgba(255,255,255,.9);color:#0f1222;font-size:11px;font-weight:700;border-radius:8px;padding:2px 7px;text-transform:capitalize}
+.bpx-topb{padding:8px 10px;font-size:13px;min-width:0}
+.bpx-topb b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bpx-topm{display:flex;flex-wrap:wrap;gap:4px 8px;font-size:12px;color:var(--muted);margin-top:4px}
+.bpx-teamf{display:grid;grid-template-columns:1fr 1.4fr auto auto;gap:8px;margin-top:12px}
+.bpx-teamf input,.bpx-teamf select,.bpx-kv select{padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-size:13px}
+@media (max-width:640px){.bpx-teamf{grid-template-columns:1fr}}
+.btn:disabled,.btn[disabled]{opacity:.45;cursor:not-allowed;filter:saturate(.6)}

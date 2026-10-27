@@ -1,8 +1,10 @@
-// Edge Function: brand-login  (verify_jwt = true — Super Admin only)
+// Edge Function: brand-login  (verify_jwt = true — Super Admin, and brand owners for their own team)
 // Gives a brand its own Geek OS login, made from the Brand CRM:
 //   { action: "create", brand_id, email, name }  → new account (role "brand", in the brand's own workspace) + a password
 //   { action: "reset",  brand_id, member_id }    → a new password for one of that brand's logins
 // The password is shown once to the Super Admin to pass on; the brand can change it after signing in.
+//   { action: "team_add", email, name, role } / { action: "team_role", member_id, role } / { action: "team_remove", member_id }
+//     → a brand owner adds a teammate (approver / viewer, max 5 logins), changes access or removes one
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 
@@ -28,9 +30,44 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: "Not authenticated" }, 401);
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
     const { data: isAdmin } = await admin.from("platform_admins").select("user_id").eq("user_id", user.id).maybeSingle();
+    const body = await req.json().catch(() => ({}));
+    const loginUrl0 = APP_URL ? `${APP_URL}/brand/` : null;
+
+    // ---- the brand's own team (owner logins): add a teammate / change access / remove
+    if (String(body.action || "").startsWith("team_")) {
+      if (body.action === "team_add") {
+        const email = String(body.email || "").trim().toLowerCase(), name = String(body.name || "").trim().slice(0, 80);
+        const role = ["approver", "viewer", "owner"].includes(String(body.role)) ? String(body.role) : "viewer";
+        if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) return json({ error: "Enter a valid email." }, 400);
+        const { data: prep, error: pe } = await admin.schema("api").rpc("ops_brand_team_prepare", { p_by: user.id, p_email: email, p_name: name });
+        if (pe) return json({ error: pe.message }, 400);
+        const password = newPassword();
+        const { data: made, error: ce } = await admin.auth.admin.createUser({
+          email, password, email_confirm: true,
+          user_metadata: { invite_token: (prep as any).token, full_name: name || (prep as any).org_name, role: "brand", org_name: (prep as any).org_name },
+        });
+        if (ce) {
+          await admin.from("invites").update({ status: "cancelled" }).eq("token", (prep as any).token);
+          return json({ error: /already|registered|exists/i.test(ce.message) ? "This email already has a Geek OS account — use another email." : ce.message }, 400);
+        }
+        const { error: re } = await admin.schema("api").rpc("ops_brand_role_set", { p_by: user.id, p_member: made.user!.id, p_role: role });
+        if (re) return json({ error: re.message }, 400);
+        return json({ ok: true, member_id: made.user?.id, email, password, role, login_url: loginUrl0 });
+      }
+      const member = String(body.member_id || "");
+      if (!/^[0-9a-f-]{36}$/i.test(member)) return json({ error: "Pick a login." }, 400);
+      if (body.action === "team_role" || body.action === "team_remove") {
+        const role = body.action === "team_remove" ? "removed" : String(body.role || "");
+        const { error: re } = await admin.schema("api").rpc("ops_brand_role_set", { p_by: user.id, p_member: member, p_role: role });
+        if (re) return json({ error: re.message }, 400);
+        // a removed teammate can't sign in any more (reversible: the Super Admin can give access back)
+        await admin.auth.admin.updateUserById(member, { ban_duration: role === "removed" ? "876000h" : "none" } as any);
+        return json({ ok: true, role });
+      }
+      return json({ error: "Unknown action" }, 400);
+    }
     if (!isAdmin) return json({ error: "Only the Super Admin can make brand logins." }, 403);
 
-    const body = await req.json().catch(() => ({}));
     const brand = String(body.brand_id || "");
     if (!/^[0-9a-f-]{36}$/i.test(brand)) return json({ error: "Pick a brand." }, 400);
     const loginUrl = APP_URL ? `${APP_URL}/brand/` : null;
