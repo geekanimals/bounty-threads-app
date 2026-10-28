@@ -4146,12 +4146,47 @@ function paintBrands(){
         <span data-l="Campaigns"><b>${esc(b.campaigns||0)}</b></span><span data-l="Active">${b.active?`<span class="tag good">${esc(b.active)} live</span>`:'<span class="muted">0</span>'}</span>
         <span data-l="Creators"><b>${esc(b.creators||0)}</b>${b.uploaded?` <span class="muted" title="Uploaded for this brand">+${esc(b.uploaded)}</span>`:""}</span><span data-l="Posted">${esc(b.posted||0)}</span>
         <span data-l="Login">${b.logins?`<span class="tag good">🔑 ${esc(b.logins)}</span>`:'<span class="muted">—</span>'}</span>
-        <span class="bc-acts">${window.__isAdmin?`<button class="mini-btn ghost" data-bcup="${esc(b.brand_id)}" title="Upload creators for this brand">📥 Upload creators</button>`:""}${window.__isAdmin?`<button class="mini-btn ghost" data-bclogin="${esc(b.brand_id)}" title="Make a login for the brand">🔑 Login</button><button class="mini-btn ghost" data-bcview="${esc(b.brand_id)}" data-bcviewname="${esc(b.name||"")}" title="See exactly what the brand login sees">👁 View as brand</button>`:""}<button class="mini-btn" data-bcopen2="${esc(b.brand_id)}">Open →</button></span></div>`).join("")}</div>`
+        <span class="bc-acts">${window.__isAdmin?`<button class="mini-btn ghost" data-bcup="${esc(b.brand_id)}" title="Upload creators for this brand">📥 Upload creators</button>`:""}${window.__isAdmin?`<button class="mini-btn ghost" data-bclogin="${esc(b.brand_id)}" title="Make a login for the brand">🔑 Login</button><button class="mini-btn ghost" data-bcview="${esc(b.brand_id)}" data-bcviewname="${esc(b.name||"")}" title="See exactly what the brand login sees">👁 View as brand</button>`:""}${window.__isAdmin?`<button class="mini-btn ghost" data-bcedit="${esc(b.brand_id)}" title="Edit the brand's details">✏️ Edit</button><button class="mini-btn ghost bc-del" data-bcdel="${esc(b.brand_id)}" title="Delete the brand — its logins lose access">🗑 Delete</button>`:""}<button class="mini-btn" data-bcopen2="${esc(b.brand_id)}">Open →</button></span></div>`).join("")}</div>`
     : `<div class="card"><div class="muted" style="padding:10px">${q?"No brand matches.":"No brands yet — ➕ Add brand, or create a campaign (its brand is added here)."}</div></div>`;
   body.querySelectorAll("[data-bcopen]").forEach(r=> r.onclick = e=>{ if(e.target.closest("button,a")) return; openBrandCrm(r.dataset.bcopen); });
   body.querySelectorAll("[data-bcopen2]").forEach(b=> b.onclick = ()=> openBrandCrm(b.dataset.bcopen2));
   body.querySelectorAll("[data-bcup]").forEach(b=> b.onclick = ()=> goCreatorUpload(b.dataset.bcup));
   body.querySelectorAll("[data-bclogin]").forEach(b=> b.onclick = ()=> openBrandLogin(b.dataset.bclogin, ()=> loadBrands()));
+  body.querySelectorAll("[data-bcedit]").forEach(x=> x.onclick = async ()=>{ x.disabled = true;
+    const { data, error } = await sb.schema("api").rpc("brand_detail", { p_brand: x.dataset.bcedit }).then(r=>r, e=>({error:e}));
+    x.disabled = false; if(error || !data || !data.brand){ gateToast((error&&error.message) || "Couldn't open the brand."); return; }
+    openBrandForm(data.brand, ()=> loadBrands()); });
+  body.querySelectorAll("[data-bcdel]").forEach(x=> x.onclick = ()=> deleteBrand((_brandCache||[]).find(b=> b.brand_id===x.dataset.bcdel) || { brand_id:x.dataset.bcdel }));
+  if(window.__isAdmin && !q) body.insertAdjacentHTML("beforeend", `<div class="bc-deleted-link"><a href="#" id="bcDeleted">🗑 Deleted brands</a></div>`);
+  const dl = document.getElementById("bcDeleted"); if(dl) dl.onclick = e=>{ e.preventDefault(); openDeletedBrands(); };
+}
+// 🗑 Delete a brand (Super Admin): it leaves Brand CRM and every brand login is blocked at once — signed out, can't sign in.
+// Campaigns, bills and reports are kept, so it can be restored from 🗑 Deleted brands.
+async function deleteBrand(b){
+  const name = b.name || "this brand";
+  if(!await confirmDelete(`Delete ${name}?`, `${name} leaves Brand CRM and ${b.logins?`its ${b.logins} login${b.logins===1?"":"s"} lose`:"any brand login loses"} access straight away — signed out and can't sign in again. Campaigns, bills and reports are kept; you can restore it from 🗑 Deleted brands.`)) return;
+  const { data, error } = await sb.schema("api").rpc("admin_brand_delete", { p_brand: b.brand_id }).then(r=>r, e=>({error:e}));
+  if(error){ gateToast(error.message||String(error)); return; }
+  gateToast(`🗑 ${name} deleted${data && data.logins_blocked ? ` · ${data.logins_blocked} login${data.logins_blocked===1?"":"s"} blocked` : ""}`);
+  document.getElementById("bcModal")?.remove();
+  if(document.getElementById("bcBody")) loadBrands();
+}
+async function openDeletedBrands(){
+  const m = bpModal("🗑 Deleted brands", `<div class="modal-form" id="bcDelB">${skel("list",3)}</div>`);
+  const box = m.querySelector("#bcDelB");
+  const paint = async ()=>{
+    const { data, error } = await sb.schema("api").rpc("admin_brands_deleted").then(r=>r, e=>({error:e}));
+    if(error){ box.innerHTML = `<div class="ci-err-inline">${esc(error.message||String(error))}${/admin_brands_deleted/.test(error.message||"")?" — run <code>supabase db push</code>.":""}</div>`; return; }
+    const L = data||[];
+    box.innerHTML = L.length ? L.map(b=>`<div class="bc-contact"><div><b>${esc(b.name)}</b><div class="muted" style="font-size:12.5px">${esc([b.category, `deleted ${fmtDateTime(b.deleted_at)}`, b.by?"by "+b.by:"", b.campaigns?b.campaigns+" campaigns":"", b.logins?b.logins+" logins blocked":""].filter(Boolean).join(" · "))}</div></div>
+        <button class="mini-btn" data-bcrest="${esc(b.brand_id)}">↩ Restore</button></div>`).join("")
+      : `<div class="muted">No deleted brands.</div>`;
+    box.querySelectorAll("[data-bcrest]").forEach(x=> x.onclick = async ()=>{ x.disabled = true;
+      const { data:r, error:e } = await sb.schema("api").rpc("admin_brand_restore", { p_brand: x.dataset.bcrest }).then(r=>r, er=>({error:er}));
+      if(e){ gateToast(e.message||String(e)); x.disabled = false; return; }
+      gateToast(`↩ Restored${r && r.logins_back ? ` · ${r.logins_back} login${r.logins_back===1?"":"s"} can sign in again` : ""}`); paint(); if(document.getElementById("bcBody")) loadBrands(); });
+  };
+  paint();
 }
 function goCreatorUpload(brandId){
   document.getElementById("bcModal")?.remove();
@@ -4422,7 +4457,7 @@ function paintBrandCrm(){
         ${row("Instagram", b.instagram?`<a href="https://instagram.com/${encodeURIComponent(b.instagram)}" target="_blank" rel="noopener">@${esc(b.instagram)} ↗</a>`:"")}
         ${row("GSTIN", esc(b.gstin||""))}${row("Address", esc(b.address||""))}${row("Status", esc(STAT[b.status]||b.status||""))}
         ${row("Notes", b.notes?esc(b.notes).replace(/\n/g,"<br>"):"")}${row("Added", b.created_at?esc(fmtDate(b.created_at)):"")}
-        <div style="margin-top:8px"><button class="btn sm ghost" id="bcEdit">✏️ Edit details</button></div></div>
+        <div style="margin-top:8px"><button class="btn sm ghost" id="bcEdit">✏️ Edit details</button>${d.is_admin?` <button class="btn sm ghost bc-del" id="bcDel">🗑 Delete brand</button>`:""}</div></div>
       <div class="bpp-card"><div class="bpp-sec">👤 Contacts</div>
         ${K.length?K.map(x=>`<div class="bc-contact"><div><b>${esc(x.name)}</b>${x.is_primary?' <span class="tag good">Main</span>':""}${x.role?` <span class="muted">· ${esc(x.role)}</span>`:""}
             <div class="muted" style="font-size:12.5px">${[x.email?`<a href="mailto:${esc(x.email)}">${esc(x.email)}</a>`:"", x.phone?`<a href="tel:${esc(x.phone)}">${esc(x.phone)}</a> · <a href="https://wa.me/${esc(String(x.phone).replace(/\D/g,"").replace(/^(\d{10})$/,"91$1"))}" target="_blank" rel="noopener">WhatsApp ↗</a>`:""].filter(Boolean).join(" · ")}</div></div>
@@ -4478,6 +4513,7 @@ function paintBrandCrm(){
   if($("bcTopCamp")) $("bcTopCamp").onclick = newCamp; if($("bcNewCamp")) $("bcNewCamp").onclick = newCamp;
   if($("bcTopUp")) $("bcTopUp").onclick = ()=> goCreatorUpload(b.brand_id); if($("bcUp")) $("bcUp").onclick = ()=> goCreatorUpload(b.brand_id);
   if($("bcEdit")) $("bcEdit").onclick = ()=> openBrandForm(b, ()=> bcReload());
+  if($("bcDel")) $("bcDel").onclick = ()=> deleteBrand(Object.assign({}, b, { logins: L.length }));
   const contactForm = x=>{ x = x||{};
     const m2 = bpModal(x.contact_id?"Edit contact":"Add contact", `<form class="modal-form" id="bccF">
         <div class="mf-row"><label>Name<input name="name" required maxlength="80" value="${esc(x.name||"")}"></label><label>Role<input name="role" maxlength="60" value="${esc(x.role||"")}" placeholder="Marketing manager"></label></div>
