@@ -259,7 +259,9 @@ Deno.serve(async (req) => {
     if (action === "name_match") {
       const w = String(body?.q || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9._]/g, "").slice(0, 24);
       const catKey = String(body?.category || "").toLowerCase().trim();
-      const nouns = catKey ? (CAT_NOUN[catKey] || [catKey.replace(/[^a-z]/g, "")]) : [];
+      const city0 = String(body?.city || "").toLowerCase().replace(/[^a-z]/g, "").slice(0, 20);
+      // only a city → the usernames city creators build most (jaipurblogger, jaipur_diaries …)
+      const nouns = catKey ? (CAT_NOUN[catKey] || [catKey.replace(/[^a-z]/g, "")]) : (w.length < 3 && city0.length >= 3 ? ["blogger", "diaries", "foodie", "vlogs", "influencer", "life"] : []);
       if (w.length < 3 && !nouns.length) return json({ error: "Type at least 3 letters." }, 400);
       const { data: shared } = await admin.schema("api").rpc("ops_discovery_token");
       const src = shared?.platform === "facebook" ? await openRow(shared) : null;
@@ -267,8 +269,9 @@ Deno.serve(async (req) => {
       const igId = encodeURIComponent(String(src.ig_user_id)), FT = encodeURIComponent(String(src.access_token));
       const city = String(body?.city || "").toLowerCase().replace(/[^a-z]/g, "").slice(0, 20);
       // usernames creators really build: word + india/official, and city × category (kolkatafoodie, foodie_kolkata, thedelhiblogger …)
-      const base = w.length >= 3 ? [w, w + "india", w + "_india", "the" + w, "the." + w, w + "official", w + "_official", "indian" + w,
-        "its" + w, w + "life", w + "diaries", w + ".in", ...(city ? [city + w, w + city, city + "_" + w, w + "_" + city, "the" + city + w] : [])] : [];
+      // with a city, the city names come first (jaipurdogs, dogsofjaipur …) — only 16 names are tried per search
+      const base = w.length >= 3 ? [...(city ? [city + w, city + w + "s", w + "sof" + city, w + city, city + "_" + w, w + "_" + city, "the" + city + w, city + "." + w, w + "s_of_" + city] : []),
+        w, w + "india", w + "_india", "the" + w, w + "official", "indian" + w, "its" + w, w + "life", w + "diaries", w + ".in", "the." + w, w + "_official"] : [];
       const combo = nouns.flatMap((n) => city ? [city + n, n + city, city + "_" + n, n + "_" + city, "the" + city + n, city + "." + n, n + "." + city]
                                               : [n + "india", "indian" + n, "the" + n + "india", n + "_india"]);
       const cand = [...new Set([...base, ...combo])]
@@ -449,7 +452,12 @@ async function bdProfile(igId: string, FT: string, username: string) {
   const fields = `business_discovery.username(${encodeURIComponent(username)}){username,name,biography,followers_count,media_count,profile_picture_url,media.limit(12){caption,permalink,like_count,comments_count}}`;
   const j = await fj(`${FB_GRAPH}/${igId}?fields=${fields}&access_token=${FT}`);
   const bd = j?.business_discovery;
-  if (!bd) return needsPermission(j) ? ({ perm: true } as any) : [4, 17, 32, 613].includes(Number(j?.error?.code)) ? ({ limit: true } as any) : null;
+  if (!bd) {
+    // a username that doesn't exist / isn't a Business or Creator account is "not found", not a permission problem
+    const code = Number(j?.error?.code), sub = Number(j?.error?.error_subcode), msg = String(j?.error?.message || "");
+    if (code === 110 || sub === 2207013 || /cannot be found|could not be found|cannot find|does not exist|invalid user|not a business/i.test(msg)) return null;
+    return needsPermission(j) ? ({ perm: true } as any) : [4, 17, 32, 613].includes(code) ? ({ limit: true } as any) : null;
+  }
   const media: any[] = bd?.media?.data ?? [];
   const avg = (k: string) => media.length ? media.reduce((s2: number, m: any) => s2 + (Number(m?.[k]) || 0), 0) / media.length : null;
   const caption = media.map((m: any) => m?.caption || "").join(" ").slice(0, 1200);

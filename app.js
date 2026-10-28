@@ -3086,12 +3086,13 @@ function mountCreatorSearch(root, opts){
       const head = ig ? `<div class="cs-sec-h"><span class="cs-sec-t">📸 From Instagram <b>${fmtNum(d.total||0)}</b></span><span class="muted">Not on Geek OS yet — followers & engagement fetched live from Instagram</span></div>`
                       : `<div class="cs-sec-h"><span class="cs-sec-t">👥 On Geek OS <b>${fmtNum(d.total||0)}</b></span><span class="muted">Signed-up creators with connected Instagram — invite in-app</span></div>`;
       const empty = ig ? (csProfCount(S) ? "Profile filters are on — Instagram-only creators have no profile, so they're hidden. Clear the ⚙️ More filters to see them."
-          : `No Instagram creators match yet${opts.campaign?"":" — pick a city or category and tap <b>📡 Find on Instagram</b>, or <b>+ Add creators</b>"}.`) : "No Geek OS creator matches these filters.";
+          : `No Instagram creators match yet${opts.campaign||window.__brandPick?"":" — pick a city or category and tap <b>📡 Find on Instagram</b>, or <b>+ Add creators</b>"}.`) : "No Geek OS creator matches these filters.";
       return `<div class="cs-sec ${ig?"cs-sec-ig":""}">${head}<div class="cs-igwarn" hidden></div>
         ${R.length ? `<div class="cs-grid">${R.map(c=> ig ? csIgCard(csIgSeed(c), opts) : csCard(c, opts)).join("")}</div>` : `<div class="card"><div class="muted">${empty}</div></div>`}
         ${csPagerHtml(d, pk, both ? (ig?24:12) : 24)}</div>`;
     };
     $i("Res").innerHTML = sec(P, "platform") + sec(E, "external");
+    if(!total && (S.page||1)===1) csClosest($i("Res"), filters, S, opts);
     // a handle typed in the search box → look it up live on Instagram (and add it to the pool)
     const h = (S.q||"").replace(/^https?:\/\/(www\.)?instagram\.com\//i,"").replace(/^@/,"").replace(/[/?].*$/,"").toLowerCase();
     if(/^[a-z0-9._]{2,30}$/.test(h) && !rows.some(r=> String(r.handle).toLowerCase()===h)){
@@ -3110,11 +3111,13 @@ function mountCreatorSearch(root, opts){
     const tag = /^#/.test(S.q||"") ? String(S.q).replace(/^#/,"").trim().toLowerCase() : "";
     if(tag && /^[\p{L}\p{N}_]{2,60}$/u.test(tag)) csHashtagPanel($i("Res"), tag, S, ()=>{ run(true); pool(); });
     // a plain word (e.g. "blogger") → Instagram accounts whose username is built from it, with photo + followers
-    const nmw = String(S.q||"").trim().toLowerCase();
+    // the name hint: what they typed, else the first must-have word of a described search ("dog" → jaipurdogs, dogsofjaipur …)
+    const wHint = ((S.words||[]).map(g=> (g||[]).find(x=> /^[a-z]{3,12}$/.test(x))).find(Boolean) || "");
+    const nmw = String(S.q||"").trim().toLowerCase() || wHint;
     if((/^[a-z0-9]{3,24}$/.test(nmw) || (!S.q && (S.categories.length || S.location))) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csNamePanel($i("Res"), nmw, S, ()=>{ run(true); pool(); });
     // a city and/or a category picked → find more of them live on Instagram (full public profiles)
     const kw = csKeyword(S.q);
-    if((S.q || S.location || S.categories.length) && !/^[@#]|instagram\.com/i.test(S.q||"") && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csMarketPanel($i("Res"), S, ()=>{ run(true); pool(); });
+    if(window.__isAdmin && (S.q || S.location || S.categories.length) && !/^[@#]|instagram\.com/i.test(S.q||"") && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csMarketPanel($i("Res"), S, ()=>{ run(true); pool(); });
     // hashtag "scout" is off: Instagram hands apps hashtag/caption text without the @handles, so it never found anyone —
     // city / category now go through username matching (csNamePanel) and Creator Marketplace (csMarketPanel)
     if(false && (kw || S.location || S.categories.length) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csScoutPanel($i("Res"), S, ()=>{ run(true); pool(); });
@@ -3185,6 +3188,39 @@ function mountCreatorSearch(root, opts){
   };
   run(); pool();
   return S;
+}
+// nothing matches everything → loosen one thing at a time and show the closest creators (e.g. dog parents in other cities,
+// or Jaipur creators who don't mention dogs) instead of an empty page
+async function csClosest(res, filters, S, opts){
+  const has = k => filters[k]!=null && filters[k]!=="" && !(Array.isArray(filters[k]) && !filters[k].length);
+  const petish = g => (g||[]).some(w=> /^(pet|dog|cat|bird|aquarium)$/.test(w));
+  const wordsLbl = (filters.words||[]).some(petish) ? "🐾 the pet" : "the must-mention words";
+  const tries = [];
+  if(has("gender")) tries.push([["gender","gender_soft"], "any gender"]);
+  if(has("location")) tries.push([["location"], `outside ${filters.location}`]);
+  if(has("words")) tries.push([["words"], `without ${wordsLbl}`]);
+  if(has("min_followers") || has("max_followers")) tries.push([["min_followers","max_followers"], "any follower count"]);
+  if(has("min_engagement")) tries.push([["min_engagement"], "any engagement"]);
+  if(has("categories")) tries.push([["categories"], "any category"]);
+  if(has("location") && has("words")) tries.push([["words","gender","gender_soft"], `everyone in ${filters.location}`]);
+  if(!tries.length) return;
+  const box = document.createElement("div"); box.className = "cs-closest"; res.prepend(box);
+  box.innerHTML = `<div class="card cs-scout"><div class="cs-scout-run"><span class="mk-spin sm"></span> No creator matches everything yet — finding the closest ones…</div></div>`;
+  const out = [], seen = new Set();
+  for(const [drop, label] of tries){
+    if(out.length >= 2) break;
+    const f = Object.assign({}, filters, { source:"all" }); drop.forEach(k=> delete f[k]);
+    const { data } = await sb.schema("api").rpc("creator_search", { p_filters:f, p_page:1, p_size:8, p_campaign: opts.campaign ? opts.campaign.id : null }).then(r=>r, ()=>({ data:null }));
+    const R = ((data && data.rows) || []).filter(r=> !seen.has(r.handle));
+    if(!R.length) continue;
+    R.forEach(r=> seen.add(r.handle)); out.push({ label, total: data.total, rows: R });
+  }
+  if(!box.isConnected) return;
+  if(!out.length){ box.innerHTML = `<div class="card"><div class="muted">No creator in our search matches yet. ${window.__brandPick ? "Tell the Geek team what you need (➕ Request a new campaign) — we'll find them for you." : "Try fewer words, or add creators."}</div></div>`; return; }
+  box.innerHTML = `<div class="card cs-scout"><b>🔁 No creator matches everything yet — here are the closest</b><div class="muted">Each row loosens one thing you asked for. ⭐ the ones you like.</div></div>`
+    + out.map(o=> `<div class="cs-sec"><div class="cs-sec-h"><span class="cs-sec-t">Same search, ${esc(o.label)} <b>${fmtNum(o.total)}</b></span></div>
+        <div class="cs-grid">${o.rows.map(c=> c.kind==="external" ? csIgCard(csIgSeed(c), opts) : csCard(c, opts)).join("")}</div></div>`).join("");
+  csWireCards(box, opts);
 }
 function csPagerHtml(d, pk, size){
   const pages = d.pages||1, page = d.page||1; if(pages<=1) return "";
