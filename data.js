@@ -60,7 +60,7 @@ const NAV_SECTIONS = {
   brand: [
     ["Today",     ["dashboard","approvals"]],
     ["Campaigns", ["campaigns","creators"]],
-    ["Social",    ["instagram","facebook"]],
+    ["Social",    ["discover","instagram","facebook"]],
     ["Insights",  ["reports","billing"]],
     ["Account",   ["settings"]]
   ]

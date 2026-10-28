@@ -52,6 +52,7 @@
       reports:["Reports","Campaign results — download them as Excel (CSV) or PDF."],
       creators:["Saved creators","Creators you ⭐ saved — to use again in your next campaign."],
       billing:["Billing","Bills from the Geek team — pay online, and download every bill and receipt."],
+      discover:["Discovery","Find creators anywhere on Instagram — describe who you need in your own words, then ⭐ shortlist them for a campaign."],
       facebook:["Facebook","Your Facebook Pages and ads — post, reply to comments, see insights and run campaigns, all from here."],
       settings:["Settings","Your login and your Facebook business."]}[page] || ["Dashboard",""];
     return shell((BP.preview?'':pageHead(head[0], head[1]))+'<div id="bpxBody">'+skel(page==="campaigns"&&BP.open?"list":"dash", 4)+'</div>');
@@ -70,6 +71,7 @@
     if(page==="creators") return paintSaved(body);
     if(page==="billing") return paintBilling(body);
     if(page==="facebook") return paintFacebook(body);
+    if(page==="discover") return paintDiscover(body);
     return paintDash(body);
   }
   function go(page, campaign){
@@ -498,6 +500,115 @@
       location.href = x.data.url; }; });
   }
 
+  // ---------- 🔎 Discovery: search every creator, describe who you need, shortlist for a campaign (the Geek team invites)
+  var DX = { tab:"search", state:null, camp:"", campName:"", picks:null };
+  function dxCampOpts(sel){ return '<option value="">No campaign yet — just shortlist</option>'+(BP.data.campaigns||[]).filter(function(c){ return !/completed|cancel/i.test(c.status||""); })
+      .map(function(c){ return '<option value="'+esc(c.campaign_id)+'"'+(c.campaign_id===sel?' selected':'')+'>'+esc(c.name)+'</option>'; }).join(""); }
+  async function brandPick(handle, memberId){
+    if(!can()){ gateToast("View-only login — ask your team's admin to shortlist creators."); return; }
+    var c = (memberId && typeof _csRowsById!=="undefined" && _csRowsById[memberId]) || (typeof _csIgRows!=="undefined" && _csIgRows[handle]) || {};
+    var pic = c.profile_picture_url ? '<img src="'+esc(c.profile_picture_url)+'" alt="" referrerpolicy="no-referrer" style="width:44px;height:44px;border-radius:50%;object-fit:cover">' : '<span class="avatar">'+esc(String(handle||"?").slice(0,2).toUpperCase())+'</span>';
+    var m = bpModal("⭐ Shortlist @"+esc(handle), '<form class="modal-form" id="dxPickF"><div style="display:flex;gap:10px;align-items:center">'+pic+'<div><b>@'+esc(handle)+'</b><div class="muted" style="font-size:12.5px">'
+        +esc([c.followers!=null?short(c.followers)+" followers":"", c.engagement!=null?(Math.round(c.engagement*10)/10)+"% engagement":"", c.city].filter(Boolean).join(" · "))+'</div></div></div>'
+      +'<label>For which campaign?<select name="camp">'+dxCampOpts(DX.camp)+'</select></label>'
+      +'<label>Note for the Geek team <span class="muted" style="font-weight:400">(optional)</span><input name="note" maxlength="500" value="'+esc(DX.product?"For: "+DX.product:"")+'" placeholder="e.g. Loved their dog reels — want 1 reel + 2 stories"></label>'
+      +'<div class="auth-err" id="dxPickErr"></div><button class="btn" type="submit">⭐ Add to shortlist</button>'
+      +'<div class="muted" style="font-size:12.5px">The Geek team gets your shortlist, checks the creator\'s rates and availability, and invites them to the campaign. It also goes to ⭐ Saved creators.</div></form>');
+    var f = m.querySelector("#dxPickF");
+    f.onsubmit = async function(e){ e.preventDefault(); var b = f.querySelector("button[type=submit]"); b.disabled = true; b.textContent = "Adding…";
+      var r = await api("brand_discover_pick", { p: { handle:handle, member_id:memberId||null, campaign_id:f.camp.value||null, note:f.note.value,
+          snapshot:{ name:c.name||c.display_name||null, followers:c.followers, engagement:c.engagement, city:c.city||null, profile_picture_url:c.profile_picture_url||null } } });
+      if(r.error){ m.querySelector("#dxPickErr").textContent = r.error.message; b.disabled = false; b.textContent = "⭐ Add to shortlist"; return; }
+      DX.picks = null; m.remove(); gateToast("⭐ @"+handle+" shortlisted — the Geek team will take it from here"); };
+  }
+  async function paintDiscover(body){
+    if(BP.preview){ body.innerHTML = '<div class="card muted">Discovery opens in the brand\'s own login — creators they shortlist show up in Brand CRM → Brand portal.</div>'; return; }
+    if(typeof mountCreatorSearch!=="function"){ body.innerHTML = '<div class="card muted">Discovery isn\'t available right now — refresh the page.</div>'; return; }
+    window.__brandPick = brandPick;
+    var tabs = [["search","🔎 Find creators"],["brief","🎯 Creators for a campaign"],["picks","📋 My shortlist"]];
+    body.innerHTML = '<div class="bpx-tabs">'+tabs.map(function(t){ return '<button class="bpx-chip'+(DX.tab===t[0]?' on':'')+'" data-dxt="'+t[0]+'">'+t[1]+'</button>'; }).join("")+'</div><div id="dxPane"></div>';
+    body.querySelectorAll("[data-dxt]").forEach(function(b){ b.onclick = function(){ DX.tab = b.dataset.dxt; paintDiscover(body); }; });
+    var box = body.querySelector("#dxPane");
+    if(DX.tab==="brief") return dxBrief(box, body);
+    if(DX.tab==="picks") return dxPicks(box);
+    box.innerHTML = (DX.camp?'<div class="card bpx-dxcamp">🎯 Finding creators for <b>'+esc(DX.campName)+'</b> — ⭐ Shortlist adds them to this campaign. <a href="#" id="dxCampX">Not for this campaign</a></div>':'')+'<div id="dxRoot"></div>';
+    var x = box.querySelector("#dxCampX"); if(x) x.onclick = function(e){ e.preventDefault(); DX.camp = ""; DX.campName = ""; paintDiscover(body); };
+    DX.state = mountCreatorSearch(box.querySelector("#dxRoot"), { state: DX.state || undefined });
+  }
+  async function dxBrief(box, body){
+    var C = (BP.data.campaigns||[]).filter(function(c){ return !/completed|cancel/i.test(c.status||""); });
+    var cats = (typeof CS_CATS!=="undefined" ? CS_CATS : []);
+    box.innerHTML = '<div class="card"><h3 style="margin-top:0">🎯 Tell us about the campaign — we\'ll find the creators</h3>'
+      +'<form class="modal-form" id="dxBf" style="padding:0">'
+      +'<label>Campaign<select name="camp"><option value="">— A new idea (not a campaign yet) —</option>'+C.map(function(c){ return '<option value="'+esc(c.campaign_id)+'"'+(c.campaign_id===DX.camp?' selected':'')+'>'+esc(c.name)+'</option>'; }).join("")+'</select></label>'
+      +'<label>What are you promoting? <span class="muted" style="font-weight:400">(goes to the Geek team with your shortlist)</span><input name="product" maxlength="200" placeholder="e.g. Dog food, a new café, a skincare serum"></label>'
+      +'<div class="mf-row"><label>Category<select name="cat"><option value="">Any</option>'+cats.map(function(c){ return '<option>'+esc(c)+'</option>'; }).join("")+'</select></label>'
+      +'<label>City / state<input name="city" maxlength="60" placeholder="e.g. Jaipur" list="dxCityL"><datalist id="dxCityL">'+(typeof CS_CITIES!=="undefined"?CS_CITIES:[]).map(function(c){ return '<option value="'+esc(c)+'">'; }).join("")+'</datalist></label>'
+      +'<label>Gender<select name="gender"><option value="">Any</option><option value="female">Female</option><option value="male">Male</option></select></label></div>'
+      +'<div class="mf-row"><label>Followers from<input name="min" type="number" min="0" placeholder="10000"></label><label>Followers up to<input name="max" type="number" min="0" placeholder="100000"></label>'
+      +'<label>Min engagement<select name="eng"><option value="">Any</option><option value="1">1%+</option><option value="2">2%+</option><option value="3">3%+</option><option value="5">5%+</option></select></label></div>'
+      +'<div class="mf-row"><label>Age from<input name="amin" type="number" min="13" max="80" placeholder="18"></label><label>Age up to<input name="amax" type="number" min="13" max="80" placeholder="35"></label>'
+      +'<label>Pet<select name="pet"><option value="">Doesn\'t matter</option><option value="any">Has a pet</option><option value="dog">Has a dog</option><option value="cat">Has a cat</option></select></label></div>'
+      +'<label>Must talk about <span class="muted" style="font-weight:400">(words in their bio or posts — comma separated, any one is enough)</span><input name="words" maxlength="200" placeholder="e.g. café, coffee, brunch"></label>'
+      +'<label>Anything else? <span class="muted" style="font-weight:400">(in your own words)</span><input name="free" maxlength="300" placeholder="e.g. Hindi speaking moms, 3% engagement"></label>'
+      +'<button class="btn" type="submit">🔎 Find matching creators</button></form></div>';
+    var f = box.querySelector("#dxBf");
+    var fill = async function(){
+      var id = f.camp.value; if(!id) return;
+      var r = await api("brand_discover_brief", { p_campaign:id }); if(r.error || !r.data) return;
+      var d = r.data, ip = d.ideal || {};
+      if(d.product && !f.product.value) f.product.value = d.product;
+      var cat = (ip.categories||[])[0] || d.category || ""; var hit = cats.find(function(c){ return c.toLowerCase()===String(cat).toLowerCase(); }); if(hit) f.cat.value = hit;
+      var city = (ip.locations||[])[0] || (d.cities||[])[0] || ""; if(city) f.city.value = city;
+      if(ip.gender && /^(male|female)$/i.test(ip.gender)) f.gender.value = ip.gender.toLowerCase();
+      if(ip.min_followers!=null) f.min.value = ip.min_followers; if(ip.max_followers!=null) f.max.value = ip.max_followers;
+      if(ip.age_min) f.amin.value = ip.age_min; if(ip.age_max) f.amax.value = ip.age_max;
+      if(ip.pet==="yes") f.pet.value = /cat/i.test(ip.pet_type||"") ? "cat" : /dog/i.test(ip.pet_type||"") ? "dog" : "any";
+      var e = Number(ip.min_engagement); if(e>0) f.eng.value = String([1,2,3,5].filter(function(x){ return x<=e; }).pop()||1);
+    };
+    f.camp.onchange = fill; if(f.camp.value) fill();
+    f.onsubmit = function(e){ e.preventDefault();
+      var S = csNew();
+      if(f.free.value.trim()) csSmartApply(S, f.free.value.trim());
+      if(f.cat.value && S.categories.indexOf(f.cat.value)<0) S.categories.push(f.cat.value);
+      if(f.city.value.trim()) S.location = f.city.value.trim();
+      if(f.gender.value){ S.gender = f.gender.value; S.gender_soft = "yes"; }
+      if(f.min.value || f.max.value){ S.tier = "custom"; S.min = f.min.value; S.max = f.max.value; }
+      if(f.eng.value) S.min_engagement = f.eng.value;
+      if(f.amin.value || f.amax.value){ S.min_age = f.amin.value; S.max_age = f.amax.value; S.more = true; }
+      var P = { any:["pet","petparent","pet parent","petlover","petsofinstagram","furbaby","dog","doggo","doglover","dogsofinstagram","cat","catlover","catsofinstagram","puppy","kitten"],
+        dog:["dog","dogs","puppy","doggo","doglover","dogmom","dogdad","dogsofinstagram","labrador","retriever","pug","beagle","husky","indie dog"],
+        cat:["cat","cats","kitten","kitty","catmom","catdad","catlover","catsofinstagram"] };
+      S.words = (S.words||[]).slice();
+      if(f.pet.value) S.words.push(P[f.pet.value]);
+      var w = f.words.value.split(/[,\n]+/).map(function(x){ return x.trim().toLowerCase(); }).filter(function(x){ return x.length>1; });
+      if(w.length) S.words.push(w);
+      var chips = [];
+      if(S.location) chips.push(["location","📍 "+S.location]); if(S.gender) chips.push(["gender", S.gender==="male"?"👨 Male":"👩 Female"]);
+      if(S.min||S.max) chips.push(["followers","👥 "+(S.min&&S.max?short(S.min)+"–"+short(S.max):S.min?short(S.min)+"+":"up to "+short(S.max))+" followers"]);
+      if(S.categories.length) chips.push(["categories","🏷 "+S.categories.join(", ")]); if(S.min_engagement) chips.push(["min_engagement","⚡ "+S.min_engagement+"%+ engagement"]);
+      if(S.min_age||S.max_age) chips.push(["age","🎂 "+(S.min_age||"any")+"–"+(S.max_age||"any")+" yrs"]); if(f.pet.value) chips.push(["pet","🐾 "+(f.pet.value==="any"?"Pet parents":f.pet.value+" parents")]);
+      if(w.length) chips.push(["extra","🔤 mentions "+w.map(function(x){ return "“"+x+"”"; }).join(" or ")]);
+      S.smartChips = chips; S.smart = ""; DX.product = f.product.value.trim();
+      DX.state = S; DX.camp = f.camp.value; DX.campName = f.camp.value ? (f.camp.options[f.camp.selectedIndex].text) : ""; DX.tab = "search"; paintDiscover(body);
+    };
+  }
+  async function dxPicks(box){
+    box.innerHTML = '<div class="card">'+skel("list",3)+'</div>';
+    if(!DX.picks){ var r = await api("brand_discover_picks", {}); if(r.error){ box.innerHTML = '<div class="card"><div class="ci-err-inline">'+esc(r.error.message)+'</div></div>'; return; } DX.picks = r.data||[]; }
+    var L = DX.picks, ST = { new:["⏳ With the Geek team","warn"], invited:["✅ Invited","good"], declined:["Not this time",""] };
+    box.innerHTML = '<div class="card"><div class="bpx-h"><h3>📋 Creators you shortlisted ('+L.length+')</h3></div>'
+      +(L.length?'<div class="bpx-picks">'+L.map(function(k){ var s0 = k.snapshot||{}, st = ST[k.status]||[k.status,""];
+          return '<div class="bpx-pick">'+(s0.profile_picture_url?'<img src="'+esc(s0.profile_picture_url)+'" alt="" referrerpolicy="no-referrer" onerror="this.remove()">':'<span class="avatar">'+esc(k.handle.slice(0,2).toUpperCase())+'</span>')
+            +'<div style="min-width:0;flex:1"><a href="https://instagram.com/'+encodeURIComponent(k.handle)+'" target="_blank" rel="noopener"><b>@'+esc(k.handle)+'</b></a> <span class="tag '+st[1]+'">'+esc(st[0])+'</span>'
+            +'<div class="muted" style="font-size:12.5px">'+esc([s0.followers!=null?short(s0.followers)+" followers":"", s0.city, k.campaign?"for "+k.campaign:"no campaign yet", fmtDate(k.added_at), k.by?"by "+k.by:""].filter(Boolean).join(" · "))+'</div>'
+            +(k.note?'<div style="font-size:13px">📝 '+esc(k.note)+'</div>':'')+(k.admin_note?'<div class="muted" style="font-size:12.5px">Geek team: '+esc(k.admin_note)+'</div>':'')+'</div>'
+            +(k.status==="new"&&can()?'<button class="mini-btn ghost" data-dxun="'+esc(k.pick_id)+'">Remove</button>':'')+'</div>'; }).join("")+'</div>'
+        :'<div class="muted">Nothing shortlisted yet — find creators in 🔎 Find creators and tap ⭐ Shortlist.</div>')+'</div>';
+    box.querySelectorAll("[data-dxun]").forEach(function(b){ b.onclick = async function(){ b.disabled = true; var r = await api("brand_discover_unpick", { p_pick:b.dataset.dxun });
+      gateToast(r.error ? r.error.message : "Removed"); DX.picks = null; dxPicks(box); }; });
+  }
+
   // ---------- 📘 Facebook: Pages (posts, comments, insights) + ads — the brand's own linked Facebook business
   var FB = { page:null, tab:"posts", pages:null, act:null, days:28, adays:30 };
   try{ FB.page = localStorage.getItem("geek_fb_page"); FB.act = localStorage.getItem("geek_fb_act"); }catch(e){}
@@ -713,7 +824,7 @@
   }
 
   window.BrandPortal = {
-    pages:["dashboard","approvals","campaigns","creators","reports","billing","facebook","settings"],
+    pages:["dashboard","approvals","campaigns","creators","reports","billing","discover","facebook","settings"],
     handles: function(page){ return currentRole==="brand" && !window.__isAdmin && this.pages.indexOf(page)>=0; },
     render: function(page){ BP.host = null; BP.preview = null; return render(page); },
     mount: function(page){ return mount(page); },

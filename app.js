@@ -2873,7 +2873,130 @@ const CS_TIERS = [["","Any size"],["nano","Nano · 1K–10K",1000,10000],["micro
   ["macro","Macro · 200K–1M",200000,1000000],["mega","Mega · 1M+",1000000,null],["custom","Custom range…"]];
 const CS_CITIES = ["Delhi NCR","Mumbai","Bengaluru","Hyderabad","Chennai","Kolkata","Pune","Ahmedabad","Jaipur","Lucknow","Chandigarh","Indore","Surat","Kochi","Goa","Bhopal","Nagpur","Patna","Dehradun","Guwahati"];
 function csNew(){ return { q:"", categories:[], location:"", tier:"", min:"", max:"", min_engagement:"", gender:"", source:"all", sort:"followers_desc", page:1,
-  state:"", language:"", content_format:"", skill:"", min_age:"", max_age:"", active_days:"", max_engagement:"", flags:[], more:false }; }
+  state:"", language:"", content_format:"", skill:"", min_age:"", max_age:"", active_days:"", max_engagement:"", flags:[], more:false,
+  words:[], gender_soft:"", smart:"", smartChips:[] }; }
+/* ✨ Describe who you need — plain English or Hinglish → search filters, e.g.
+ *   "male creators in Jaipur jinke paas dogs ho, 10k-50k followers"  → 📍 Jaipur · 👨 Male · 🐾 dog lovers · 10K–50K
+ * Understands cities, gender, categories, pets & other must-have words, follower ranges / tiers, engagement %, age and language.
+ * Anything it doesn't know becomes a "must mention" word (matched in bio, posts and hashtags). No AI call — instant and free. */
+const CS_SMART = (()=>{
+  const cities = { "delhi":"Delhi","new delhi":"Delhi","ncr":"Delhi","gurgaon":"Gurugram","gurugram":"Gurugram","noida":"Noida","ghaziabad":"Ghaziabad","faridabad":"Faridabad",
+    "mumbai":"Mumbai","bombay":"Mumbai","navi mumbai":"Navi Mumbai","thane":"Thane","bangalore":"Bengaluru","bengaluru":"Bengaluru","bengalore":"Bengaluru","hyderabad":"Hyderabad",
+    "chennai":"Chennai","madras":"Chennai","kolkata":"Kolkata","calcutta":"Kolkata","pune":"Pune","ahmedabad":"Ahmedabad","jaipur":"Jaipur","lucknow":"Lucknow","chandigarh":"Chandigarh",
+    "indore":"Indore","surat":"Surat","kochi":"Kochi","cochin":"Kochi","goa":"Goa","bhopal":"Bhopal","nagpur":"Nagpur","patna":"Patna","dehradun":"Dehradun","guwahati":"Guwahati",
+    "udaipur":"Udaipur","jodhpur":"Jodhpur","kota":"Kota","ajmer":"Ajmer","bikaner":"Bikaner","vadodara":"Vadodara","baroda":"Vadodara","rajkot":"Rajkot","nashik":"Nashik",
+    "aurangabad":"Aurangabad","kanpur":"Kanpur","varanasi":"Varanasi","banaras":"Varanasi","agra":"Agra","meerut":"Meerut","prayagraj":"Prayagraj","allahabad":"Prayagraj",
+    "amritsar":"Amritsar","ludhiana":"Ludhiana","jalandhar":"Jalandhar","mohali":"Mohali","shimla":"Shimla","jammu":"Jammu","srinagar":"Srinagar","ranchi":"Ranchi",
+    "bhubaneswar":"Bhubaneswar","raipur":"Raipur","visakhapatnam":"Visakhapatnam","vizag":"Visakhapatnam","vijayawada":"Vijayawada","coimbatore":"Coimbatore","madurai":"Madurai",
+    "mysore":"Mysuru","mysuru":"Mysuru","mangalore":"Mangaluru","mangaluru":"Mangaluru","trivandrum":"Thiruvananthapuram","thiruvananthapuram":"Thiruvananthapuram",
+    "siliguri":"Siliguri","gwalior":"Gwalior","jabalpur":"Jabalpur","rishikesh":"Rishikesh","haridwar":"Haridwar","pondicherry":"Puducherry","puducherry":"Puducherry",
+    "rajasthan":"Rajasthan","maharashtra":"Maharashtra","gujarat":"Gujarat","punjab":"Punjab","haryana":"Haryana","karnataka":"Karnataka","kerala":"Kerala","tamil nadu":"Tamil Nadu",
+    "telangana":"Telangana","west bengal":"West Bengal","bengal":"West Bengal","bihar":"Bihar","uttar pradesh":"Uttar Pradesh","up":"Uttar Pradesh","madhya pradesh":"Madhya Pradesh",
+    "mp":"Madhya Pradesh","uttarakhand":"Uttarakhand","himachal":"Himachal Pradesh","assam":"Assam","odisha":"Odisha","jharkhand":"Jharkhand","chhattisgarh":"Chhattisgarh" };
+  const cats = [["Food",/^(food|foodie|foodies|khana|khaana|recipe|recipes|cooking|cook|chef|baking|baker|restaurant|cafe|cafes|street ?food)$/],
+    ["Fashion",/^(fashion|ootd|style|styling|outfit|outfits|kapde|clothing|saree|sarees|ethnic|streetwear|modest)$/],["Beauty",/^(beauty|makeup|skincare|skin|haircare|hair|cosmetics|grwm|nails)$/],
+    ["Fitness",/^(fitness|gym|workout|yoga|fit|bodybuilding|crossfit|running|runner)$/],["Health",/^(health|healthy|wellness|nutrition|diet|dietitian|doctor|ayurveda)$/],
+    ["Travel",/^(travel|traveller|traveler|travelling|ghumna|trip|trips|tourism|backpacking|wanderlust)$/],["Tech",/^(tech|technology|gadget|gadgets|smartphone|smartphones|mobile|laptop|unboxing)$/],
+    ["Comedy",/^(comedy|comedian|funny|meme|memes|skit|skits|standup)$/],["Entertainment",/^(entertainment|actor|actress|acting|movies|bollywood)$/],
+    ["Parenting",/^(parenting|parent|parents|mom|moms|mommy|mother|mothers|mummy|dad|dads|father|baby|babies|kids|kid|toddler|newborn)$/],
+    ["Gaming",/^(gaming|gamer|gamers|games|bgmi|esports|streamer)$/],["Finance",/^(finance|money|stocks|stock|investing|investment|trading|crypto|personal ?finance)$/],
+    ["Business",/^(business|entrepreneur|startup|startups|founder|marketing)$/],["Education",/^(education|teacher|teaching|study|students|edtech|learning|upsc)$/],
+    ["Music",/^(music|singer|singing|musician|rapper|guitar)$/],["Dance",/^(dance|dancer|dancing|choreographer)$/],["Art",/^(art|artist|artists|painting|drawing|illustration|craft|crafts|diy)$/],
+    ["Photography",/^(photography|photographer|photos)$/],["Sports",/^(sports|sport|cricket|football|athlete|badminton|tennis)$/],["Home decor",/^(decor|interior|interiors|homedecor|home)$/],
+    ["Auto",/^(auto|cars|car|bikes|bike|automobile|motorcycle|biker)$/],["Spirituality",/^(spiritual|spirituality|devotional|meditation|astrology)$/],
+    ["Lifestyle",/^(lifestyle|vlog|vlogs|vlogger|daily ?vlog)$/],["Lifestyle",/^(wedding|weddings|bride|bridal|shaadi)$/]];
+  const pets = { dog:["dog","dogs","puppy","pup","doggo","doglover","dogmom","dogdad","labrador","retriever","pug","beagle","husky","shihtzu","shih tzu","german shepherd","indie dog","kutta","dogsofinstagram","doggy","doggie","furbaby","fur baby"],
+    cat:["cat","cats","kitten","kitty","catmom","catdad","catlover","persian cat","billi","catsofinstagram","meow","furbaby"], bird:["bird","birds","parrot","budgie"], fish:["aquarium","fish tank","fishkeeping"] };
+  const petWord = { dog:"dog",dogs:"dog",puppy:"dog",puppies:"dog",pup:"dog",doggo:"dog",kutta:"dog",kutte:"dog",labrador:"dog",pug:"dog",husky:"dog",beagle:"dog",
+    cat:"cat",cats:"cat",kitten:"cat",kitty:"cat",billi:"cat",bird:"bird",birds:"bird",parrot:"bird",aquarium:"fish" };
+  const langs = ["hindi","english","marathi","tamil","telugu","bengali","bangla","gujarati","punjabi","kannada","malayalam","odia","urdu","bhojpuri","rajasthani","haryanvi","assamese"];
+  const stop = new Set(("a an the and or with who whose have has having had want wants need needs needed looking look find show give get me my us our we i for of in on at from to near around by "
+    + "is are be been being that this these those any some all every only also etc like type kind based city cities area region place followers follower following "
+    + "creator creators creater creaters cretor creaters influencer influencers influncer blogger bloggers vlogger vloggers youtuber youtubers profile profiles account accounts people person "
+    + "mai me mein mei main se ke ki ka ko ho hai hain hon jo jin jinke jinka jinki jiske jiska jiski jis wale wala wali walo log logon koi sab sabhi aur ya bhi pe par tak liye lie chahiye chaiye "
+    + "chahie chahiyee chiye chaye chahye chahte chahta chahti speak speaks speaking bolte bolne bolti who mujhe humko hume hamein muje pass paas rakhte rakhta rakhti rakhe hota hoti hote hum aap apna apne apni ek do bhai yaar please pls plz acha ache achha good best "
+    + "top great nice campaign campaigns brand brands product products promote promotion collab collaboration content post posts reel reels video videos instagram insta ig lover lovers owner owners "
+    + "having pet-friendly friendly ka-pet").split(/\s+/));
+  const num = (t)=>{ const m = String(t).toLowerCase().replace(/,/g,"").match(/^(\d+(?:\.\d+)?)\s*(k|thousand|l|lac|lakh|lakhs|m|mn|million|cr|crore)?$/); if(!m) return null;
+    const v = parseFloat(m[1]), u = m[2]||""; return Math.round(v * (/^k|thousand/.test(u)?1e3:/^(l|lac|lakh)/.test(u)?1e5:/^(m|mn|million)$/.test(u)?1e6:/^(cr|crore)/.test(u)?1e7:1)); };
+  const N = "(\\d+(?:\\.\\d+)?\\s*(?:k|thousand|lakhs?|lac|l|mn|m|million|cr|crore)?)";
+  return function parse(text){
+    let t = " " + String(text||"").toLowerCase().replace(/[“”"']/g," ").replace(/[,;|/]+/g," , ").replace(/\s+/g," ") + " ";
+    const out = { location:"", gender:"", categories:[], words:[], min:"", max:"", min_engagement:"", min_age:"", max_age:"", language:"", chips:[] };
+    const cut = (re)=>{ t = t.replace(re, " "); };
+    // followers
+    let m = t.match(new RegExp(N+"\\s*(?:-|–|to|se|and)\\s*"+N+"(?=\\s|$)"));
+    if(m && (/[a-z]/.test(m[1]+m[2]) || /follower/.test(t))){ const a = num(m[1].replace(/\s/g,"")), b = num(m[2].replace(/\s/g,"")) ;
+      if(a!=null && b!=null){ const mul = !/[a-z]/.test(m[1]) && /[a-z]/.test(m[2]) ? num("1"+m[2].replace(/[\d.\s]/g,"")) : 1; out.min = String(a*mul); out.max = String(b); cut(m[0]); } }
+    if(!out.min && !out.max){
+      m = t.match(new RegExp("(?:above|over|more than|min(?:imum)?|at ?least|atleast|from)\\s*"+N)) || t.match(new RegExp(N+"\\s*(?:\\+|plus|se (?:zyada|jyada|upar|uppar|above)|or more|and above)"));
+      if(m && num(m[1].replace(/\s/g,""))!=null){ out.min = String(num(m[1].replace(/\s/g,""))); cut(m[0]); }
+      m = t.match(new RegExp("(?:under|below|less than|max(?:imum)?|upto|up to|within)\\s*"+N)) || t.match(new RegExp(N+"\\s*(?:se kam|tak|or less|and below)"));
+      if(m && num(m[1].replace(/\s/g,""))!=null){ out.max = String(num(m[1].replace(/\s/g,""))); cut(m[0]); }
+      m = !out.min && !out.max && t.match(new RegExp(N+"\\s*followers?"));
+      if(m && num(m[1].replace(/\s/g,""))!=null){ out.min = String(num(m[1].replace(/\s/g,""))); cut(m[0]); }
+    }
+    const tiers = { nano:[1000,10000], micro:[10000,50000], mid:[50000,200000], "mid-tier":[50000,200000], macro:[200000,1000000], mega:[1000000,""], celebrity:[1000000,""] };
+    Object.keys(tiers).forEach(k=>{ if(!out.min && !out.max && new RegExp("\\s"+k+"\\s").test(t)){ out.min = String(tiers[k][0]); out.max = String(tiers[k][1]); cut(new RegExp("\\s"+k+"\\s")); } });
+    if(out.min || out.max) out.chips.push(["followers", "👥 " + (out.min&&out.max ? kfmtN(+out.min)+"–"+kfmtN(+out.max) : out.min ? kfmtN(+out.min)+"+" : "up to "+kfmtN(+out.max)) + " followers"]);
+    // engagement %
+    m = t.match(/(\d+(?:\.\d+)?)\s*%\s*(?:\+|plus)?\s*(?:engagement|er|eng)?/) || t.match(/(?:engagement|er)\s*(?:above|over|of|>)?\s*(\d+(?:\.\d+)?)\s*%?/);
+    if(m){ const e = parseFloat(m[1]); if(e>0 && e<50){ out.min_engagement = String([1,2,3,5,8].filter(x=>x<=e).pop()||1); out.chips.push(["min_engagement","⚡ "+out.min_engagement+"%+ engagement"]); cut(m[0]); } }
+    // age
+    m = t.match(/(\d{2})\s*(?:-|–|to|se)\s*(\d{2})\s*(?:years?|yrs?|saal|sal|age|ki age|umar)/) || t.match(/(?:age|aged|umar)\s*(\d{2})\s*(?:-|–|to|se)\s*(\d{2})/);
+    if(m){ out.min_age = m[1]; out.max_age = m[2]; out.chips.push(["age","🎂 "+m[1]+"–"+m[2]+" yrs"]); cut(m[0]); }
+    else { m = t.match(/(?:under|below)\s*(\d{2})\s*(?:years?|yrs?|age|saal)?/) || t.match(/(\d{2})\s*(?:saal|years?|yrs?)\s*(?:se kam|tak)/);
+      if(m && +m[1]>12){ out.max_age = m[1]; out.chips.push(["age","🎂 up to "+m[1]+" yrs"]); cut(m[0]); }
+      m = t.match(/(?:above|over)\s*(\d{2})\s*(?:years?|yrs?|age|saal)/) || t.match(/(\d{2})\s*\+\s*(?:years?|yrs?|age)/);
+      if(m && +m[1]>12){ out.min_age = m[1]; out.chips.push(["age","🎂 "+m[1]+"+ yrs"]); cut(m[0]); } }
+    // gender
+    if(/\s(male|males|man|men|boy|boys|guy|guys|ladka|ladke|ladko|mard|purush|gents)\s/.test(t)){ out.gender = "male"; cut(/\s(male|males|man|men|boy|boys|guy|guys|ladka|ladke|ladko|mard|purush|gents)\s/g); }
+    if(/\s(female|females|woman|women|girl|girls|lady|ladies|ladki|ladkiyan|ladkiyon|aurat|mahila|she)\s/.test(t)){ out.gender = out.gender ? "" : "female"; cut(/\s(female|females|woman|women|girl|girls|lady|ladies|ladki|ladkiyan|ladkiyon|aurat|mahila|she)\s/g); }
+    if(/\s(moms?|mommy|mummy|mothers?)\s/.test(t) && !out.gender) out.gender = "female";
+    if(/\s(dads?|fathers?)\s/.test(t) && !out.gender) out.gender = "male";
+    if(out.gender) out.chips.push(["gender", out.gender==="male" ? "👨 Male" : "👩 Female"]);
+    // city / state (two-word names first)
+    Object.keys(cities).sort((a,b)=> b.length-a.length).some(k=>{ const re = new RegExp("\\s"+k.replace(/ /g,"\\s")+"\\s"); if(re.test(t)){ out.location = cities[k]; cut(re); return true; } });
+    // language
+    langs.some(l=>{ const re = new RegExp("\\s"+l+"(?:\\s(?:speaking|bolne|language|bhasha))?\\s"); if(re.test(t)){ out.language = l==="bangla"?"bengali":l; cut(re); return true; } });
+    if(out.language) out.chips.push(["language","🗣 "+cap1(out.language)]);
+    // pets
+    const petKinds = new Set();
+    t.split(/\s+/).forEach(w=>{ const k = petWord[w.replace(/[^a-z]/g,"")]; if(k) petKinds.add(k); });
+    if(petKinds.size){ const g = []; petKinds.forEach(k=> g.push(...pets[k])); out.words.push(g); out.chips.push(["pet", "🐾 " + [...petKinds].map(k=>k+" "+(k==="fish"?"keepers":"parents")).join(" / ")]);
+      t = t.split(/\s+/).filter(w=> !petWord[w.replace(/[^a-z]/g,"")] && !/^(parents?|lovers?|owners?)$/.test(w)).join(" "); t = " "+t+" "; }
+    if(/\s(pet|pets|petparent|petparents|petlover|petlovers)\s/.test(t)){ if(!petKinds.size){ out.words.push(["pet","petparent","pet parent","petlover","petsofinstagram","furbaby","fur baby","dog","doggo","doglover","dogsofinstagram","cat","catlover","catsofinstagram","puppy","kitten"]); out.chips.push(["pet","🐾 Pet parents"]); }
+      cut(/\s(pet|pets|petparent|petparents|petlover|petlovers)\s/g); }
+    // categories
+    const words = t.split(/\s+/).map(w=>w.replace(/[^a-z0-9._#-]/g,"")).filter(Boolean);
+    const left = [];
+    for(let i=0;i<words.length;i++){
+      const w = words[i], two = w + " " + (words[i+1]||"");
+      let hit = cats.find(([,re])=> re.test(two)); if(hit){ i++; } else hit = cats.find(([,re])=> re.test(w));
+      if(hit){ if(!out.categories.includes(hit[0])) out.categories.push(hit[0]); continue; }
+      if(/^\d+$/.test(w) || w.length<3 || stop.has(w)) continue;
+      left.push(w.replace(/^#/,""));
+    }
+    // "in <place>" that we don't know → location
+    if(!out.location){ const mm = String(text||"").toLowerCase().match(/\b(?:in|from)\s+([a-z]{4,20})\b/) || String(text||"").toLowerCase().match(/\b([a-z]{4,20})\s+(?:mai|me|mein|se|ke|wale|ki|ka)\b/);
+      if(mm && left.includes(mm[1]) && !stop.has(mm[1])){ out.location = cap1(mm[1]); left.splice(left.indexOf(mm[1]),1); } }
+    if(out.location) out.chips.unshift(["location","📍 "+out.location]);
+    if(out.categories.length) out.chips.push(["categories","🏷 "+out.categories.join(", ")]);
+    if(left.length){ out.words.push([...new Set(left)]); out.chips.push(["extra","🔤 mentions "+[...new Set(left)].map(w=>"“"+w+"”").join(" or ")]); }
+    return out;
+  };
+})();
+// apply a parsed description to a search state (keeps source / sort)
+function csSmartApply(S, text){
+  const p = CS_SMART(text), keep = { source:S.source, sort:S.sort, more:false };
+  Object.assign(S, csNew(), keep);
+  S.smart = text; S.smartChips = p.chips; S.location = p.location; S.gender = p.gender; S.gender_soft = p.gender ? "yes" : "";
+  S.categories = p.categories.filter(c=> CS_CATS.includes(c)); S.words = p.words; S.min_engagement = p.min_engagement;
+  if(p.min || p.max){ S.tier = "custom"; S.min = p.min; S.max = p.max; }
+  S.min_age = p.min_age; S.max_age = p.max_age; S.language = p.language;
+  if(p.min_age || p.max_age || p.language) S.more = true;
+  return p;
+}
 // profile filters (Geek OS creators only — Instagram-only creators have no profile)
 const CS_FLAGS = [["barter","🎁 Takes barter"],["pet","🐾 Pet parent"],["whatsapp","✅ WhatsApp verified"],["brands_worked","🤝 Worked with brands"],["travel","✈️ Ready to travel"],["campaigns_done","🏆 Done campaigns with us"]];
 const CS_FORMATS = ["reels","stories","posts","carousel","ugc","youtube","shorts","live","photography","video editing"];
@@ -2893,6 +3016,11 @@ function mountCreatorSearch(root, opts){
   const key = opts.campaign ? "inv" : "dc";
   const id = s => key + s;
   root.innerHTML = `<div class="card cs-panel">
+      ${opts.campaign?"":`<div class="cs-smart"><div class="cs-smart-h">✨ <b>Describe who you need</b> <span class="muted">— in your own words, English or Hinglish</span></div>
+        <div class="cs-searchrow"><input id="${id("Smart")}" placeholder="e.g. male creators in Jaipur who have dogs, 10k–50k followers" value="${esc(S.smart||"")}" autocomplete="off"><button class="btn" id="${id("SmartGo")}">✨ Find creators</button></div>
+        <div class="cs-smart-ex">${["Female fashion creators in Mumbai, 50k+","Jaipur mai male creators jinke paas dog ho","Food bloggers in Bengaluru under 20k followers","Fitness creators 18-25 age, 3% engagement","Moms in Delhi who speak Hindi","Cat parents in Pune"].map(x=>`<button type="button" class="cs-chip" data-cssx="${esc(x)}">${esc(x)}</button>`).join("")}</div>
+        ${(S.smartChips||[]).length?`<div class="cs-smart-got"><span class="muted">Searching for:</span>${S.smartChips.map(c=>`<span class="cs-got" data-csgot="${esc(c[0])}">${esc(c[1])} <button type="button" title="Remove" data-csgotx="${esc(c[0])}">✕</button></span>`).join("")}
+          ${S.gender && S.gender_soft?`<span class="muted" style="font-size:12px">Gender is known only for Geek OS creators — Instagram creators are shown too.</span>`:""}</div>`:""}</div>`}
       <div class="cs-searchrow"><input id="${id("Q")}" type="search" placeholder="🔎 Search @username, name, a word from their posts, or #hashtag" value="${esc(S.q)}">
         <button class="btn" id="${id("Go")}">Search</button></div>
       <div class="cs-cats" id="${id("Cats")}">${CS_CATS.map(c=>`<button type="button" class="cs-chip${S.categories.includes(c)?" on":""}" data-cscat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
@@ -2923,7 +3051,7 @@ function mountCreatorSearch(root, opts){
       </div></div>
     <div class="cs-bar"><div id="${id("Count")}" class="cs-count"></div>
       <div class="cs-pool" id="${id("Pool")}"></div>
-      ${opts.campaign?"":`<span class="cs-acts"><button class="btn sm ghost" id="${id("Fetch")}">↻ Fetch from Instagram</button><button class="btn sm" id="${id("Add")}">+ Add creators</button></span>`}</div>
+      ${opts.campaign||window.__brandPick?"":`<span class="cs-acts"><button class="btn sm ghost" id="${id("Fetch")}">↻ Fetch from Instagram</button><button class="btn sm" id="${id("Add")}">+ Add creators</button></span>`}</div>
     <div id="${id("Res")}"></div><div id="${id("Pager")}"></div>`;
   const $i = s => document.getElementById(id(s));
   const read = ()=>{ S.q = $i("Q").value.trim(); S.location = $i("Loc").value.trim(); S.tier = $i("Tier").value;
@@ -2938,6 +3066,8 @@ function mountCreatorSearch(root, opts){
     Object.assign(filters, { state:S.state, language:S.language, content_format:S.content_format, skill:S.skill, min_age:S.min_age, max_age:S.max_age,
       active_days:S.active_days, max_engagement:S.max_engagement });
     (S.flags||[]).forEach(f=> filters[f] = "yes");
+    if((S.words||[]).length) filters.words = S.words;
+    if(S.gender && S.gender_soft) filters.gender_soft = "yes";
     Object.keys(filters).forEach(k=>{ if(filters[k]==="" || filters[k]==null) delete filters[k]; });
     $i("Res").innerHTML = skel("cards", 6); $i("Pager").innerHTML = "";
     const ask = (src, page, size)=> sb.schema("api").rpc("creator_search", { p_filters:Object.assign({}, filters, { source:src }), p_page:page, p_size:size, p_campaign: opts.campaign ? opts.campaign.id : null }).then(r=>r, e=>({error:e}));
@@ -3027,6 +3157,17 @@ function mountCreatorSearch(root, opts){
   });
   $i("Go").onclick = ()=> run();
   $i("Q").onkeydown = e=>{ if(e.key==="Enter") run(); };
+  const smartGo = (txt)=>{ txt = String(txt||"").trim(); if(!txt){ gateToast("Describe the creators you need — e.g. male creators in Jaipur with dogs"); return; }
+    csSmartApply(S, txt); mountCreatorSearch(root, Object.assign({}, opts, { state:S })); };
+  if($i("SmartGo")){ $i("SmartGo").onclick = ()=> smartGo($i("Smart").value); $i("Smart").onkeydown = e=>{ if(e.key==="Enter"){ e.preventDefault(); smartGo($i("Smart").value); } };
+    root.querySelectorAll("[data-cssx]").forEach(b=> b.onclick = ()=> smartGo(b.dataset.cssx));
+    root.querySelectorAll("[data-csgotx]").forEach(b=> b.onclick = ()=>{ const k = b.dataset.csgotx;
+      if(k==="location") S.location = ""; else if(k==="gender"){ S.gender = ""; S.gender_soft = ""; } else if(k==="categories") S.categories = [];
+      else if(k==="followers"){ S.tier = ""; S.min = ""; S.max = ""; } else if(k==="min_engagement") S.min_engagement = "";
+      else if(k==="age"){ S.min_age = ""; S.max_age = ""; } else if(k==="language") S.language = "";
+      else if(k==="pet") S.words = (S.words||[]).filter(g=> !g.some(w=> /^(pet|dog|cat|bird|aquarium)$/.test(w)));
+      else if(k==="extra") S.words = (S.words||[]).filter(g=> g.some(w=> /^(pet|dog|cat|bird|aquarium)$/.test(w)));
+      S.smartChips = (S.smartChips||[]).filter(c=> c[0]!==k); mountCreatorSearch(root, Object.assign({}, opts, { state:S })); }); }
   $i("Loc").onchange = ()=> run();
   $i("Tier").onchange = ()=>{ root.querySelectorAll(".cs-custom").forEach(x=> x.style.display = $i("Tier").value==="custom" ? "" : "none"); if($i("Tier").value!=="custom") run(); };
   [$i("Min"),$i("Max")].forEach(x=> x.onchange = ()=> run());
@@ -3102,7 +3243,7 @@ function csIgHead(c, badge){
 }
 function csIgCard(c, opts){
   const st = c.state_in_campaign, h = String(c.handle||"");
-  const inv = opts && opts.campaign && st==="invited" ? `<span class="tag warn">Invited</span>` : `<button class="btn sm" data-csinv="${esc(h)}" data-csmid="">🎯 Invite</button>`;
+  const inv = opts && opts.campaign && st==="invited" ? `<span class="tag warn">Invited</span>` : `<button class="btn sm" data-csinv="${esc(h)}" data-csmid="">${window.__brandPick?"⭐ Shortlist":"🎯 Invite"}</button>`;
   const loading = c.followers==null && !c._err && !c._done;
   return `<div class="card cs-card cs-igc${loading?" is-loading":""}" data-igcard="${esc(h)}">
     ${csIgHead(c, `<span class="cs-src ig">📸 Instagram</span>`)}
@@ -3195,7 +3336,7 @@ function csCard(c, opts){
   const btn = opts.campaign
     ? (st==="invited" ? `<span class="tag warn">Invited</span>` : onCamp ? `<span class="tag good">On the campaign</span>`
        : `<button class="btn sm" data-csinv="${esc(c.handle)}" data-csmid="${esc(c.member_id||"")}">🎯 Invite</button>`)
-    : `<button class="btn sm" data-csinv="${esc(c.handle)}" data-csmid="${esc(c.member_id||"")}">🎯 Invite</button>`;
+    : `<button class="btn sm" data-csinv="${esc(c.handle)}" data-csmid="${esc(c.member_id||"")}">${window.__brandPick?"⭐ Shortlist":"🎯 Invite"}</button>`;
   return `<div class="card cs-card">
     <div class="cs-top">${c.profile_picture_url?`<img src="${esc(safeUrl(c.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${esc((c.handle||"?").slice(0,2).toUpperCase())}'}))">`:`<span class="avatar">${esc((c.handle||"?").slice(0,2).toUpperCase())}</span>`}
       <div class="cs-id"><a href="https://instagram.com/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener"><b>@${esc(c.handle)}</b></a>
@@ -3228,7 +3369,7 @@ function openDiscoveryCreator(c){
       <div class="bpp-top">${pic}<div style="min-width:0;flex:1"><div class="bpp-name">${esc(c.name||c.handle||"Creator")}</div>
           ${c.handle?`<a href="https://instagram.com/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">@${esc(c.handle)} ↗</a>`:""}
           <div class="bpp-cats">${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(cap1(x))}</span>`).join("")}${c.city?`<span>📍 ${esc(c.city)}</span>`:""}</div></div>
-        <div class="bpp-topacts"><button class="btn sm" id="dxCrInv">🎯 Invite</button>${c.handle?`<a class="btn sm ghost" href="/p.html?u=${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}</div></div>
+        <div class="bpp-topacts"><button class="btn sm" id="dxCrInv">${window.__brandPick?"⭐ Shortlist":"🎯 Invite"}</button>${c.handle?`<a class="btn sm ghost" href="/p.html?u=${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}</div></div>
       <div class="bpp-stats bpp-stats4"><div><b>${c.followers!=null?fmtNum(c.followers):"—"}</b><span>Followers</span></div><div><b>${c.engagement!=null?(Math.round(c.engagement*10)/10)+"%":"—"}</b><span>Engagement</span></div>
         <div><b>${c.avg_likes!=null?kfmtN(c.avg_likes):"—"}</b><span>Avg likes</span></div><div><b>${c.profile_pct!=null?c.profile_pct+"%":"—"}</b><span>Profile</span></div></div>
       <div class="bpp-card"><div class="bpp-sec">🧬 Profile</div>
@@ -3244,7 +3385,7 @@ function openDiscoveryCreator(c){
   document.body.appendChild(m); m.classList.add("open");
   const close = ()=> m.remove();
   document.getElementById("dxCrX").onclick = close; m.onclick = e=>{ if(e.target.id==="dxCreator") close(); };
-  document.getElementById("dxCrInv").onclick = ()=>{ close(); inviteFromDiscovery(c.handle); };
+  document.getElementById("dxCrInv").onclick = ()=>{ close(); inviteFromDiscovery(c.handle, c.member_id); };
   if(c.identity_id && window.ciIntel && window.__ciIntelEnabled) window.ciIntel.openCard(c.identity_id, "dxCrIntel");
 }
 
@@ -4002,6 +4143,33 @@ function showBrandCreds(box, d, brandName){
   document.getElementById("blCopy").onclick = ()=>{ try{ navigator.clipboard.writeText(text); gateToast("Copied ✓"); }catch(e){} };
 }
 // Brand CRM → 🏢 Brand portal (Super Admin): email alerts on/off, campaign requests, team access, saved creators
+// creators the brand ⭐ shortlisted in its Discovery page → the Super Admin invites them (or says no) from here
+async function bcPaintPicks(b){
+  const box = document.getElementById("bcPicks"); if(!box) return;
+  const { data, error } = await sb.schema("api").rpc("admin_brand_picks", { p_brand: b.brand_id }).then(r=>r, e=>({error:e}));
+  if(!box.isConnected) return;
+  if(error){ box.innerHTML = `<div class="ci-err-inline">${esc(error.message||String(error))}${/admin_brand_picks/.test(error.message||"")?" — run <code>supabase db push</code>.":""}</div>`; return; }
+  const L = data||[], ST = { new:["New","warn"], invited:["Invited","good"], declined:["Declined",""] };
+  box.innerHTML = L.length ? L.map(k=>{ const s0 = k.snapshot||{}, st = ST[k.status]||[k.status,""];
+      return `<div class="bc-contact" style="align-items:flex-start"><div style="min-width:0;flex:1"><a href="https://instagram.com/${encodeURIComponent(k.handle)}" target="_blank" rel="noopener"><b>@${esc(k.handle)}</b></a>
+          <span class="tag ${st[1]}">${esc(st[0])}</span>${s0.on_geek?' <span class="tag good">On Geek OS</span>':""}${k.on_campaign?` <span class="tag">${esc(String(k.on_campaign).replace(/_/g," "))}</span>`:""}
+          <div class="muted" style="font-size:12.5px">${esc([s0.followers!=null?fmtNum(s0.followers)+" followers":"", s0.engagement!=null?(Math.round(s0.engagement*10)/10)+"% ER":"", s0.city, k.campaign?"for "+k.campaign:"no campaign picked", fmtDate(k.added_at), k.by?"by "+k.by:""].filter(Boolean).join(" · "))}</div>
+          ${k.note?`<div style="font-size:13px">📝 ${esc(k.note)}</div>`:""}</div>
+        <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${k.status==="new"?`${k.campaign_id?`<button class="mini-btn" data-bcpinv="${esc(k.pick_id)}">🎯 Invite to ${esc(k.campaign)}</button>`:""}<button class="mini-btn ghost" data-bcpno="${esc(k.pick_id)}">Decline</button>`
+          :`<button class="mini-btn ghost" data-bcpre="${esc(k.pick_id)}">Reopen</button>`}</span></div>`; }).join("")
+    : `<div class="muted">Nothing yet — ${esc(b.name)} shortlists creators from 🔎 Discovery in their dashboard.</div>`;
+  const pk = id => L.find(x=> x.pick_id===id) || {};
+  const setSt = async (id, st, note)=>{ const { error:e } = await sb.schema("api").rpc("admin_brand_pick_set", { p_pick:id, p_status:st, p_note:note||null }).then(r=>r, er=>({error:er}));
+    if(e){ gateToast(e.message||String(e)); return false; } return true; };
+  box.querySelectorAll("[data-bcpinv]").forEach(x=> x.onclick = async ()=>{ const k = pk(x.dataset.bcpinv); x.disabled = true; x.textContent = "Inviting…";
+    const { data:r, error:e } = await sb.schema("api").rpc("invite_external", { p_campaign:k.campaign_id, p_handle:k.handle, p_note:k.note||null }).then(r=>r, er=>({error:er}));
+    if(e){ gateToast(e.message||String(e)); x.disabled = false; x.textContent = "🎯 Invite"; return; }
+    await setSt(k.pick_id, "invited");
+    gateToast(r && r.on_platform ? `✅ @${k.handle} invited — they see it in the app` : `✅ @${k.handle} added to the campaign's invite list — send the DM from the campaign's Invite panel`); bcPaintPicks(b); });
+  box.querySelectorAll("[data-bcpno]").forEach(x=> x.onclick = async ()=>{ const note = prompt("Note for the brand (optional) — e.g. over budget, not available:", ""); if(note===null) return;
+    if(await setSt(x.dataset.bcpno, "declined", note)){ gateToast("Declined — the brand is told"); bcPaintPicks(b); } });
+  box.querySelectorAll("[data-bcpre]").forEach(x=> x.onclick = async ()=>{ if(await setSt(x.dataset.bcpre, "new")) bcPaintPicks(b); });
+}
 async function bcPaintPortal(b){
   const box = document.getElementById("bcPortal"); if(!box) return;
   const { data:d, error } = await sb.schema("api").rpc("admin_brand_portal", { p_brand: b.brand_id }).then(r=>r, e=>({error:e}));
@@ -4030,7 +4198,9 @@ async function bcPaintPortal(b){
       <div class="muted" style="font-size:12.5px;margin-top:4px">Approver approves creators and videos · View only can't approve · Admin also adds teammates (max 5 logins).</div></div>
     <div class="bpp-card"><div class="bpp-sec">⭐ Creators they saved (${F.length})</div>
       ${F.length?F.map(f=>{ const c = f.creator||{}; return `<div class="bc-contact"><div><b>${c.username?"@"+esc(c.username):esc(c.name||"Creator")}</b><div class="muted" style="font-size:12.5px">${esc([c.followers!=null?fmtNum(c.followers)+" followers":"", c.city, f.campaigns].filter(Boolean).join(" · "))}</div></div><span class="muted" style="font-size:12px">${esc(fmtDate(f.added_at))}</span></div>`; }).join("")
-        :'<div class="muted">None yet.</div>'}</div>`;
+        :'<div class="muted">None yet.</div>'}</div>
+    <div class="bpp-card"><div class="bpp-sec">🔎 Shortlisted from Discovery</div><div id="bcPicks">${skel("list",2)}</div></div>`;
+  bcPaintPicks(b);
   const nt = document.getElementById("bcNotify"); if(nt) nt.onchange = async ()=>{ const { error:e } = await sb.schema("api").rpc("admin_brand_notify", { p_brand:b.brand_id, p_on:nt.checked }).then(r=>r, er=>({error:er}));
     gateToast(e ? (e.message||String(e)) : nt.checked ? "Email alerts on ✓" : "Email alerts off"); if(e) nt.checked = !nt.checked; };
   const reqOf = id => Q.find(q=> q.request_id===id) || {};
@@ -7872,6 +8042,7 @@ function wireInvitePanel(){
 }
 // pick a campaign, then invite (used from Discovery)
 async function inviteFromDiscovery(username, memberId){
+  if(window.__brandPick && currentRole==="brand" && !window.__isAdmin) return window.__brandPick(username, memberId);   // a brand shortlists; the Geek team invites
   const { data, error } = await sb.from("campaigns").select("id,name,status").order("created_at",{ascending:false}).limit(50);
   if(error){ alert(error.message); return; }
   const live = (data||[]).filter(c=>["Sourcing","Live","In Production","Approval"].includes(c.status));
