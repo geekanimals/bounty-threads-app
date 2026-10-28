@@ -20,7 +20,7 @@
       + '  to brands or stored in your browser.</p>'
       + '  <div class="cp-links"><a href="#" data-ig="analyses">What Geek analyses</a>'
       + '    <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>'
-      + '    <a href="terms.html" target="_blank" rel="noopener">Data Use Policy</a>'
+      + '    <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>'
       + '    <a href="data-deletion.html" target="_blank" rel="noopener">Disconnect Instagram</a></div>'
       + '  <button class="btn cp-ig-cta" id="cpIgConnect">Connect Instagram &amp; Build My Profile</button>'
       + '  <div class="cp-hint" id="cpIgErr"></div>'

@@ -31,3 +31,7 @@ code{background:#eef0fa;padding:1px 6px;border-radius:5px;font-size:13px}
 /* Geek logo in place of the old "G" mark */
 .mark{background:url(/assets/geek-icon-192.png) center/contain no-repeat;color:transparent;font-size:0;box-shadow:none;border-radius:0}
 .wrap > p{margin:0 0 14px}
+.nav-links{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px 0}
+.lp-nav{gap:14px;align-items:flex-start}
+footer a{display:inline-block;margin:0 16px 6px 0}
+@media(max-width:720px){.lp-nav{flex-direction:column}.nav-links{justify-content:flex-start}.nav-links a{margin:0 14px 0 0}}
