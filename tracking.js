@@ -69,6 +69,8 @@
       + '<div class="trk-setup"><div><span class="muted">Opens</span> '+(dest?'<a href="'+e(dest)+'" target="_blank" rel="noopener">'+e(String(dest).replace(/^https?:\/\//,"").slice(0,60))+' ↗</a>':'<b class="trk-warn">no shop link yet</b>')+'</div>'
       +   '<div><span class="muted">Code</span> <b>'+e(MODE[mode]||mode)+'</b>'+(mode==="common"&&cfg.common_code?' · <code class="trk-code">'+e(cfg.common_code)+'</code>':'')+(cfg.prefix?' · auto: '+e(cfg.prefix)+'+handle':'')+'</div>'
       +   (cfg.discount?'<div><span class="muted">Offer</span> '+e(cfg.discount)+'</div>':'')
+      +   '<div><span class="muted">Tags</span> '+(cfg.utm===false?'off':'UTM on (utm_source=geek)')+(cfg.shopify_code?' · Shopify code auto-applied':'')+'</div>'
+      +   (L.some(function(x){ return x.dest_url; })?'<div><span class="muted">Own brand links</span> <b>'+L.filter(function(x){ return x.dest_url; }).length+'</b> creators</div>':'')
       +   (admin&&!opts.readOnly&&typeof opts.onEdit==="function"?'<button class="mini-btn ghost" data-trkedit>✏️ Change</button>':'')+'</div>'
       + '<div class="trk-kpis">'+kpi(num(L.length),"Creators with a link", T.active+" got clicks")+kpi(num(T.clicks),"Link clicks", num(T.unique)+" unique people")
       +   kpi(num(T.copies),"Code copies", T.unique?Math.round(100*T.copies/T.unique)+"% of visitors":"")+kpi(num(T.shop),"Went to the shop","")
@@ -76,13 +78,16 @@
       + (days.length>1?'<div class="trk-days" title="Clicks per day">'+days.map(function(x){ return '<i style="height:'+Math.max(3, Math.round(56*(+x.clicks||0)/mx))+'px" title="'+e(x.d)+': '+num(x.clicks)+' clicks, '+num(x.copies)+' copies"></i>'; }).join("")+'</div><div class="muted trk-dayl">Clicks per day — last '+days.length+' days</div>':'')
       + '<div class="trk-bar"><input type="search" id="'+box.id+'Q" placeholder="🔎 Creator, code…" value="'+e(st.q)+'">'
       +   '<select id="'+box.id+'Sort">'+[["clicks","Most clicks"],["orders","Most orders"],["copies","Most code copies"],["recent","Last clicked"],["name","Name A → Z"]].map(function(o){ return '<option value="'+o[0]+'"'+(st.sort===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join("")+'</select>'
-      +   '<span class="trk-acts">'+(admin&&!opts.readOnly?'<button class="btn sm ghost" data-trkpaste>📋 Paste codes</button>':'')
+      +   '<span class="trk-acts">'+(admin&&!opts.readOnly?'<button class="btn sm ghost" data-trkpaste>📋 Paste codes / links</button>':'')
       +   (d.can_add_sales?'<button class="btn sm ghost" data-trksale>➕ Add sales</button><button class="btn sm ghost" data-trkcsv>📤 Upload order report</button>':'')
       +   '<button class="btn sm ghost" data-trkdl>⬇️ Download</button></span></div>'
-      + (shown.length?'<div class="trk-tablew"><table class="tbl trk-tbl"><thead><tr><th>Creator</th><th>Link</th><th>Code</th><th>Clicks</th><th>Unique</th><th>Copies</th><th>To shop</th><th>Orders</th><th>Sales</th><th>Last click</th></tr></thead><tbody>'
+      + (shown.length?'<div class="trk-tablew"><table class="tbl trk-tbl"><thead><tr><th>Creator</th><th>Geek link</th><th>Opens (brand link)</th><th>Code</th><th>Clicks</th><th>Unique</th><th>Copies</th><th>To shop</th><th>Orders</th><th>Sales</th><th>Last click</th></tr></thead><tbody>'
         + shown.map(function(x){ return '<tr><td><div class="trk-who">'+(x.picture?'<img src="'+e(x.picture)+'" alt="" referrerpolicy="no-referrer" onerror="this.remove()">':'<span class="avatar">'+e(String(x.handle||"?").slice(0,2).toUpperCase())+'</span>')
             + '<div><b>'+(x.handle?'@'+e(x.handle):e(x.name||"Creator"))+'</b><div class="muted">'+e([x.kind==="geek"?"On Geek OS":"Sheet", STAGE(x.stage)].join(" · "))+'</div></div></div></td>'
-            + '<td><div class="trk-link"><a href="'+e(linkOf(x.slug))+'" target="_blank" rel="noopener" title="'+e(linkOf(x.slug))+'">/go/'+e(x.slug)+'</a><button class="mini-btn ghost" data-trkcopy="'+e(linkOf(x.slug))+'">Copy</button></div></td>'
+            + '<td><div class="trk-link"><a href="'+e(linkOf(x.slug))+'" target="_blank" rel="noopener" title="'+e(linkOf(x.slug))+'">/go/'+e(x.slug)+'</a><button class="mini-btn ghost" data-trkcopy="'+e(linkOf(x.slug))+'">Copy</button>'
+            +   (admin&&!opts.readOnly?'<button class="mini-btn ghost" data-trkregen="'+e(x.link_id)+'" title="Make a new link — the old one stops working">🔄</button>':'')+'</div></td>'
+            + '<td>'+(admin&&!opts.readOnly?'<input class="trk-urlin" data-trkurl="'+e(x.link_id)+'" value="'+e(x.dest_url||"")+'" placeholder="'+e(dest?"Campaign link (default)":"https://brand.com/…")+'" spellcheck="false">'
+            :   (x.dest_url?'<a href="'+e(x.dest_url)+'" target="_blank" rel="noopener" class="trk-dest">'+e(String(x.dest_url).replace(/^https?:\/\//,"").slice(0,40))+'</a>':'<span class="muted">campaign link</span>'))+'</td>'
             + '<td>'+codeCell(x)+'</td><td><b>'+num(x.clicks)+'</b></td><td>'+num(x.unique)+'</td><td>'+num(x.copies)+'</td><td>'+num(x.shop)+'</td>'
             + '<td>'+(+x.orders?'<b>'+num(x.orders)+'</b>':'0')+'</td><td>'+(+x.sales?inr(x.sales):'—')+'</td><td class="muted">'+e(ago(x.last_click))+'</td></tr>'; }).join("")
         + '</tbody></table></div>' : '<div class="muted" style="padding:12px">'+(L.length?'No creator matches.':'No creators on this campaign yet — every creator added gets a link automatically.')+'</div>')
@@ -108,6 +113,19 @@
         x.own_code = v||null; x.code = v || ((d.config||{}).mode==="common" ? (d.config||{}).common_code : null); toast(v ? "Code saved ✓ "+v : "Code removed"); };
       inp.onchange = save; inp.onkeydown = function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); inp.blur(); } };
     });
+    box.querySelectorAll("[data-trkurl]").forEach(function(inp){
+      inp.onchange = async function(){ var v = inp.value.trim(), x = (d.links||[]).find(function(l){ return l.link_id===inp.dataset.trkurl; }) || {};
+        if((x.dest_url||"")===v) return;
+        if(v && !/^https?:\/\/\S+$/i.test(v)){ toast("The link must start with https://"); inp.value = x.dest_url||""; return; }
+        inp.disabled = true; var r = await api("track_link_set_dest", { p_link: inp.dataset.trkurl, p_url: v||null }); inp.disabled = false;
+        if(r.error){ toast(r.error.message); inp.value = x.dest_url||""; return; }
+        x.dest_url = v||null; toast(v ? "✓ @"+(x.handle||"")+"'s link opens this now" : "Uses the campaign link again"); };
+      inp.onkeydown = function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); inp.blur(); } };
+    });
+    box.querySelectorAll("[data-trkregen]").forEach(function(b){ b.onclick = async function(){
+      if(!confirm("Make a new link for this creator? The old link stops working — send them the new one.")) return; b.disabled = true;
+      var r = await api("track_link_regen", { p_link: b.dataset.trkregen }); if(r.error){ toast(r.error.message); b.disabled = false; return; }
+      toast("🔄 New link: "+linkOf(r.data.slug)); mount(box, st.campaign, st.opts); }; });
     var pb = box.querySelector("[data-trkpaste]"); if(pb) pb.onclick = function(){ pasteCodes(box); };
     var sb2 = box.querySelector("[data-trksale]"); if(sb2) sb2.onclick = function(){ addSales(box); };
     var cb = box.querySelector("[data-trkcsv]"); if(cb) cb.onclick = function(){ uploadReport(box); };
@@ -117,19 +135,27 @@
   }
   function pasteCodes(box){
     var st = S[box.id];
-    var m = modal("📋 Paste creator codes", '<form class="modal-form" id="trkPF"><p class="muted" style="margin:0;font-size:13px">One per line. <b>@handle, CODE</b> gives that creator that code. A line with <b>only a code</b> goes to the next creator who has none — so you can paste the brand\'s list of codes as it is.</p>'
-      + '<textarea name="t" rows="10" placeholder="@riya.sharma, OLIORIYA15\n@foodie.aman, OLIOAMAN15\nOLIO15A\nOLIO15B"></textarea>'
-      + '<label class="cp-check"><input type="checkbox" name="ow"> Replace codes creators already have</label><div class="auth-err" id="trkPE"></div><button class="btn" type="submit">Save codes</button></form>');
+    var m = modal("📋 Paste codes &amp; brand links", '<form class="modal-form" id="trkPF"><p class="muted" style="margin:0;font-size:13px">One per line, in any of these shapes — straight from the brand\'s sheet:<br><b>@handle, CODE</b> · <b>@handle, https://brand-link</b> · <b>@handle, CODE, https://brand-link</b><br>A line with <b>only a code</b> goes to the next creator who has none — paste the brand\'s list of codes as it is.</p>'
+      + '<textarea name="t" rows="10" placeholder="@riya.sharma, OLIORIYA15, https://brand.com/p/serum?ref=riya\n@foodie.aman, https://brand.com/p/combo\n@style.neha, OLIONEHA15\nOLIO15A"></textarea>'
+      + '<label class="cp-check"><input type="checkbox" name="ow"> Replace codes / links creators already have</label><div class="auth-err" id="trkPE"></div><button class="btn" type="submit">Save</button></form>');
     var f = m.querySelector("#trkPF");
     f.onsubmit = async function(ev){ ev.preventDefault();
-      var rows = f.t.value.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean).map(function(l){
-        var p = l.split(/[,\t;]+|\s{2,}|\s+(?=[A-Za-z0-9_-]+$)/).map(function(x){ return x.trim(); }).filter(Boolean);
-        return p.length>1 ? { handle:p[0].replace(/^https?:\/\/(www\.)?instagram\.com\//i,"").replace(/[/?].*$/,""), code:p[p.length-1] } : { code:p[0] }; });
-      if(!rows.length){ m.querySelector("#trkPE").textContent = "Paste at least one code."; return; }
-      var b = f.querySelector("button[type=submit]"); b.disabled = true; b.textContent = "Saving…";
-      var r = await api("track_codes_bulk", { p_campaign: st.campaign, p_rows: rows, p_overwrite: !!f.ow.checked });
-      if(r.error){ m.querySelector("#trkPE").textContent = r.error.message; b.disabled = false; b.textContent = "Save codes"; return; }
-      m.remove(); toast("✓ "+r.data.set+" code"+(r.data.set===1?"":"s")+" saved"+(r.data.skipped?" · "+r.data.skipped+" skipped (no matching creator / bad code)":"")); mount(box, st.campaign, st.opts); };
+      var withH = [], pool = [];
+      f.t.value.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean).forEach(function(l){
+        var url = (l.match(/https?:\/\/\S+/i)||[""])[0]; var rest = l.replace(url, " ");
+        var p = rest.split(/[,\t;]+|\s+/).map(function(x){ return x.trim(); }).filter(Boolean);
+        var h = p.length && (/^@/.test(p[0]) || p.length>1 || url) ? p[0].replace(/^@/,"") : "", code = p.length>1 ? p[p.length-1] : (!h && p[0]) || "";
+        if(h && p.length===1) code = "";
+        if(h) withH.push({ handle:h, code:code, url:url }); else if(code) pool.push({ code:code }); });
+      if(!withH.length && !pool.length){ m.querySelector("#trkPE").textContent = "Paste at least one line."; return; }
+      var b = f.querySelector("button[type=submit]"); b.disabled = true; b.textContent = "Saving…"; var msg = [];
+      if(withH.length){ var r = await api("track_links_bulk", { p_campaign: st.campaign, p_rows: withH, p_overwrite: !!f.ow.checked });
+        if(r.error){ m.querySelector("#trkPE").textContent = r.error.message; b.disabled = false; b.textContent = "Save"; return; }
+        if(r.data.codes) msg.push(r.data.codes+" code"+(r.data.codes===1?"":"s")); if(r.data.links) msg.push(r.data.links+" brand link"+(r.data.links===1?"":"s")); if(r.data.skipped) msg.push(r.data.skipped+" @handle not on this campaign"); }
+      if(pool.length){ var r2 = await api("track_codes_bulk", { p_campaign: st.campaign, p_rows: pool, p_overwrite: false });
+        if(r2.error){ m.querySelector("#trkPE").textContent = r2.error.message; b.disabled = false; b.textContent = "Save"; return; }
+        msg.push(r2.data.set+" code"+(r2.data.set===1?"":"s")+" from the list"); }
+      m.remove(); toast("✓ Saved: "+(msg.join(" · ")||"nothing new")); mount(box, st.campaign, st.opts); };
   }
   function addSales(box){
     var st = S[box.id], L = (st.data.links||[]);
@@ -208,8 +234,8 @@
   }
   function download(box){
     var st = S[box.id], d = st.data, L = d.links||[];
-    var csv = [["Creator","Name","On Geek OS","Stage","Link","Code","Clicks","Unique people","Code copies","Went to shop","Orders","Sales (INR)","Last click"]]
-      .concat(L.map(function(x){ return ["@"+(x.handle||""), x.name||"", x.kind==="geek"?"Yes":"No", STAGE(x.stage), linkOf(x.slug), x.code||"", x.clicks, x.unique, x.copies, x.shop, x.orders, x.sales, x.last_click||""]; }));
+    var csv = [["Creator","Name","On Geek OS","Stage","Geek link","Opens (brand link)","Code","Clicks","Unique people","Code copies","Went to shop","Orders","Sales (INR)","Last click"]]
+      .concat(L.map(function(x){ return ["@"+(x.handle||""), x.name||"", x.kind==="geek"?"Yes":"No", STAGE(x.stage), linkOf(x.slug), x.dest_url || (d.config||{}).dest_url || (d.config||{}).product_link || "", x.code||"", x.clicks, x.unique, x.copies, x.shop, x.orders, x.sales, x.last_click||""]; }));
     var text = csv.map(function(r){ return r.map(function(c){ c = String(c==null?"":c); return /[",\n]/.test(c) ? '"'+c.replace(/"/g,'""')+'"' : c; }).join(","); }).join("\n");
     var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff"+text], { type:"text/csv" }));
     a.download = "links-and-codes-" + String((d.config||{}).campaign||"campaign").replace(/[^\w]+/g,"-").toLowerCase() + ".csv"; a.click();

@@ -1755,6 +1755,9 @@ function openCampaignModal(existing, preset){
         <div class="mf-row"><label>Coupon code<select name="tk_mode">${kv([["none","No code — link only"],["common","One code for every creator"],["per_creator","A different code for each creator"]], tk.mode||"none")}</select></label>
         <label class="tk-common">Code for every creator<input name="tk_code" maxlength="30" value="${esc(tk.common_code||'')}" placeholder="OLIO15" style="text-transform:uppercase"></label>
         <label class="tk-per">Make each code from <span class="muted" style="font-weight:400">(optional)</span><input name="tk_prefix" maxlength="12" value="${esc(tk.prefix||'')}" placeholder="OLIO → OLIORIYASHARMA" style="text-transform:uppercase"></label></div>
+        <label class="cp-check"><input type="checkbox" name="tk_utm"${tk.utm===false?"":" checked"}> Add tracking tags to the brand's link <span class="muted">(utm_source=geek · utm_content=@creator — the brand sees these visits in its own Google Analytics / Shopify)</span></label>
+        <label class="cp-check tk-anycode"><input type="checkbox" name="tk_shop"${tk.shopify_code?" checked":""}> Shopify store — apply the creator's code automatically at checkout</label>
+        <div class="muted" style="font-size:12px;margin:-2px 0 6px">A different brand link for some creators? Set it per creator on the campaign page → <b>🔗 Links &amp; codes</b> (type it, or paste <b>@handle, https://…</b>) — they still share their own Geek link, so every click is counted.</div>
         <div class="muted tk-per" style="font-size:12px;margin-top:-4px">Leave it empty to type or paste each creator's own code on the campaign page → <b>🔗 Links &amp; codes</b>. A prefix makes them for you (prefix + the creator's handle) — create the same codes in the brand's store.</div>
       </div>
       <div class="cm-sec">✅ Eligibility — who can apply <span class="muted" style="font-weight:400;font-size:12px">— creators see these, and can apply / be invited only if they match every one</span></div>
@@ -1839,7 +1842,7 @@ function openCampaignModal(existing, preset){
   paintDeliv();
   { const on = form.querySelector("[name=tk_on]"), md = form.querySelector("[name=tk_mode]"), bx = form.querySelector(".tk-box");
     const tkPaint = ()=>{ if(bx) bx.hidden = !on.checked; form.querySelectorAll(".tk-common").forEach(x=> x.hidden = md.value!=="common");
-      form.querySelectorAll(".tk-per").forEach(x=> x.hidden = md.value!=="per_creator"); };
+      form.querySelectorAll(".tk-per").forEach(x=> x.hidden = md.value!=="per_creator"); form.querySelectorAll(".tk-anycode").forEach(x=> x.hidden = md.value==="none"); };
     if(on && md){ on.onchange = tkPaint; md.onchange = tkPaint; tkPaint(); } }
   { const srcs = ["brief","vb_shoot","vb_msg","vb_dos","vb_donts","vb_note"].map(n=> form.querySelector(`[name=${n}]`)).filter(Boolean);
     const put = (name, v, label, show)=>{ const el = form.querySelector(`[name=${name}]`); if(!el || v==null || v==="" ) return null;
@@ -1973,7 +1976,8 @@ function openCampaignModal(existing, preset){
         if(dest && !/^https?:\/\//i.test(dest)) throw new Error("The shop link must start with https://");
         if(mode==="common" && f.get("tk_on") && !/^[A-Z0-9_-]{2,30}$/.test(code)) throw new Error("Type the coupon code for every creator (2–30 letters / numbers, no spaces).");
         row.tracking = { enabled: !!f.get("tk_on"), dest_url: dest || null, discount: txt("tk_disc") || null, mode,
-          common_code: mode==="common" ? code : null, prefix: mode==="per_creator" ? (pre || null) : null, auto_codes: mode==="per_creator" && !!pre }; }
+          common_code: mode==="common" ? code : null, prefix: mode==="per_creator" ? (pre || null) : null, auto_codes: mode==="per_creator" && !!pre,
+          utm: !!f.get("tk_utm"), shopify_code: mode!=="none" && !!f.get("tk_shop") }; }
       if(isReq){                          // a brand's request: send the whole form to the Geek team, create nothing
         row.brand_id = preset.brand_id || null; row.brand = preset.brand || row.brand; delete row.status;
         const { error:re } = await sb.schema("api").rpc("brand_campaign_request", { p:{ brand_id: preset.brand_id || null, name: row.name, form: row } }).then(r=>r, er=>({error:er}));

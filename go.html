@@ -50,6 +50,12 @@
   call("click").then(function(d){
     if(!d || !d.ok){ fail(); return; }
     var dest = d.dest && /^https?:\/\//i.test(d.dest) ? d.dest : "";
+    // the brand's link + UTM tags (so the brand's own analytics see these visits) + Shopify auto-apply of the code
+    try{ if(dest){ var u = new URL(dest);
+      if(d.utm && !u.searchParams.has("utm_source")){ u.searchParams.set("utm_source","geek"); u.searchParams.set("utm_medium","influencer");
+        if(d.utm_campaign) u.searchParams.set("utm_campaign", d.utm_campaign); if(d.creator) u.searchParams.set("utm_content", d.creator); }
+      if(d.shopify_code && d.code && !/\/discount\//i.test(u.pathname)){ var w = new URL(u.origin + "/discount/" + encodeURIComponent(d.code)); w.searchParams.set("redirect", (u.pathname || "/") + u.search); u = w; }
+      dest = u.toString(); } }catch(err){}
     if(!d.code){                                   // no code → straight to the shop
       if(dest){ box.innerHTML = '<div class="spin"></div><div class="sub">Taking you to ' + esc(d.brand || "the shop") + '…</div>'; go(dest); }
       else fail("The shop link isn't set yet — please try again later.");
