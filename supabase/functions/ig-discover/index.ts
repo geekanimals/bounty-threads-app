@@ -311,28 +311,44 @@ Deno.serve(async (req) => {
       const pg = await fj(`${FB_GRAPH}/me/accounts?fields=id,access_token,instagram_business_account&limit=50&access_token=${encodeURIComponent(tokenForCm)}`);
       const pageTok = (pg?.data ?? []).find((p: any) => String(p?.instagram_business_account?.id || "") === String(src.ig_user_id))?.access_token;
       if (pageTok) tokenForCm = pageTok;
-      const words = [String(body?.q || ""), String(body?.category || ""), String(body?.city || "")].map((x) => x.trim()).filter(Boolean).join(" ").slice(0, 80);
+      // every filter Meta's creator search has: state (from the city), interests (from the category), gender, age, language,
+      // follower range (Meta only takes fixed steps), plus free words. Cursor paging → "Load more".
+      const cats = String(body?.category || "").toLowerCase().split(/[,|]+| (?=[a-z])/).map((x) => x.trim()).filter(Boolean);
+      const interests = [...new Set(cats.flatMap((c) => CM_INTEREST[c] || []))].slice(0, 5);
+      const cityRaw = String(body?.city || "").trim().toLowerCase();
+      const state = CM_STATE[cityRaw] || CM_STATE[cityRaw.replace(/\s+(ncr|city)$/, "")] || null;
+      const words = [String(body?.q || "").trim(), state ? "" : cityRaw].filter(Boolean).join(" ").slice(0, 80);
       const p = new URLSearchParams();
       p.set("creator_countries", JSON.stringify(["IN"]));
+      if (state) p.set("creator_states", JSON.stringify([state]));
+      if (interests.length) p.set("creator_interests", JSON.stringify(interests));
       if (words) p.set("query", words);
+      const g = String(body?.gender || "").toLowerCase(); if (g === "male" || g === "female") p.set("creator_gender", g);
+      const ages = cmAges(Number(body?.min_age) || 0, Number(body?.max_age) || 0); if (ages.length) p.set("creator_age_bucket", JSON.stringify(ages));
+      const lang = CM_LANG[String(body?.language || "").toLowerCase()]; if (lang) p.set("creator_language", JSON.stringify([lang]));
       const mn = Number(body?.min_followers) || 0, mx = Number(body?.max_followers) || 0;
-      if (mn > 0) p.set("creator_min_followers", String(mn));
-      if (mx > 0) p.set("creator_max_followers", String(mx));
-      p.set("limit", "30");
+      const MINS = [0, 10000, 25000, 50000, 75000, 100000, 250000, 1000000], MAXS = [10000, 25000, 50000, 75000, 100000, 250000, 1000000];
+      if (mn > 0) p.set("creator_min_followers", String(MINS.filter((x) => x <= mn).pop() ?? 0));
+      if (mx > 0 && mx < 1000000) p.set("creator_max_followers", String(MAXS.find((x) => x >= mx) ?? 1000000));
+      p.set("limit", "50");
+      if (body?.after) p.set("after", String(body.after).slice(0, 400));
       const CMV = "https://graph.facebook.com/v25.0";
       const ask = (fields: string) => { const q = new URLSearchParams(p); q.set("fields", fields); q.set("access_token", tokenForCm);
         return fj(`${CMV}/${igId}/creator_marketplace_creators?${q.toString()}`, 20000); };
-      let j = await ask("id,username,profile_picture_url,biography,country,gender,category,is_account_verified,insights.metrics(total_followers)");
+      let j = await ask("id,username,profile_picture_url,biography,country,gender,age_bucket,category,is_account_verified,email,insights.metrics(total_followers,creator_engaged_accounts)");
       if (!Array.isArray(j?.data) && Number(j?.error?.code) === 100) j = await ask("id,username,profile_picture_url,biography,country,gender,category,is_account_verified");
       if (!Array.isArray(j?.data)) {
         const m = String(j?.error?.message || "Instagram couldn't run the Creator Marketplace search.");
         const perm = Number(j?.error?.code) === 10 || /permission|eligib|onboard/i.test(m);
-        return json({ error: perm ? `Creator Marketplace isn't open for this app yet (${m}). It needs Meta's approval for instagram_creator_marketplace_discovery.` : m, needs_review: perm }, 200);
+        const onboard = /onboard|terms|eligib/i.test(m);
+        return json({ error: perm ? (onboard ? `Creator Marketplace: the Geek brand account must accept Instagram's Creator Marketplace terms first (${m}).`
+            : `Creator Marketplace isn't open for this app yet (${m}). It needs Meta's approval for instagram_creator_marketplace_discovery.`) : m, needs_review: perm, needs_onboarding: perm && onboard }, 200);
       }
       const num = (x: any) => { const v = x?.insights?.data?.find?.((d: any) => d?.name === "total_followers"); const n = v?.values?.[0]?.value ?? v?.total_value?.value; return typeof n === "number" ? n : null; };
       const profiles = (j.data as any[]).filter((c) => c?.username).map((c) => ({
         handle: String(c.username).toLowerCase(), name: null, bio: String(c.biography || "").slice(0, 300), followers: num(c),
-        profile_picture_url: c.profile_picture_url ?? null, category: c.category ?? null, country: c.country ?? null, verified: !!c.is_account_verified, source: "marketplace" }));
+        profile_picture_url: c.profile_picture_url ?? null, category: c.category ?? null, country: c.country ?? null, verified: !!c.is_account_verified,
+        gender: c.gender ?? null, age_bucket: c.age_bucket ?? null, source: "marketplace" }));
       // followers missing → fill the top ones from their public profile
       const need = profiles.filter((x) => x.followers == null).slice(0, 12);
       const FT = encodeURIComponent(String(src.access_token));
@@ -342,7 +358,8 @@ Deno.serve(async (req) => {
         const { error: se } = await userClient.schema("api").rpc("save_external_candidates", { p_items: profiles.map((x) => ({ ...x, caption: x.category || "" })) });
         if (se) console.error("marketplace save:", se.message);
       }
-      return json({ ok: true, query: words, found: profiles.length, profiles, test_data: !!j?.is_test_data });
+      return json({ ok: true, query: [words, state, interests.join("+"), g].filter(Boolean).join(" · "), found: profiles.length, profiles, test_data: !!j?.is_test_data,
+        after: j?.paging?.cursors?.after && j?.paging?.next ? j.paging.cursors.after : null });
     }
 
     if (action === "scout") {
@@ -494,6 +511,39 @@ const CAT_TAGS: Record<string, string[]> = {
   entertainment: ["actor", "entertainment", "reels"], spirituality: ["spirituality", "spiritual", "meditation"],
 };
 // category → words creators put in their usernames (for city × category username guesses)
+// Creator Marketplace filters
+const CM_INTEREST: Record<string, string[]> = {
+  pets: ["ANIMALS_AND_PETS"], finance: ["BUSINESS_FINANCE_AND_ECONOMICS"], business: ["BUSINESS_FINANCE_AND_ECONOMICS"], education: ["EDUCATION_AND_LEARNING"],
+  beauty: ["BEAUTY"], fashion: ["FASHION"], fitness: ["FITNESS_AND_WORKOUTS"], health: ["FITNESS_AND_WORKOUTS"], food: ["FOOD_AND_DRINK"],
+  gaming: ["GAMES_PUZZLES_AND_PLAY"], "home decor": ["HOME_AND_GARDEN"], home: ["HOME_AND_GARDEN"], decor: ["HOME_AND_GARDEN"], music: ["MUSIC_AND_AUDIO"],
+  dance: ["PERFORMING_ARTS"], comedy: ["PERFORMING_ARTS"], entertainment: ["TV_AND_MOVIES"], tech: ["SCIENCE_AND_TECH"], sports: ["SPORTS"],
+  travel: ["TRAVEL_AND_LEISURE_ACTIVITIES"], auto: ["VEHICLES_AND_TRANSPORTATION"], art: ["VISUAL_ARTS_ARCHITECTURE_AND_CRAFTS"],
+  photography: ["VISUAL_ARTS_ARCHITECTURE_AND_CRAFTS"], spirituality: ["HISTORY_AND_PHILOSOPHY"], parenting: ["HOLIDAYS_AND_CELEBRATIONS"], lifestyle: [],
+};
+// city / state → ISO 3166-2:IN state code
+const CM_STATE: Record<string, string> = (() => {
+  const S: Record<string, string[]> = {
+    "IN-MH": ["maharashtra", "mumbai", "navi mumbai", "thane", "pune", "nagpur", "nashik", "aurangabad", "kolhapur"],
+    "IN-DL": ["delhi", "new delhi", "delhi ncr"], "IN-HR": ["haryana", "gurugram", "gurgaon", "faridabad", "panipat"],
+    "IN-UP": ["uttar pradesh", "up", "noida", "ghaziabad", "lucknow", "kanpur", "varanasi", "agra", "meerut", "prayagraj", "allahabad"],
+    "IN-KA": ["karnataka", "bengaluru", "bangalore", "mysuru", "mysore", "mangaluru", "mangalore"], "IN-TG": ["telangana", "hyderabad"],
+    "IN-TN": ["tamil nadu", "chennai", "coimbatore", "madurai"], "IN-WB": ["west bengal", "bengal", "kolkata", "siliguri"],
+    "IN-GJ": ["gujarat", "ahmedabad", "surat", "vadodara", "baroda", "rajkot"], "IN-RJ": ["rajasthan", "jaipur", "udaipur", "jodhpur", "kota", "ajmer", "bikaner"],
+    "IN-PB": ["punjab", "ludhiana", "amritsar", "jalandhar", "mohali"], "IN-CH": ["chandigarh"], "IN-MP": ["madhya pradesh", "mp", "indore", "bhopal", "gwalior", "jabalpur"],
+    "IN-BR": ["bihar", "patna"], "IN-UT": ["uttarakhand", "dehradun", "rishikesh", "haridwar"], "IN-AS": ["assam", "guwahati"],
+    "IN-KL": ["kerala", "kochi", "cochin", "thiruvananthapuram", "trivandrum"], "IN-GA": ["goa"], "IN-OR": ["odisha", "bhubaneswar"],
+    "IN-JH": ["jharkhand", "ranchi"], "IN-CT": ["chhattisgarh", "raipur"], "IN-AP": ["andhra pradesh", "visakhapatnam", "vizag", "vijayawada"],
+    "IN-HP": ["himachal pradesh", "himachal", "shimla"], "IN-JK": ["jammu and kashmir", "jammu", "srinagar"], "IN-PY": ["puducherry", "pondicherry"],
+  };
+  const out: Record<string, string> = {}; for (const [k, v] of Object.entries(S)) v.forEach((c) => out[c] = k); return out;
+})();
+const CM_LANG: Record<string, string> = { hindi: "hi", english: "en", marathi: "mr", tamil: "ta", telugu: "te", bengali: "bn", gujarati: "gu", punjabi: "pa",
+  kannada: "kn", malayalam: "ml", odia: "or", urdu: "ur", assamese: "as" };
+function cmAges(lo: number, hi: number) {
+  if (!lo && !hi) return [];
+  const B: [string, number, number][] = [["18_to_24", 18, 24], ["25_to_34", 25, 34], ["35_to_44", 35, 44], ["45_to_54", 45, 54], ["55_to_64", 55, 64], ["65_and_above", 65, 120]];
+  return B.filter(([, a, b]) => b >= (lo || 0) && a <= (hi || 120)).map(([k]) => k);
+}
 const CAT_NOUN: Record<string, string[]> = {
   food: ["foodie", "foodblogger", "food", "foodies", "eats", "foodiaries", "foodlover", "khana"],
   fashion: ["fashion", "fashionblogger", "style", "styles", "stylist", "fashionista", "ootd", "styleblogger"],

@@ -3630,25 +3630,37 @@ async function csFillProfiles(handles, scope){
 // a plain search word (not @handle, #hashtag, a link or a username) = what creators post about
 // Meta's official creator search (Instagram Creator Marketplace): keyword + category + city + follower size
 const _csMarketDone = {};
+// Meta's Instagram Creator Marketplace: the real "every creator who fits" search — state (from the city), category, gender,
+// age, language and follower range in one call, 50 at a time with "Load more". Switches itself on once Meta approves
+// instagram_creator_marketplace_discovery (brands don't see it before that).
 async function csMarketPanel(res, S, refresh){
   const t = CS_TIERS.find(x=>x[0]===S.tier);
-  const body = { action:"marketplace", q:S.q||"", category:(S.categories||[]).join(" "), city:S.location||"",
+  const body = { action:"marketplace", q:String(S.q||"").replace(/^[@#]/,""), category:(S.categories||[]).join(","), city:S.location||"", gender:S.gender||"",
+    min_age:S.min_age||"", max_age:S.max_age||"", language:S.language||"",
     min_followers: S.tier==="custom" ? S.min : (t && t[2]) || "", max_followers: S.tier==="custom" ? S.max : (t && t[3]) || "" };
   const key = JSON.stringify(body);
-  res.insertAdjacentHTML("afterbegin", `<div class="card cs-scout" id="csMktBox"><div class="cs-scout-h"><div><b>🛍️ Instagram Creator Marketplace</b>
-      <div class="muted">Meta's own creator search — every matching creator with photo, followers and bio, even if they're not on Geek OS.</div></div></div>
-    <div id="csMktMsg">${_csMarketDone[key] ? "" : `<div class="cs-scout-run"><span class="mk-spin sm"></span> Searching Instagram's creator database…</div>`}</div></div>`);
-  const paint = d => { const box = document.getElementById("csMktMsg"); if(!box) return;
-    // not approved by Meta yet → brands don't see the panel at all (it switches itself on once Meta approves)
+  res.insertAdjacentHTML("afterbegin", `<div class="card cs-scout" id="csMktBox"><div class="cs-scout-h"><div><b>🛍️ Instagram Creator Marketplace — every creator who fits</b>
+      <div class="muted">Meta's own creator search: state, category, gender, age, language and followers together.</div></div></div>
+    <div id="csMktGrid" class="cs-grid"></div><div id="csMktMsg">${_csMarketDone[key] ? "" : `<div class="cs-scout-run"><span class="mk-spin sm"></span> Searching Instagram's creator database…</div>`}</div></div>`);
+  const st = _csMarketDone[key] || null;
+  const card = p=> csIgCard(csIgSeed({ handle:p.handle, name:p.name, profile_picture_url:p.profile_picture_url, followers:p.followers, posts:p.media_count,
+          avg_likes:p.avg_likes, bio:p.bio, _done:true, engagement: p.followers && p.avg_likes!=null ? Math.round(10000*((+p.avg_likes||0)+(+p.avg_comments||0))/p.followers)/100 : null }), {});
+  const paint = d => { const box = document.getElementById("csMktMsg"), grid = document.getElementById("csMktGrid"); if(!box || !grid) return;
     if(d && d.needs_review && !window.__isAdmin){ const bx = document.getElementById("csMktBox"); if(bx) bx.remove(); return; }
-    if(!d || d.error){ box.innerHTML = `<div class="muted">${d && d.needs_review ? "⏳ " : "⚠️ "}${esc((d && d.error) || "Couldn't reach Instagram.")}</div>`; return; }
+    if(!d || d.error){ grid.innerHTML = ""; box.innerHTML = `<div class="muted">${d && d.needs_review ? "⏳ " : "⚠️ "}${esc((d && d.error) || "Couldn't reach Instagram.")}</div>`; return; }
     const P = d.profiles||[];
-    box.innerHTML = P.length ? `${d.test_data?`<div class="muted">Meta test data — real creators show once the app review is approved.</div>`:""}<div class="cs-grid">${P.map(p=> csIgCard(csIgSeed({ handle:p.handle, name:p.name, profile_picture_url:p.profile_picture_url, followers:p.followers, posts:p.media_count,
-          avg_likes:p.avg_likes, bio:p.bio, _done:true, engagement: p.followers && p.avg_likes!=null ? Math.round(10000*((+p.avg_likes||0)+(+p.avg_comments||0))/p.followers)/100 : null }), {})).join("")}</div>
-        <div class="muted" style="margin-top:6px">✓ ${P.length} creator(s) added to your search.</div>`
-      : `<div class="muted">No Creator Marketplace creators match “${esc(d.query||"")}”.</div>`;
-    if(typeof csWireCards==="function") csWireCards(box, {}); };
-  if(_csMarketDone[key]){ paint(_csMarketDone[key]); return; }
+    grid.innerHTML = P.map(card).join("");
+    box.innerHTML = `<div class="cs-name-foot">${d.test_data?`<span class="muted">Meta test data — real creators show once the app review is approved.</span>`:""}
+      <span class="muted">${P.length ? `✓ ${P.length} creator${P.length===1?"":"s"} · added to your creator search` : `No creator in Meta's marketplace fits ${esc(d.query||"these filters")} — loosen a filter.`}</span>
+      ${d.after?`<button class="btn sm" id="csMktMore">Load more creators</button>`:""}</div>`;
+    const more = document.getElementById("csMktMore");
+    if(more) more.onclick = async ()=>{ more.disabled = true; more.textContent = "Loading…";
+      const { data:x } = await sb.functions.invoke("ig-discover", { body: Object.assign({}, body, { after:d.after }) }).then(r=>r, e=>({ data:{ error:e.message } }));
+      if(x && !x.error){ const seen = new Set(P.map(p=>p.handle)); (x.profiles||[]).forEach(p=>{ if(!seen.has(p.handle)) P.push(p); }); d.after = x.after; }
+      else d.after = null;
+      paint(d); };
+    if(typeof csWireCards==="function") csWireCards(document.getElementById("csMktBox")||box, {}); };
+  if(st){ paint(st); return; }
   const { data, error } = await sb.functions.invoke("ig-discover", { body }).then(r=>r, e=>({error:e}));
   const d = data || { error: error && (typeof fnError==="function" ? await fnError(error) : error.message) };
   _csMarketDone[key] = d;
