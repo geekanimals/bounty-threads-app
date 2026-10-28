@@ -3117,7 +3117,7 @@ function mountCreatorSearch(root, opts){
     if((/^[a-z0-9]{3,24}$/.test(nmw) || (!S.q && (S.categories.length || S.location))) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csNamePanel($i("Res"), nmw, S, ()=>{ run(true); pool(); });
     // a city and/or a category picked → find more of them live on Instagram (full public profiles)
     const kw = csKeyword(S.q);
-    if(window.__isAdmin && (S.q || S.location || S.categories.length) && !/^[@#]|instagram\.com/i.test(S.q||"") && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csMarketPanel($i("Res"), S, ()=>{ run(true); pool(); });
+    if((window.__isAdmin || !_csMarketDone.__closed) && (S.q || S.location || S.categories.length) && !/^[@#]|instagram\.com/i.test(S.q||"") && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csMarketPanel($i("Res"), S, ()=>{ run(true); pool(); });
     // hashtag "scout" is off: Instagram hands apps hashtag/caption text without the @handles, so it never found anyone —
     // city / category now go through username matching (csNamePanel) and Creator Marketplace (csMarketPanel)
     if(false && (kw || S.location || S.categories.length) && S.source!=="platform" && (S.pageE||1)===1 && S.page===1) csScoutPanel($i("Res"), S, ()=>{ run(true); pool(); });
@@ -3639,6 +3639,8 @@ async function csMarketPanel(res, S, refresh){
       <div class="muted">Meta's own creator search — every matching creator with photo, followers and bio, even if they're not on Geek OS.</div></div></div>
     <div id="csMktMsg">${_csMarketDone[key] ? "" : `<div class="cs-scout-run"><span class="mk-spin sm"></span> Searching Instagram's creator database…</div>`}</div></div>`);
   const paint = d => { const box = document.getElementById("csMktMsg"); if(!box) return;
+    // not approved by Meta yet → brands don't see the panel at all (it switches itself on once Meta approves)
+    if(d && d.needs_review && !window.__isAdmin){ const bx = document.getElementById("csMktBox"); if(bx) bx.remove(); return; }
     if(!d || d.error){ box.innerHTML = `<div class="muted">${d && d.needs_review ? "⏳ " : "⚠️ "}${esc((d && d.error) || "Couldn't reach Instagram.")}</div>`; return; }
     const P = d.profiles||[];
     box.innerHTML = P.length ? `${d.test_data?`<div class="muted">Meta test data — real creators show once the app review is approved.</div>`:""}<div class="cs-grid">${P.map(p=> csIgCard(csIgSeed({ handle:p.handle, name:p.name, profile_picture_url:p.profile_picture_url, followers:p.followers, posts:p.media_count,
@@ -3650,30 +3652,54 @@ async function csMarketPanel(res, S, refresh){
   const { data, error } = await sb.functions.invoke("ig-discover", { body }).then(r=>r, e=>({error:e}));
   const d = data || { error: error && (typeof fnError==="function" ? await fnError(error) : error.message) };
   _csMarketDone[key] = d;
+  if(d && d.needs_review) _csMarketDone.__closed = true;      // don't ask Instagram again this session
   paint(d);
   if(d && d.found && refresh) setTimeout(refresh, 400);
 }
 const _csNameDone = {};
+// Instagram has no "search by city / followers" for apps, so we look up the usernames creators of that city and category
+// really build (mumbaifashionblogger, the.mumbai.style, dogsofjaipur …) through business discovery — 20 names a batch —
+// and show only the accounts that fit the filters (followers, engagement). Everyone found also joins the creator search.
 async function csNamePanel(res, w, S, refresh){
-  const cat = (S.categories||[])[0] || "", key = w + "|" + (S.location||"") + "|" + cat;
+  const cat = (S.categories||[])[0] || "", gen = S.gender || "", key = [w, S.location||"", cat, gen].join("|");
   const what = w || [S.location, cat].filter(Boolean).join(" ");
-  res.insertAdjacentHTML("afterbegin", `<div class="card cs-scout" id="csNameBox"><div class="cs-scout-h"><div><b>📸 Instagram accounts named like “${esc(what)}”</b>
-      <div class="muted">Public Business / Creator accounts whose username is built from it (e.g. ${w?`${esc(w)}india, the${esc(w)}`:`${esc((S.location||"city").toLowerCase().replace(/[^a-z]/g,""))}foodie, the…blogger`}) — with photo, followers and engagement.</div></div></div>
-    <div id="csNameMsg">${_csNameDone[key] ? "" : `<div class="cs-scout-run"><span class="mk-spin sm"></span> Checking Instagram…</div>`}</div></div>`);
-  const paint = d => { const box = document.getElementById("csNameMsg"); if(!box) return;
-    if(!d || d.error){ box.innerHTML = `<div class="muted">${esc((d && d.error) || "Couldn't reach Instagram.")}</div>`; return; }
-    const P = d.profiles||[];
-    box.innerHTML = P.length ? `<div class="cs-grid">${P.map(p=> csIgCard(csIgSeed({ handle:p.handle, name:p.name, profile_picture_url:p.profile_picture_url, followers:p.followers, _done:true,
-          avg_likes:p.avg_likes, bio:p.bio, posts:p.media_count, engagement: p.followers && p.avg_likes!=null ? Math.round(10000*((+p.avg_likes||0)+(+p.avg_comments||0))/p.followers)/100 : null }), {})).join("")}</div>
-        <div class="muted" style="margin-top:6px">✓ Added to your creator search.${d.note?" "+esc(d.note):""}</div>`
-      : `<div class="muted">No public Instagram account named like “${esc(what)}” (tried ${(d.tried||[]).slice(0,6).map(h=>"@"+esc(h)).join(", ")}…). Instagram has no username search for apps — try a #hashtag, a city, or paste handles.${d.note?" "+esc(d.note):""}</div>`;
-    if(typeof csWireCards==="function") csWireCards(box, {}); };
-  if(_csNameDone[key]){ paint(_csNameDone[key]); return; }
-  const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"name_match", q:w, city:S.location||"", category:cat } }).then(r=>r, e=>({error:e}));
-  const d = data || { error: error && (typeof fnError==="function" ? await fnError(error) : error.message) };
-  if(d && d.ok) _csNameDone[key] = d;
-  paint(d);
-  if(d && d.found && refresh) setTimeout(refresh, 400);
+  const t = CS_TIERS.find(x=>x[0]===S.tier);
+  const mn = S.tier==="custom" ? (+S.min||0) : t && t[2]!=null ? t[2] : 0, mx = S.tier==="custom" ? (+S.max||0) : t && t[3]!=null ? t[3] : 0, me = +S.min_engagement||0;
+  const fits = p => (p.followers!=null || (!mn && !mx)) && (!mn || (p.followers||0) >= mn) && (!mx || (p.followers||0) <= mx)
+    && (!me || (p.followers && p.avg_likes!=null && 100*((+p.avg_likes||0)+(+p.avg_comments||0))/p.followers >= me));
+  const rule = [mn||mx ? (mn&&mx ? kfmtN(mn)+"–"+kfmtN(mx) : mn ? kfmtN(mn)+"+" : "up to "+kfmtN(mx))+" followers" : "", me ? me+"%+ engagement" : ""].filter(Boolean).join(", ");
+  res.insertAdjacentHTML("afterbegin", `<div class="card cs-scout" id="csNameBox"><div class="cs-scout-h"><div><b>📸 Live from Instagram — ${esc(what)} creators${rule?` with ${esc(rule)}`:""}</b>
+      <div class="muted">Instagram doesn't let apps list accounts by city or followers, so we check the usernames ${esc(what)} creators use (e.g. ${esc((S.location||"city").toLowerCase().replace(/[^a-z]/g,""))}${esc((w||cat||"blogger").toLowerCase().replace(/[^a-z]/g,""))}, the${esc((S.location||"city").toLowerCase().replace(/[^a-z]/g,""))}…) and keep the ones that fit.</div></div></div>
+    <div id="csNameGrid" class="cs-grid"></div><div id="csNameMsg"></div></div>`);
+  const st = _csNameDone[key] || (_csNameDone[key] = { profiles:[], tried:0, next:0, total:null, err:null, note:null });
+  const paint = (busy)=>{ const grid = document.getElementById("csNameGrid"), box = document.getElementById("csNameMsg"); if(!grid || !box) return;
+    const good = st.profiles.filter(fits), other = st.profiles.length - good.length;
+    grid.innerHTML = good.map(p=> csIgCard(csIgSeed({ handle:p.handle, name:p.name, profile_picture_url:p.profile_picture_url, followers:p.followers, _done:true,
+          avg_likes:p.avg_likes, bio:p.bio, posts:p.media_count, engagement: p.followers && p.avg_likes!=null ? Math.round(10000*((+p.avg_likes||0)+(+p.avg_comments||0))/p.followers)/100 : null }), {})).join("");
+    box.innerHTML = st.err ? `<div class="muted">${esc(st.err)}</div>`
+      : `<div class="cs-name-foot">${busy ? `<span class="cs-scout-run"><span class="mk-spin sm"></span> Checking Instagram… (${st.tried}${st.total?` of ${st.total}`:""} names so far)</span>`
+          : `<span class="muted">${good.length ? `✓ ${good.length} fit${rule?` (${esc(rule)})`:""}` : `None of the ${st.tried} names checked fit yet`}${other?` · ${other} smaller / other account${other===1?"":"s"} hidden`:""} · all added to the creator search.${st.note?" "+esc(st.note):""}</span>
+            ${st.next!=null ? `<button class="btn sm" id="csNameMore">🔍 Search ${Math.min(20, (st.total||0)-(st.next||0))||20} more names on Instagram</button>` : `<span class="muted">All ${st.tried} likely names checked.</span>`}`}</div>`;
+    const more = document.getElementById("csNameMore"); if(more) more.onclick = ()=> batch(1);
+    if(typeof csWireCards==="function") csWireCards(grid, window.__brandPick ? {} : {}); };
+  const batch = async (n)=>{
+    for(let i=0; i<n && st.next!=null; i++){
+      paint(true);
+      const { data, error } = await sb.functions.invoke("ig-discover", { body:{ action:"name_match", q:w, city:S.location||"", category:cat, gender:gen, offset:st.next } }).then(r=>r, e=>({error:e}));
+      const d = data || { error: error && (typeof fnError==="function" ? await fnError(error) : error.message) };
+      if(!d || d.error){ st.err = (d && d.error) || "Couldn't reach Instagram."; break; }
+      const seen = new Set(st.profiles.map(p=>p.handle));
+      (d.profiles||[]).forEach(p=>{ if(!seen.has(p.handle)) st.profiles.push(p); });
+      st.profiles.sort((a,b)=> (b.followers||0)-(a.followers||0));
+      st.tried += (d.tried||[]).length; st.next = d.next_offset ?? null; st.total = d.total_names || st.total; st.note = d.note || null;
+      if(d.note) break;                                        // Instagram's hourly limit — stop
+      if(st.profiles.filter(fits).length >= 6) break;
+    }
+    paint(false);
+    if(refresh && st.profiles.length) setTimeout(refresh, 400);
+  };
+  if(st.tried || st.err){ paint(false); return; }
+  batch(2);       // first 40 likely names straight away; more on request
 }
 function csKeyword(q){
   q = String(q||"").trim();

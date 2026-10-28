@@ -261,21 +261,30 @@ Deno.serve(async (req) => {
       const catKey = String(body?.category || "").toLowerCase().trim();
       const city0 = String(body?.city || "").toLowerCase().replace(/[^a-z]/g, "").slice(0, 20);
       // only a city → the usernames city creators build most (jaipurblogger, jaipur_diaries …)
-      const nouns = catKey ? (CAT_NOUN[catKey] || [catKey.replace(/[^a-z]/g, "")]) : (w.length < 3 && city0.length >= 3 ? ["blogger", "diaries", "foodie", "vlogs", "influencer", "life"] : []);
+      const gender = String(body?.gender || "").toLowerCase();
+      const gNouns = gender === "female" ? ["girl", "diva", "queen", "girlie"] : gender === "male" ? ["boy", "guy", "man"] : [];
+      const nouns = [...new Set([...(catKey ? (CAT_NOUN[catKey] || [catKey.replace(/[^a-z]/g, "")]) : []),
+        ...(w.length < 3 && city0.length >= 3 ? ["blogger", "diaries", "vlogs", "influencer", "foodie", "life", "insta"] : []), ...(city0 ? gNouns : [])])];
       if (w.length < 3 && !nouns.length) return json({ error: "Type at least 3 letters." }, 400);
       const { data: shared } = await admin.schema("api").rpc("ops_discovery_token");
       const src = shared?.platform === "facebook" ? await openRow(shared) : null;
       if (!src?.access_token || !src?.ig_user_id) return json({ error: "Instagram search isn't switched on yet.", needs_facebook: true }, 200);
       const igId = encodeURIComponent(String(src.ig_user_id)), FT = encodeURIComponent(String(src.access_token));
-      const city = String(body?.city || "").toLowerCase().replace(/[^a-z]/g, "").slice(0, 20);
-      // usernames creators really build: word + india/official, and city × category (kolkatafoodie, foodie_kolkata, thedelhiblogger …)
-      // with a city, the city names come first (jaipurdogs, dogsofjaipur …) — only 16 names are tried per search
-      const base = w.length >= 3 ? [...(city ? [city + w, city + w + "s", w + "sof" + city, w + city, city + "_" + w, w + "_" + city, "the" + city + w, city + "." + w, w + "s_of_" + city] : []),
-        w, w + "india", w + "_india", "the" + w, w + "official", "indian" + w, "its" + w, w + "life", w + "diaries", w + ".in", "the." + w, w + "_official"] : [];
-      const combo = nouns.flatMap((n) => city ? [city + n, n + city, city + "_" + n, n + "_" + city, "the" + city + n, city + "." + n, n + "." + city]
-                                              : [n + "india", "indian" + n, "the" + n + "india", n + "_india"]);
-      const cand = [...new Set([...base, ...combo])]
-        .filter((h) => /^[a-z0-9._]{2,30}$/.test(h) && !/^\.|\.$|\.\./.test(h)).slice(0, 16);
+      const city = city0;
+      // usernames creators really build, most likely first: city × word / category (jaipurdogs, dogsofjaipur, mumbaifashionblogger,
+      // the.mumbai.style …). Instagram has no "search by city / followers" for apps, so we try names in batches of 20:
+      // offset 0 = the first 20, "Search more" asks for the next 20.
+      const words = [...new Set([...(w.length >= 3 ? [w] : []), ...nouns])];
+      const cityPat = (n: string) => [city + n, city + "_" + n, "the" + city + n, city + "." + n, n + "_" + city, n + "of" + city, city + n + "s",
+        n + "." + city, n + city, city + n + "official", "its" + city + n, city + n + "diaries", city + "_" + n + "_", "the." + city + "." + n, city + n + "blogger", city + n + "girl"];
+      const plainPat = (n: string) => [n + "india", "indian" + n, "the" + n + "india", n + "_india", n, "the" + n, n + "official", n + "life", n + "diaries", n + ".in"];
+      const rows = words.map((n) => city ? [...cityPat(n), ...plainPat(n)] : plainPat(n));
+      const all: string[] = [];
+      for (let i = 0; i < Math.max(0, ...rows.map((r) => r.length)); i++) for (const r of rows) if (r[i]) all.push(r[i]);   // interleave: best pattern of every word first
+      const ordered = [...new Set(all)].filter((h) => /^[a-z0-9._]{2,30}$/.test(h) && !/^[._]|\.$|\.\.|__/.test(h));
+      const offset = Math.max(0, Math.floor(Number(body?.offset) || 0)), size = 20;
+      const cand = ordered.slice(offset, offset + size);
+      if (!cand.length) return json({ ok: true, q: w, tried: [], found: 0, profiles: [], next_offset: null, total_names: ordered.length });
       const got = await Promise.all(cand.map((h) => bdProfile(igId, FT, h).then((p) => [h, p] as const)));
       if (got.length && got.every(([, p]) => p && (p as any).perm)) return json({ error: "Instagram refused the lookup (permission) — reconnect Facebook in Discovery.", needs_permission: true }, 200);
       const found = got.filter(([, p]) => p && !(p as any).perm).map(([, p]) => ({ ...(p as any), source: "name_match" }));
@@ -284,7 +293,7 @@ Deno.serve(async (req) => {
         if (se) console.error("name_match save:", se.message);
       }
       const rateLimited = got.some(([, p]) => p && (p as any).limit);
-      return json({ ok: true, q: w, tried: cand, found: found.length,
+      return json({ ok: true, q: w, tried: cand, found: found.length, next_offset: offset + size < ordered.length ? offset + size : null, total_names: ordered.length,
         note: rateLimited ? "Instagram's hourly limit was reached for some names — try again in a while." : undefined,
         profiles: found.map(({ caption: _c, mentions: _m, ...r }: any) => r).sort((a: any, b: any) => (b.followers || 0) - (a.followers || 0)) });
     }
@@ -486,13 +495,20 @@ const CAT_TAGS: Record<string, string[]> = {
 };
 // category → words creators put in their usernames (for city × category username guesses)
 const CAT_NOUN: Record<string, string[]> = {
-  food: ["foodie", "foodblogger", "food"], fashion: ["fashion", "fashionblogger", "style"], beauty: ["beauty", "makeup", "beautyblogger"],
-  travel: ["traveller", "travelblogger", "travels"], fitness: ["fitness", "fit", "fitnesscoach"], lifestyle: ["blogger", "lifestyle", "diaries"],
-  parenting: ["mom", "mommy", "momblogger"], tech: ["tech", "techie", "gadgets"], comedy: ["comedy", "memes", "funny"],
-  gaming: ["gamer", "gaming"], finance: ["finance", "money"], music: ["music", "singer"], dance: ["dance", "dancer"],
-  photography: ["photography", "clicks", "lens"], pets: ["pets", "dogs", "paws"], "home decor": ["homedecor", "home", "interiors"],
-  auto: ["cars", "rider", "motovlogs"], health: ["health", "wellness"], education: ["edu", "learning"], art: ["art", "artist"],
-  sports: ["sports", "fitness"], business: ["business", "startup"], entertainment: ["entertainment", "reels"], spirituality: ["spiritual", "bhakti"],
+  food: ["foodie", "foodblogger", "food", "foodies", "eats", "foodiaries", "foodlover", "khana"],
+  fashion: ["fashion", "fashionblogger", "style", "styles", "stylist", "fashionista", "ootd", "styleblogger"],
+  beauty: ["beauty", "makeup", "beautyblogger", "makeupartist", "skincare", "glow", "mua"],
+  travel: ["traveller", "travelblogger", "travels", "traveler", "explorer", "wanderer", "diaries"],
+  fitness: ["fitness", "fit", "fitnesscoach", "gym", "fitfam", "trainer", "yoga"],
+  lifestyle: ["blogger", "lifestyle", "diaries", "vlogs", "life", "influencer"],
+  parenting: ["mom", "mommy", "momblogger", "mama", "moms", "parenting", "dad"],
+  tech: ["tech", "techie", "gadgets", "techguru", "techreview"], comedy: ["comedy", "memes", "funny", "comedian", "jokes"],
+  gaming: ["gamer", "gaming", "gamerz", "gamingyt"], finance: ["finance", "money", "investor", "stocks"], music: ["music", "singer", "musician", "beats"],
+  dance: ["dance", "dancer", "dancers", "choreographer"], photography: ["photography", "clicks", "lens", "photographer", "shots"],
+  pets: ["pets", "dogs", "paws", "dog", "cats", "petlovers", "pups"], "home decor": ["homedecor", "home", "interiors", "decor", "homes"],
+  auto: ["cars", "rider", "motovlogs", "bikers", "riders", "automobiles"], health: ["health", "wellness", "nutrition", "dietitian"],
+  education: ["edu", "learning", "teacher", "classes"], art: ["art", "artist", "arts", "artistry"], sports: ["sports", "fitness", "cricket", "athlete"],
+  business: ["business", "startup", "entrepreneur"], entertainment: ["entertainment", "reels", "vibes", "talkies"], spirituality: ["spiritual", "bhakti", "temples"],
 };
 // file the searched city unless the bio clearly says another one (a Mumbai creator tagged in a #delhifood post stays Mumbai)
 const CITY_WORDS = ["delhi", "mumbai", "bangalore", "bengaluru", "hyderabad", "chennai", "kolkata", "pune", "ahmedabad", "jaipur", "lucknow",
