@@ -371,12 +371,36 @@
     var r = await api("brand_top_posts", { p_campaign:id, p_limit:5 }); BP.top = BP.top || {}; BP.top[id] = r.error ? [] : (r.data||[]); return BP.top[id];
   }
   function topGrid(L, showCamp){
-    return '<div class="bpx-top">'+L.map(function(p, i){ var c = p.creator||{}, img = p.thumb || c.profile_picture_url;
-      return '<a class="bpx-topc" href="'+esc(p.permalink)+'" target="_blank" rel="noopener"><div class="bpx-topi">'+(img?'<img src="'+esc(img)+'" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">':'')
+    setTimeout(thumbsFix, 0);   // missing / expired pictures → fetched live from Instagram (post-thumb) and saved for good
+    return '<div class="bpx-top">'+L.map(function(p, i){ var c = p.creator||{}, img = p.thumb || c.profile_picture_url, kind = p.thumb ? "post" : "pp";
+      return '<a class="bpx-topc" href="'+esc(p.permalink)+'" data-pl="'+esc(p.permalink||"")+'" target="_blank" rel="noopener"><div class="bpx-topi">'+(img?'<img src="'+esc(img)+'" data-kind="'+kind+'" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';this.dataset.bad=1;window.__bpxThumbs&&window.__bpxThumbs()">':'')
         +'<span class="bpx-rank">#'+(i+1)+'</span><span class="bpx-type">'+esc(p.type||"post")+'</span></div>'
         +'<div class="bpx-topb"><b>@'+esc(c.username||c.name||"creator")+'</b>'+(showCamp&&p.campaign?'<div class="muted" style="font-size:11.5px">'+esc(p.campaign)+'</div>':'')
         +'<div class="bpx-topm"><span>👀 '+short(p.views)+'</span>'+(p.likes!=null?'<span>❤️ '+short(p.likes)+'</span>':'')+(p.comments!=null?'<span>💬 '+short(p.comments)+'</span>':'')+(p.er!=null?'<span>⚡ '+esc(p.er)+'%</span>':'')+'</div></div></a>'; }).join("")+'</div>';
   }
+
+  // a post's picture: our saved copy, else fetched live from Instagram once and kept (post-thumb Edge Function).
+  // Cards with no picture, a profile photo standing in, or a broken (expired) Instagram link are fixed here.
+  var _thumbT = null, _thumbAsked = {};
+  function thumbsFix(){
+    clearTimeout(_thumbT);
+    _thumbT = setTimeout(function(){
+      var cards = Array.prototype.slice.call(document.querySelectorAll(".bpx-topc[data-pl]")).filter(function(a){
+        var im = a.querySelector(".bpx-topi img"); var pl = a.getAttribute("data-pl");
+        return pl && !_thumbAsked[pl] && (!im || im.dataset.bad || im.dataset.kind === "pp"); });
+      if(!cards.length || !window.sb || !window.sb.functions) return;
+      var pls = []; cards.forEach(function(a){ var pl = a.getAttribute("data-pl"); if(pls.indexOf(pl) < 0){ pls.push(pl); _thumbAsked[pl] = 1; } });
+      window.sb.functions.invoke("post-thumb", { body:{ permalinks: pls.slice(0, 30) } }).then(function(r){
+        var t = (r && r.data && r.data.thumbs) || {};
+        cards.forEach(function(a){ var u = t[a.getAttribute("data-pl")]; if(!u) return;
+          var box = a.querySelector(".bpx-topi"); if(!box) return; var im = box.querySelector("img");
+          if(!im){ im = document.createElement("img"); im.alt = ""; im.loading = "lazy"; im.referrerPolicy = "no-referrer"; box.insertBefore(im, box.firstChild); }
+          im.onerror = function(){ this.style.display = "none"; };
+          im.style.display = ""; delete im.dataset.bad; im.dataset.kind = "post"; im.src = u; });
+      }, function(){});
+    }, 80);
+  }
+  window.__bpxThumbs = thumbsFix;
 
   // ---------- ☑ select several → approve together
   function selBox(kind, pid){ return pid ? '<label class="bpx-sel" title="Select"><input type="checkbox" data-bpxsel="'+kind+'" value="'+esc(pid)+'"></label>' : ''; }
