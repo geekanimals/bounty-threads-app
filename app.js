@@ -4157,8 +4157,10 @@ function paintBrands(){
     x.disabled = false; if(error || !data || !data.brand){ gateToast((error&&error.message) || "Couldn't open the brand."); return; }
     openBrandForm(data.brand, ()=> loadBrands()); });
   body.querySelectorAll("[data-bcdel]").forEach(x=> x.onclick = ()=> deleteBrand((_brandCache||[]).find(b=> b.brand_id===x.dataset.bcdel) || { brand_id:x.dataset.bcdel }));
-  if(window.__isAdmin && !q) body.insertAdjacentHTML("beforeend", `<div class="bc-deleted-link"><a href="#" id="bcDeleted">🗑 Deleted brands</a></div>`);
-  const dl = document.getElementById("bcDeleted"); if(dl) dl.onclick = e=>{ e.preventDefault(); openDeletedBrands(); };
+  // 🗑 Deleted brands — up in the top bar, next to ➕ Add brand
+  const bar = document.querySelector(".bc-bar"), addB = document.getElementById("bcAdd");
+  if(window.__isAdmin && bar && addB && !document.getElementById("bcDeleted")) addB.insertAdjacentHTML("beforebegin", `<button class="btn ghost" id="bcDeleted" type="button">🗑 Deleted brands</button>`);
+  const dl = document.getElementById("bcDeleted"); if(dl) dl.onclick = ()=> openDeletedBrands();
 }
 // 🗑 Delete a brand (Super Admin): it leaves Brand CRM and every brand login is blocked at once — signed out, can't sign in.
 // Campaigns, bills and reports are kept, so it can be restored from 🗑 Deleted brands.
