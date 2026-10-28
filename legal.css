@@ -23,3 +23,7 @@
 .legal code{background:#eef0fa;padding:1px 6px;border-radius:5px;font-size:13px}
 @media(max-width:640px){.legal{padding:24px 0 50px}.legal-wrap{padding:0 14px}.legal-card{padding:22px 18px;border-radius:16px}.legal h1{font-size:26px}}
 @media(max-width:640px){.lp-nav .nav-cta .lp-btn:not(.ghost){display:none}.lp-brand-name{font-size:15px;white-space:nowrap}}
+.legal-toc{font-size:13.5px;color:var(--muted);background:#f7f8fd;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:0 0 22px !important}
+.legal-toc a{font-weight:600;text-decoration:none}
+.legal h2.legal-part{margin-top:46px;padding-top:26px;border-top:1px solid var(--line);font-size:24px;scroll-margin-top:90px}
+.legal [id]{scroll-margin-top:90px}

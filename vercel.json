@@ -41,6 +41,36 @@
       "source": "/brand/",
       "destination": "/brand",
       "permanent": false
+    },
+    {
+      "source": "/refund.html",
+      "destination": "/terms.html#refund",
+      "permanent": false
+    },
+    {
+      "source": "/shipping.html",
+      "destination": "/terms.html#shipping",
+      "permanent": false
+    },
+    {
+      "source": "/contact.html",
+      "destination": "/terms.html#contact",
+      "permanent": false
+    },
+    {
+      "source": "/refund",
+      "destination": "/terms.html#refund",
+      "permanent": false
+    },
+    {
+      "source": "/shipping",
+      "destination": "/terms.html#shipping",
+      "permanent": false
+    },
+    {
+      "source": "/contact",
+      "destination": "/terms.html#contact",
+      "permanent": false
     }
   ],
   "rewrites": [
