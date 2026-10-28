@@ -23,9 +23,10 @@ const APP_SECRET = (Deno.env.get("FB_APP_SECRET") || "").trim();
 const CONFIG_ID = (Deno.env.get("FB_BRAND_CONFIG_ID") || Deno.env.get("FB_LOGIN_CONFIG_ID") || "").trim();
 const VER = Deno.env.get("FB_GRAPH_VER") || "v23.0";
 const GRAPH = `https://graph.facebook.com/${VER}`;
-// read-only: who they are, their Business Manager, Pages (+ Instagram), Page insights and ad accounts
+// who they are, their Business Manager, Pages (+ Instagram), Page insights and ad accounts — plus managing Page posts /
+// comments and pausing / resuming ad campaigns from the brand's 📘 Facebook page (brand-facebook)
 const SCOPES = (Deno.env.get("FB_BRAND_SCOPES") ||
-  "public_profile,email,business_management,pages_show_list,pages_read_engagement,pages_read_user_content,read_insights,ads_read").trim();
+  "public_profile,email,business_management,pages_show_list,pages_read_engagement,pages_read_user_content,pages_manage_posts,pages_manage_engagement,read_insights,ads_read,ads_management").trim();
 const PLATFORM = "facebook_brand";
 const gerr = (j: any) => j?.error?.error_user_msg || j?.error?.message || null;
 const get = async (path: string, token: string) => {

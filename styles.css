@@ -2528,3 +2528,21 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .bb-it input{padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-size:13px;min-width:0}
 @media (max-width:600px){.bb-it{grid-template-columns:1fr 70px 100px auto}}
 .bb-tot{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px}
+
+/* ---------- brand 📘 Facebook page */
+.bpx-fbhero ul{margin:8px 0 14px;padding-left:18px;line-height:1.7}
+.bpx-fbsw{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bpx-fbsw img{width:46px;height:46px;border-radius:50%;object-fit:cover;flex:none}
+.bpx-fbsw select{font-weight:700;font-size:15px;max-width:100%;padding:4px 8px;border-radius:8px}
+.bpx-fbposts{display:grid;gap:12px}
+.bpx-fbpost{display:flex;gap:12px;border:1px solid var(--line,#e5e7eb);border-radius:12px;padding:10px;min-width:0}
+.bpx-fbpost img{width:96px;height:96px;border-radius:8px;object-fit:cover;flex:none}
+.bpx-fbpb{min-width:0;flex:1}
+.bpx-fbmsg{white-space:pre-wrap;word-break:break-word;margin:4px 0;max-height:7.5em;overflow:hidden}
+.bpx-fbc{border-bottom:1px solid var(--line,#e5e7eb);padding:10px 0}
+.bpx-fbc.rep{margin-left:22px;padding-left:10px;border-left:2px solid var(--line,#e5e7eb)}
+.bpx-fbc.hid{opacity:.6}
+.bpx-fbca{display:flex;gap:14px;font-size:12.5px;margin-top:4px}
+.bpx-fbrf{display:flex;gap:6px;margin-top:6px}
+.bpx-fbrf input{flex:1;min-width:0}
+@media (max-width:600px){.bpx-fbpost{flex-direction:column}.bpx-fbpost img{width:100%;height:180px}}

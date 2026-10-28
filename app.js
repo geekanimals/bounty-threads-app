@@ -5007,7 +5007,7 @@ function renderInstagram(){
   return pageHead("Instagram","Post, reply to comments and answer DMs — without leaving Geek OS.")
     + `<div id="igBody">${skel("cards",3)}</div>`;
 }
-const IG_TABS = [["post","📤 Post"],["stories","🟣 Stories"],["comments","💬 Comments"],["inbox","✉️ Messages"]];
+const IG_TABS = [["post","📤 Post"],["stories","🟣 Stories"],["comments","💬 Comments"],["inbox","✉️ Messages"],["insights","📊 Insights"]];
 function paintIgTabs(){
   document.querySelectorAll("[data-igtab]").forEach(b=> b.classList.toggle("on", b.dataset.igtab===_igTab));
   IG_TABS.forEach(([k])=>{ const p=document.getElementById("igPane_"+k); if(p) p.style.display = k===_igTab ? "" : "none"; });
@@ -5025,7 +5025,8 @@ async function loadInstagram(){
     <div id="igPane_post"><div class="mk-kit" id="mkComposerWrap"></div></div>
     <div id="igPane_stories"><div class="mk-kit" id="mkStoriesWrap"></div></div>
     <div id="igPane_comments"><div class="mk-kit" id="mkCommentsWrap"></div></div>
-    <div id="igPane_inbox"><div class="mk-kit" id="mkInboxWrap"></div></div>`;
+    <div id="igPane_inbox"><div class="mk-kit" id="mkInboxWrap"></div></div>
+    <div id="igPane_insights"><div id="igInsWrap"></div></div>`;
   document.getElementById("mkComposerWrap").innerHTML = mkComposer();
   document.getElementById("mkStoriesWrap").innerHTML = mkStories(acct) || `<div class="card"><div class="muted">No live stories right now. Post one from the 📤 Post tab — it shows here for 24 hours.</div></div>`;
   document.getElementById("mkCommentsWrap").innerHTML = mkCommentsHtml(acct) || `<div class="card"><div class="muted">No posts yet — comments on your posts will show here.</div></div>`;
@@ -5033,8 +5034,8 @@ async function loadInstagram(){
   _igMediaSig = JSON.stringify((acct.recent_media||[]).map(m=>[m.id,m.comments_count]));
   wireMkComposer(); wireMkComments(acct); loadMkInbox();
   paintIgSwitcher("igAcctSwitch", "Posting as");
-  document.querySelectorAll("[data-igtab]").forEach(b=> b.onclick = ()=>{ _igTab = b.dataset.igtab; paintIgTabs(); });
-  paintIgTabs();
+  document.querySelectorAll("[data-igtab]").forEach(b=> b.onclick = ()=>{ _igTab = b.dataset.igtab; paintIgTabs(); if(_igTab==="insights") loadIgInsights(); });
+  paintIgTabs(); if(_igTab==="insights") loadIgInsights();
   _mkSyncedAt = 0; mkStamp(); refreshInstagram(false);
   if(_igTimer) clearInterval(_igTimer);
   _igTimer = setInterval(()=>{
@@ -5042,6 +5043,40 @@ async function loadInstagram(){
     mkStamp();
     if(document.visibilityState==="visible" && Date.now()-(_mkSyncedAt||0) >= 60000) refreshInstagram(false);
   }, 5000);
+}
+// 📊 Instagram insights for the connected (active) account: reach, views, engagement, follows, audience and every post
+let _igInsDays = 30;
+async function loadIgInsights(){
+  const box = document.getElementById("igInsWrap"); if(!box) return;
+  box.innerHTML = `<div class="card">${skel("list",3)}</div>`;
+  const [a, m] = await Promise.all([ sb.functions.invoke("instagram-insights", { body:{ action:"account", days:_igInsDays } }).then(r=>r, e=>({error:e})),
+                                     sb.functions.invoke("instagram-insights", { body:{ action:"media", limit:12 } }).then(r=>r, e=>({error:e})) ]);
+  if(!document.getElementById("igInsWrap")) return;
+  const err = (a.data&&a.data.error) || (a.error && (typeof fnError==="function" ? await fnError(a.error) : a.error.message));
+  if(err){ box.innerHTML = `<div class="card"><div class="ci-err-inline">${esc(err)}</div>${/function|not found|404/i.test(err)?'<div class="muted" style="margin-top:6px">Deploy the instagram-insights function.</div>':''}</div>`; return; }
+  const d = a.data, t = d.totals||{}, P = d.profile||{}, au = d.audience||{}, M = (m.data&&m.data.media)||[];
+  const sh = v => v==null ? "—" : Number(v)>=1e5 ? (Number(v)/1e5).toFixed(1).replace(/\.0$/,"")+" L" : Number(v)>=1e3 ? (Number(v)/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(v);
+  const k = (ic,v,l,sub)=> `<div class="bpx-kpi"><div class="bpx-kpi-ic">${ic}</div><b>${esc(sh(v))}</b><span>${esc(l)}</span><small class="muted">${esc(sub||"")}</small></div>`;
+  const tot = arr => (arr||[]).reduce((x,y)=> x + (Number(y.value)||0), 0);
+  const bars = (title, L, map)=>{ if(!L||!L.length) return ""; const T = tot(L)||1;
+    return `<div class="bpx-aud"><b>${title}</b>${L.map(x=>{ const pct = Math.round(1000*x.value/T)/10; return `<div class="bpx-audr"><span>${esc(map?map(x.key):x.key)}</span><i><em style="width:${Math.min(100,pct)}%"></em></i><span>${pct}%</span></div>`; }).join("")}</div>`; };
+  const spark = (L)=>{ if(!L||L.length<2) return ""; const mx = Math.max(...L.map(x=>x.v))||1, w = 600, h = 80, st = w/(L.length-1);
+    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:80px;display:block"><polyline fill="none" stroke="var(--brand)" stroke-width="2.5" points="${L.map((x,i)=>`${(i*st).toFixed(1)},${(h-4-(x.v/mx)*(h-8)).toFixed(1)}`).join(" ")}"/></svg>`; };
+  const fs = d.series||{}, fc = fs.follower_count||[], G = { F:"Women", M:"Men", U:"Other" };
+  box.innerHTML = `<div class="card"><div class="bpx-h"><h3>📊 @${esc(P.username||"")} — last ${d.days} days</h3>
+      <span style="display:flex;gap:6px">${[7,14,30].map(n=>`<button class="bpx-chip${n===d.days?" on":""}" data-igd="${n}">${n} days</button>`).join("")}</span></div>
+    <div class="bpx-kpis">${k("👥",P.followers,"Followers",(t.follows!=null?"+"+t.follows:"")+(t.unfollows!=null?" / −"+t.unfollows:"")+(t.follows!=null?" in "+d.days+" days":""))}${k("📡",t.reach,"Accounts reached","")}${k("👀",t.views,"Views","")}
+      ${k("🙌",t.accounts_engaged,"Accounts engaged","")}${k("⚡",t.total_interactions,"Interactions","")}${k("❤️",t.likes,"Likes","")}${k("💬",t.comments,"Comments","")}
+      ${k("🔁",t.shares,"Shares","")}${k("🔖",t.saves,"Saves","")}${k("👤",t.profile_views,"Profile visits","")}${k("🔗",t.profile_links_taps!=null?t.profile_links_taps:t.website_clicks,"Link taps","from the profile")}</div>
+    ${fs.reach&&fs.reach.length>1?`<div style="margin-top:12px"><b style="font-size:13px">Daily reach</b>${spark(fs.reach)}</div>`:""}
+    ${fc.length>1?`<div style="margin-top:8px"><b style="font-size:13px">New followers per day</b>${spark(fc)}</div>`:""}</div>
+  ${(au.city||au.age||au.gender||au.country)?`<div class="card" style="margin-top:14px"><h3 style="margin-top:0">👥 Who follows you</h3><div class="bpx-audg">${bars("📍 Top cities", au.city)}${bars("🎂 Age", au.age)}${bars("⚧ Gender", au.gender, x=>G[x]||x)}${bars("🌍 Countries", au.country)}</div></div>`
+    :`<div class="card muted" style="margin-top:14px">Audience (city, age, gender) shows once the account has 100+ followers — Instagram's rule.</div>`}
+  <div class="card" style="margin-top:14px"><h3 style="margin-top:0">🧾 Your latest posts</h3>${M.length?`<div style="overflow-x:auto"><table class="tbl bpx-tbl"><thead><tr><th>Post</th><th>Type</th><th>Date</th><th>Reach</th><th>Views</th><th>Likes</th><th>Comments</th><th>Shares</th><th>Saves</th><th>Eng. %</th></tr></thead><tbody>
+    ${M.map(x=>`<tr><td><a href="${esc(safeUrl(x.permalink||"#"))}" target="_blank" rel="noopener" style="display:flex;gap:8px;align-items:center;max-width:280px">${x.img?`<img src="${esc(safeUrl(x.img))}" alt="" style="width:36px;height:36px;border-radius:6px;object-fit:cover" referrerpolicy="no-referrer" onerror="this.remove()">`:""}<span style="white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(x.caption||"(no caption)")}</span></a></td>
+      <td>${esc(x.type||"")}</td><td>${esc(fmtDate(x.at))}</td><td>${esc(sh(x.reach))}</td><td>${esc(sh(x.views))}</td><td>${esc(sh(x.likes))}</td><td>${esc(sh(x.comments))}</td><td>${esc(sh(x.shares))}</td><td>${esc(sh(x.saves))}</td><td>${x.er_reach!=null?esc(x.er_reach)+"%":"—"}</td></tr>`).join("")}</tbody></table></div>`:'<div class="muted">No posts yet.</div>'}
+    <div class="muted" style="font-size:12px;margin-top:8px">Engagement % = (likes + comments + shares + saves) ÷ reach. Numbers come straight from Instagram for the account selected above.</div></div>`;
+  box.querySelectorAll("[data-igd]").forEach(b=> b.onclick = ()=>{ _igInsDays = +b.dataset.igd; loadIgInsights(); });
 }
 // silent sync: stories + the comments post-picker repaint only when Instagram data changed; the composer and an
 // open comment thread / DM conversation are never touched
@@ -9641,7 +9676,7 @@ function renderContent(){
     if(/^fbbrand:link:/.test(new URLSearchParams(location.search).get("state")||"")) BrandPortal.fbReturn();
     return;
   }
-  if(currentRole==="brand" && window.BrandPortal && !window.__isAdmin){ currentPage = "dashboard"; return renderContent(); }
+  if(currentRole==="brand" && window.BrandPortal && !window.__isAdmin && currentPage!=="instagram"){ currentPage = "dashboard"; return renderContent(); }
   const fn = PAGES[currentPage] || (()=>renderPlaceholder(NAV_META[currentPage]?.label||"Module",""));
   $("#content").innerHTML = fn();
   const card = document.getElementById("openAiFromCard");

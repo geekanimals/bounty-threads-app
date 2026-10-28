@@ -52,6 +52,7 @@
       reports:["Reports","Campaign results — download them as Excel (CSV) or PDF."],
       creators:["Saved creators","Creators you ⭐ saved — to use again in your next campaign."],
       billing:["Billing","Bills from the Geek team — pay online, and download every bill and receipt."],
+      facebook:["Facebook","Your Facebook Pages and ads — post, reply to comments, see insights and run campaigns, all from here."],
       settings:["Settings","Your login and your Facebook business."]}[page] || ["Dashboard",""];
     return shell((BP.preview?'':pageHead(head[0], head[1]))+'<div id="bpxBody">'+skel(page==="campaigns"&&BP.open?"list":"dash", 4)+'</div>');
   }
@@ -68,6 +69,7 @@
     if(page==="settings") return paintSettings(body);
     if(page==="creators") return paintSaved(body);
     if(page==="billing") return paintBilling(body);
+    if(page==="facebook") return paintFacebook(body);
     return paintDash(body);
   }
   function go(page, campaign){
@@ -305,7 +307,7 @@
       +'<div class="card" style="margin-top:16px"><h3 style="margin-top:0">📘 Facebook business</h3>'
       +(fb ? '<div>✓ Linked to <b>'+esc(fb.fb_name||"your Facebook account")+'</b> — you can sign in with <b>Continue with Facebook</b>.</div>'
              +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn sm ghost" data-bpxfbrefresh>↻ Refresh data</button><button class="btn sm ghost" data-bpxfbunlink>Unlink</button></div>'
-           : '<p class="muted" style="margin:0 0 10px">Link your Facebook (Business Manager) once — then sign in with one tap, and see your Pages, Instagram and ad accounts here. We only read; nothing is posted.</p><button class="btn sm" data-bpxfb>🔗 Link Facebook business</button>')
+           : '<p class="muted" style="margin:0 0 10px">Link your Facebook (Business Manager) once — then sign in with one tap, and manage your Pages (posts, comments, insights) and ad campaigns from the 📘 Facebook page. Nothing is posted unless you post it.</p><button class="btn sm" data-bpxfb>🔗 Link Facebook business</button>')
       +'</div>'+(fb?fbCard(fb):'')
       +'<div class="card" style="margin-top:16px" id="bpxTeam"><h3 style="margin-top:0">👥 Your team</h3>'+skel("list",2)+'</div>';
     wireCommon(body); paintTeam(body.querySelector("#bpxTeam"));
@@ -325,7 +327,8 @@
     body.querySelectorAll("[data-bpxback]").forEach(function(b){ b.onclick = function(){ go("campaigns", null); }; });
     body.querySelectorAll("[data-bpxcsv]").forEach(function(b){ b.onclick = function(e){ e.stopPropagation(); campCsv(b.dataset.bpxcsv).catch(function(er){ gateToast(er.message||String(er)); }); }; });
     body.querySelectorAll("[data-bpxpdf]").forEach(function(b){ b.onclick = function(e){ e.stopPropagation(); campPdf(b.dataset.bpxpdf).catch(function(er){ gateToast(er.message||String(er)); }); }; });
-    body.querySelectorAll("[data-bpxfb]").forEach(function(b){ b.onclick = function(){ if(BP.preview){ gateToast("The brand links Facebook from their own login."); return; } fbStart("link"); }; });
+    body.querySelectorAll("[data-bpxfb]").forEach(function(b){ b.onclick = function(){ if(BP.preview){ gateToast("The brand links Facebook from their own login."); return; }
+      try{ sessionStorage.setItem("geek_fb_after", "fbreturn="+(BP.page==="facebook"?"facebook":"settings")); }catch(e){} fbStart("link"); }; });
     body.querySelectorAll("[data-bpxfbrefresh]").forEach(function(b){ b.onclick = async function(){ if(BP.preview) return; b.disabled = true; b.textContent = "Refreshing…";
       var r = await sb.functions.invoke("brand-fb-login", { body:{ action:"refresh" } }); var m = (r.data&&r.data.error) || (r.error && (typeof fnError==="function" ? await fnError(r.error) : r.error.message));
       if(m) gateToast(m); refresh(); }; });
@@ -495,6 +498,155 @@
       location.href = x.data.url; }; });
   }
 
+  // ---------- 📘 Facebook: Pages (posts, comments, insights) + ads — the brand's own linked Facebook business
+  var FB = { page:null, tab:"posts", pages:null, act:null, days:28, adays:30 };
+  try{ FB.page = localStorage.getItem("geek_fb_page"); FB.act = localStorage.getItem("geek_fb_act"); }catch(e){}
+  var fbCall = async function(body){
+    var r = await sb.functions.invoke("brand-facebook", { body:body });
+    var m = (r.data&&r.data.error) || (r.error && (typeof fnError==="function" ? await fnError(r.error) : r.error.message));
+    return m ? { err:m, reconnect:!!(r.data&&r.data.reconnect), notLinked:!!(r.data&&r.data.not_linked) } : { data:r.data };
+  };
+  async function paintFacebook(body){
+    if(BP.preview){ body.innerHTML = '<div class="card muted">Facebook Pages and ads are managed from the brand\'s own login (each login links its own Facebook business).</div>'; return; }
+    var fb = BP.data.facebook;
+    if(!fb){ body.innerHTML = '<div class="card bpx-fbhero"><h3 style="margin-top:0">📘 Connect your Facebook business</h3><p class="muted">Link the Facebook account that manages your brand\'s Page and ad accounts (Business Manager). Then, right here, you can:</p>'
+        +'<ul class="muted"><li>Switch between all your Pages</li><li>Publish or schedule posts, links and photos</li><li>Read, reply to, hide or delete comments</li><li>See Page insights — reach, impressions, engagement, follows</li><li>See ad campaigns with spend and results, and pause / resume them</li></ul>'
+        +'<button class="btn" data-bpxfb>🔗 Connect Facebook</button></div>'; wireCommon(body); return; }
+    body.innerHTML = '<div class="card">'+skel("list",3)+'</div>';
+    if(!FB.pages){ var r = await fbCall({ action:"pages" });
+      if(r.err){ body.innerHTML = '<div class="card"><div class="ci-err-inline">'+esc(r.err)+'</div><button class="btn sm" style="margin-top:10px" data-bpxfb>🔄 Reconnect Facebook</button></div>'; wireCommon(body); return; }
+      FB.pages = r.data.pages||[]; }
+    var P = FB.pages;
+    if(!P.length){ body.innerHTML = '<div class="card"><h3 style="margin-top:0">No Pages shared yet</h3><p class="muted">Reconnect Facebook and, on Facebook\'s screen, tick the Pages (and ad accounts) Geek OS may manage.</p><button class="btn sm" data-bpxfb>🔄 Reconnect Facebook</button></div>'; wireCommon(body); return; }
+    if(!P.some(function(p){ return p.id===FB.page; })) FB.page = P[0].id;
+    var pg = P.find(function(p){ return p.id===FB.page; });
+    var tabs = [["posts","📝 Posts"],["create","✍️ Create post"],["insights","📊 Insights"],["ads","📣 Ads"]];
+    body.innerHTML = '<div class="card bpx-fbhead"><div class="bpx-fbsw">'+(pg.picture?'<img src="'+esc(pg.picture)+'" alt="" referrerpolicy="no-referrer">':'<span class="bpx-av bpx-av-t" style="position:static">f</span>')
+        +'<div style="min-width:0;flex:1"><div class="muted" style="font-size:12px">Managing Page</div>'
+        +(P.length>1?'<select id="fbPageSel">'+P.map(function(p){ return '<option value="'+esc(p.id)+'"'+(p.id===FB.page?' selected':'')+'>'+esc(p.name)+(p.followers!=null?' · '+short(p.followers)+' followers':'')+'</option>'; }).join("")+'</select>':'<b>'+esc(pg.name)+'</b>')
+        +'<div class="muted" style="font-size:12.5px">'+esc(pg.category||"")+(pg.followers!=null?' · '+short(pg.followers)+' followers':'')+(pg.instagram?' · 📷 @'+esc(pg.instagram.username)+' linked':'')+(pg.link?' · <a href="'+esc(pg.link)+'" target="_blank" rel="noopener">Open Page ↗</a>':'')+'</div></div>'
+        +'<span class="muted" style="font-size:12px">'+P.length+' Page'+(P.length===1?'':'s')+'</span><button class="btn sm ghost" data-bpxfb title="Add Pages or permissions">🔄 Reconnect</button></div></div>'
+      +'<div class="bpx-tabs">'+tabs.map(function(t){ return '<button class="bpx-chip'+(FB.tab===t[0]?' on':'')+'" data-fbt="'+t[0]+'">'+t[1]+'</button>'; }).join("")+'</div><div id="fbPane"></div>';
+    wireCommon(body);
+    var sel = body.querySelector("#fbPageSel"); if(sel) sel.onchange = function(){ FB.page = sel.value; try{ localStorage.setItem("geek_fb_page", FB.page); }catch(e){} paintFacebook(body); };
+    body.querySelectorAll("[data-fbt]").forEach(function(b){ b.onclick = function(){ FB.tab = b.dataset.fbt; body.querySelectorAll("[data-fbt]").forEach(function(x){ x.classList.toggle("on", x===b); }); fbPane(body.querySelector("#fbPane"), pg); }; });
+    fbPane(body.querySelector("#fbPane"), pg);
+  }
+  function fbPane(box, pg){
+    if(FB.tab==="create") return fbCreate(box, pg);
+    if(FB.tab==="insights") return fbInsights(box, pg);
+    if(FB.tab==="ads") return fbAds(box);
+    return fbPosts(box, pg);
+  }
+  async function fbPosts(box, pg, sched){
+    box.innerHTML = '<div class="card">'+skel("list",3)+'</div>';
+    var r = await fbCall({ action: sched ? "scheduled" : "posts", page_id:pg.id }); if(!box.isConnected) return;
+    if(r.err){ box.innerHTML = '<div class="card"><div class="ci-err-inline">'+esc(r.err)+'</div>'+(r.reconnect?'<button class="btn sm" style="margin-top:8px" data-bpxfb>🔄 Reconnect Facebook</button>':'')+'</div>'; wireCommon(box); return; }
+    var L = r.data.posts||[];
+    box.innerHTML = '<div class="card"><div class="bpx-h"><h3>'+(sched?'🗓 Scheduled posts':'📝 Published posts')+'</h3><button class="btn sm ghost" id="fbSched">'+(sched?'← Published posts':'🗓 Scheduled')+'</button></div>'
+      +(L.length?'<div class="bpx-fbposts">'+L.map(function(p){ return '<div class="bpx-fbpost">'+(p.image?'<img src="'+esc(p.image)+'" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">':'')
+          +'<div class="bpx-fbpb"><div class="muted" style="font-size:12px">'+(sched?'Goes live '+fmtDateTime((p.scheduled_at||0)*1000):fmtDateTime(p.at))+'</div><div class="bpx-fbmsg">'+esc(p.message||"(no text)")+'</div>'
+          +(sched?'':'<div class="bpx-topm"><span>👍 '+short(p.reactions)+'</span><span>💬 '+short(p.comments)+'</span><span>🔁 '+short(p.shares)+'</span>'+(p.reach!=null?'<span>📡 '+short(p.reach)+' reach</span>':'')+(p.clicks!=null?'<span>🖱 '+short(p.clicks)+' clicks</span>':'')+'</div>')
+          +'<div class="bpx-acts" style="justify-content:flex-start;margin-top:6px">'+(sched?'':'<button class="btn sm ghost" data-fbcm="'+esc(p.id)+'">💬 Comments ('+p.comments+')</button>')
+          +(p.link?'<a class="btn sm ghost" href="'+esc(p.link)+'" target="_blank" rel="noopener">Open ↗</a>':'')+(can()?'<button class="btn sm ghost" data-fbdel="'+esc(p.id)+'">🗑 Delete</button>':'')+'</div></div></div>'; }).join("")+'</div>'
+        :'<div class="muted">'+(sched?'Nothing scheduled.':'No posts yet — create one in ✍️ Create post.')+'</div>')+'</div>';
+    box.querySelector("#fbSched").onclick = function(){ fbPosts(box, pg, !sched); };
+    box.querySelectorAll("[data-fbcm]").forEach(function(b){ b.onclick = function(){ fbComments(pg, b.dataset.fbcm); }; });
+    box.querySelectorAll("[data-fbdel]").forEach(function(b){ b.onclick = async function(){ if(!confirm("Delete this post from your Facebook Page? This can't be undone.")) return; b.disabled = true;
+      var q = await fbCall({ action:"delete_post", page_id:pg.id, post_id:b.dataset.fbdel }); gateToast(q.err||"Post deleted ✓"); fbPosts(box, pg, sched); }; });
+  }
+  async function fbComments(pg, postId){
+    var m = bpModal("💬 Comments", '<div class="modal-form" id="fbCmB">'+skel("list",3)+'</div>'); m.querySelector(".modal").classList.add("bpx-cardm");
+    var load = async function(){ var box = m.querySelector("#fbCmB"); var r = await fbCall({ action:"comments", page_id:pg.id, post_id:postId }); if(!box.isConnected) return;
+      if(r.err){ box.innerHTML = '<div class="ci-err-inline">'+esc(r.err)+'</div>'; return; }
+      var C = r.data.comments||[];
+      var one = function(c, reply){ return '<div class="bpx-fbc'+(reply?' rep':'')+(c.hidden?' hid':'')+'"><div><b>'+esc(c.from)+'</b>'+(c.from_page?' <span class="tag good">Your Page</span>':'')+(c.hidden?' <span class="tag">Hidden</span>':'')
+          +' <span class="muted" style="font-size:12px">'+fmtDateTime(c.at)+(c.likes?' · 👍 '+c.likes:'')+'</span></div><div style="white-space:pre-wrap">'+esc(c.message)+'</div>'
+          +(can()?'<div class="bpx-fbca">'+(reply?'':'<a href="#" data-fbre="'+esc(c.id)+'">Reply</a>')+(c.from_page?'':'<a href="#" data-fbhide="'+esc(c.id)+'" data-h="'+(c.hidden?0:1)+'">'+(c.hidden?'Unhide':'Hide')+'</a>')+'<a href="#" data-fbdc="'+esc(c.id)+'">Delete</a></div>':'')
+          +(reply?'':'<div class="bpx-fbrf" id="fbrf_'+esc(c.id)+'" hidden><input maxlength="2000" placeholder="Reply as '+esc(pg.name)+'…"><button class="btn sm">Reply</button></div>')+'</div>'; };
+      box.innerHTML = C.length ? C.map(function(c){ return one(c,false)+(c.replies||[]).map(function(x){ return one(x,true); }).join(""); }).join("") : '<div class="muted">No comments yet.</div>';
+      box.querySelectorAll("[data-fbre]").forEach(function(a){ a.onclick = function(e){ e.preventDefault(); var f = box.querySelector("#fbrf_"+CSS.escape(a.dataset.fbre)); f.hidden = !f.hidden; if(!f.hidden) f.querySelector("input").focus();
+        f.querySelector("button").onclick = async function(){ var t = f.querySelector("input").value.trim(); if(!t) return; this.disabled = true;
+          var q = await fbCall({ action:"reply", page_id:pg.id, comment_id:a.dataset.fbre, message:t }); gateToast(q.err||"Replied ✓"); load(); }; }; });
+      box.querySelectorAll("[data-fbhide]").forEach(function(a){ a.onclick = async function(e){ e.preventDefault(); var q = await fbCall({ action:"hide", page_id:pg.id, comment_id:a.dataset.fbhide, hide:a.dataset.h==="1" }); gateToast(q.err||(a.dataset.h==="1"?"Hidden ✓ — only the person and their friends see it":"Visible again ✓")); load(); }; });
+      box.querySelectorAll("[data-fbdc]").forEach(function(a){ a.onclick = async function(e){ e.preventDefault(); if(!confirm("Delete this comment?")) return; var q = await fbCall({ action:"delete_comment", page_id:pg.id, comment_id:a.dataset.fbdc }); gateToast(q.err||"Deleted ✓"); load(); }; });
+    };
+    load();
+  }
+  function fbCreate(box, pg){
+    if(!can()){ box.innerHTML = '<div class="card muted">View-only login — posting is done by your team\'s admin or approvers.</div>'; return; }
+    box.innerHTML = '<div class="card"><form class="modal-form" id="fbNew" style="padding:0"><div class="muted" style="font-size:13px">Posting to <b>'+esc(pg.name)+'</b></div>'
+      +'<label>What do you want to say?<textarea name="message" rows="5" maxlength="5000" placeholder="Write your post…"></textarea></label>'
+      +'<div class="mf-row"><label>Link <span class="muted" style="font-weight:400">(optional)</span><input name="link" type="url" placeholder="https://yourbrand.com/offer"></label>'
+      +'<label>Photo <span class="muted" style="font-weight:400">(optional — upload or paste a link)</span><input name="img" type="file" accept="image/jpeg,image/png,image/webp"><input name="image_url" type="url" placeholder="https://…/photo.jpg" style="margin-top:6px"></label></div>'
+      +'<div class="mf-row"><label>When<select name="when"><option value="now">Publish now</option><option value="later">Schedule</option></select></label><label id="fbAtL" hidden>Date &amp; time<input name="at" type="datetime-local"></label></div>'
+      +'<div class="auth-err" id="fbNewErr"></div><button class="btn" type="submit">Publish to Facebook</button>'
+      +'<div class="muted" style="font-size:12px">A photo post uses the photo; otherwise a link post shows the link preview. Scheduling: 10 minutes to 75 days ahead.</div></form></div>';
+    var f = box.querySelector("#fbNew"), atL = box.querySelector("#fbAtL");
+    f.when.onchange = function(){ atL.hidden = f.when.value!=="later"; f.querySelector("button[type=submit]").textContent = f.when.value==="later" ? "Schedule post" : "Publish to Facebook"; };
+    f.onsubmit = async function(e){ e.preventDefault(); var err = box.querySelector("#fbNewErr"), btn = f.querySelector("button[type=submit]"); err.textContent = ""; btn.disabled = true; btn.textContent = "Working…";
+      try{
+        var img = f.image_url.value.trim(), file = f.img.files && f.img.files[0];
+        if(file){ if(file.size > 8*1024*1024) throw new Error("The photo must be under 8 MB.");
+          var org = window.Auth && Auth.profile && Auth.profile.org_id; if(!org) throw new Error("Your workspace isn't ready to upload files.");
+          var path = org+"/facebook/"+Date.now()+"-"+file.name.replace(/[^\w.\-]+/g,"_").slice(-60);
+          var up = await sb.storage.from("campaign-files").upload(path, file, { contentType:file.type, upsert:false }); if(up.error) throw new Error("Couldn't upload the photo: "+up.error.message);
+          img = sb.storage.from("campaign-files").getPublicUrl(path).data.publicUrl; }
+        var at = f.when.value==="later" && f.at.value ? Math.floor(new Date(f.at.value).getTime()/1000) : 0;
+        if(f.when.value==="later" && !at) throw new Error("Pick the date and time.");
+        var q = await fbCall({ action:"publish", page_id:pg.id, message:f.message.value, link:f.link.value.trim(), image_url:img, schedule_at:at||undefined });
+        if(q.err) throw new Error(q.err);
+        gateToast(q.data.scheduled ? "🗓 Scheduled ✓" : "✓ Posted to "+pg.name); FB.tab = "posts"; fbPosts(box, pg, !!q.data.scheduled);
+        var bar = document.querySelectorAll("[data-fbt]"); bar.forEach(function(x){ x.classList.toggle("on", x.dataset.fbt==="posts"); });
+      }catch(ex){ err.textContent = ex.message||String(ex); btn.disabled = false; btn.textContent = f.when.value==="later" ? "Schedule post" : "Publish to Facebook"; } };
+  }
+  async function fbInsights(box, pg){
+    box.innerHTML = '<div class="card">'+skel("list",3)+'</div>';
+    var r = await fbCall({ action:"insights", page_id:pg.id, days:FB.days }); if(!box.isConnected) return;
+    if(r.err){ box.innerHTML = '<div class="card"><div class="ci-err-inline">'+esc(r.err)+'</div></div>'; return; }
+    var M = r.data.metrics||{}, v = function(k){ return M[k] ? M[k].total : null; };
+    var spark = function(L){ if(!L||L.length<2) return ""; var mx = Math.max.apply(null, L.map(function(x){ return x.v; }))||1, w = 600, h = 80, st = w/(L.length-1);
+      return '<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" style="width:100%;height:80px;display:block"><polyline fill="none" stroke="var(--brand)" stroke-width="2.5" points="'+L.map(function(x,i){ return (i*st).toFixed(1)+","+(h-4-(x.v/mx)*(h-8)).toFixed(1); }).join(" ")+'"/></svg>'; };
+    var reachS = (M.page_impressions_unique||M.page_impressions||{}).series;
+    box.innerHTML = '<div class="card"><div class="bpx-h"><h3>📊 '+esc(pg.name)+' — last '+r.data.days+' days</h3><span style="display:flex;gap:6px">'+[7,14,28].map(function(n2){ return '<button class="bpx-chip'+(n2===r.data.days?' on':'')+'" data-fbd="'+n2+'">'+n2+' days</button>'; }).join("")+'</span></div>'
+      +'<div class="bpx-kpis">'+kpi("👥", pg.followers, "Followers", "")+kpi("📡", v("page_impressions_unique"), "Reach", "people who saw your Page")+kpi("👀", v("page_impressions"), "Impressions", "")
+      +kpi("⚡", v("page_post_engagements"), "Post engagements", "")+kpi("🏠", v("page_views_total"), "Page views", "")+kpi("➕", v("page_daily_follows_unique")!=null?v("page_daily_follows_unique"):v("page_fan_adds_unique"), "New follows", "")
+      +kpi("🎬", v("page_video_views"), "Video views", "")+'</div>'
+      +(reachS&&reachS.length>1?'<div style="margin-top:12px"><b style="font-size:13px">Daily reach</b>'+spark(reachS)+'</div>':'')
+      +'<div class="muted" style="font-size:12px;margin-top:8px">Straight from Facebook Page insights. A dash means Facebook doesn\'t report that number for this Page.</div></div>';
+    box.querySelectorAll("[data-fbd]").forEach(function(b){ b.onclick = function(){ FB.days = +b.dataset.fbd; fbInsights(box, pg); }; });
+  }
+  async function fbAds(box){
+    box.innerHTML = '<div class="card">'+skel("list",3)+'</div>';
+    var r = await fbCall({ action:"ad_accounts" }); if(!box.isConnected) return;
+    if(r.err){ box.innerHTML = '<div class="card"><div class="ci-err-inline">'+esc(r.err)+'</div>'+(r.reconnect?'<button class="btn sm" style="margin-top:8px" data-bpxfb>🔄 Reconnect Facebook</button>':'')+'</div>'; wireCommon(box); return; }
+    var A = r.data.accounts||[];
+    if(!A.length){ box.innerHTML = '<div class="card muted">No ad accounts shared. Reconnect Facebook and tick your ad account on Facebook\'s screen.</div>'; return; }
+    if(!A.some(function(a){ return a.id===FB.act; })) FB.act = A[0].id;
+    var acc = A.find(function(a){ return a.id===FB.act; }), ST = { 1:"Active", 2:"Disabled", 3:"Unsettled", 7:"Pending review", 9:"In grace period", 101:"Closed" };
+    box.innerHTML = '<div class="card"><div class="bpx-h"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>📣 Ad account</b>'
+        +(A.length>1?'<select id="fbActSel">'+A.map(function(a){ return '<option value="'+esc(a.id)+'"'+(a.id===FB.act?' selected':'')+'>'+esc(a.name||a.id)+'</option>'; }).join("")+'</select>':'<span>'+esc(acc.name||acc.id)+'</span>')
+        +'<span class="tag '+(acc.status===1?'good':'warn')+'">'+esc(ST[acc.status]||"Status "+acc.status)+'</span></div>'
+        +'<span style="display:flex;gap:6px">'+[7,30,90].map(function(n2){ return '<button class="bpx-chip'+(n2===FB.adays?' on':'')+'" data-fbad="'+n2+'">'+n2+' days</button>'; }).join("")+'</span></div><div id="fbCamps">'+skel("list",3)+'</div></div>';
+    var s2 = box.querySelector("#fbActSel"); if(s2) s2.onchange = function(){ FB.act = s2.value; try{ localStorage.setItem("geek_fb_act", FB.act); }catch(e){} fbAds(box); };
+    box.querySelectorAll("[data-fbad]").forEach(function(b){ b.onclick = function(){ FB.adays = +b.dataset.fbad; fbAds(box); }; });
+    var q = await fbCall({ action:"ad_campaigns", account_id:FB.act, days:FB.adays }), cb = box.querySelector("#fbCamps"); if(!cb) return;
+    if(q.err){ cb.innerHTML = '<div class="ci-err-inline">'+esc(q.err)+'</div>'; return; }
+    var t = q.data.totals||{}, C = q.data.campaigns||[], cur = acc.currency||"INR", money = function(x){ return x==null||x==="" ? "—" : cur+" "+n(Math.round(Number(x)*100)/100); };
+    cb.innerHTML = '<div class="bpx-kpis bpx-kpis-sm" style="margin-top:10px">'+kpi("💸", money(t.spend), "Spent", "last "+FB.adays+" days")+kpi("👀", t.impressions, "Impressions", "")+kpi("📡", t.reach, "Reach", "")
+        +kpi("🖱", t.clicks, "Clicks", "")+kpi("⚡", t.ctr!=null?(Math.round(Number(t.ctr)*100)/100)+"%":"—", "CTR", "")+kpi("🪙", money(t.cpc), "Cost per click", "")+'</div>'
+      +(C.length?'<div style="overflow-x:auto;margin-top:12px"><table class="tbl bpx-tbl"><thead><tr><th>Campaign</th><th>Status</th><th>Objective</th><th>Budget</th><th>Spent</th><th>Impr.</th><th>Clicks</th><th>CTR</th><th>CPC</th><th>Results</th><th></th></tr></thead><tbody>'
+        +C.map(function(c){ var on = c.status==="ACTIVE", res = (c.results||[]).map(function(x){ return n(x.value)+" "+x.type.replace(/^offsite_conversion\.fb_pixel_|^onsite_conversion\.|omni_/,"").replace(/_/g," "); }).join(", ");
+          return '<tr><td><b>'+esc(c.name)+'</b></td><td><span class="tag '+(c.effective_status==="ACTIVE"?'good':'')+'">'+esc(String(c.effective_status||c.status||"").replace(/_/g," ").toLowerCase())+'</span></td><td>'+esc(String(c.objective||"").replace(/^OUTCOME_/,"").replace(/_/g," ").toLowerCase())+'</td>'
+            +'<td>'+(c.daily_budget?money(c.daily_budget)+'/day':c.lifetime_budget?money(c.lifetime_budget)+' total':'—')+'</td><td>'+money(c.spend)+'</td><td>'+n(c.impressions)+'</td><td>'+n(c.clicks)+'</td><td>'+(c.ctr!=null?(Math.round(c.ctr*100)/100)+'%':'—')+'</td><td>'+money(c.cpc)+'</td><td>'+esc(res||"—")+'</td>'
+            +'<td>'+(can()&&(c.status==="ACTIVE"||c.status==="PAUSED")?'<button class="mini-btn '+(on?'ghost':'')+'" data-fbcs="'+esc(c.id)+'" data-to="'+(on?'PAUSED':'ACTIVE')+'">'+(on?'⏸ Pause':'▶ Resume')+'</button>':'')+'</td></tr>'; }).join("")+'</tbody></table></div>'
+        :'<div class="muted" style="margin-top:10px">No campaigns in this ad account.</div>')
+      +'<div class="muted" style="font-size:12px;margin-top:8px">Create new ads in Meta Ads Manager — here you see every campaign\'s spend and results, and can pause or resume them.</div>';
+    cb.querySelectorAll("[data-fbcs]").forEach(function(b){ b.onclick = async function(){ var to = b.dataset.to;
+      if(!confirm(to==="PAUSED" ? "Pause this campaign? Ads stop showing right away." : "Resume this campaign? Ads start spending again.")) return; b.disabled = true;
+      var x = await fbCall({ action:"ad_status", campaign_id:b.dataset.fbcs, status:to }); gateToast(x.err || (to==="PAUSED"?"⏸ Campaign paused":"▶ Campaign resumed")); fbAds(box); }; });
+  }
+
   // ---------- 👥 team logins
   async function paintTeam(box){
     if(!box) return;
@@ -544,7 +696,7 @@
     var r = await sb.functions.invoke("brand-fb-login", { body:{ action:"link", code:code, redirect_uri: location.origin + "/app.html" } });
     var m = (r.data&&r.data.error) || (r.error && (typeof fnError==="function" ? await fnError(r.error) : r.error.message));
     gateToast(m ? m : "✓ Facebook business linked — next time just tap Continue with Facebook");
-    BP.data = null; if(currentRole==="brand"){ currentPage = "settings"; renderShell(); }
+    BP.data = null; FB.pages = null; if(currentRole==="brand"){ currentPage = /fbreturn=facebook/.test(sessionStorage.getItem("geek_fb_after")||"") ? "facebook" : "settings"; try{ sessionStorage.removeItem("geek_fb_after"); }catch(e){} renderShell(); }
     return true;
   }
 
@@ -561,7 +713,7 @@
   }
 
   window.BrandPortal = {
-    pages:["dashboard","approvals","campaigns","creators","reports","billing","settings"],
+    pages:["dashboard","approvals","campaigns","creators","reports","billing","facebook","settings"],
     handles: function(page){ return currentRole==="brand" && !window.__isAdmin && this.pages.indexOf(page)>=0; },
     render: function(page){ BP.host = null; BP.preview = null; return render(page); },
     mount: function(page){ return mount(page); },

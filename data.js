@@ -60,6 +60,7 @@ const NAV_SECTIONS = {
   brand: [
     ["Today",     ["dashboard","approvals"]],
     ["Campaigns", ["campaigns","creators"]],
+    ["Social",    ["instagram","facebook"]],
     ["Insights",  ["reports","billing"]],
     ["Account",   ["settings"]]
   ]
@@ -93,7 +94,7 @@ const NAV_META = {
   cintel:{ic:"🔎",label:"Creator Intelligence"},
   campaignops:{ic:"🗂",label:"Pipeline board"},
   brandsetup:{ic:"🏷",label:"Brand Setup"},
-  mycampaigns:{ic:"🎯",label:"My Campaigns"}, billing:{ic:"💳",label:"Billing"},
+  mycampaigns:{ic:"🎯",label:"My Campaigns"}, billing:{ic:"💳",label:"Billing"}, facebook:{ic:"📘",label:"Facebook"},
   onboarding:{ic:"🚦",label:"Get Campaign-Ready"}
 };
 
