@@ -59,6 +59,10 @@
     {
       "source": "/kit/:username",
       "destination": "/p.html"
+    },
+    {
+      "source": "/go/:slug",
+      "destination": "/go.html"
     }
   ]
 }

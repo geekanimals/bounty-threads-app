@@ -1477,6 +1477,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
       ${window.__isAdmin && ["paid","barter_paid"].includes(c.campaign_type) ? `<button class="btn ghost" data-ccsec="payments">💰 Payments</button>` : ""}
       ${window.__isAdmin ? `<button class="btn ghost" data-ccsec="messages">💬 Messages &amp; templates</button>` : ""}
       <button class="btn ghost" data-ccsec="terms">📜 Contract &amp; video brief</button>
+      ${window.__isAdmin ? `<button class="btn ghost" data-ccsec="tracking">🔗 Links &amp; codes</button>` : ""}
       <button class="btn ghost" data-ccsec="outreach">✉️ Outreach message</button>
       <button class="btn ghost" data-ccsec="shortlist">📋 List for the brand</button>
       <button class="btn ghost" data-ccsec="analytics">📈 Report</button>
@@ -1672,6 +1673,7 @@ function openCampaignModal(existing, preset){
   const ip = (ed.ideal_profile && typeof ed.ideal_profile==="object") ? ed.ideal_profile : {};
   const ct = (ed.contract_terms && typeof ed.contract_terms==="object") ? ed.contract_terms : {};
   const vb = (ed.video_brief && typeof ed.video_brief==="object") ? ed.video_brief : {};
+  const tk = (ed.tracking && typeof ed.tracking==="object") ? ed.tracking : {};
   let files = Array.isArray(ed.attachments) ? ed.attachments.slice() : [];
   const ctype = ed.campaign_type || preset.campaign_type || (/paid/i.test(ed.type||"") && !/hybrid/i.test(ed.type||"") ? "paid" : /hybrid/i.test(ed.type||"") ? "barter_paid" : "barter");
   const opt = (arr,val)=>arr.map(o=>`<option${o===val?' selected':''}>${o}</option>`).join("");
@@ -1745,6 +1747,16 @@ function openCampaignModal(existing, preset){
       <div class="mf-row"><label>Caption to use<input name="vb_caption" maxlength="600" value="${esc(vb.caption||'')}" placeholder="Best momos in town 🥟"></label>
       <label>Reference links<input name="vb_refs" maxlength="600" value="${esc(vb.reference_links||'')}" placeholder="https://instagram.com/reel/…"></label></div>
       <label>Posting note <span class="muted" style="font-weight:400">(optional)</span><input name="vb_note" maxlength="400" value="${esc(vb.posting_note||'')}" placeholder="Post between 6–9 pm, tag the brand in the story"></label>
+      <div class="cm-sec">🔗 Link &amp; coupon tracking <span class="muted" style="font-weight:400;font-size:12px">— every creator gets their own link (and code) · we count clicks, code copies and sales per creator</span></div>
+      <label class="cp-check"><input type="checkbox" name="tk_on"${tk.enabled===true||(!existing&&tk.enabled==null)?" checked":""}> <b>Give every creator a tracking link</b> <span class="muted">— shown in their post instructions</span></label>
+      <div class="tk-box">
+        <div class="mf-row"><label>Shop link <span class="muted" style="font-weight:400">(where the link opens)</span><input name="tk_dest" type="url" maxlength="600" value="${esc(tk.dest_url||'')}" placeholder="https://brand.com/offer — empty = the product link"></label>
+        <label>Offer line <span class="muted" style="font-weight:400">(shown with the code)</span><input name="tk_disc" maxlength="80" value="${esc(tk.discount||'')}" placeholder="Flat 15% off on your first order"></label></div>
+        <div class="mf-row"><label>Coupon code<select name="tk_mode">${kv([["none","No code — link only"],["common","One code for every creator"],["per_creator","A different code for each creator"]], tk.mode||"none")}</select></label>
+        <label class="tk-common">Code for every creator<input name="tk_code" maxlength="30" value="${esc(tk.common_code||'')}" placeholder="OLIO15" style="text-transform:uppercase"></label>
+        <label class="tk-per">Make each code from <span class="muted" style="font-weight:400">(optional)</span><input name="tk_prefix" maxlength="12" value="${esc(tk.prefix||'')}" placeholder="OLIO → OLIORIYASHARMA" style="text-transform:uppercase"></label></div>
+        <div class="muted tk-per" style="font-size:12px;margin-top:-4px">Leave it empty to type or paste each creator's own code on the campaign page → <b>🔗 Links &amp; codes</b>. A prefix makes them for you (prefix + the creator's handle) — create the same codes in the brand's store.</div>
+      </div>
       <div class="cm-sec">✅ Eligibility — who can apply <span class="muted" style="font-weight:400;font-size:12px">— creators see these, and can apply / be invited only if they match every one</span></div>
       <div class="muted" id="cmEligAuto" style="font-size:12px;margin:-2px 0 6px"></div>
       <div class="mf-row"><label>Min followers<input name="ip_min" inputmode="numeric" value="${esc(ip.min_followers??'')}" placeholder="Any (e.g. 1000)"></label>
@@ -1825,6 +1837,10 @@ function openCampaignModal(existing, preset){
   ["deliv_other","ct_days","ct_months","ct_collab","ct_black","pay_due_days"].forEach(n=>{ const x = form.querySelector(`[name=${n}]`); if(x){ x.addEventListener("input", paintDeliv); x.addEventListener("change", paintDeliv); } });
   [tagBox, mentBox].forEach(b=>{ b.addEventListener("change", paintDeliv); b.addEventListener("keyup", paintDeliv); b.addEventListener("focusout", ()=> setTimeout(paintDeliv, 0)); });
   paintDeliv();
+  { const on = form.querySelector("[name=tk_on]"), md = form.querySelector("[name=tk_mode]"), bx = form.querySelector(".tk-box");
+    const tkPaint = ()=>{ if(bx) bx.hidden = !on.checked; form.querySelectorAll(".tk-common").forEach(x=> x.hidden = md.value!=="common");
+      form.querySelectorAll(".tk-per").forEach(x=> x.hidden = md.value!=="per_creator"); };
+    if(on && md){ on.onchange = tkPaint; md.onchange = tkPaint; tkPaint(); } }
   { const srcs = ["brief","vb_shoot","vb_msg","vb_dos","vb_donts","vb_note"].map(n=> form.querySelector(`[name=${n}]`)).filter(Boolean);
     const put = (name, v, label, show)=>{ const el = form.querySelector(`[name=${name}]`); if(!el || v==null || v==="" ) return null;
       if(String(el.value||"").trim() && el.dataset.auto!=="1") return null;       // never overwrite what the team typed
@@ -1952,6 +1968,12 @@ function openCampaignModal(existing, preset){
       if(t==="paid") row.contract_terms.product = null;
       row.video_brief = { what_to_shoot: txt("vb_shoot") || null, key_messages: txt("vb_msg") || null, dos: txt("vb_dos") || null, donts: txt("vb_donts") || null,
         caption: txt("vb_caption") || null, reference_links: txt("vb_refs") || null, posting_note: txt("vb_note") || null };
+      { const mode = txt("tk_mode") || "none", code = txt("tk_code").toUpperCase().replace(/\s+/g,""), pre = txt("tk_prefix").toUpperCase().replace(/[^A-Z0-9]/g,"");
+        const dest = txt("tk_dest");
+        if(dest && !/^https?:\/\//i.test(dest)) throw new Error("The shop link must start with https://");
+        if(mode==="common" && f.get("tk_on") && !/^[A-Z0-9_-]{2,30}$/.test(code)) throw new Error("Type the coupon code for every creator (2–30 letters / numbers, no spaces).");
+        row.tracking = { enabled: !!f.get("tk_on"), dest_url: dest || null, discount: txt("tk_disc") || null, mode,
+          common_code: mode==="common" ? code : null, prefix: mode==="per_creator" ? (pre || null) : null, auto_codes: mode==="per_creator" && !!pre }; }
       if(isReq){                          // a brand's request: send the whole form to the Geek team, create nothing
         row.brand_id = preset.brand_id || null; row.brand = preset.brand || row.brand; delete row.status;
         const { error:re } = await sb.schema("api").rpc("brand_campaign_request", { p:{ brand_id: preset.brand_id || null, name: row.name, form: row } }).then(r=>r, er=>({error:er}));
@@ -1963,6 +1985,7 @@ function openCampaignModal(existing, preset){
       if(!existing && window.Auth&&Auth.profile){ row.org_name=Auth.profile.org; row.org_id=Auth.profile.org_id; }
       ({ error } = await save(row));
       if(error && /brand_id/i.test(error.message||"")){ delete row.brand_id; ({ error } = await save(row)); }   // before the Brand CRM update
+      if(error && /tracking/i.test(error.message||"")){ delete row.tracking; ({ error } = await save(row)); }   // before the tracking update
       if(error && /contract_terms|video_brief/i.test(error.message||"")){   // database not upgraded yet — save the rest
         delete row.contract_terms; delete row.video_brief; ({ error } = await save(row));
       }
@@ -6350,7 +6373,7 @@ function startCampaignCommand(c){
     if(!_wsMode || !document.getElementById("bpBody")){ clearInterval(_bpTimer); return; }
     if(document.visibilityState!=="visible" || document.querySelector(".modal-overlay.open,.cc-ov,#ccOv")) return;
     const a = document.activeElement; if(a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.tagName==="SELECT")) return;
-    if(document.querySelector("#bpBody .hub-set") || _bpTab==="terms" || _bpTab==="bulk" || _bpTab==="payments" || _bpTab==="messages") return;   // never wipe a half-filled form
+    if(document.querySelector("#bpBody .hub-set") || _bpTab==="terms" || _bpTab==="bulk" || _bpTab==="payments" || _bpTab==="messages" || _bpTab==="tracking") return;   // never wipe a half-filled form
     loadBarterProcess(true);
   }, 20000);
 }
@@ -6420,7 +6443,7 @@ async function loadBarterProcess(silent){
   if(t.error){ if(!silent) body.innerHTML = `<div class="card"><div class="muted">${esc(t.error.message||t.error)}</div></div>`; return; }
   _bpData = t.data||{}; _bpData.outreach = o.data||{}; _bpData.progress = (g && g.data) || {}; pollNavCounts();
   if(_bpTab==="analytics") await loadBpAnalytics(true);
-  if(silent && _bpTab==="bulk") return;
+  if(silent && (_bpTab==="bulk" || _bpTab==="tracking")) return;
   paintBarterProcess();
   ccApplyFocus();
 }
@@ -6567,6 +6590,7 @@ function paintCampaignCommand(body){
   const _y = window.scrollY, _h = body.offsetHeight; if(_h) body.style.minHeight = _h + "px";
   try{ paintCampaignCommandInner(body); } finally { body.style.minHeight = ""; if(Math.abs(window.scrollY - _y) > 2) window.scrollTo(0, _y); }
   if(_bpTab==="traits" && _bpCamp) mountTraitReport(document.getElementById("ctrCamp"), { campaign:_bpCamp.id });
+  if(_bpTab==="tracking" && _bpCamp && window.Tracking) Tracking.mount(document.getElementById("trkCamp"), _bpCamp.id, { onEdit: ()=>{ const b = document.getElementById("wsEdit"); if(b) b.click(); } });
   if(_bpTab==="payments" && typeof payAfterPaint==="function") payAfterPaint();
   if(_bpTab==="messages" && typeof msgAfterPaint==="function") msgAfterPaint();
 }
@@ -6584,7 +6608,7 @@ function paintCampaignCommandInner(body){
       const l = document.querySelector("#bpBody .cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); }; }
   const TILES = bpNoShip() ? CC_TILES.filter(t=> !BP_SHIP.includes(t[0])) : CC_TILES;
   const tile = t => `<button type="button" class="cc-tile${_ccFilter===t[0]?" on":""}" data-cctile="${t[0]}" title="${esc(t[2]||t[1])}"><b>${rows.filter(r=>ccMatch(t[0], r)).length}</b><span>${esc(t[1])}</span>${t[2]&&t[0]!=="all"?`<i>${esc(t[2])}</i>`:""}</button>`;
-  const secTitle = { messages:"💬 Messages & templates — every step: WhatsApp · email · app", payments:"💰 Payments — every creator A–Z (Super Admins only)", bulk:"📥 Bulk upload", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand" }[_bpTab];
+  const secTitle = { messages:"💬 Messages & templates — every step: WhatsApp · email · app", payments:"💰 Payments — every creator A–Z (Super Admins only)", bulk:"📥 Bulk upload", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand", tracking:"🔗 Links & codes — every creator's own link and code: clicks, code copies, orders, sales" }[_bpTab];
   const P0 = shown.filter(r=>r.kind==="p").map(r=>r.x), Iall0 = shown.filter(r=>r.kind==="i");
   const fP = x=> { const c = x.creator||{}; return { fol: c.followers ?? ((pubOf(c.username||x.applied_profile)||{}).followers), geek: c.followers!=null && !!c.username,
       posted: (x.posts||[]).length>0, name: String(c.username||c.name||x.applied_profile||"").toLowerCase(), step: bpEffectiveIndex(x)*10,
@@ -6604,7 +6628,7 @@ function paintCampaignCommandInner(body){
     ${pb.saved===false?`<div class="ac360-miss">📜 No contract terms or video brief saved yet — creators get the defaults. <a href="#" id="bpGoTerms">Set them now →</a></div>`:""}
     <div class="cc-flow">${TILES.map(tile).join("")}</div>
     ${secTitle?`<div class="card cc-sec" id="ccSec"><div class="cc-sec-h"><h3>${secTitle}</h3><button class="ci-pop-x" id="ccSecX" aria-label="Close">✕</button></div>
-      <div class="ac360-sec">${_bpTab==="messages"?`<div id="msgBox">${typeof msgMapHtml==="function"?msgMapHtml():""}</div>`:_bpTab==="payments"?`<div id="payBox">${typeof payHtml==="function"?payHtml():""}</div>`:_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="traits"?`<div id="ctrCamp"></div>`:_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(d.creators||[])}</div></div>`:""}
+      <div class="ac360-sec">${_bpTab==="messages"?`<div id="msgBox">${typeof msgMapHtml==="function"?msgMapHtml():""}</div>`:_bpTab==="payments"?`<div id="payBox">${typeof payHtml==="function"?payHtml():""}</div>`:_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="traits"?`<div id="ctrCamp"></div>`:_bpTab==="tracking"?`<div id="trkCamp"></div>`:_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(d.creators||[])}</div></div>`:""}
     <div class="card cc-list">
       <div class="cc-list-h"><h3>Creators <span class="muted">${P.length+Iall.length}${_ccFilter==="needs"?" · ⚡ need you":_ccFilter!=="all"?` · ${esc((CC_TILES.find(t=>t[0]===_ccFilter)||[])[1]||"")}`:""}</span></h3>
         ${needsYou?`<button type="button" class="bp-needs cc-needs${_ccFilter==="needs"?" on":""}" id="ccNeedsChip">⚡ <b>${needsYou}</b> need${needsYou>1?"":"s"} you${_ccFilter==="needs"?" · showing them ✕":" — tap to see"}</button>`:""}

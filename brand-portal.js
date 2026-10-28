@@ -176,7 +176,7 @@
     var d;
     try{ d = await loadCamp(id); }catch(e){ body.innerHTML = '<div class="card"><div class="ci-err-inline">'+esc(e.message||String(e))+'</div></div>'; return; }
     var c = d.campaign, R = d.creators||[], k = {}; R.forEach(function(x){ var s = (x.status||{}).key; k[s] = (k[s]||0)+1; });
-    var cc = { counts:k }, tabs = [["creators","🧑‍🎤 Creators ("+R.filter(function(x){ return (x.status||{}).key!=="not_selected"; }).length+")"],["analytics","📊 Analytics"],["brief","📝 Brief"],["activity","🕒 Activity"]];
+    var cc = { counts:k }, tabs = [["creators","🧑‍🎤 Creators ("+R.filter(function(x){ return (x.status||{}).key!=="not_selected"; }).length+")"],["analytics","📊 Analytics"],["links","🔗 Links & sales"],["brief","📝 Brief"],["activity","🕒 Activity"]];
     body.innerHTML = '<button class="btn sm ghost" data-bpxback>← All campaigns</button>'
       +'<div class="card" style="margin-top:12px"><div class="bpx-camp-h"><div style="min-width:0"><h2 style="margin:0">'+esc(c.name)+'</h2>'
       +'<div class="muted">'+esc(TYPE[c.campaign_type]||"")+(c.product?' · '+esc(c.product):'')+(c.starts_on||c.ends_on?' · '+date(c.starts_on)+' – '+date(c.ends_on):'')+'</div></div>'
@@ -198,6 +198,11 @@
       return;
     }
     if(BP.tab==="analytics") return paintAnalytics(box, id);
+    if(BP.tab==="links"){        // every creator's own link + code: clicks, code copies, orders, sales — the brand adds its orders here
+      box.innerHTML = '<div class="card"><div class="bpx-h"><h3>🔗 Links, codes &amp; sales</h3></div><div id="trkBrand"></div></div>';
+      if(window.Tracking) window.Tracking.mount(box.querySelector("#trkBrand"), id, { readOnly:true });
+      return;
+    }
     var R = d.creators||[], F = BP.cf || "all";
     var keys = [["all","All"],["to_approve","To approve"],["approved","Approved"],["shipped","In progress"],["video_review","Video review"],["posted","Posted"],["invited","Invited (sheet)"],["not_selected","Not selected"]];
     var match = function(x){ var s = (x.status||{}).key; return F==="all" ? s!=="not_selected" : F==="shipped" ? (s==="shipped"||s==="making"||s==="posting") : s===F; };

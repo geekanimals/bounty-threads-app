@@ -578,6 +578,10 @@
       var fl=await apiCreator("my_campaign_flows").then(function(x){ return x; }, function(){ return { data:null }; });
       var flows=(fl && !fl.error && fl.data) || {};
       (r.data||[]).forEach(function(c){ c._flow=flows[c.participation_id]||null; });
+      // 🔗 my own link + code on each campaign (when the campaign tracks links)
+      var tk=await apiCreator("my_track_links").then(function(x){ return x; }, function(){ return { data:null }; });
+      var tks={}; ((tk && !tk.error && tk.data) || []).forEach(function(t){ tks[t.participation_id]=t; });
+      (r.data||[]).forEach(function(c){ c._trk=tks[c.participation_id]||null; });
       var sig=JSON.stringify(r.data||[]); if(silent && sig===_mineSig) return; _mineSig=sig;
       await igMediaMap(); renderMine(r.data||[]); }
     catch(e){ if(silent) return; var el=document.getElementById("opsMineBody"); if(el) el.innerHTML='<div class="card ci-err-inline">Couldn\'t load: '+esc((e&&e.message)||e)+'</div>'; }
@@ -945,6 +949,7 @@
     var line=function(k,v){ return v?'<div class="mc-sec">'+k+'</div><div class="mc-text">'+esc(v)+'</div>':''; };
     var tags=[b.hashtags,b.mentions].filter(Boolean).join(' ');
     return '<div class="jr-brief"><div class="jr-now-h">🎬 <b>Your video brief</b>'+(c.deadline?' <span class="ci-pill ci-warn">Due '+fmtDate(c.deadline)+'</span>':'')+'</div>'
+      + (c._trk && window.Tracking ? window.Tracking.creatorHtml(c._trk) : '')
       + line('What to shoot', b.what_to_shoot) + line('Key messages', b.key_messages) + line("Do's", b.dos) + line("Don'ts", b.donts)
       + line('Make', b.deliverables_text) + line('Caption', b.caption)
       + (tags?'<div class="mc-sec">Hashtags &amp; tags</div><div class="mc-tags">'+tags.split(/\s+/).filter(Boolean).map(function(t){ return '<span>'+esc(t)+'</span>'; }).join("")+'</div>':'')
@@ -1001,7 +1006,7 @@
       + (meta.length?'<div class="mc-meta">'+meta.map(function(m){ return '<span>'+m+'</span>'; }).join("")+'</div>':'')
       + (declined?'<div class="mc-banner no"><b>Not selected this time.</b>'+(c.reason_label?' Reason: <b>'+esc(c.reason_label)+'</b>.':'')
           +(c.reason&&c.reason!==c.reason_label?'<div class="mc-note">“'+esc(String(c.reason).replace(/^.*?—\s*/,""))+'”</div>':'')+'</div>'
-        : journeyHtml(c) + nextStepHtml(c) + (approved ? payBoxMine(c) : ''))
+        : journeyHtml(c) + nextStepHtml(c) + (approved ? payBoxMine(c) : '') + (approved && c._trk && window.Tracking ? window.Tracking.creatorHtml(c._trk) : ''))
       + (shTxt?'<div class="mc-ship">'+shTxt+'</div>':'')
       + ((c.posts||[]).length?postsHtml(c):delivHtml)
       + (vb?fold('vb-'+P,'🎬 Video brief'+(c.deadline&&['content_created','changes_requested'].indexOf(c.stage)>=0?' <span class="ci-pill ci-warn" style="margin-left:6px">Due '+fmtDate(c.deadline)+'</span>':''), vbHint, briefHtml(c), false):'')
