@@ -27,3 +27,7 @@
 .legal-toc a{font-weight:600;text-decoration:none}
 .legal h2.legal-part{margin-top:46px;padding-top:26px;border-top:1px solid var(--line);font-size:24px;scroll-margin-top:90px}
 .legal [id]{scroll-margin-top:90px}
+/* policy tabs: one row, swipe sideways on small screens */
+.legal-tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px}
+.legal-tabs::-webkit-scrollbar{display:none}
+.legal-tabs a{white-space:nowrap;flex:none}
