@@ -264,7 +264,7 @@ Deno.serve(async (req) => {
       const gender = String(body?.gender || "").toLowerCase();
       const gNouns = gender === "female" ? ["girl", "diva", "queen", "girlie"] : gender === "male" ? ["boy", "guy", "man"] : [];
       const nouns = [...new Set([...(catKey ? (CAT_NOUN[catKey] || [catKey.replace(/[^a-z]/g, "")]) : []),
-        ...(w.length < 3 && city0.length >= 3 ? ["blogger", "diaries", "vlogs", "influencer", "foodie", "life", "insta"] : []), ...(city0 ? gNouns : [])])];
+        ...(w.length < 3 && !catKey && city0.length >= 3 ? ["blogger", "diaries", "vlogs", "influencer", "foodie", "life", "insta"] : []), ...(city0 ? gNouns : [])])];
       if (w.length < 3 && !nouns.length) return json({ error: "Type at least 3 letters." }, 400);
       const { data: shared } = await admin.schema("api").rpc("ops_discovery_token");
       const src = shared?.platform === "facebook" ? await openRow(shared) : null;
