@@ -1542,7 +1542,7 @@ function ccDetailsHtml(c){
       ${it("@","Mentions", tg.ments.length?chips(tg.ments):'<span class="muted">—</span>')}
       ${it("🎁","Product", [ct.product?esc(ct.product):"", c.product_value?fmtMoney(c.product_value):"", c.product_link?`<a href="${esc(safeUrl(c.product_link))}" target="_blank" rel="noopener">link ↗</a>`:""].filter(Boolean).join(" · ") || '<span class="muted">—</span>')}
       ${it("🗓","Dates", `${esc(c.start_date||"—")} → ${esc(c.end_date||"—")}${left!=null?` <span class="cc-left${left<0?" past":left<=3?" soon":""}">${left<0?"ended":left===0?"ends today":`${left} day${left>1?"s":""} left`}</span>`:""}`)}
-      ${it("⏱","Video due", `${esc(ct.content_days||7)} days after delivery · reminders 9:00 + 18:30`)}
+      ${it("⏱","Video due", `${esc(ct.content_days||7)} days after delivery · no automatic reminders`)}
       ${it("📢","Ad rights", `${esc(ct.ad_rights_months??1)} month${(ct.ad_rights_months??1)==1?"":"s"} · posts must stay live (checked twice a day)`)}
       ${it("🤝","Terms", terms.length?chips(terms):"—")}
       ${it("👥","Creators needed", c.creators?esc(c.creators):"")}
@@ -5738,7 +5738,7 @@ const BK_STATUSES = [
   ["contract_signed","Contract signed","next: the creator confirms the address","Confirm your address",""],
   ["address_confirmed","Address confirmed","they can read the video brief in the app to practise · next: you add the courier","no message","Address (+ State, PIN code) — or they add it in the app"],
   ["courier_sent","Courier sent","creator can track it · next: they tap Received","Product shipped","Courier + Tracking"],
-  ["courier_delivered","Courier delivered","the video deadline (campaign's days) starts today + reminders","Video brief","Courier + Tracking"],
+  ["courier_delivered","Courier delivered","the video deadline (campaign's days) starts today","Video brief","Courier + Tracking"],
   ["video_brief_sent","Video brief sent","same as Courier delivered (optional)","Video brief","Courier + Tracking"],
   ["video_submitted","Video submitted","waiting for the brand's review","no message","Video link"],
   ["client_approved","Client approved","next: the creator posts it","Video approved — post it","Video link"],
@@ -5803,7 +5803,7 @@ function bkStatuses(){
   if(k==="paid") return BK_STATUSES.filter(s=> !BK_SHIP_ST.includes(s[0])).map(s=>
       s[0]==="approved" ? [s[0], s[1], "brand said yes → the contract goes out as soon as their fee is set", s[3], feeNeed]
     : s[0]==="contract_signed" ? [s[0], s[1], "signed → the video brief goes out at once (nothing to ship) · they add bank / UPI", "Video brief + add payment details", ""]
-    : s[0]==="video_brief_sent" ? [s[0], s[1], "the video deadline (campaign's days) starts today + reminders", "Video brief", ""]
+    : s[0]==="video_brief_sent" ? [s[0], s[1], "the video deadline (campaign's days) starts today", "Video brief", ""]
     : s);
   if(k==="barter_paid") return BK_STATUSES.map(s=>
       s[0]==="approved" ? [s[0], s[1], "brand said yes → the contract goes out as soon as their fee is set", s[3], feeNeed]
@@ -6014,7 +6014,7 @@ function bulkHtml(){
   const noAddr = live.filter(r=>r._addrMissing).length;
   return `<div class="card bk-card">
       <h3 style="margin:0 0 4px">📥 Upload creators in bulk <span class="tag">${BK_KIND_LABEL[bkKind()]} campaign</span></h3>
-      <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Give every creator a <b>Status</b> — the exact step they are on (see the guide). They get <b>one message for that step</b>: <b>Approved</b> → the invite; a later step → only that step's message. Creators on Geek OS with a complete profile go on that step now; new ones register, connect Instagram and complete their profile (pre-filled from your sheet) and then land on their step. From there the normal flow and reminders carry on.</div>
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Give every creator a <b>Status</b> — the exact step they are on (see the guide). They get <b>one message for that step</b>: <b>Approved</b> → the invite; a later step → only that step's message. Creators on Geek OS with a complete profile go on that step now; new ones register, connect Instagram and complete their profile (pre-filled from your sheet) and then land on their step. From there the normal flow carries on — every message goes once; press Resend to send one again.</div>
       ${bkWaLine()}
       ${bkGuideHtml(!rows.length)}
       <div class="bk-src">
@@ -6082,8 +6082,8 @@ function bkGuideSteps(){
     pay ? `<li><b>Where to pay</b> (optional — they can also add it in the app): <b>UPI ID</b>, or <b>Account no</b> + <b>IFSC</b>, plus the <b>Account holder</b> name. It must be in the creator's own name; it is stored encrypted and checked automatically.</li>` : "",
     `<li><b>Messages:</b> each creator gets <b>one</b> message for their step — <b>Approved</b> → the invite; ${k==="paid"?"Contract sent / Contract signed (video brief) / Client approved / Posted":"Contract sent / Contract signed / Address confirmed / Courier sent / Courier delivered / Client approved / Posted"} → that step's message. <b>Posted / Done</b> is the last step. Applied, Screened, Sent to brand and Video submitted send no message.</li>`,
     k==="paid"
-      ? `<li><b>After that the normal flow runs:</b> from <b>Contract signed / Video brief sent</b> the video deadline is the campaign's own number of days <b>from today</b>, with the usual reminders; once every post is live the payment falls due.</li>`
-      : `<li><b>After that the normal flow runs:</b> next steps, follow-ups and reminders. From <b>Courier delivered / Video brief sent</b> the video deadline is the campaign's own number of days <b>from today</b>, with the usual reminders.${pay?" Once every post is live the payment falls due.":""}</li>`,
+      ? `<li><b>After that the normal flow runs:</b> from <b>Contract signed / Video brief sent</b> the video deadline is the campaign's own number of days <b>from today</b>; once every post is live the payment falls due. Every message goes <b>once</b> — use Resend to send it again.</li>`
+      : `<li><b>After that the normal flow runs:</b> next steps as they happen. From <b>Courier delivered / Video brief sent</b> the video deadline is the campaign's own number of days <b>from today</b>. Every message goes <b>once</b> — use Resend to send it again.${pay?" Once every post is live the payment falls due.":""}</li>`,
     k==="paid" ? "" : `<li>For <b>Address confirmed</b>, <b>Courier sent</b> and <b>Courier delivered</b> add the <b>Address</b> (+ State, PIN code); for <b>Courier sent / delivered</b> also the <b>Courier</b> and <b>Tracking</b> ID or link.</li>`,
     `<li><b>New creators</b> (not on Geek OS yet): the step's message carries the app link → they register → <b>connect Instagram</b> → <b>complete the profile</b> (pre-filled from your sheet) → they join the campaign <b>right on their step</b>${pay?" with their fee and payment details from the sheet":""}. No second message.</li>`,
     `<li>Upload the file — or paste a Google Sheet link (Share → <b>Anyone with the link</b> → Viewer). Column names don't have to match exactly; we match them and you can fix them in the dropdowns.</li>`];
@@ -6265,7 +6265,7 @@ const BP_NEXT = {
   contract_signed:"Waiting for the creator to confirm their delivery address.",
   address_confirmed:"Ship the product and add the courier + tracking.",
   product_sent:"In transit — mark delivered when it arrives (the creator can also confirm).",
-  content_created:"Video brief sent — waiting for the video (reminders at 9:00 and 18:30 every day until it's in; only the Super Admin can blocklist).",
+  content_created:"Video brief sent — waiting for the video (no automatic reminders — use Resend or WhatsApp to nudge; only the Super Admin can blocklist).",
   content_submitted:"Video is in — approve it or ask for changes.",
   changes_requested:"Waiting for the creator to resubmit.",
   content_approved:"Approved — waiting for the creator to post and add the link.",
