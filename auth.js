@@ -11,19 +11,43 @@ window.appOrigin = function(){ return (window.GEEK_CONFIG && GEEK_CONFIG.appUrl)
 
 // Which door this tab is (creator · agency · brand · Super Admin). Each door keeps its OWN login, so the same browser
 // can be signed in as a creator in one tab, a brand in another and the Super Admin in a third — signing in or out in
-// one never touches the others. The door comes from the link (?door=… or /brand, /agency, /superadmin) and is
-// remembered for this tab (sessionStorage), so refreshes, deep links and the Facebook / Instagram round trips keep it.
+// one never touches the others. The door comes from the LINK:
+//   <site>/ · /app.html · /creator        → Creator      <site>/brand · /brands   → Brand
+//   <site>/agency · /agencies             → Agency       <site>/superadmin · /admin → Super Admin
+// A plain /app.html is ALWAYS the creator door — except when it is a sign-in round trip coming back
+// (Instagram / Facebook / payment: ?code=… / ?state=… / ?error=…), which returns to the door that started it.
 const GEEK_DOOR = (function(){
   let d = null;
   try{
-    const q = (new URLSearchParams(location.search).get("door") || "").toLowerCase(), p = location.pathname.toLowerCase();
-    if(q === "superadmin" || /^\/superadmin\/?$/.test(p)) d = "admin";
-    else if(q === "agency" || /^\/agency\/?$/.test(p)) d = "owner";
-    else if(q === "brand" || /^\/brand\/?$/.test(p)) d = "brand";
-    else if(q === "creator") d = "creator";
-    if(d) sessionStorage.setItem("geek_tab_door", d); else d = sessionStorage.getItem("geek_tab_door");
+    const sp = new URLSearchParams(location.search);
+    const q = (sp.get("door") || "").toLowerCase(), p = location.pathname.toLowerCase().replace(/\/+$/, "");
+    d = { superadmin:"admin", admin:"admin", agency:"owner", owner:"owner", brand:"brand", brands:"brand", creator:"creator" }[q]
+      || { "/superadmin":"admin", "/admin":"admin", "/agency":"owner", "/agencies":"owner", "/brand":"brand", "/brands":"brand", "/creator":"creator", "/creators":"creator" }[p]
+      || null;
+    const roundTrip = ["code","state","error","error_description","error_reason"].some(k => sp.has(k));
+    if(!d && roundTrip) d = sessionStorage.getItem("geek_tab_door");
+    if(!d) d = "creator";
+    sessionStorage.setItem("geek_tab_door", d);
   }catch(e){}
   return ["admin","owner","brand","creator"].includes(d) ? d : "creator";
+})();
+// keep the door in the address bar: when the app tidies the URL (history.replaceState after a sign-in round trip,
+// a payment, an invite link…) the ?door=… stays, so a refresh opens the same door instead of the creator one
+(function(){
+  if(GEEK_DOOR === "creator") return;
+  const param = { admin:"superadmin", owner:"agency", brand:"brand" }[GEEK_DOOR];
+  const raw = history.replaceState.bind(history);
+  history.replaceState = function(st, t, u){
+    try{
+      if(u != null){
+        const x = new URL(u, location.href);
+        if((x.pathname === "/app.html" || x.pathname === "/") && !x.searchParams.get("door")){ x.searchParams.set("door", param); u = "/app.html" + x.search + x.hash; }
+      }
+    }catch(e){}
+    return raw(st, t, u);
+  };
+  try{ const sp = new URLSearchParams(location.search);
+       if(location.pathname === "/app.html" && !sp.get("door") && !["code","state","error"].some(k=>sp.has(k))) history.replaceState(history.state, "", location.href); }catch(e){}
 })();
 window.GEEK_DOOR = GEEK_DOOR;
 const SB_KEY_BASE = (function(){ try{ return "sb-" + new URL(SUPABASE_URL).hostname.split(".")[0] + "-auth-token"; }catch(e){ return "sb-auth-token"; } })();
@@ -167,12 +191,14 @@ const Auth = {
   },
 
   async signOut() {
-    await sb.auth.signOut();
+    // "local" = sign out of THIS door in this browser only. The default ("global") ended the account's login
+    // everywhere — every other tab, browser and phone — which is why the Super Admin kept getting logged out.
+    await sb.auth.signOut({ scope: "local" });
     this.profile = null;
     this.user = null;
     // a Super Admin goes back to their own door, everyone else to the home page
-    { const dm = (location.search.match(/door=(superadmin|agency|brand)/)||[])[1] || (/^\/(superadmin|agency|brand)\/?$/i.exec(location.pathname)||[])[1];
-      location.href = window.__isAdmin ? '/app.html?door=superadmin' : (dm ? '/app.html?door=' + dm.toLowerCase() : 'index.html'); }
+    { const dm = { admin:"superadmin", owner:"agency", brand:"brand" }[GEEK_DOOR];
+      location.href = (window.__isAdmin || GEEK_DOOR === "admin") ? '/app.html?door=superadmin' : (dm ? '/app.html?door=' + dm : 'index.html'); }
   },
 
   isDemo() { return false; }

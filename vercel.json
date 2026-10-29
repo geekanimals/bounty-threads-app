@@ -41,9 +41,45 @@
       "source": "/brand/",
       "destination": "/brand",
       "permanent": false
+    },
+    {
+      "source": "/admin/",
+      "destination": "/admin",
+      "permanent": false
+    },
+    {
+      "source": "/brands/",
+      "destination": "/brands",
+      "permanent": false
+    },
+    {
+      "source": "/agencies/",
+      "destination": "/agencies",
+      "permanent": false
+    },
+    {
+      "source": "/creator/",
+      "destination": "/creator",
+      "permanent": false
     }
   ],
   "rewrites": [
+    {
+      "source": "/creator",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/agencies",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/brands",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/app.html"
+    },
     {
       "source": "/superadmin",
       "destination": "/app.html"

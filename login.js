@@ -10,7 +10,9 @@
 //   <site>/            → Creator login (the only one on the normal screen)
 //   <site>/agency      → Agency login        (/agency/index.html → app.html?door=agency)
 //   <site>/brand       → Brand login         (/brand/index.html  → app.html?door=brand)
+//   <site>/brands      → Brand login too      <site>/admin → Super Admin login too
 //   <site>/superadmin  → Super Admin login
+// (the door itself is decided in auth.js — GEEK_DOOR)
 const LOGIN_DOOR = (function(){
   if(window.GEEK_DOOR) return window.GEEK_DOOR;      // auth.js: this tab's door (kept across refreshes and sign-in round trips)
   const q = (new URLSearchParams(location.search).get("door") || "").toLowerCase(), p = location.pathname.toLowerCase();
