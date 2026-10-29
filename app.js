@@ -5120,7 +5120,7 @@ function mkDmProblem(r){
 }
 function wireMkDmProblem(){
   const rc = document.getElementById("mkDmReconnect");
-  if(rc) rc.onclick = ()=>{ try{ localStorage.setItem("geekos_after_ig", currentPage||"messages"); if(currentPage==="messages") localStorage.setItem("geekos_msgtab","ig"); }catch(e){} connectInstagram(true); };
+  if(rc) rc.onclick = ()=>{ try{ localStorage.setItem("geekos_after_ig", currentPage||"messages"); if(currentPage==="messages") localStorage.setItem("geekos_msgtab","ig"); }catch(e){} connectInstagram(); };
   const rt = document.getElementById("mkDmRetry"); if(rt) rt.onclick = ()=>{ const b = document.getElementById("mkInbox"); if(b) b.innerHTML = "Loading…"; loadMkInbox(); };
 }
 async function loadMkInbox(){
@@ -9558,7 +9558,8 @@ async function connectInstagram(fresh){
     scope: IG_SCOPES,
     state
   });
-  if(fresh === true) p.set("force_reauth", "true");   // show the permission screen again (to allow messages)
+  // Never send force_reauth: Instagram then SIGNS THE PERSON OUT in that browser and asks for the password.
+  // Without it, someone already logged in to Instagram just sees "Allow" (all permissions, messages too, are asked again).
   // Keep the login in the BROWSER on phones (never jump to the Instagram app, which just opens its feed):
   // Instagram's app-link rules (instagram.com/.well-known/apple-app-site-association) exclude "/oauth/authorize/*"
   // (note the trailing slash) and any address ending in "#weblink" — so this opens the web login + Allow screen,
@@ -9578,8 +9579,8 @@ async function igAccountsLoad(force){
 window.igAccountsLoad = igAccountsLoad;
 function igAddAnother(back){
   try{ localStorage.setItem("geekos_after_ig", back || currentPage || "mediakit"); }catch(e){}
-  gateToast("Log in to the other Instagram account on the next screen (tap “Not you?” if it shows your current one).");
-  setTimeout(()=> connectInstagram(true), 900);
+  gateToast("Instagram connects the account that's open in this browser — switch to the other account in Instagram first, then tap Allow.");
+  setTimeout(()=> connectInstagram(), 1400);
 }
 window.igAddAnother = igAddAnother;
 async function igSwitchTo(igId){
