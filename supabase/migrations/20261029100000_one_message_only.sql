@@ -1,6 +1,8 @@
 -- 📵 One message, once. Every creator gets each message ONE time — the invite once, each step's update once.
 --   * no automatic repeats: invite reminders, "join the campaign" reminders, video-deadline reminders, "campaign
---     ends soon", "restore your post" and the SLA reminder runners are all switched off;
+--     ends soon" and the SLA reminder runners are all switched off;
+--   * the one reminder that stays: "please restore your post" (a creator deleted a post that must stay up) — it keeps
+--     going at 9:00 and 18:30 until the post is back;
 --   * a message that already went to a creator for this campaign is not sent again by the system (it is kept in the
 --     log as "skipped — already sent once");
 --   * to send it again, someone on the team presses Resend in the panel (Super Admin / agency / brand) — a person on
@@ -14,7 +16,7 @@ do $$ begin
     perform cron.unschedule(jobid) from cron.job
      where jobname in ('ci-invite-reminders','ci-invite-reminders-pm','ci-join-reminders',
                        'ci-deadline-am','ci-deadline-pm','ci-video-am','ci-video-pm',
-                       'ci-restore-am','ci-restore-pm','ci-reminders','ci-reminders-sql');
+                       'ci-reminders','ci-reminders-sql');
   end if;
 exception when others then raise warning 'reminder crons not removed: %', sqlerrm; end $$;
 
@@ -38,6 +40,8 @@ create or replace function private.tg_outbox_once()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   if new.campaign_id is null or new.template_key is null or new.status <> 'queued' then return new; end if;
+  -- "please restore your post" keeps going until the post is back
+  if new.template_key like 'post_restore%' then return new; end if;
   -- messages to the team are not limited
   if private.ci_is_team(new.recipient_member_id) then return new; end if;
   -- someone on the team pressing Resend / changing a step by hand may send it again
