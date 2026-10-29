@@ -51,8 +51,11 @@
     var root = document.getElementById("cpRoot"); if(!root) return;
     try{
       var p = await api("get_my_profile");
-      if(p.error){ throw p.error; }
-      if(!p.data){ // no profile yet → bootstrap
+      // a brand-new creator has no profile identity yet: the database answers "no creator identity for caller"
+      // instead of an empty profile — make it now (bootstrap) rather than showing that error
+      var fresh = p.error && /no creator identity/i.test(String(p.error.message||p.error));
+      if(p.error && !fresh){ throw p.error; }
+      if(fresh || !p.data){ // no profile yet → bootstrap
         var b = await api("bootstrap_my_profile", { p_correlation: "ui-bootstrap" });
         if(b.error) throw b.error;
         p = await api("get_my_profile");

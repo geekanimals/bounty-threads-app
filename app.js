@@ -10249,7 +10249,7 @@ function showInstagramGate(){
   if(window.hideBootSplash) hideBootSplash();
   const root = document.getElementById("authRoot"); if(!root) return;
   root.classList.add("open");
-  root.innerHTML = `<div class="auth-wrap"><div class="auth-card" style="max-width:460px;margin:auto">
+  root.innerHTML = `<div class="auth-wrap"><div class="auth-card" style="max-width:460px">
     <div class="auth-brand"><div class="brand-mark">G</div><div><div class="brand-name">Almost there</div><div class="muted">Step 2 of 2 — connect Instagram</div></div></div>
     <p style="margin:6px 0 12px">Connect your Instagram <b>Business or Creator</b> account. We build your media kit from it, show brands your real stats and let you publish posts, reels &amp; stories from here.</p>
     <ul class="muted" style="font-size:13px;margin:0 0 14px 18px;line-height:1.6">
@@ -10260,7 +10260,12 @@ function showInstagramGate(){
     <button class="ig-btn" id="gateIg"><span class="ig-ic">📸</span> Connect Instagram</button>
     <div class="muted" style="font-size:12px;margin-top:10px">Personal account? In Instagram: Settings → Account type and tools → Switch to professional account (free, 1 minute).</div>
     <button class="btn ghost" id="gateSignout" style="margin-top:14px;width:100%">Sign out</button>
-  </div></div>`;
+  </div>
+  <div class="auth-side"><div class="auth-quote">
+    <h2>Connect Instagram.<br>Your Media Kit Builds Itself.</h2>
+    <ul><li>📊 Real Followers, Reach &amp; Engagement</li><li>🖼️ Your Best Posts &amp; Reels, Auto-Picked</li><li>🎯 Brands See Your Real Stats</li><li>📦 Apply to Barter &amp; Paid Campaigns</li><li>🚀 Publish Posts, Reels &amp; Stories From Here</li><li>🔒 We Never See Your Password</li></ul>
+    <div class="auth-foot">One tap. Then tap Allow.</div>
+  </div></div></div>`;
   document.getElementById("gateIg").onclick = ()=>{ if(window.Tracker) Tracker.security("instagram_connect_start"); connectInstagram(); };
   document.getElementById("gateSignout").onclick = ()=> window.Auth && Auth.signOut();
 }
