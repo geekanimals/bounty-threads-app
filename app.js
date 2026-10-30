@@ -6527,6 +6527,7 @@ const CC_TILES = [
   ["invited","Invited","invited, not registered yet"],
   ["registered","Registered","on Geek OS"],
   ["insta","Instagram attached","media kit connected"],
+  ["noig","Registered · no Instagram","signed up, Instagram not connected"],
   ["applied","Applied","waiting for screening / the brand"],
   ["brand_confirmed","Approved","the brand said yes"],
   ["contract_signed","Contract signed",""],
@@ -6584,12 +6585,14 @@ function ccMatch(key, r){
     if(key==="invited") return !i.registered;
     if(key==="registered") return !!i.registered;
     if(key==="insta") return !!i.ig_connected;
+    if(key==="noig") return !!i.registered && !i.ig_connected;
     if(key==="applied") return rk<=3;
     return CC_INV_RANK[key] ? rk >= CC_INV_RANK[key] : false; }
   const x = r.x;
   if(key==="invited") return x.stage==="invited";
   if(key==="registered") return true;
   if(key==="insta") return !!(r.pp.ig_connected || (x.creator||{}).username);
+  if(key==="noig") return !(r.pp.ig_connected || (x.creator||{}).username);
   if(key==="applied") return ["applied","eligible","sent_to_brand","shortlisted"].includes(x.stage);
   return !fail(x.stage) && bpEffectiveIndex(x) >= bpStageIndex(key);
 }
