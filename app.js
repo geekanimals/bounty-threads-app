@@ -5949,6 +5949,22 @@ function bkRowData(r){
            fee:g("fee"), advance_pct:g("advance_pct"), pay_days:g("pay_days"), pay_terms:g("pay_terms"), upi:g("upi"), account_no:g("account_no"), ifsc:g("ifsc"), account_name:g("account_name") };
 }
 // the same person on several rows: keep the first row, take the furthest step and every link / missing detail
+// two sheet rows with the SAME WhatsApp / email but DIFFERENT Instagram handles are not one person — usually the sheet
+// has someone else's number (a team / manager number) copied down the column. Never merge them (the invite would go
+// to that one number for everyone): flag every such row and leave it out of the upload until the sheet is fixed.
+function bkFlagConflicts(data, pv){
+  if(!Array.isArray(pv)) return;
+  const ph = d => String(d.phone||"").replace(/\D/g,"").slice(-10), em = d => String(d.email||"").trim().toLowerCase(),
+        hd = d => String(d.handle||"").trim().toLowerCase().replace(/^@/,"").replace(/^(https?:\/\/)?(www\.|m\.)?instagram\.com\//,"").replace(/[\/?#].*$/,"");
+  data.forEach((a,i)=> data.forEach((b,j)=>{
+    if(j<=i || !pv[i] || !pv[j]) return;
+    const byPh = ph(a).length===10 && ph(a)===ph(b), byEm = em(a) && em(a)===em(b);
+    if(!(byPh || byEm) || !hd(a) || !hd(b) || hd(a)===hd(b)) return;
+    const by = byPh ? "WhatsApp number" : "email";
+    [[i,j],[j,i]].forEach(([x,y])=>{ const p = pv[x]; p.duplicate = false; delete p._dupOf;
+      p.conflict = p.conflict || { by, rows:[] }; if(!p.conflict.rows.includes(y+1)) p.conflict.rows.push(y+1); });
+  }));
+}
 function bkSamePerson(a, b){ return !!a && !!b && ((a.phone && a.phone===b.phone) || (a.email && a.email===b.email) || (a.handle && a.handle===b.handle)); }
 function bkMergeRepeats(all, pv){
   pv.forEach((p,i)=>{
@@ -5967,7 +5983,7 @@ async function bkCheck(){
   if(!_bk.rows) return;
   const { data, error } = await sb.schema("api").rpc("bulk_preview", { p_campaign:_bpCamp.id, p_rows: _bk.rows.map(bkRowData) }).then(r=>r, e=>({error:e}));
   _bk.preview = error ? { error: error.message||String(error) } : (data||[]);
-  if(Array.isArray(_bk.preview)) bkMergeRepeats(_bk.rows.map(bkRowData), _bk.preview);
+  if(Array.isArray(_bk.preview)){ const rd = _bk.rows.map(bkRowData); bkFlagConflicts(rd, _bk.preview); bkMergeRepeats(rd, _bk.preview); }
   paintBulk();
 }
 async function loadBulkList(){
@@ -5978,6 +5994,7 @@ async function loadBulkList(){
 function bkStatusChip(p, r){
   if(!p) return '<span class="muted">…</span>';
   if(p.no_contact) return '<span class="tag warn">⚠ no WhatsApp / email / Instagram</span>';
+  if(p.conflict) return `<span class="tag bad">⚠ Same ${bkEsc(p.conflict.by)} as row ${bkEsc(p.conflict.rows.join(", "))} but a different Instagram — fix it in the sheet · not uploaded</span>`;
   if(p.duplicate) return `<span class="tag">Same person as row ${bkEsc((p._dupOf!=null?p._dupOf:0)+1)} — merged into it (furthest step + all links kept)</span>`;
   if(p.already) return `<span class="tag">Already in${p.live_stage?` · ${bkEsc(String(p.live_stage).replace(/_/g," "))}`:""} — nothing new in this row · skipped</span>`;
   if(p.lands_on && bkDispStatus(p.lands_on) !== ((r && r.status) || "registered") && bkStRank(p.lands_on) < bkStRank(bkServerStatus((r && r.status) || "registered"))){
@@ -6005,9 +6022,10 @@ function bkStatusSelect(attr, val, extra){
 }
 function bulkHtml(){
   const rows = _bk.rows||[], pv = Array.isArray(_bk.preview) ? _bk.preview : null;
-  const skipRow = p => p && (p.no_contact || p.duplicate || p.already);
+  const skipRow = p => p && (p.no_contact || p.conflict || p.duplicate || p.already);
   const valid = pv ? pv.filter(p=>!skipRow(p)).length : rows.length;
-  const nDup = pv ? pv.filter(p=> p && !p.no_contact && (p.duplicate || p.already)).length : 0;
+  const nDup = pv ? pv.filter(p=> p && !p.no_contact && !p.conflict && (p.duplicate || p.already)).length : 0;
+  const nClash = pv ? pv.filter(p=> p && p.conflict).length : 0;
   rows.forEach(r=>{ const d = bkRowData(r); r._addrMissing = bkKind()!=="paid" && bkNeedsAddr(r.status) && !d.address; });
   const live = rows.filter((r,i)=> !(pv && skipRow(pv[i])));
   const byStatus = bkStatuses().map(([k,l])=>[l, live.filter(r=>(r.status||"registered")===k).length]).filter(x=>x[1]);
@@ -6038,7 +6056,7 @@ function bulkHtml(){
           const raw = _bk.map.status!=null ? String(r.cells[_bk.map.status]||"").trim() : "";
           const unread = raw && !bkStatus(raw);
           const ship = [d.address, [d.state, d.pincode].filter(Boolean).join(" "), [d.courier, d.tracking].filter(Boolean).join(" · ")].filter(Boolean).join(" · ");
-          return `<tr class="${p&&p.no_contact?"bk-bad":p&&(p.duplicate||p.already)?"bk-dup":""}"><td>${bkStatusSelect(`data-bkst="${i}"`, r.status||"registered", p&&p.no_contact?" disabled":"")}${unread?`<div class="muted bk-raw" title="Couldn't read this status — pick it">“${bkEsc(raw.slice(0,24))}”?</div>`:""}</td>
+          return `<tr class="${p&&(p.no_contact||p.conflict)?"bk-bad":p&&(p.duplicate||p.already)?"bk-dup":""}"><td>${bkStatusSelect(`data-bkst="${i}"`, r.status||"registered", p&&p.no_contact?" disabled":"")}${unread?`<div class="muted bk-raw" title="Couldn't read this status — pick it">“${bkEsc(raw.slice(0,24))}”?</div>`:""}</td>
             <td>${bkEsc(d.name)||'<span class="muted">—</span>'}</td><td>${p&&p.handle?"@"+bkEsc(p.handle):bkEsc(d.handle)}</td>
             <td>${p&&p.phone?bkEsc(p.phone):bkEsc(d.phone)}</td><td>${bkEsc(p&&p.email||d.email)}</td><td>${bkEsc(d.city)}</td>
             ${bkKind()!=="paid"?`<td class="bk-ship">${ship?bkEsc(ship):'<span class="muted">—</span>'}</td>`:""}
@@ -6048,7 +6066,7 @@ function bulkHtml(){
       ${_bk.preview && _bk.preview.error ? `<div class="auth-err">${bkEsc(_bk.preview.error)}</div>` : ""}
       <label class="bk-note"><span>Message to the creators (optional — goes with the invite)</span><input id="bkNote" maxlength="200" value="${bkEsc(_bk.note)}" placeholder="e.g. Diwali drop — we loved your recent reels!"></label>
       <div class="bk-go"><button class="btn" id="bkUpload"${_bk.busy||!valid?" disabled":""}>${_bk.busy?"Uploading…":`Upload &amp; invite ${valid} creator${valid===1?"":"s"}`}</button>
-        <span class="muted">${byStatus.map(([l,n])=>`${n} ${bkEsc(l.toLowerCase())}`).join(" · ")}${noAddr?` · <b style="color:#b45309">${noAddr} without an address</b> (they add it in their profile)`:""}${nDup?` · <b>${nDup} repeat${nDup>1?"s":""}</b> (merged into the first row / already up to date)`:""}</span>
+        <span class="muted">${byStatus.map(([l,n])=>`${n} ${bkEsc(l.toLowerCase())}`).join(" · ")}${noAddr?` · <b style="color:#b45309">${noAddr} without an address</b> (they add it in their profile)`:""}${nDup?` · <b>${nDup} repeat${nDup>1?"s":""}</b> (merged into the first row / already up to date)`:""}${nClash?` · <b style="color:#dc2626">${nClash} share a WhatsApp / email with a different Instagram — fix the sheet, they're left out</b>`:""}</span>
         <button class="btn sm ghost" id="bkClear">Clear</button></div>
       <div id="bkResult"></div>` : ""}
     </div>
@@ -6200,7 +6218,7 @@ function wireBulk(){
     const pv = Array.isArray(_bk.preview) ? _bk.preview : [];
     const all = _bk.rows.map(bkRowData);
     bkMergeRepeats(all, pv);
-    const rows = all.filter((d,i)=> !(pv[i] && (pv[i].no_contact || pv[i].duplicate || pv[i].already && !d._merged)));
+    const rows = all.filter((d,i)=> !(pv[i] && (pv[i].no_contact || pv[i].conflict || pv[i].duplicate || pv[i].already && !d._merged)));
     if(!rows.length) return;
     _bk.busy = true; paintBulk();
     // paid campaign: each row's fee / bank / UPI first — applied as each creator lands (a waiting contract goes out with it)
