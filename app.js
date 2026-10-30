@@ -7163,9 +7163,9 @@ function paintCreatorHub(){
           ${digits?`<a class="wa-open" href="https://wa.me/${digits}" target="_blank" rel="noopener" title="Open this chat in WhatsApp">Open in WhatsApp ↗</a>`:""}</div>
         <div class="wa-chat" id="hubChat">${bubbles || `<div class="wa-empty">No WhatsApp messages with this creator yet.</div>`}</div>
         <div class="wa-tplrow"><select id="hubStepKey"><option value="">📨 Send a step template…</option>${(d.step_messages||[]).map(s2=>`<option value="${esc(s2.key)}">${esc(s2.title||s2.key)}</option>`).join("")}</select><button class="wa-tplgo" id="hubStepGo" type="button">Send</button></div>
-        <div class="wa-compose"><textarea id="hubText" rows="1" placeholder="${d.phone?(d.session_open?"Type a message":"Type a message (works within 24 h of their last reply)"):"No WhatsApp number for this creator"}"${d.phone?"":" disabled"}></textarea>
+        <div class="wa-compose"><textarea id="hubText" rows="1" placeholder="${d.phone?(d.session_open?"Type a message":"Type a message — goes as a WhatsApp update (they haven't replied in 24 h)"):"No WhatsApp number for this creator"}"${d.phone?"":" disabled"}></textarea>
           <button class="wa-send" id="hubTextGo" type="button" aria-label="Send"${d.phone?"":" disabled"}>➤</button></div>
-        <div class="wa-note">${d.session_open ? "✅ They replied in the last 24 h — your message goes straight to their WhatsApp." : "WhatsApp lets you type freely only within 24 h of the creator's last message. Otherwise send a step template, or tap “Open in WhatsApp”."}</div>
+        <div class="wa-note">${d.session_open ? "✅ They replied in the last 24 h — your message goes straight to their WhatsApp." : "They haven't replied in 24 h — your message still goes, inside the approved “campaign update” WhatsApp template."}</div>
       </div>`;
   } else {
     const M = OTH, A = d.alerts||[];
@@ -7248,8 +7248,8 @@ function paintCreatorHub(){
       const { data:r, error } = await sb.functions.invoke("wa-send", { body:{ to_phone: d.phone, text: t, subject: d.campaign || null } }).then(x=>x, e=>({error:e}));
       tg.disabled = false; tg.textContent = "Send";
       const msg = (r && r.error) || (error && (typeof fnError==="function" ? await fnError(error) : error.message));
-      if(msg){ gateToast(/24-hour|template/i.test(msg) ? "Outside WhatsApp's 24-hour window — send a step message instead (pre-approved template)." : msg); return; }
-      document.getElementById("hubText").value = ""; gateToast("WhatsApp message sent ✓"); hubReload(); };
+      if(msg){ gateToast(msg); return; }
+      document.getElementById("hubText").value = ""; gateToast(r && r.via_template ? "Sent as a WhatsApp update ✓ (they hadn't replied in 24 h)" : "WhatsApp message sent ✓"); hubReload(); };
   }
 }
 
@@ -8002,9 +8002,9 @@ function inviteChatHtml(id, d){
         <div class="wa-head-id"><b>${esc(d.name||(d.handle?"@"+d.handle:"")||d.phone||"Creator")}</b><span>${d.phone?esc(d.phone):"no WhatsApp number"}${d.session_open?" · chat open":""}${d.opted_out?" · opted out":""}</span></div>
         ${digits?`<a class="wa-open" href="https://wa.me/${digits}" target="_blank" rel="noopener">Open in WhatsApp ↗</a>`:""}</div>
       <div class="wa-chat" data-invscroll>${bubbles || `<div class="wa-empty">Nothing sent yet.</div>`}</div>
-      <div class="wa-compose"><textarea data-invtext="${esc(id)}" rows="1" placeholder="${d.phone?(d.session_open?"Type a message":"Type a message (WhatsApp delivers it only within 24 h of their last reply)"):"No WhatsApp number on their row"}"${d.phone&&!d.opted_out?"":" disabled"}></textarea>
+      <div class="wa-compose"><textarea data-invtext="${esc(id)}" rows="1" placeholder="${d.phone?(d.session_open?"Type a message":"Type a message — goes as a WhatsApp update (they haven't replied in 24 h)"):"No WhatsApp number on their row"}"${d.phone&&!d.opted_out?"":" disabled"}></textarea>
         <button class="wa-send" data-invsend="${esc(id)}" type="button" aria-label="Send"${d.phone&&!d.opted_out?"":" disabled"}>➤</button></div>
-      <div class="wa-note">${d.session_open ? "✅ They replied in the last 24 h — your message goes straight to their WhatsApp." : "Outside WhatsApp's 24-hour window a typed message can't be delivered — use ↻ Resend invite (an approved template), or Open in WhatsApp."}</div></div>`;
+      <div class="wa-note">${d.session_open ? "✅ They replied in the last 24 h — your message goes straight to their WhatsApp." : "They haven't replied in 24 h — your message still goes, inside the approved “campaign update” WhatsApp template."}</div></div>`;
 }
 async function loadInviteChat(box, id){
   const paint = d=>{ if(!box.isConnected) return; box.innerHTML = inviteChatHtml(id, d);
@@ -8018,8 +8018,8 @@ async function loadInviteChat(box, id){
       const { data:r, error } = await sb.functions.invoke("wa-send", { body:{ to_phone: d.phone, text: t, subject: (_wsCampaign&&_wsCampaign.name) || null } }).then(x=>x, e=>({error:e}));
       go.disabled = false;
       const msg = (r && r.error) || (error && (typeof fnError==="function" ? await fnError(error) : error.message));
-      if(msg){ gateToast(/24-hour|template|opted in/i.test(msg) ? "Can't deliver a typed message now (outside WhatsApp's 24-hour window) — use ↻ Resend invite, or Open in WhatsApp." : msg); return; }
-      ta.value = ""; gateToast("WhatsApp message sent ✓"); delete _invChat[id]; loadInviteChat(box, id); };
+      if(msg){ gateToast(msg); return; }
+      ta.value = ""; gateToast(r && r.via_template ? "Sent as a WhatsApp update ✓ (they hadn't replied in 24 h)" : "WhatsApp message sent ✓"); delete _invChat[id]; loadInviteChat(box, id); };
   };
   if(_invChat[id]) paint(_invChat[id]);
   const { data, error } = await sb.schema("api").rpc("invite_messages", { p_invite: id }).then(r=>r, e=>({error:e}));
