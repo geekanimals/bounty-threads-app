@@ -12,6 +12,33 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="home.css">
+
+<style>
+  /* creator guide player — premium, plays in place */
+  .cg-player{position:relative;border-radius:22px;overflow:hidden;background:#0b0d1a;aspect-ratio:16/9;
+    box-shadow:0 30px 70px -20px rgba(76,57,201,.55),0 10px 30px rgba(15,18,34,.18);isolation:isolate}
+  .cg-player::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1.5px;z-index:3;pointer-events:none;
+    background:linear-gradient(135deg,#a78bfa,#6c5ce7 40%,#ec4899);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude}
+  .cg-player video{display:block;width:100%;height:100%;object-fit:cover;background:#0b0d1a}
+  .cg-shade{position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(11,13,26,0) 45%,rgba(11,13,26,.78) 100%);transition:opacity .3s}
+  .cg-badge{position:absolute;top:14px;left:14px;z-index:2;display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;
+    background:rgba(15,18,34,.55);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#fff;font-size:12.5px;font-weight:700;letter-spacing:.01em;border:1px solid rgba(255,255,255,.18)}
+  .cg-badge i{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 4px rgba(34,197,94,.25);animation:cgPulse 1.6s infinite}
+  @keyframes cgPulse{50%{box-shadow:0 0 0 7px rgba(34,197,94,0)}}
+  .cg-play{position:absolute;left:16px;right:16px;bottom:16px;z-index:2;display:flex;align-items:center;gap:14px;padding:12px 16px 12px 12px;
+    border-radius:16px;border:1px solid rgba(255,255,255,.2);background:rgba(15,18,34,.5);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    color:#fff;font:inherit;text-align:left;cursor:pointer;transition:transform .18s,background .18s}
+  .cg-play:hover{transform:translateY(-2px);background:rgba(15,18,34,.65)}
+  .cg-ring{flex:0 0 auto;width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;padding-left:3px;
+    background:linear-gradient(135deg,#7c6cf0,#a66cff);box-shadow:0 0 0 6px rgba(124,108,240,.28),0 10px 24px rgba(108,92,231,.5)}
+  .cg-lbl{display:flex;flex-direction:column;gap:2px}.cg-lbl b{font-size:16px}.cg-lbl small{font-size:12.5px;opacity:.82}
+  .cg-player.on .cg-shade,.cg-player.on .cg-play,.cg-player.on .cg-badge{opacity:0;pointer-events:none}
+  .cg-player.on video{object-fit:contain}
+  @media (max-width:560px){ .cg-play{left:auto;right:10px;bottom:10px;gap:9px;padding:5px 14px 5px 5px;border-radius:999px}
+    .cg-ring{width:38px;height:38px;font-size:14px;box-shadow:0 0 0 4px rgba(124,108,240,.28)} .cg-lbl b{font-size:13px} .cg-lbl small{display:none}
+    .cg-badge{top:10px;left:10px;font-size:11.5px;padding:5px 10px} .cg-player{border-radius:18px} }
+</style>
 </head>
 <body>
 
@@ -104,8 +131,17 @@
           <a href="app.html" class="lp-btn">Start your dream plan →</a>
         </div>
         <div class="aud-media">
-          <div class="video-frame small" data-video="mp4:assets/creator-guide.mp4">
-            <div class="video-poster"><div class="poster-body"><div class="play-btn">▶</div><div class="poster-cap">Creator guide · sign in → Instagram → campaigns · 3 min</div></div></div>
+          <!-- Creator guide: visible right here (silent preview), tap to play with sound in the same box -->
+          <div class="cg-player" id="cgPlayer">
+            <video id="cgVid" muted playsinline loop preload="metadata" poster="assets/creator-guide-poster.jpg">
+              <source src="assets/creator-guide.mp4" type="video/mp4">
+            </video>
+            <div class="cg-shade"></div>
+            <span class="cg-badge"><i></i>Creator guide · 3:45</span>
+            <button type="button" class="cg-play" id="cgPlay" aria-label="Play the creator guide">
+              <span class="cg-ring">▶</span>
+              <span class="cg-lbl"><b>Watch how it works</b><small>Sign in → Instagram → profile → campaigns</small></span>
+            </button>
           </div>
         </div>
       </div>
@@ -382,6 +418,25 @@
   document.getElementById('vidClose').addEventListener('click', closeVid);
   overlay.addEventListener('click', e => { if (e.target === overlay) closeVid(); });
 
+
+  // ---- Creator guide player: silent preview while on screen, tap = play from the start with sound, in place ----
+  (function(){
+    const box = document.getElementById('cgPlayer'), v = document.getElementById('cgVid'), btn = document.getElementById('cgPlay');
+    if(!box || !v) return;
+    let started = false;
+    const vis = () => box.offsetParent !== null;          // the Creators tab is the one showing
+    const io = 'IntersectionObserver' in window ? new IntersectionObserver(es => es.forEach(e => {
+      if(started) { if(!e.isIntersecting) v.pause(); return; }
+      if(e.isIntersecting && vis()){ v.play().catch(()=>{}); } else v.pause();
+    }), { threshold: .35 }) : null;
+    if(io) io.observe(box); else v.play().catch(()=>{});
+    const start = () => { started = true; box.classList.add('on'); v.loop = false; v.muted = false; v.controls = true;
+      try{ v.currentTime = 0; }catch(e){} v.play().catch(()=>{ v.muted = true; v.play().catch(()=>{}); }); };
+    btn.addEventListener('click', e => { e.stopPropagation(); start(); });
+    box.addEventListener('click', () => { if(!started) start(); });
+    // switching audience tabs pauses it
+    document.querySelectorAll('[data-aud]').forEach(t => t.addEventListener('click', () => setTimeout(() => { if(!vis()) v.pause(); }, 50)));
+  })();
   // ---- WhatsApp button ----
   const waMsg = encodeURIComponent("Hi! I'd like early access to Geek Influencer OS.");
   document.getElementById('waBtn').href = `https://wa.me/${WHATSAPP_NUMBER}?text=${waMsg}`;
