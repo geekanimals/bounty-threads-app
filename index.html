@@ -104,8 +104,8 @@
           <a href="app.html" class="lp-btn">Start your dream plan →</a>
         </div>
         <div class="aud-media">
-          <div class="video-frame small" data-video="dQw4w9WgXcQ">
-            <div class="video-poster"><div class="poster-body"><div class="play-btn">▶</div><div class="poster-cap">Creator journey demo</div></div></div>
+          <div class="video-frame small" data-video="mp4:assets/creator-guide.mp4">
+            <div class="video-poster"><div class="poster-body"><div class="play-btn">▶</div><div class="poster-cap">Creator guide · sign in → Instagram → campaigns · 3 min</div></div></div>
           </div>
         </div>
       </div>
@@ -194,7 +194,7 @@
     </div>
     <div class="demo-chips">
       <span data-video="3EpqYD3ti7M">▶ Celebrity barter exchange</span>
-      <span data-video="dQw4w9WgXcQ">▶ Creator growth journey</span>
+      <span data-video="mp4:assets/creator-guide.mp4">▶ Creator guide: sign in to campaigns</span>
       <span data-video="dQw4w9WgXcQ">▶ Brand approvals</span>
       <span data-video="dQw4w9WgXcQ">▶ Auto EMV / ROI reports</span>
     </div>
@@ -368,7 +368,10 @@
   const overlay = document.getElementById('vidOverlay');
   const embed = document.getElementById('vidEmbed');
   function openVid(id){
-    embed.innerHTML = `<iframe width="100%" height="100%" src="https://www.youtube.com/embed/${id}?autoplay=1" title="Demo" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+    // our own videos (mp4:path) play in the same player as the YouTube demos
+    embed.innerHTML = id.indexOf('mp4:') === 0
+      ? `<video src="${id.slice(4)}" controls autoplay playsinline style="width:100%;height:100%;background:#000;display:block"></video>`
+      : `<iframe width="100%" height="100%" src="https://www.youtube.com/embed/${id}?autoplay=1" title="Demo" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
     overlay.classList.add('open');
   }
   function closeVid(){ overlay.classList.remove('open'); embed.innerHTML = ''; }
