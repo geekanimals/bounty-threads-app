@@ -6364,10 +6364,13 @@ function confirmDelete(title, detail){
 }
 let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null, _bpAnalytics = null;
 let _wsMode = false, _ccFilter = "all", _ccQ = "", _ccInvOpen = null, _bpPeople = null;
+let _ccSel = new Set();   // invite rows ticked for "Resend invite to selected"
+// who can get an invite again: not registered yet / still has to connect, and not already done
+function ccCanResend(i, inCamp){ const st = i.status==="invited" ? "registered" : (i.status||"registered"); return (!i.registered || (i.needs||[]).length) && !(inCamp && st==="posted"); }
 let _ccSort = "step", _ccSrc = "", _ccTier = "", _ccPost = "";   // campaign creator list: sort + filters
 // the campaign page runs the whole process itself: one list, every step, every action
 function startCampaignCommand(c){
-  _wsMode = true; _ccFilter = "all"; _ccQ = ""; _ccInvOpen = null; _bpPeople = null;
+  _wsMode = true; _ccFilter = "all"; _ccQ = ""; _ccInvOpen = null; _bpPeople = null; _ccSel = new Set();
   _bpCamp = { id: c.id, name: c.name, kind: c.campaign_type || "barter" }; _bpTab = "tracker"; _bpOpen = null; _bpAnalytics = null; _pay = null; _msgMap = null;
   _bk = { rows:null, head:null, map:null, preview:null, list:null, src:"", busy:false, note:"" };
   window.__bpClose = ()=>{ _bpTab = "tracker"; paintBarterProcess(); };
@@ -6643,6 +6646,13 @@ function paintCampaignCommandInner(body){
         <select id="ccPost" title="Posts">${[["","Posted or not"],["yes","Has posted"],["no","Not posted yet"]].map(([v,l])=>`<option value="${v}"${_ccPost===v?" selected":""}>${l}</option>`).join("")}</select>
         ${_ccFilter!=="all"?`<button class="mini-btn ghost" id="ccAll">Show everyone ✕</button>`:""}
         ${window.__isAdmin && ccNoPost().length ? `<button type="button" class="btn sm" id="ccBlockAll" style="background:#dc2626;border-color:#dc2626;color:#fff" title="Got the product but never posted">⛔ Blocklist who didn't post (${ccNoPost().length})</button>` : ""}</div>
+      ${(()=>{ const el = Iall.filter(r=> ccCanResend(r.i, inCamp(r))).map(r=> r.i.invite_id); window.__ccEligible = el;
+          [..._ccSel].forEach(id=>{ if(!el.includes(id)) _ccSel.delete(id); });
+          if(!el.length) return "";
+          const all = el.every(id=> _ccSel.has(id));
+          return `<div class="cc-selbar"><label><input type="checkbox" id="ccSelAll"${all?" checked":""}> Select all <span class="muted">(${el.length} can get an invite)</span></label>
+            <button type="button" class="btn sm" id="ccSendSel"${_ccSel.size?"":" disabled"}>↻ Resend invite to selected (<span id="ccSelN">${_ccSel.size}</span>)</button>
+            ${_ccSel.size?`<button type="button" class="mini-btn ghost" id="ccSelClear">Clear</button>`:""}</div>`; })()}
       <div class="cc-hint muted">Tap a creator to open everything — every step with its time, contract, address, courier, video, posts with their numbers — and do any action right there. Changing a step asks only for what it needs (courier, video link, the link of every post).</div>
       ${ccSortedHtml(P, Ion, fP, fI)}
       ${I.length ? `<div class="cc-invh">${P.length||Ion.length?"Uploaded / invited — not in the campaign yet":""}</div>` + I.map(r=>ccInviteRowHtml(r.i)).join("") : ""}
@@ -6657,12 +6667,43 @@ function paintCampaignCommandInner(body){
   const goT = body.querySelector("#bpGoTerms"); if(goT) goT.onclick = e=>{ e.preventDefault(); _bpTab="terms"; paintBarterProcess(); };
   wireBarterProcess();
   wireCcInvites(body);
+  wireCcSelect(body);
   body.querySelectorAll("[data-bppayfee]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); _bpTab = "payments"; paintBarterProcess();
     setTimeout(()=>{ const r = payRows().find(x=> x.participation_id===b.dataset.bppayfee); if(r) payFeeModal(r); else { const sec = document.getElementById("ccSec"); if(sec) sec.scrollIntoView({ behavior:"smooth" }); } }, 900); });
   const ba = body.querySelector("#ccBlockAll"); if(ba) ba.onclick = ()=> ccBlockNoPost(ba);
   [["ccSort",v=>_ccSort=v],["ccSrc",v=>_ccSrc=v],["ccTier",v=>_ccTier=v],["ccPost",v=>_ccPost=v]].forEach(([id,set])=>{ const e = body.querySelector("#"+id); if(e) e.onchange = ()=>{ set(e.value); paintBarterProcess(); }; });
   if(_bpTab==="bulk"){ wireBulk(); }
   if(_bpOpen){ const sel = body.querySelector(`[data-ccstep="${_bpOpen}"]`); if(sel) mountInlineSetStep(_bpOpen); }
+}
+// tick creators (or Select all) → "Resend invite to selected" sends every invite in one go
+function wireCcSelect(body){
+  const btn = body.querySelector("#ccSendSel"), n = body.querySelector("#ccSelN");
+  const sync = ()=>{ if(n) n.textContent = _ccSel.size; if(btn) btn.disabled = !_ccSel.size;
+    const sa = body.querySelector("#ccSelAll"), el = window.__ccEligible||[]; if(sa) sa.checked = el.length && el.every(id=> _ccSel.has(id)); };
+  body.querySelectorAll("[data-ccsel]").forEach(c=>{ c.onclick = e=> e.stopPropagation();
+    c.onchange = ()=>{ c.checked ? _ccSel.add(c.dataset.ccsel) : _ccSel.delete(c.dataset.ccsel); sync(); }; });
+  const sa = body.querySelector("#ccSelAll");
+  if(sa) sa.onchange = ()=>{ const el = window.__ccEligible||[]; if(sa.checked) el.forEach(id=> _ccSel.add(id)); else el.forEach(id=> _ccSel.delete(id));
+    body.querySelectorAll("[data-ccsel]").forEach(c=> c.checked = _ccSel.has(c.dataset.ccsel)); sync(); };
+  const cl = body.querySelector("#ccSelClear"); if(cl) cl.onclick = ()=>{ _ccSel.clear(); paintBarterProcess(); };
+  if(btn) btn.onclick = async ()=>{
+    const ids = [..._ccSel]; if(!ids.length) return;
+    // the messages only go out while WhatsApp / email are ON for this campaign
+    const ms = await sb.schema("api").rpc("campaign_messaging", { p_campaign: _bpCamp && _bpCamp.id }).then(r=>r, e=>({error:e}));
+    const m = (ms && ms.data) || {};
+    if(!ms.error && !(m.wa_on && m.global_wa_on !== false) && !(m.email_on && m.global_email_on !== false)){
+      gateToast("WhatsApp and email are OFF for this campaign — turn one on at the top first, then send."); return; }
+    if(!confirm(`Send the invite again to ${ids.length} creator${ids.length>1?"s":""} on WhatsApp + email?`)) return;
+    btn.disabled = true; let ok = 0, joined = 0, bad = [];
+    for(let k=0;k<ids.length;k++){
+      btn.textContent = `Sending ${k+1} / ${ids.length}…`;
+      const { data, error } = await sb.schema("api").rpc("bulk_resend_invite", { p_invite: ids[k] }).then(r=>r, e=>({error:e}));
+      if(error) bad.push(error.message||String(error)); else { ok++; if(data && data.status==="joined") joined++; }
+    }
+    _ccSel.clear();
+    gateToast(`↻ Invite sent again to ${ok} creator${ok!==1?"s":""} ✓${joined?` · ${joined} were already on Geek OS — added to the campaign`:""}${bad.length?` · ${bad.length} failed: ${bad[0]}`:""}`);
+    loadBarterProcess(true);
+  };
 }
 // someone uploaded / invited who isn't in the campaign yet (not registered, or registered and connecting)
 function ccInviteRowHtml(i, inCamp){
@@ -6677,6 +6718,7 @@ function ccInviteRowHtml(i, inCamp){
   const wa = i.last_wa ? (i.last_wa.status==="sent"||i.last_wa.status==="delivered"||i.last_wa.status==="read" ? "WhatsApp ✓" : i.last_wa.status==="failed" ? "WhatsApp ✗" : "WhatsApp …") : "";
   return `<div class="card bp-card cc-inv${open?" open":""}">
     <div class="bp-head" data-ccinvopen="${esc(i.invite_id)}">
+      ${ccCanResend(i, inCamp)?`<input type="checkbox" class="cc-sel" data-ccsel="${esc(i.invite_id)}"${_ccSel.has(i.invite_id)?" checked":""} title="Select for a bulk invite" aria-label="Select">`:""}
       ${pic?`<img class="ap-pic" src="${esc(safeUrl(pic))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc(String(who).replace(/^@/,"").slice(0,2).toUpperCase())}</span>`}
       <div style="flex:1;min-width:0">
         <div class="r-title"><b>${esc(who)}</b>${i.name&&i.handle?` <span class="muted">${esc(i.name)}</span>`:""}
