@@ -9681,13 +9681,47 @@ async function paintIgSwitcher(boxId, label){
   box.querySelector(".ig-sw-add").onclick = ()=> igAddAnother(currentPage);
 }
 
+/* ---------- Instagram connect: a 1 → 100 % loader, so the creator always sees it moving ----------
+   Climbs on its own through the steps (never sits still), and only reaches 100 % once the Media Kit is on screen. */
+const IG_PROG_STEPS = [[0,"Connecting to Instagram…"],[22,"Verifying your account…"],[40,"Fetching your profile & followers…"],[58,"Reading your posts & reach…"],[76,"Building your media kit…"],[92,"Almost done…"]];
+let _igProg = null;
+function igProgStart(){
+  if(window.hideBootSplash) try{ hideBootSplash(); }catch(e){}
+  let o = document.getElementById("igProg");
+  if(!o){ o = document.createElement("div"); o.id = "igProg"; o.className = "ig-prog"; document.body.appendChild(o); }
+  o.innerHTML = `<div class="ig-prog-box"><div class="ig-prog-ic">📸</div><div class="ig-prog-pct"><b id="igProgN">1</b>%</div>
+    <div class="ig-prog-bar"><i id="igProgBar" style="width:1%"></i></div><div class="ig-prog-t" id="igProgT">${IG_PROG_STEPS[0][1]}</div>
+    <div class="ig-prog-sub">Setting up your media kit — please keep this page open.</div></div>`;
+  const st = { v:1, t0:Date.now(), done:false };
+  const paint = ()=>{ const n = document.getElementById("igProgN"), b = document.getElementById("igProgBar"), t = document.getElementById("igProgT"); const v = Math.floor(st.v);
+    if(n) n.textContent = v; if(b) b.style.width = v + "%"; if(t){ const s2 = IG_PROG_STEPS.filter(x=> v >= x[0]).pop(); t.textContent = st.done && v>=100 ? "Your media kit is ready ✓" : s2[1]; } };
+  // eases toward 95 % over ~35 s, then creeps toward 99 % — it never stops moving and never claims 100 % early
+  st.timer = setInterval(()=>{ if(st.done) return; const sec = (Date.now()-st.t0)/1000;
+    const target = sec < 35 ? 1 + 94 * (1 - Math.pow(1 - sec/35, 2)) : Math.min(99, 95 + (sec-35) * 0.1);
+    st.v = Math.max(st.v, target); paint(); }, 120);
+  st.paint = paint; _igProg = st; paint();
+  setTimeout(()=> igProgFinish(true), 90000);   // safety: never stuck on screen
+}
+// fast: true = just close (error / leaving). Otherwise wait for the Media Kit to be drawn, run to 100 %, fade out.
+async function igProgFinish(fast){
+  const st = _igProg; if(!st || st.finishing) return; st.finishing = true;
+  if(!fast){ const t0 = Date.now();
+    while(Date.now()-t0 < 20000 && !(document.getElementById("mkHeadWrap") || document.getElementById("igBody") || (currentPage!=="mediakit" && window.__osBooted))) await new Promise(r=>setTimeout(r,250)); }
+  st.done = true; clearInterval(st.timer);
+  if(!fast){ while(st.v < 100){ st.v = Math.min(100, st.v + Math.max(1.5, (100-st.v)/6)); st.paint(); await new Promise(r=>setTimeout(r,30)); } await new Promise(r=>setTimeout(r,450)); }
+  const o = document.getElementById("igProg"); if(o){ o.classList.add("out"); setTimeout(()=> o.remove(), 300); }
+  _igProg = null;
+}
+window.igProgStart = igProgStart; window.igProgFinish = igProgFinish;
+
 // Called after Instagram redirects back with ?code — hands it to the Edge Function.
 async function finishInstagram(code, ticket){
   const signedInCreator = !!(window.Auth && Auth.profile && Auth.profile.role === "creator");
   if(signedInCreator){
     paintEarlyShell(pageHead("Media Kit","Your reach, audience and best work — auto-built from Instagram and shareable with brands.")
       + `<div class="card mk-building"><div class="mk-spin"></div><h3 style="margin:10px 0 4px">Connecting your Instagram…</h3><div class="muted">Building your media kit from your profile, posts and audience. This takes a few seconds.</div></div>`);
-  } else showBusy("Connecting your Instagram and building your media kit…");
+  }
+  igProgStart();                         // 1 → 100 % loader on top until the Media Kit is on screen
   setTimeout(hideBusy, 45000);          // never stuck
   try{
     if(!(window.sb && window.sb.functions)) throw new Error("Edge Functions not available.");
@@ -9709,6 +9743,7 @@ async function finishInstagram(code, ticket){
       if(window.__osBooted){ if(typeof renderShell==="function") renderShell(); }
       else if(typeof bootOS==="function") await bootOS();
       setTimeout(hideBusy, 400);           // the Media Kit shows its own loader from here
+      igProgFinish();
       return;
     }
 
@@ -9729,9 +9764,10 @@ async function finishInstagram(code, ticket){
         currentPage = "mediakit";
         if(typeof bootOS==="function") await bootOS();
         setTimeout(hideBusy, 400);
+        igProgFinish();
         return;
       }
-      hideBusy(); window.__igLoggingIn = false;
+      hideBusy(); igProgFinish(true); window.__igLoggingIn = false;
       alert("Instagram connected ✓ — sign in to continue.");
       if(window.startApp) mountLogin("login");
       return;
@@ -9754,8 +9790,9 @@ async function finishInstagram(code, ticket){
     currentPage = "mediakit";
     if(typeof bootOS==="function") await bootOS();
     setTimeout(hideBusy, 400);
+    igProgFinish();
   }catch(ex){
-    hideBusy();
+    hideBusy(); igProgFinish(true);
     window.__igLoggingIn = false;
     alert("Instagram sign-in failed: " + (ex.message||ex) + "\n\nMake sure the instagram-login & instagram-auth Edge Functions are deployed and this redirect URL is registered in Meta:\n" + IG_REDIRECT);
     const { data:{ session:s2 } } = await sb.auth.getSession();
