@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "Not authenticated" }, 401);
 
-    const { conversation_id, to_phone, campaign_id, subject, text, template, lang, variables, components } = await req.json();
+    const { conversation_id, to_phone, campaign_id, subject, text, template, lang, variables, components, to_name, link: linkIn } = await req.json();
 
     // resolve the conversation the caller is allowed to use
     let convId = conversation_id as string | undefined;
@@ -102,14 +102,16 @@ Deno.serve(async (req) => {
         if ((ws as any)?.template) { genTpl = String((ws as any).template); genLang = String((ws as any).lang || "en"); }
         if (!appUrl && (ws as any)?.app_url) appUrl = String((ws as any).app_url).replace(/\/+$/, "");
       } catch (_e) { /* keep defaults */ }
-      let name = "there";
+      let name = String(to_name || "").trim() || "there";
       try {
         const { data: c2 } = await admin.from("wa_conversations").select("contact_user_id").eq("contact_phone_e164", conv.contact_phone_e164)
           .not("contact_user_id", "is", null).limit(1);
         const uid = c2?.[0]?.contact_user_id;
-        if (uid) { const { data: m } = await admin.from("members").select("name").eq("id", uid).maybeSingle(); if (m?.name) name = String(m.name); }
+        if (uid && name === "there") { const { data: m } = await admin.from("members").select("name").eq("id", uid).maybeSingle(); if (m?.name) name = String(m.name); }
       } catch (_e) { /* "there" */ }
-      const link = appUrl ? `${appUrl}/app.html` : "the Geek OS app";
+      // the panel sends each creator's own link (an invite link for someone not registered yet) — only our own app
+      const own = String(linkIn || "").trim();
+      const link = own && appUrl && own.startsWith(appUrl + "/") ? own : appUrl ? `${appUrl}/app.html` : "the Geek OS app";
       // 3-variable templates (name · update · link) set in Settings / secrets first, then the approved
       // geek_team_update (name · campaign · update · link) that is always there
       let campName = String(subject || "").trim();

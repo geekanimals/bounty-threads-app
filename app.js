@@ -6890,7 +6890,7 @@ async function ccWaSend(go){
   for(let k=0; k<list.length; k++){
     const x = list[k]; go.textContent = `Sending ${k+1} / ${list.length}…`;
     const link = base + (x.route || "/app.html");
-    const body = mode==="text" ? { to_phone: x.phone, subject: camp, text }
+    const body = mode==="text" ? { to_phone: x.phone, subject: camp, text, to_name: x.name || "", link }
       : { to_phone: x.phone, subject: camp, template: x.tp.name, lang: "en",
           variables: ccTplRoles(x.tp.body).map(r=> r==="name" ? x.name : r==="campaign" ? camp : r==="brand" ? brand : r==="code" ? (x.code||"") : r==="link" ? link : "") };
     const { data:r, error:e } = await sb.functions.invoke("wa-send", { body }).then(v=>v, er=>({error:er}));
