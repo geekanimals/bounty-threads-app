@@ -6751,7 +6751,7 @@ function ccTplRoles(body){
     return n===last ? "link" : "campaign";
   });
 }
-const CC_TPL_LABEL = { geek_selected_connect_instagram:"Connect Instagram · you are selected", geek_campaign_access:"Invite · approved, register & join",
+const CC_TPL_LABEL = { geek_selected_connect_instagram:"Connect Instagram · you are selected", geek_campaign_access:"Invite · approved, register & join", geek_invite_register_guide:"Invite + how-to-register video",
   geek_join_invite:"Registration · complete it & connect Instagram", geek_step_contract:"Contract · read & sign", geek_step_contract_bp:"Contract · barter + paid",
   geek_step_contract_paid:"Contract · paid", geek_step_address:"Address · confirm delivery address", geek_step_shipped:"Courier sent · on its way",
   geek_step_brief:"Parcel received · video brief", geek_step_brief_code:"Video brief + their own code", geek_step_brief_paid:"Video brief (paid)", geek_step_video_due:"Video due soon", geek_step_video_overdue:"Video overdue",
@@ -6774,6 +6774,8 @@ function ccStepKey(row){
 function ccTplFor(key, code){
   if(!key || !_ccTpls) return null;
   // a campaign where creators say their own code: the brief step goes on the template with the code (when they have one)
+  // not registered yet: the invite with the how-to-register video once Meta approved it, else the usual invite
+  if(key==="invited"){ const g = _ccTpls.find(x=> (x.keys||[]).includes("invited_guide") && x.status==="approved"); if(g) return g; }
   if(code && key==="parcel_received"){ const c = _ccTpls.find(x=> (x.keys||[]).includes("parcel_received@code")); if(c) return c; }
   const kind = (_bpCamp && _bpCamp.kind) || "barter";
   return _ccTpls.find(x=> (x.keys||[]).includes(key+"@"+kind)) || _ccTpls.find(x=> (x.keys||[]).includes(key)) || null;
