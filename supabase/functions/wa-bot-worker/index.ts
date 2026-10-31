@@ -61,7 +61,8 @@ Deno.serve(async (req) => {
   const started = Date.now();
   while (Date.now() - started < 45000) {
     // Super Admin → Settings → WhatsApp OFF also pauses the bot
-    try { const { data: sw } = await api.rpc("ops_messaging_switches"); if (sw && sw.wa_on === false) return new Response(JSON.stringify({ ok: true, paused: "WhatsApp messages are turned off" }), { headers: { "Content-Type": "application/json" } }); } catch (_e) { /* keep going */ }
+    let autoOff = false;
+    try { const { data: sw } = await api.rpc("ops_messaging_switches"); if (sw && sw.wa_on === false) return new Response(JSON.stringify({ ok: true, paused: "WhatsApp messages are turned off" }), { headers: { "Content-Type": "application/json" } }); autoOff = !!(sw && sw.auto_on === false); } catch (_e) { /* keep going */ }
     const { data: jobs, error } = await api.rpc("ops_bot_claim", { p_limit: 5 });
     if (error) { console.error("bot claim", error.message); break; }
     if (!Array.isArray(jobs) || !jobs.length) break;
@@ -69,6 +70,12 @@ Deno.serve(async (req) => {
       const ctx = job.ctx || {};
       ctx.app_url = ENV_APP_URL || ctx.app_url || null;
       const q = String(job.question || "");
+      // Super Admin → Settings → Automatic messages OFF: no bot replies — the team answers by hand (marked skipped, never sent later)
+      if (autoOff) {
+        await api.rpc("ops_bot_done", { p_job: job.job_id, p_status: "skipped", p_reply: null, p_refs: [], p_reason: "automatic messages are off",
+          p_handoff: false, p_intent: "paused", p_campaign: null, p_images: 0 });
+        continue;
+      }
       // a creator whose messages a Super Admin paused gets no bot replies either
       try {
         const { data: paused } = await api.rpc("ops_contact_paused", { p_addr: job.phone });

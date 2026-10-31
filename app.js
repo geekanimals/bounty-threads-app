@@ -6816,6 +6816,7 @@ async function ccPickOpenWindows(){
   _ccWa.winBusy = true;
   const { data, error } = await sb.schema("api").rpc("campaign_wa_open_windows", { p_campaign: _bpCamp && _bpCamp.id }).then(r=>r, e=>({error:e}));
   _ccWa.winBusy = false;
+  if(!_ccWa.open || _ccWa.mode !== "text") return;   // switched away while checking — leave the ticks alone
   if(error){ gateToast("Couldn't check who replied in the last 24 hours: " + (error.message||error)); return; }
   const vis = new Set(window.__ccEligible||[]); _ccWa.win = new Map();
   (data||[]).forEach(x=>{ if(vis.has(x.key)) _ccWa.win.set(x.key, x.until); });
@@ -6826,7 +6827,8 @@ function wireCcWaPanel(body){
   const wx = body.querySelector("#ccWaX"); if(wx) wx.onclick = ()=>{ _ccWa.open = false; paintBarterProcess(); };
   body.querySelectorAll('input[name="ccWaMode"]').forEach(r=> r.onchange = ()=>{ _ccWa.mode = r.value; _ccWa.winSig = null; _ccWa.win = null; paintBarterProcess(); });
   // ✍️ My own message = plain typed WhatsApp → tick only who wrote to us in the last 24 hours on THIS list, untick the rest
-  if(_ccWa.open && _ccWa.mode==="text"){ const sig = (_bpCamp && _bpCamp.id) + "|" + (window.__ccEligible||[]).join(","); if(_ccWa.winSig !== sig){ _ccWa.winSig = sig; ccPickOpenWindows(); } }
+  if(!_ccWa.open) _ccWa.winSig = null;
+  if(_ccWa.open && _ccWa.mode==="text" && !_ccWa.busy){ const sig = (_bpCamp && _bpCamp.id) + "|" + Math.floor(Date.now()/300000) + "|" + (window.__ccEligible||[]).join(","); if(_ccWa.winSig !== sig){ _ccWa.winSig = sig; ccPickOpenWindows(); } }
   const ta = body.querySelector("#ccWaText"); if(ta) ta.oninput = ()=>{ _ccWa.text = ta.value; };
   const ts = body.querySelector("#ccWaTpl"); if(ts) ts.onchange = ()=>{ _ccWa.tpl = ts.value; paintBarterProcess(); };
   const go = body.querySelector("#ccWaGo"); if(go) go.onclick = ()=> ccWaSend(go);
@@ -6891,13 +6893,14 @@ async function ccWaSend(go){
   const camp = (t && t.campaign) || (_bpCamp && _bpCamp.name) || "the campaign", brand = (t && t.brand) || "the brand";
   const one = mode==="tpl" ? (_ccTpls.find(x=> x.name===_ccWa.tpl) || _ccTpls.find(x=> x.name==="geek_selected_connect_instagram")) : null;
   const all = (t && t.targets) || [], seen = new Set(); let noTpl = 0, noCode = 0, noWin = 0;
-  const list = all.filter(x=> x.phone && !x.opted_out && !seen.has(x.phone) && seen.add(x.phone)).map(x=>{
+  const okStop = x=> mode==="text" && _ccWa.win && _ccWa.win.has(x.key);   // said STOP but wrote to us again after it
+  const list = all.filter(x=> x.phone && (!x.opted_out || okStop(x)) && !seen.has(x.phone) && seen.add(x.phone)).map(x=>{
     const tp = mode==="tpl" ? one : mode==="step" ? ccTplFor(ccStepKey((window.__ccRowByKey||{})[x.key]), t && t.say_code ? x.code : null) : null;
     return Object.assign({}, x, { tp });
   }).filter(x=> mode!=="text" || (_ccWa.win && _ccWa.win.has(x.key)) || (noWin++, false))
     .filter(x=> mode==="text" || x.tp || (noTpl++, false))
     .filter(x=> !(x.tp && ccTplRoles(x.tp.body).includes("code") && !x.code) || (noCode++, false));
-  const noPh = all.filter(x=> !x.phone).length, out = all.filter(x=> x.phone && x.opted_out).length, dup = all.length - seen.size - noPh - out;
+  const noPh = all.filter(x=> !x.phone).length, out = all.filter(x=> x.phone && x.opted_out && !okStop(x)).length, dup = all.length - seen.size - noPh - out;
   const skip = [noPh?`${noPh} have no WhatsApp number`:"", out?`${out} said STOP`:"", dup>0?`${dup} share a number`:"", noTpl?`${noTpl} have nothing to send at their step`:"", noWin?`${noWin} haven't written to you in the last 24 hours (typed messages can't reach them)`:"", noCode?`${noCode} have no coupon code yet (add it in 🔗 Links & codes)`:""].filter(Boolean).join(" · ");
   if(!list.length){ gateToast(`Nobody to send to${skip?" — "+skip:""}`); return; }
   const waiting = [...new Set(list.filter(x=> x.tp && x.tp.status && x.tp.status!=="approved").map(x=> ccTplLabel(x.tp)))];
@@ -6908,8 +6911,8 @@ async function ccWaSend(go){
   for(let k=0; k<list.length; k++){
     const x = list[k]; go.textContent = `Sending ${k+1} / ${list.length}…`;
     const link = base + (x.route || "/app.html");
-    const body = mode==="text" ? { to_phone: x.phone, subject: camp, text, to_name: x.name || "", link, no_template: true }
-      : { to_phone: x.phone, subject: camp, template: x.tp.name, lang: "en",
+    const body = mode==="text" ? { to_phone: x.phone, subject: camp, text, to_name: x.name || "", link, no_template: true, check_campaign: _bpCamp && _bpCamp.id }
+      : { to_phone: x.phone, subject: camp, template: x.tp.name, lang: "en", check_campaign: _bpCamp && _bpCamp.id,
           variables: ccTplRoles(x.tp.body).map(r=> r==="name" ? x.name : r==="campaign" ? camp : r==="brand" ? brand : r==="code" ? (x.code||"") : r==="link" ? link : "") };
     const { data:r, error:e } = await sb.functions.invoke("wa-send", { body }).then(v=>v, er=>({error:er}));
     let em = e ? (e.message||String(e)) : (r && r.error) || "";
@@ -6917,7 +6920,7 @@ async function ccWaSend(go){
     if(em){ bad.push(`${x.who}: ${em}`); badKeys.add(x.key); if(/turned off/i.test(em)) break; } else { ok++; okKeys.add(x.key); }
     if(stat) stat.textContent = `${ok} sent${bad.length?` · ${bad.length} failed`:""}`;
   }
-  _ccWa.busy = false;
+  _ccWa.busy = false; _ccWa.winSig = null;   // the 24-hour list is checked again next time
   gateToast(`${bad.length?"⚠️":"🟢"} WhatsApp sent to ${ok} creator${ok!==1?"s":""}${bad.length?` · ${bad.length} NOT sent`:""}${skip?` · left out: ${skip}`:""}`);
   if(bad.length){
     // keep only the ones that failed ticked + the panel open, so nothing looks "sent" when it wasn't
@@ -9120,14 +9123,26 @@ function mswHtml(key, label, on, sub){
 // Super Admin → Settings: stop / start EVERY automatic WhatsApp or email message on the platform
 async function adminMsgSwitches(){
   const box = document.getElementById("msgSwCard"); if(!box) return;
-  const { data, error } = await sb.rpc("admin_messaging_switches").then(r=>r, e=>({error:e}));
+  const [{ data, error }, au] = await Promise.all([sb.rpc("admin_messaging_switches").then(r=>r, e=>({error:e})),
+    sb.schema("api").rpc("ops_auto_messages").then(r=>r, e=>({error:e}))]);
+  const autoOn = !(au && au.data && au.data.auto_on === false);
   if(error){ box.innerHTML = `<h3 style="margin-top:0">📣 Automatic messages</h3><div class="muted">${esc(error.message||String(error))} — run <code>supabase db push</code>.</div>`; return; }
   const d = data||{};
   box.innerHTML = `<h3 style="margin-top:0">📣 Automatic messages — whole platform</h3>
     <p class="muted" style="font-size:12.5px;margin:0 0 10px">This is the master switch. <b>OFF</b> stops every automatic message on that channel for <b>all campaigns</b> (invites, step updates, reminders, alerts; WhatsApp also pauses the bot) and every campaign shows OFF. <b>ON</b> turns that channel back on for every campaign. Messages held while OFF are not sent later. <b>OFF means OFF everywhere</b> — every campaign, alerts, account messages, test messages and messages the team types by hand. Only login / OTP codes still go (so people can sign in).</p>
+    <div class="msw-row">${mswHtml("auto","🤖 Automatic messages (every step)", autoOn, autoOn ? "Invites, step updates, reminders and bot replies go by themselves" : "⏸ Only what the team sends by hand goes — 🟢 WhatsApp panel, 💬 chat, Resend, Send step / email / contract. Login codes and team alerts still go. Stopped messages are not sent later.")}</div>
     <div class="msw-row">${mswHtml("wa","💬 WhatsApp", d.wa_on!==false, d.wa_on===false && d.held_wa?`${d.held_wa} stopped while OFF (last 7 days) — never sent`:"")}${mswHtml("email","✉️ Email", d.email_on!==false, d.email_on===false && d.held_email?`${d.held_email} stopped while OFF (last 7 days) — never sent`:"")}</div>
     <div class="muted" style="font-size:12px;margin-top:8px">${d.updated_by?`Last changed by ${esc(d.updated_by)} · ${esc(fmtDateTime(d.updated_at))}`:""}${d.campaigns_off?` · ${d.campaigns_off} campaign${d.campaigns_off>1?"s have":" has"} its own switch off`:""}</div>`;
   box.querySelectorAll("[data-msw]").forEach(b=> b.onclick = async ()=>{
+    if(b.dataset.msw==="auto"){
+      const on = !b.classList.contains("on");
+      if(!confirm(on ? "Turn automatic messages back ON?\n\nNew invites, step updates, reminders and bot replies will go by themselves again. What was stopped while OFF is NOT sent." : "Turn automatic messages OFF?\n\nNothing goes by itself any more — only what the team sends by hand.")) return;
+      b.disabled = true;
+      const { data:r, error:e } = await sb.schema("api").rpc("ops_set_auto_messages", { p_on: on }).then(x=>x, e=>({error:e}));
+      if(e){ b.disabled = false; gateToast(e.message||String(e)); return; }
+      gateToast(on ? "🤖 Automatic messages ON ✓" : `⏸ Automatic messages OFF${r&&r.stopped_now?` · ${r.stopped_now} waiting message${r.stopped_now>1?"s":""} stopped`:""}`);
+      adminMsgSwitches(); return;
+    }
     const ch = b.dataset.msw==="wa" ? "whatsapp" : "email", on = !b.classList.contains("on");
     b.disabled = true;
     const { data:r, error:e } = await sb.rpc("admin_set_messaging_switch", { p_channel: ch, p_on: on }).then(x=>x, e=>({error:e}));
@@ -9138,8 +9153,10 @@ async function adminMsgSwitches(){
 // Campaign page: stop / start WhatsApp or email for THIS campaign only
 async function campMsgSwitches(campId){
   const box = document.getElementById("ccMsgSw"); if(!box) return;
-  const { data, error } = await sb.schema("api").rpc("campaign_messaging", { p_campaign: campId }).then(r=>r, e=>({error:e}));
+  const [{ data, error }, au] = await Promise.all([sb.schema("api").rpc("campaign_messaging", { p_campaign: campId }).then(r=>r, e=>({error:e})),
+    sb.schema("api").rpc("ops_auto_messages").then(r=>r, e=>({error:e}))]);
   if(error){ box.hidden = true; return; }
+  const autoOff = !!(au && au.data && au.data.auto_on === false);
   const d = data||{};
   // Settings is the master switch: when it is OFF the campaign shows OFF and can't be turned on here
   const waOn = d.global_wa_on!==false && d.wa_on!==false, emOn = d.global_email_on!==false && d.email_on!==false;
@@ -9147,7 +9164,7 @@ async function campMsgSwitches(campId){
   // when ON, an old "54 held" read as if something is stuck right now
   const sub = (globalOn, on, held)=> globalOn===false ? "🔒 Turned off for all campaigns in Settings" : (!on && held) ? `${held} stopped while OFF — never sent` : "";
   box.hidden = false;
-  box.innerHTML = `<span class="msw-lbl">📣 Messages for this campaign</span>${mswHtml("wa","💬 WhatsApp", waOn, sub(d.global_wa_on, waOn, d.held_wa))}${mswHtml("email","✉️ Email", emOn, sub(d.global_email_on, emOn, d.held_email))}`;
+  box.innerHTML = `${autoOff?`<div class="cc-wa-err" style="flex-basis:100%;margin:0 0 8px">⏸ <b>Automatic messages are OFF</b> (Super Admin → Settings) — changing a step does not message the creator. Send by hand from 🟢 WhatsApp to selected.</div>`:""}<span class="msw-lbl">📣 Messages for this campaign</span>${mswHtml("wa","💬 WhatsApp", waOn, sub(d.global_wa_on, waOn, d.held_wa))}${mswHtml("email","✉️ Email", emOn, sub(d.global_email_on, emOn, d.held_email))}`;
   [["wa", d.global_wa_on], ["email", d.global_email_on]].forEach(([k, g])=>{ const b = box.querySelector(`[data-msw="${k}"]`); if(b && g===false){ b.classList.add("locked"); b.title = "Turn it on in Super Admin → Settings first"; } });
   box.querySelectorAll("[data-msw]").forEach(b=> b.onclick = async ()=>{
     if(b.classList.contains("locked")){ gateToast("This is turned off for every campaign in Super Admin → Settings. Turn it on there first."); return; }

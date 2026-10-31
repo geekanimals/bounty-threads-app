@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "Not authenticated" }, 401);
 
-    const { conversation_id, to_phone, campaign_id, subject, text, template, lang, variables, components, to_name, link: linkIn, no_template } = await req.json();
+    const { conversation_id, to_phone, campaign_id, subject, text, template, lang, variables, components, to_name, link: linkIn, no_template, check_campaign } = await req.json();
 
     // resolve the conversation the caller is allowed to use
     let convId = conversation_id as string | undefined;
@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
     // Super Admin → Settings (and the campaign's own switch): WhatsApp OFF means nothing is sent, typed by hand included
     {
-      const { data: allow } = await admin.schema("api").rpc("messaging_allowed", { p_channel: "whatsapp", p_campaign: campaign_id ?? null });
+      const { data: allow } = await admin.schema("api").rpc("messaging_allowed", { p_channel: "whatsapp", p_campaign: campaign_id ?? check_campaign ?? null });
       if (allow && (allow as any).ok === false) return json({ error: `WhatsApp is turned off — ${(allow as any).reason || "Settings"}. Turn it on to send.`, paused: true }, 423);
     }
     const { data: consent } = await admin.from("wa_contacts").select("opt_in_at,opt_out_at,verified_at")
@@ -129,10 +129,11 @@ Deno.serve(async (req) => {
           .map((t) => ({ t, lang: t === genTpl ? genLang : "en", vars: [waParam(name, 60), upd, waParam(link, 300)] })),
         { t: WA_TEAM_TEMPLATE, lang: "en", vars: [waParam(name, 60), waParam(campName || "your campaign", 120), upd, waParam(link, 300)] },
       ];
-      // the creator-worded one (name · campaign · update · link) goes first once Meta has approved it
+      // the creator-worded one (name · campaign · update · link) goes first — while Meta has not approved it yet,
+      // WhatsApp refuses it straight away and geek_team_update goes instead, so nobody has to flip a status by hand
       try {
         const { data: st } = await admin.schema("api").rpc("wa_template_status", { p_name: WA_CREATOR_TEMPLATE });
-        if (st === "approved") tries.unshift({ t: WA_CREATOR_TEMPLATE, lang: "en", vars: [waParam(name, 60), waParam(campName || "your campaign", 120), upd, waParam(link, 300)] });
+        if (st && st !== "rejected" && st !== "manual") tries.unshift({ t: WA_CREATOR_TEMPLATE, lang: "en", vars: [waParam(name, 60), waParam(campName || "your campaign", 120), upd, waParam(link, 300)] });
       } catch (_e) { /* not set up → geek_team_update */ }
       let lastErr: Error | null = null;
       for (const x of tries) {
