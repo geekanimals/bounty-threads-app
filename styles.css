@@ -2669,3 +2669,4 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .modal-form label.cp-check{flex-direction:row;align-items:flex-start;gap:9px;text-transform:none;letter-spacing:0;font-size:13px;font-weight:500;color:var(--ink,#111)}
 .modal-form label.cp-check input{margin-top:2px;flex:0 0 auto}
 .modal-form label.cp-check .muted{font-weight:400}
+.modal-form [hidden]{display:none!important}   /* hidden form parts really hide (labels are display:flex) */
