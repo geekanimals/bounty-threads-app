@@ -660,10 +660,21 @@
     var pb=ov.querySelector("[data-prof]"); if(pb) pb.onclick=function(){ close(); var cp=document.getElementById("ciPop"); if(cp) cp.remove(); document.body.style.overflow="";
       if(typeof currentPage!=="undefined" && typeof renderShell==="function"){ currentPage="profile"; renderShell(); } };
   }
+  // 🎟️ a campaign where every creator says their own code: {code} in the brief = MY code, and the code in a box on top
+  function myCode(c){ return (c && c._trk && c._trk.code) || ''; }
+  function codeFill(c, v){ if(!v) return v; var code=myCode(c); return String(v).replace(/\{\s*code\s*\}/gi, code || '[your code — coming soon]'); }
+  function sayCodeHtml(c){
+    if(!(c && c._trk && c._trk.say_code)) return '';
+    var code=myCode(c);
+    return '<div class="say-code"><span>🎟️ Say this code in your video</span>'
+      + (code ? '<b>'+esc(code)+'</b><button type="button" class="mini-btn" onclick="try{navigator.clipboard.writeText(\''+esc(code)+'\');this.textContent=\'Copied ✓\'}catch(e){}">Copy</button>'
+              : '<i>Your code is being set up — it will show here before you shoot.</i>')
+      + '</div>';
+  }
   // the whole brief the team entered (video brief, caption, tags, references, posting note) + terms
   function fullBriefHtml(c){
-    var b=c.video_brief||{}, t=c.terms||{}, out='';
-    var line=function(k,v){ return v?'<div class="ci-pop-sec">'+k+'</div><div style="white-space:pre-wrap;line-height:1.55">'+esc(v)+'</div>':''; };
+    var b=c.video_brief||{}, t=c.terms||{}, out=sayCodeHtml(c);
+    var line=function(k,v){ v=codeFill(c,v); return v?'<div class="ci-pop-sec">'+k+'</div><div style="white-space:pre-wrap;line-height:1.55">'+esc(v)+'</div>':''; };
     var vb=line('What to shoot', b.what_to_shoot) + line('Key messages', b.key_messages) + line("Do's", b.dos) + line("Don'ts", b.donts)
       + line('Caption to use', b.caption)
       + (b.reference_links?'<div class="ci-pop-sec">References</div><div>'+String(b.reference_links).split(/[\s,]+/).filter(Boolean).map(function(u){ return /^https?:\/\//i.test(u)?'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>':esc(u); }).join('<br>')+'</div>':'')
@@ -946,9 +957,10 @@
   }
   function briefHtml(c){
     var b=c.video_brief; if(!b) return '';
-    var line=function(k,v){ return v?'<div class="mc-sec">'+k+'</div><div class="mc-text">'+esc(v)+'</div>':''; };
+    var line=function(k,v){ v=codeFill(c,v); return v?'<div class="mc-sec">'+k+'</div><div class="mc-text">'+esc(v)+'</div>':''; };
     var tags=[b.hashtags,b.mentions].filter(Boolean).join(' ');
     return '<div class="jr-brief"><div class="jr-now-h">🎬 <b>Your video brief</b>'+(c.deadline?' <span class="ci-pill ci-warn">Due '+fmtDate(c.deadline)+'</span>':'')+'</div>'
+      + sayCodeHtml(c)
       + (c._trk && window.Tracking ? window.Tracking.creatorHtml(c._trk) : '')
       + line('What to shoot', b.what_to_shoot) + line('Key messages', b.key_messages) + line("Do's", b.dos) + line("Don'ts", b.donts)
       + line('Make', b.deliverables_text) + line('Caption', b.caption)

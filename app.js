@@ -1741,7 +1741,7 @@ function openCampaignModal(existing, preset){
       </div>
       <div class="cm-sec">🎬 Video brief <span class="muted" style="font-weight:400;font-size:12px" id="cmVbWhen">— sent to the creator automatically when the product is delivered</span></div>
       <label>What to shoot<textarea name="vb_shoot" rows="2" maxlength="2000" placeholder="Unboxing + first bite, 20–30 sec, vertical 9:16">${esc(vb.what_to_shoot||'')}</textarea></label>
-      <label>Key messages<textarea name="vb_msg" rows="2" maxlength="1500" placeholder="Steamed fresh in 10 minutes, 400+ outlets">${esc(vb.key_messages||'')}</textarea></label>
+      <label>Key messages <span class="muted" style="font-weight:400">(<code>{code}</code> = each creator's own coupon code)</span><textarea name="vb_msg" rows="2" maxlength="1500" placeholder="Steamed fresh in 10 minutes · Use my code {code} for 15% off">${esc(vb.key_messages||'')}</textarea></label>
       <div class="mf-row"><label>Do's<textarea name="vb_dos" rows="2" maxlength="1000" placeholder="Natural light, show the box">${esc(vb.dos||'')}</textarea></label>
       <label>Don'ts<textarea name="vb_donts" rows="2" maxlength="1000" placeholder="No other brands in frame">${esc(vb.donts||'')}</textarea></label></div>
       <div class="mf-row"><label>Caption to use<input name="vb_caption" maxlength="600" value="${esc(vb.caption||'')}" placeholder="Best momos in town 🥟"></label>
@@ -1756,6 +1756,7 @@ function openCampaignModal(existing, preset){
         <label class="tk-common">Code for every creator<input name="tk_code" maxlength="30" value="${esc(tk.common_code||'')}" placeholder="OLIO15" style="text-transform:uppercase"></label>
         <label class="tk-per">Make each code from <span class="muted" style="font-weight:400">(optional)</span><input name="tk_prefix" maxlength="12" value="${esc(tk.prefix||'')}" placeholder="OLIO → OLIORIYASHARMA" style="text-transform:uppercase"></label></div>
         <label class="cp-check"><input type="checkbox" name="tk_utm"${tk.utm===false?"":" checked"}> Add tracking tags to the brand's link <span class="muted">(utm_source=geek · utm_content=@creator — the brand sees these visits in its own Google Analytics / Shopify)</span></label>
+        <label class="cp-check tk-anycode"><input type="checkbox" name="tk_say"${tk.say_code?" checked":""}> 🎟️ <b>Creators say their own code in the video</b> <span class="muted">— each creator's code goes into their video brief + the brief WhatsApp. Write <code>{code}</code> in the brief where they say it (e.g. "Use my code {code} for 15% off").</span></label>
         <label class="cp-check tk-anycode"><input type="checkbox" name="tk_shop"${tk.shopify_code?" checked":""}> Shopify store — apply the creator's code automatically at checkout</label>
         <div class="muted" style="font-size:12px;margin:-2px 0 6px">A different brand link for some creators? Set it per creator on the campaign page → <b>🔗 Links &amp; codes</b> (type it, or paste <b>@handle, https://…</b>) — they still share their own Geek link, so every click is counted.</div>
         <div class="muted tk-per" style="font-size:12px;margin-top:-4px">Leave it empty to type or paste each creator's own code on the campaign page → <b>🔗 Links &amp; codes</b>. A prefix makes them for you (prefix + the creator's handle) — create the same codes in the brand's store.</div>
@@ -1977,7 +1978,7 @@ function openCampaignModal(existing, preset){
         if(mode==="common" && f.get("tk_on") && !/^[A-Z0-9_-]{2,30}$/.test(code)) throw new Error("Type the coupon code for every creator (2–30 letters / numbers, no spaces).");
         row.tracking = { enabled: !!f.get("tk_on"), dest_url: dest || null, discount: txt("tk_disc") || null, mode,
           common_code: mode==="common" ? code : null, prefix: mode==="per_creator" ? (pre || null) : null, auto_codes: mode==="per_creator" && !!pre,
-          utm: !!f.get("tk_utm"), shopify_code: mode!=="none" && !!f.get("tk_shop") }; }
+          utm: !!f.get("tk_utm"), shopify_code: mode!=="none" && !!f.get("tk_shop"), say_code: mode!=="none" && !!f.get("tk_say") }; }
       if(isReq){                          // a brand's request: send the whole form to the Geek team, create nothing
         row.brand_id = preset.brand_id || null; row.brand = preset.brand || row.brand; delete row.status;
         const { error:re } = await sb.schema("api").rpc("brand_campaign_request", { p:{ brand_id: preset.brand_id || null, name: row.name, form: row } }).then(r=>r, er=>({error:er}));
@@ -6724,8 +6725,9 @@ function ccTplRoles(body){
   const last = nums[nums.length-1];
   return nums.map(n=>{
     if(n===1) return "name";
-    const i = body.indexOf("{{"+n+"}}"), before = body.slice(Math.max(0,i-24), i), after = body.slice(i+5+String(n).length-1, i+20);
+    const i = body.indexOf("{{"+n+"}}"), before = body.slice(Math.max(0,i-48), i), after = body.slice(i+5+String(n).length-1, i+20);
     if(/Reason:\s*\*?$/i.test(before)) return null;
+    if(/code[^:\n]{0,30}:\s*\*?$/i.test(before)) return "code";
     if(/(here|link|continue|below):\s*\*?$/i.test(before) || (n===last && /\n\s*$/.test(before))) return "link";
     if(/campaign\s+\*?$/i.test(before)) return "campaign";
     if(/with\s+\*?$/i.test(before) || /^\*?\s+has\b/i.test(after)) return "brand";
@@ -6735,7 +6737,7 @@ function ccTplRoles(body){
 const CC_TPL_LABEL = { geek_selected_connect_instagram:"Connect Instagram (selected · log in with Instagram)", geek_campaign_access:"Invite · approved, register & join",
   geek_join_invite:"Registration · complete it & connect Instagram", geek_step_contract:"Contract · read & sign", geek_step_contract_bp:"Contract · barter + paid",
   geek_step_contract_paid:"Contract · paid", geek_step_address:"Address · confirm delivery address", geek_step_shipped:"Courier sent · on its way",
-  geek_step_brief:"Parcel received · video brief", geek_step_brief_paid:"Video brief (paid)", geek_step_video_due:"Video due soon", geek_step_video_overdue:"Video overdue",
+  geek_step_brief:"Parcel received · video brief", geek_step_brief_code:"Video brief + their own code", geek_step_brief_paid:"Video brief (paid)", geek_step_video_due:"Video due soon", geek_step_video_overdue:"Video overdue",
   geek_step_video_final:"Video · last reminder", geek_step_changes:"Video · changes asked", geek_step_approved:"Video approved · post it", geek_step_caption:"Caption · fix hashtags",
   geek_step_feedback:"Post · feedback", geek_step_posts_pending:"Posts pending", geek_step_restore_post:"Post · put it back", geek_step_on_hold:"On hold",
   geek_step_pending:"Steps pending · deadline", geek_step_completed:"Completed · results", geek_step_completed_paid:"Completed · payment",
@@ -6752,8 +6754,10 @@ function ccStepKey(row){
     product_sent:"product_shipped", content_created:"parcel_received", changes_requested:"changes_requested", content_approved:"content_approved",
     published:"posts_pending", completed:"completed" })[x.stage] || null;
 }
-function ccTplFor(key){
+function ccTplFor(key, code){
   if(!key || !_ccTpls) return null;
+  // a campaign where creators say their own code: the brief step goes on the template with the code (when they have one)
+  if(code && key==="parcel_received"){ const c = _ccTpls.find(x=> (x.keys||[]).includes("parcel_received@code")); if(c) return c; }
   const kind = (_bpCamp && _bpCamp.kind) || "barter";
   return _ccTpls.find(x=> (x.keys||[]).includes(key+"@"+kind)) || _ccTpls.find(x=> (x.keys||[]).includes(key)) || null;
 }
@@ -6764,7 +6768,7 @@ function ccWaPanelHtml(){
   // what "each creator's own step" will send, grouped
   const groups = {}; let none = 0;
   [..._ccSel].forEach(k=>{ const tp = ccTplFor(ccStepKey((window.__ccRowByKey||{})[k])); if(tp) groups[tp.name] = (groups[tp.name]||0) + 1; else none++; });
-  const sample = { name:"Asha", campaign:camp, brand:"the brand", link:"https://…/app.html" };
+  const sample = { name:"Asha", campaign:camp, brand:"the brand", code:"ASHA15", link:"https://…/app.html" };
   const prev = tp=> { const r = ccTplRoles(tp.body); return `<div class="cc-wa-prev">${esc(ccFill(tp.body, r.map(x=> sample[x]||""))).replace(/\*([^*\n]+)\*/g,"<b>$1</b>").replace(/\n/g,"<br>")}<div class="cc-wa-ft">Reply STOP to stop WhatsApp updates</div></div>`; };
   const pick = _ccTpls.find(x=> x.name===_ccWa.tpl) || _ccTpls.find(x=> x.name==="geek_selected_connect_instagram");
   return `<div class="cc-wa" id="ccWa">
@@ -6848,13 +6852,14 @@ async function ccWaSend(go){
   const base = (t && t.app_url) || "https://www.bountythreads.geekcreativeagency.com";
   const camp = (t && t.campaign) || (_bpCamp && _bpCamp.name) || "the campaign", brand = (t && t.brand) || "the brand";
   const one = mode==="tpl" ? (_ccTpls.find(x=> x.name===_ccWa.tpl) || _ccTpls.find(x=> x.name==="geek_selected_connect_instagram")) : null;
-  const all = (t && t.targets) || [], seen = new Set(); let noTpl = 0;
+  const all = (t && t.targets) || [], seen = new Set(); let noTpl = 0, noCode = 0;
   const list = all.filter(x=> x.phone && !x.opted_out && !seen.has(x.phone) && seen.add(x.phone)).map(x=>{
-    const tp = mode==="tpl" ? one : mode==="step" ? ccTplFor(ccStepKey((window.__ccRowByKey||{})[x.key])) : null;
+    const tp = mode==="tpl" ? one : mode==="step" ? ccTplFor(ccStepKey((window.__ccRowByKey||{})[x.key]), t && t.say_code ? x.code : null) : null;
     return Object.assign({}, x, { tp });
-  }).filter(x=> mode==="text" || x.tp || (noTpl++, false));
+  }).filter(x=> mode==="text" || x.tp || (noTpl++, false))
+    .filter(x=> !(x.tp && ccTplRoles(x.tp.body).includes("code") && !x.code) || (noCode++, false));
   const noPh = all.filter(x=> !x.phone).length, out = all.filter(x=> x.phone && x.opted_out).length, dup = all.length - seen.size - noPh - out;
-  const skip = [noPh?`${noPh} have no WhatsApp number`:"", out?`${out} said STOP`:"", dup>0?`${dup} share a number`:"", noTpl?`${noTpl} have nothing to send at their step`:""].filter(Boolean).join(" · ");
+  const skip = [noPh?`${noPh} have no WhatsApp number`:"", out?`${out} said STOP`:"", dup>0?`${dup} share a number`:"", noTpl?`${noTpl} have nothing to send at their step`:"", noCode?`${noCode} have no coupon code yet (add it in 🔗 Links & codes)`:""].filter(Boolean).join(" · ");
   if(!list.length){ gateToast(`Nobody to send to${skip?" — "+skip:""}`); return; }
   const waiting = [...new Set(list.filter(x=> x.tp && x.tp.status && x.tp.status!=="approved").map(x=> ccTplLabel(x.tp)))];
   if(waiting.length && !confirm(`Not approved by Meta yet:\n${waiting.join("\n")}\n\nWhatsApp may refuse these until then. Try anyway?`)) return;
@@ -6866,7 +6871,7 @@ async function ccWaSend(go){
     const link = base + (x.route || "/app.html");
     const body = mode==="text" ? { to_phone: x.phone, subject: camp, text }
       : { to_phone: x.phone, subject: camp, template: x.tp.name, lang: "en",
-          variables: ccTplRoles(x.tp.body).map(r=> r==="name" ? x.name : r==="campaign" ? camp : r==="brand" ? brand : r==="link" ? link : "") };
+          variables: ccTplRoles(x.tp.body).map(r=> r==="name" ? x.name : r==="campaign" ? camp : r==="brand" ? brand : r==="code" ? (x.code||"") : r==="link" ? link : "") };
     const { data:r, error:e } = await sb.functions.invoke("wa-send", { body }).then(v=>v, er=>({error:er}));
     let em = e ? (e.message||String(e)) : (r && r.error) || "";
     if(e && e.context && typeof e.context.json==="function"){ try{ const j = await e.context.json(); if(j && j.error) em = j.error; }catch(_){} }
@@ -7636,7 +7641,7 @@ function bpTermsHtml(){
   <div class="card bt-card"><div class="bt-head"><h4>🎬 Video brief</h4><span class="bt-sub">Goes out automatically when the product is delivered.</span></div>
     <div class="bt-sec">The video</div>
     ${ta("bpbShoot","What to shoot",b.what_to_shoot,"Unboxing + first bite\n20–30 sec, vertical 9:16","",5)}
-    ${ta("bpbMsg","Key messages",b.key_messages,"Steamed fresh in 10 minutes\n400+ outlets","One message per line",3)}
+    ${ta("bpbMsg","Key messages",b.key_messages,"Steamed fresh in 10 minutes\nUse my code {code} for 15% off","One message per line · write {code} where the creator says their own coupon code (each creator sees theirs — turn on 🎟️ in Edit campaign → Link & coupon tracking)",3)}
     <div class="bt-row2">${ta("bpbDos","Do's",b.dos,"Natural light\nShow the box","One per line",4)}${ta("bpbDonts","Don'ts",b.donts,"No other brands in frame","One per line",4)}</div>
     <div class="bt-sec">Posting</div>
     ${ta("bpbCap","Caption to use",b.caption,"Best momos in town 🥟","",3)}
