@@ -6382,13 +6382,15 @@ function confirmDelete(title, detail){
 }
 let _bpCamp = null, _bpData = null, _bpTimer = null, _bpTab = "tracker", _bpOpen = null, _bpAnalytics = null;
 let _wsMode = false, _ccFilter = "all", _ccQ = "", _ccInvOpen = null, _bpPeople = null;
-let _ccSel = new Set();   // invite rows ticked for "Resend invite to selected"
+let _ccSel = new Set();   // ticked creators — "i:<invite>" / "p:<participation>" — for a bulk invite or a bulk WhatsApp
+let _ccWa = { open:false, mode:"ig", text:"", busy:false };   // the "WhatsApp to selected" panel
 // who can get an invite again: not registered yet / still has to connect, and not already done
 function ccCanResend(i, inCamp){ const st = i.status==="invited" ? "registered" : (i.status||"registered"); return (!i.registered || (i.needs||[]).length) && !(inCamp && st==="posted"); }
 let _ccSort = "step", _ccSrc = "", _ccTier = "", _ccPost = "";   // campaign creator list: sort + filters
 // the campaign page runs the whole process itself: one list, every step, every action
 function startCampaignCommand(c){
   _wsMode = true; _ccFilter = "all"; _ccQ = ""; _ccInvOpen = null; _bpPeople = null; _ccSel = new Set();
+  _ccWa = { open:false, mode:"ig", text:"", busy:false };
   _bpCamp = { id: c.id, name: c.name, kind: c.campaign_type || "barter" }; _bpTab = "tracker"; _bpOpen = null; _bpAnalytics = null; _pay = null; _msgMap = null;
   _bk = { rows:null, head:null, map:null, preview:null, list:null, src:"", busy:false, note:"" };
   window.__bpClose = ()=>{ _bpTab = "tracker"; paintBarterProcess(); };
@@ -6667,13 +6669,17 @@ function paintCampaignCommandInner(body){
         <select id="ccPost" title="Posts">${[["","Posted or not"],["yes","Has posted"],["no","Not posted yet"]].map(([v,l])=>`<option value="${v}"${_ccPost===v?" selected":""}>${l}</option>`).join("")}</select>
         ${_ccFilter!=="all"?`<button class="mini-btn ghost" id="ccAll">Show everyone ✕</button>`:""}
         ${window.__isAdmin && ccNoPost().length ? `<button type="button" class="btn sm" id="ccBlockAll" style="background:#dc2626;border-color:#dc2626;color:#fff" title="Got the product but never posted">⛔ Blocklist who didn't post (${ccNoPost().length})</button>` : ""}</div>
-      ${(()=>{ const el = Iall.filter(r=> ccCanResend(r.i, inCamp(r))).map(r=> r.i.invite_id); window.__ccEligible = el;
-          [..._ccSel].forEach(id=>{ if(!el.includes(id)) _ccSel.delete(id); });
-          if(!el.length) return "";
-          const all = el.every(id=> _ccSel.has(id));
-          return `<div class="cc-selbar"><label><input type="checkbox" id="ccSelAll"${all?" checked":""}> Select all <span class="muted">(${el.length} can get an invite)</span></label>
-            <button type="button" class="btn sm" id="ccSendSel"${_ccSel.size?"":" disabled"}>↻ Resend invite to selected (<span id="ccSelN">${_ccSel.size}</span>)</button>
-            ${_ccSel.size?`<button type="button" class="mini-btn ghost" id="ccSelClear">Clear</button>`:""}</div>`; })()}
+      ${(()=>{ const vis = P.map(x=> "p:"+x.participation_id).concat(Iall.map(r=> "i:"+r.i.invite_id)); window.__ccEligible = vis;
+          const reIds = new Set(Iall.filter(r=> ccCanResend(r.i, inCamp(r))).map(r=> "i:"+r.i.invite_id)); window.__ccResend = reIds;
+          [..._ccSel].forEach(id=>{ if(!vis.includes(id)) _ccSel.delete(id); });
+          if(!vis.length) return "";
+          const all = vis.every(id=> _ccSel.has(id)), nRe = [..._ccSel].filter(id=> reIds.has(id)).length;
+          return `<div class="cc-selbar"><label><input type="checkbox" id="ccSelAll"${all?" checked":""}> Select all <span class="muted">(${vis.length} shown)</span></label>
+            <button type="button" class="btn sm cc-wabtn" id="ccWaSel"${_ccSel.size?"":" disabled"}>🟢 WhatsApp to selected (<span id="ccSelN">${_ccSel.size}</span>)</button>
+            ${reIds.size?`<button type="button" class="btn ghost sm" id="ccSendSel"${nRe?"":" disabled"}>↻ Resend invite to selected (<span id="ccReN">${nRe}</span>)</button>`:""}
+            ${_ccSel.size?`<button type="button" class="mini-btn ghost" id="ccSelClear">Clear</button>`:""}
+            ${_ccFilter!=="noig"?`<button type="button" class="mini-btn ghost" id="ccPickNoIg" title="Show only creators who registered but haven't connected Instagram, and tick them all">📸 Pick everyone without Instagram</button>`:""}</div>
+            ${_ccWa.open?ccWaPanelHtml():""}`; })()}
       <div class="cc-hint muted">Tap a creator to open everything — every step with its time, contract, address, courier, video, posts with their numbers — and do any action right there. Changing a step asks only for what it needs (courier, video link, the link of every post).</div>
       ${ccSortedHtml(P, Ion, fP, fI)}
       ${I.length ? `<div class="cc-invh">${P.length||Ion.length?"Uploaded / invited — not in the campaign yet":""}</div>` + I.map(r=>ccInviteRowHtml(r.i)).join("") : ""}
@@ -6696,10 +6702,30 @@ function paintCampaignCommandInner(body){
   if(_bpTab==="bulk"){ wireBulk(); }
   if(_bpOpen){ const sel = body.querySelector(`[data-ccstep="${_bpOpen}"]`); if(sel) mountInlineSetStep(_bpOpen); }
 }
-// tick creators (or Select all) → "Resend invite to selected" sends every invite in one go
+// the WhatsApp text of the "Connect Instagram" template (geek_selected_connect_instagram) — {{1}} name · {{2}} campaign · {{3}} link
+const CC_IG_TPL = "Hi *{{1}}*,\n\nThank you for filling the form for the campaign *{{2}}*. This is an update on your application: you are selected.\n\nNext, please open the app and connect your Instagram account to continue. Once that is done, we will update your campaign status.\n\nContinue here: {{3}}\n\nNeed help connecting? Watch this short guide: https://www.youtube.com/watch?v=PYpBru7LUvc\n\nThank you!\nTeam Geek Animals";
+function ccWaPanelHtml(){
+  const n = _ccSel.size, camp = (_bpCamp && _bpCamp.name) || "the campaign";
+  const prev = CC_IG_TPL.replace("{{1}}","Asha").replace("{{2}}", camp).replace("{{3}}", location.origin + "/app.html…");
+  return `<div class="cc-wa" id="ccWa">
+    <div class="cc-wa-h"><b>🟢 WhatsApp to ${n} selected creator${n!==1?"s":""}</b><span class="muted">WhatsApp only · goes only when you press Send</span><button type="button" class="ci-pop-x" id="ccWaX" aria-label="Close">✕</button></div>
+    <div class="cc-wa-modes">
+      <label class="cc-wa-mode${_ccWa.mode==="ig"?" on":""}"><input type="radio" name="ccWaMode" value="ig"${_ccWa.mode==="ig"?" checked":""}> <span><b>📸 Template · Connect Instagram</b><i>Each creator's own name, this campaign and their own login link go in automatically.</i></span></label>
+      <label class="cc-wa-mode${_ccWa.mode==="text"?" on":""}"><input type="radio" name="ccWaMode" value="text"${_ccWa.mode==="text"?" checked":""}> <span><b>✍️ My own message</b><i>Type once — the same message goes to everyone ticked.</i></span></label>
+    </div>
+    ${_ccWa.mode==="ig" ? `<div class="cc-wa-prev">${esc(prev).replace(/\*([^*]+)\*/g,"<b>$1</b>").replace(/\n/g,"<br>")}<div class="cc-wa-ft">Reply STOP to stop WhatsApp updates</div></div>`
+      : `<textarea id="ccWaText" rows="4" maxlength="900" placeholder="Type the WhatsApp message for everyone ticked…">${esc(_ccWa.text)}</textarea>
+         <div class="muted cc-wa-note">Creators who wrote to us in the last 24 hours get it as typed; everyone else gets it inside the approved “campaign update” template (Hi name · your message · app link).</div>`}
+    <div class="cc-wa-foot"><button type="button" class="btn sm cc-wabtn" id="ccWaGo"${n?"":" disabled"}>➤ Send on WhatsApp to ${n}</button><span class="muted" id="ccWaStat"></span></div>
+  </div>`;
+}
+// tick creators (or Select all) → one WhatsApp to all of them (template or typed), or "Resend invite to selected"
 function wireCcSelect(body){
-  const btn = body.querySelector("#ccSendSel"), n = body.querySelector("#ccSelN");
-  const sync = ()=>{ if(n) n.textContent = _ccSel.size; if(btn) btn.disabled = !_ccSel.size;
+  const btn = body.querySelector("#ccSendSel"), wab = body.querySelector("#ccWaSel"), n = body.querySelector("#ccSelN"), nre = body.querySelector("#ccReN");
+  const sync = ()=>{ const re = window.__ccResend || new Set(), k = [..._ccSel].filter(id=> re.has(id)).length;
+    if(n) n.textContent = _ccSel.size; if(nre) nre.textContent = k; if(btn) btn.disabled = !k; if(wab) wab.disabled = !_ccSel.size;
+    const go = body.querySelector("#ccWaGo"); if(go){ go.disabled = !_ccSel.size || _ccWa.busy; if(!_ccWa.busy) go.textContent = `➤ Send on WhatsApp to ${_ccSel.size}`; }
+    const h = body.querySelector(".cc-wa-h b"); if(h) h.textContent = `🟢 WhatsApp to ${_ccSel.size} selected creator${_ccSel.size!==1?"s":""}`;
     const sa = body.querySelector("#ccSelAll"), el = window.__ccEligible||[]; if(sa) sa.checked = el.length && el.every(id=> _ccSel.has(id)); };
   body.querySelectorAll("[data-ccsel]").forEach(c=>{ c.onclick = e=> e.stopPropagation();
     c.onchange = ()=>{ c.checked ? _ccSel.add(c.dataset.ccsel) : _ccSel.delete(c.dataset.ccsel); sync(); }; });
@@ -6707,8 +6733,16 @@ function wireCcSelect(body){
   if(sa) sa.onchange = ()=>{ const el = window.__ccEligible||[]; if(sa.checked) el.forEach(id=> _ccSel.add(id)); else el.forEach(id=> _ccSel.delete(id));
     body.querySelectorAll("[data-ccsel]").forEach(c=> c.checked = _ccSel.has(c.dataset.ccsel)); sync(); };
   const cl = body.querySelector("#ccSelClear"); if(cl) cl.onclick = ()=>{ _ccSel.clear(); paintBarterProcess(); };
+  const pk = body.querySelector("#ccPickNoIg"); if(pk) pk.onclick = ()=>{ _ccFilter = "noig"; _ccSel.clear(); paintBarterProcess();
+    (window.__ccEligible||[]).forEach(id=> _ccSel.add(id)); _ccWa.open = true; _ccWa.mode = "ig"; paintBarterProcess();
+    const w = document.getElementById("ccWa"); if(w) w.scrollIntoView({ behavior:"smooth", block:"center" }); };
+  if(wab) wab.onclick = ()=>{ _ccWa.open = !_ccWa.open; paintBarterProcess(); const w = document.getElementById("ccWa"); if(w) w.scrollIntoView({ behavior:"smooth", block:"center" }); };
+  const wx = body.querySelector("#ccWaX"); if(wx) wx.onclick = ()=>{ _ccWa.open = false; paintBarterProcess(); };
+  body.querySelectorAll('input[name="ccWaMode"]').forEach(r=> r.onchange = ()=>{ _ccWa.mode = r.value; paintBarterProcess(); });
+  const ta = body.querySelector("#ccWaText"); if(ta) ta.oninput = ()=>{ _ccWa.text = ta.value; };
+  const go = body.querySelector("#ccWaGo"); if(go) go.onclick = ()=> ccWaSend(go);
   if(btn) btn.onclick = async ()=>{
-    const ids = [..._ccSel]; if(!ids.length) return;
+    const re = window.__ccResend || new Set(), ids = [..._ccSel].filter(id=> re.has(id)).map(id=> id.slice(2)); if(!ids.length) return;
     // the messages only go out while WhatsApp / email are ON for this campaign
     const ms = await sb.schema("api").rpc("campaign_messaging", { p_campaign: _bpCamp && _bpCamp.id }).then(r=>r, e=>({error:e}));
     const m = (ms && ms.data) || {};
@@ -6726,6 +6760,45 @@ function wireCcSelect(body){
     loadBarterProcess(true);
   };
 }
+// one WhatsApp to every ticked creator — the "Connect Instagram" template, or the typed message (wa-send decides plain text vs template)
+async function ccWaSend(go){
+  const keys = [..._ccSel]; if(!keys.length || _ccWa.busy) return;
+  const mode = _ccWa.mode, text = String(_ccWa.text||"").trim();
+  if(mode==="text" && !text){ gateToast("Type the message first."); return; }
+  const stat = document.getElementById("ccWaStat");
+  // the campaign's own WhatsApp switch (Settings + this campaign) — OFF means nothing goes, typed or template
+  const ms = await sb.schema("api").rpc("campaign_messaging", { p_campaign: _bpCamp && _bpCamp.id }).then(r=>r, e=>({error:e}));
+  const sw = (ms && ms.data) || {};
+  if(!ms.error && !(sw.wa_on && sw.global_wa_on !== false)){ gateToast("WhatsApp is OFF for this campaign — turn it on at the top first, then send."); return; }
+  const { data:t, error } = await sb.schema("api").rpc("campaign_wa_targets", { p_campaign: _bpCamp.id,
+      p_invites: keys.filter(k=> k[0]==="i").map(k=> k.slice(2)), p_parts: keys.filter(k=> k[0]==="p").map(k=> k.slice(2)) }).then(r=>r, e=>({error:e}));
+  if(error){ gateToast("Couldn't load the numbers: " + (error.message||error)); return; }
+  const all = (t && t.targets) || [], seen = new Set();
+  const list = all.filter(x=> x.phone && !x.opted_out && !seen.has(x.phone) && seen.add(x.phone));
+  const noPh = all.filter(x=> !x.phone).length, out = all.filter(x=> x.phone && x.opted_out).length, dup = all.length - list.length - noPh - out;
+  if(!list.length){ gateToast(`Nobody to send to — ${noPh?noPh+" without a WhatsApp number":""}${out?` ${out} said STOP`:""}`.trim()); return; }
+  if(mode==="ig" && t.tpl_status && t.tpl_status!=="approved" && !confirm(`The “Connect Instagram” template is still waiting for Meta's approval (${t.tpl_status}). WhatsApp may refuse it until then. Try anyway?`)) return;
+  const skip = [noPh?`${noPh} have no WhatsApp number`:"", out?`${out} said STOP`:"", dup>0?`${dup} share a number`:""].filter(Boolean).join(" · ");
+  if(!confirm(`Send ${mode==="ig"?"the “Connect Instagram” template":"your message"} on WhatsApp to ${list.length} creator${list.length>1?"s":""}?${skip?`\n\nLeft out: ${skip}.`:""}`)) return;
+  _ccWa.busy = true; go.disabled = true; let ok = 0; const bad = [];
+  const camp = (t && t.campaign) || (_bpCamp && _bpCamp.name) || "the campaign";
+  for(let k=0; k<list.length; k++){
+    const x = list[k]; go.textContent = `Sending ${k+1} / ${list.length}…`;
+    const body = mode==="ig"
+      ? { to_phone: x.phone, subject: camp, template: "geek_selected_connect_instagram", lang: "en", variables: [x.name, camp, location.origin + x.route] }
+      : { to_phone: x.phone, subject: camp, text };
+    const { data:r, error:e } = await sb.functions.invoke("wa-send", { body }).then(v=>v, er=>({error:er}));
+    let em = e ? (e.message||String(e)) : (r && r.error) || "";
+    if(e && e.context && typeof e.context.json==="function"){ try{ const j = await e.context.json(); if(j && j.error) em = j.error; }catch(_){} }
+    if(em){ bad.push(`${x.who}: ${em}`); if(/turned off/i.test(em)) break; } else ok++;
+    if(stat) stat.textContent = `${ok} sent${bad.length?` · ${bad.length} failed`:""}`;
+  }
+  _ccWa.busy = false;
+  gateToast(`🟢 WhatsApp sent to ${ok} creator${ok!==1?"s":""}${bad.length?` · ${bad.length} failed`:""}${skip?` · left out: ${skip}`:""}`);
+  if(bad.length) alert("Not sent:\n\n" + bad.slice(0,30).join("\n"));
+  if(ok){ _ccSel.clear(); _ccWa.open = false; _ccWa.text = ""; }
+  paintBarterProcess();
+}
 // someone uploaded / invited who isn't in the campaign yet (not registered, or registered and connecting)
 function ccInviteRowHtml(i, inCamp){
   const open = _ccInvOpen === i.invite_id, st = i.status==="invited" ? "registered" : (i.status||"registered");
@@ -6739,7 +6812,7 @@ function ccInviteRowHtml(i, inCamp){
   const wa = i.last_wa ? (i.last_wa.status==="sent"||i.last_wa.status==="delivered"||i.last_wa.status==="read" ? "WhatsApp ✓" : i.last_wa.status==="failed" ? "WhatsApp ✗" : "WhatsApp …") : "";
   return `<div class="card bp-card cc-inv${open?" open":""}">
     <div class="bp-head" data-ccinvopen="${esc(i.invite_id)}">
-      ${ccCanResend(i, inCamp)?`<input type="checkbox" class="cc-sel" data-ccsel="${esc(i.invite_id)}"${_ccSel.has(i.invite_id)?" checked":""} title="Select for a bulk invite" aria-label="Select">`:""}
+      <input type="checkbox" class="cc-sel" data-ccsel="i:${esc(i.invite_id)}"${_ccSel.has("i:"+i.invite_id)?" checked":""} title="Select" aria-label="Select">
       ${pic?`<img class="ap-pic" src="${esc(safeUrl(pic))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc(String(who).replace(/^@/,"").slice(0,2).toUpperCase())}</span>`}
       <div style="flex:1;min-width:0">
         <div class="r-title"><b>${esc(who)}</b>${i.name&&i.handle?` <span class="muted">${esc(i.name)}</span>`:""}
@@ -7383,6 +7456,7 @@ function bpTrackerHtml(list){
     if(pubH && !pp) setTimeout(()=> pubFill(list.filter(y=> (y.creator||{}).followers==null && ((y.creator||{}).username || y.applied_profile)).map(y=> (y.creator||{}).username || y.applied_profile), ()=>{ if(_bpTab==="tracker") paintBarterProcess(); }), 0);
     return `<div class="card bp-card${open?" open":""}" data-bpcard="${esc(P)}">
       <div class="bp-head" data-bpopen="${esc(P)}">
+        ${_wsMode && _bpCamp && document.getElementById("bpBody") ? `<input type="checkbox" class="cc-sel" data-ccsel="p:${esc(P)}"${_ccSel.has("p:"+P)?" checked":""} title="Select" aria-label="Select">` : ""}
         <span class="bp-who" data-bpprof="${esc(P)}" title="Open the creator's full profile">${cr.profile_picture_url?`<img class="ap-pic" src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((cr.username||"?").slice(0,2).toUpperCase())}</span>`}</span>
         <div style="flex:1;min-width:0">
           <div class="r-title"><span class="bp-who-n" data-bpprof="${esc(P)}" title="Open the creator's full profile">${cr.username?`@${esc(cr.username)}`:esc(cr.name||"Creator")}</span> <button type="button" class="bp-prof-btn" data-bpprof="${esc(P)}">👤 Profile</button>

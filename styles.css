@@ -2634,3 +2634,21 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .cc-tile[data-cctile="noig"] b{color:#c2410c}
 .cc-tile[data-cctile="noig"].on{box-shadow:0 0 0 2px #f59e0b inset}
 @media (prefers-color-scheme: dark){ .cc-tile[data-cctile="noig"]{background:rgba(245,158,11,.1)} .cc-tile[data-cctile="noig"] b{color:#fbbf24} }
+/* campaign list: one WhatsApp to every ticked creator */
+.cc-wabtn{background:#16a34a!important;border-color:#16a34a!important;color:#fff!important}
+.cc-wabtn:disabled{opacity:.5}
+.cc-wa{margin:0 0 12px;padding:14px;border:1px solid #bbf7d0;border-radius:14px;background:linear-gradient(180deg,#f0fdf4,var(--card,#fff))}
+.cc-wa-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}.cc-wa-h .ci-pop-x{margin-left:auto}
+.cc-wa-h .muted{font-size:12.5px}
+.cc-wa-modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;margin-bottom:10px}
+.cc-wa-mode{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line,#e5e7eb);border-radius:12px;cursor:pointer;background:var(--card,#fff)}
+.cc-wa-mode.on{border-color:#16a34a;box-shadow:0 0 0 2px rgba(22,163,74,.15)}
+.cc-wa-mode input{margin-top:3px;accent-color:#16a34a}.cc-wa-mode span{display:flex;flex-direction:column;gap:2px}.cc-wa-mode i{font-style:normal;font-size:12.5px;color:var(--muted,#6b7280)}
+.cc-wa-prev{background:#dcf8c6;color:#111;border-radius:10px 10px 10px 2px;padding:10px 12px;font-size:13.5px;line-height:1.45;max-width:520px;white-space:normal;word-break:break-word}
+.cc-wa-ft{margin-top:6px;font-size:11.5px;color:#4b5563}
+.cc-wa textarea{width:100%;box-sizing:border-box;border:1px solid var(--line,#e5e7eb);border-radius:10px;padding:10px;font:inherit;resize:vertical;background:var(--card,#fff);color:inherit}
+.cc-wa-note{font-size:12.5px;margin-top:6px}
+.cc-wa-foot{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+.bp-head .cc-sel{margin-right:4px}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .cc-wa{background:var(--card);border-color:#14532d}}
+:root[data-theme=dark] .cc-wa{background:var(--card);border-color:#14532d}
