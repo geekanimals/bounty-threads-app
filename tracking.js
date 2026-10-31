@@ -53,7 +53,9 @@
         nsSales = notSplit.reduce(function(a,s){ return a+(+s.amount||0); },0);
     var allOrders = T.orders + nsOrders, allSales = T.sales + nsSales;
     var q = st.q.toLowerCase();
-    var shown = L.filter(function(x){ return !q || [x.handle, x.name, x.code, x.slug, x.stage].join(" ").toLowerCase().indexOf(q)>=0; });
+    // 🎟️ a campaign where creators say their own code in the video: who still has no code
+    var sayCode = !!cfg.say_code && mode!=="none", noCode = L.filter(function(x){ return !x.code; });
+    var shown = L.filter(function(x){ return (!q || [x.handle, x.name, x.code, x.slug, x.stage].join(" ").toLowerCase().indexOf(q)>=0) && (!st.missing || !x.code); });
     var key = st.sort;
     shown.sort(function(a,b){ return key==="name" ? String(a.handle||"").localeCompare(String(b.handle||"")) : key==="orders" ? (+b.orders||0)-(+a.orders||0) || (+b.sales||0)-(+a.sales||0)
       : key==="copies" ? (+b.copies||0)-(+a.copies||0) : key==="recent" ? new Date(b.last_click||0)-new Date(a.last_click||0) : (+b.clicks||0)-(+a.clicks||0); });
@@ -69,6 +71,8 @@
       + '<div class="trk-setup"><div><span class="muted">Opens</span> '+(dest?'<a href="'+e(dest)+'" target="_blank" rel="noopener">'+e(String(dest).replace(/^https?:\/\//,"").slice(0,60))+' ↗</a>':'<b class="trk-warn">no shop link yet</b>')+'</div>'
       +   '<div><span class="muted">Code</span> <b>'+e(MODE[mode]||mode)+'</b>'+(mode==="common"&&cfg.common_code?' · <code class="trk-code">'+e(cfg.common_code)+'</code>':'')+(cfg.prefix?' · auto: '+e(cfg.prefix)+'+handle':'')+'</div>'
       +   (cfg.discount?'<div><span class="muted">Offer</span> '+e(cfg.discount)+'</div>':'')
+      +   (sayCode?'<div class="trk-say">🎟️ <b>Said in the video</b> — each creator\'s code goes into their video brief + brief WhatsApp / email · '
+            +(noCode.length?'<b class="trk-warn">'+noCode.length+' without a code</b> <button class="mini-btn'+(st.missing?'':' ghost')+'" data-trkmiss>'+(st.missing?'Show everyone':'Show who has no code')+'</button>':'<b>everyone has a code ✓</b>')+'</div>':'')
       +   '<div><span class="muted">Tags</span> '+(cfg.utm===false?'off':'UTM on (utm_source=geek)')+(cfg.shopify_code?' · Shopify code auto-applied':'')+'</div>'
       +   (L.some(function(x){ return x.dest_url; })?'<div><span class="muted">Own brand links</span> <b>'+L.filter(function(x){ return x.dest_url; }).length+'</b> creators</div>':'')
       +   (admin&&!opts.readOnly&&typeof opts.onEdit==="function"?'<button class="mini-btn ghost" data-trkedit>✏️ Change</button>':'')+'</div>'
@@ -103,6 +107,7 @@
     var qi = box.querySelector("#"+box.id+"Q"); if(qi) qi.oninput = function(){ st.q = qi.value; var p = qi.selectionStart; paint(box); var n = box.querySelector("#"+box.id+"Q"); if(n){ n.focus(); try{ n.setSelectionRange(p,p); }catch(err){} } };
     var so = box.querySelector("#"+box.id+"Sort"); if(so) so.onchange = function(){ st.sort = so.value; paint(box); };
     var ed = box.querySelector("[data-trkedit]"); if(ed) ed.onclick = function(){ opts.onEdit(); };
+    var mb = box.querySelector("[data-trkmiss]"); if(mb) mb.onclick = function(){ S[box.id].missing = !S[box.id].missing; paint(box); };
     box.querySelectorAll("[data-trkcode]").forEach(function(inp){
       var save = async function(){ var v = inp.value.trim().toUpperCase().replace(/\s+/g,""); inp.value = v;
         var x = (d.links||[]).find(function(l){ return l.link_id===inp.dataset.trkcode; }) || {}; if((x.own_code||"")===v) return;
