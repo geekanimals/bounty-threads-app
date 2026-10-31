@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "Not authenticated" }, 401);
 
-    const { conversation_id, to_phone, campaign_id, subject, text, template, lang, variables, components, to_name, link: linkIn } = await req.json();
+    const { conversation_id, to_phone, campaign_id, subject, text, template, lang, variables, components, to_name, link: linkIn, no_template } = await req.json();
 
     // resolve the conversation the caller is allowed to use
     let convId = conversation_id as string | undefined;
@@ -84,6 +84,11 @@ Deno.serve(async (req) => {
         wroteAfter = !!ib?.length;
       }
       if (!wroteAfter) return json({ error: "This creator said STOP on WhatsApp — nothing is sent to them.", opted_out: true }, 403);
+    }
+
+    // "My own message" from the panel: plain typed text only — never wrapped in a template
+    if (no_template && !template && !openWindow) {
+      return json({ error: "They haven't written to you in the last 24 hours — WhatsApp only lets a typed message go inside that window.", window_closed: true }, 409);
     }
 
     let res: { wamid?: string | null } | null = null, usedTemplate: string | null = template || null;

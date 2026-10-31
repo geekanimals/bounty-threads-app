@@ -6802,14 +6802,31 @@ function ccWaPanelHtml(){
         ${!n?`<div class="muted">Tick creators first.</div>`:""}</div>
         ${Object.keys(groups).length===1 ? prev(_ccTpls.find(x=> x.name===Object.keys(groups)[0])) : ""}`
       : _ccWa.mode==="tpl" ? `<select id="ccWaTpl" class="cc-wa-sel">${_ccTpls.map(x=>`<option value="${esc(x.name)}"${pick&&pick.name===x.name?" selected":""}${x.status==="rejected"||x.status==="manual"?" disabled":""}>${esc(ccTplLabel(x))}</option>`).join("")}</select>${pick?prev(pick):""}`
-      : `<textarea id="ccWaText" rows="4" maxlength="900" placeholder="Type the WhatsApp message for everyone ticked…">${esc(_ccWa.text)}</textarea>
-         <div class="muted cc-wa-note">Creators who wrote to us in the last 24 hours get it as typed; everyone else gets it inside the approved “campaign update” template (Hi name · your message · app link).</div>`}
+      : (()=>{ const w = _ccWa.win, cnt = w ? w.size : 0;
+          const soon = w && cnt ? [...w.values()].sort()[0] : null;
+          return `${_ccWa.winBusy || !w ? `<div class="muted cc-wa-note">Checking who replied in the last 24 hours…</div>`
+            : cnt ? `<div class="cc-wa-win">💬 <b>${cnt}</b> creator${cnt!==1?"s":""} on this list wrote to you in the last 24 hours — ticked automatically, everyone else removed.${soon?` <span class="muted">First window closes ${esc(fmtDateTime(soon))}.</span>`:""}</div>`
+            : `<div class="cc-wa-err">Nobody on this list wrote to you in the last 24 hours. WhatsApp only lets a typed message go inside that window — use 🎯 their step or 📋 a template instead.</div>`}
+          <textarea id="ccWaText" rows="4" maxlength="900" placeholder="Type the WhatsApp message…">${esc(_ccWa.text)}</textarea>
+          <div class="muted cc-wa-note">Goes exactly as you type it — no template. Only to creators whose 24-hour window is open.</div>`; })()}
     <div class="cc-wa-foot"><button type="button" class="btn sm cc-wabtn" id="ccWaGo"${n?"":" disabled"}>➤ Send on WhatsApp to ${n}</button><span class="muted" id="ccWaStat"></span></div>${_ccWa.lastErr?`<div class="cc-wa-err" role="alert">⚠️ ${esc(_ccWa.lastErr)}</div>`:""}
   </div>`;
 }
+async function ccPickOpenWindows(){
+  _ccWa.winBusy = true;
+  const { data, error } = await sb.schema("api").rpc("campaign_wa_open_windows", { p_campaign: _bpCamp && _bpCamp.id }).then(r=>r, e=>({error:e}));
+  _ccWa.winBusy = false;
+  if(error){ gateToast("Couldn't check who replied in the last 24 hours: " + (error.message||error)); return; }
+  const vis = new Set(window.__ccEligible||[]); _ccWa.win = new Map();
+  (data||[]).forEach(x=>{ if(vis.has(x.key)) _ccWa.win.set(x.key, x.until); });
+  _ccSel = new Set(_ccWa.win.keys());
+  paintBarterProcess();
+}
 function wireCcWaPanel(body){
   const wx = body.querySelector("#ccWaX"); if(wx) wx.onclick = ()=>{ _ccWa.open = false; paintBarterProcess(); };
-  body.querySelectorAll('input[name="ccWaMode"]').forEach(r=> r.onchange = ()=>{ _ccWa.mode = r.value; paintBarterProcess(); });
+  body.querySelectorAll('input[name="ccWaMode"]').forEach(r=> r.onchange = ()=>{ _ccWa.mode = r.value; _ccWa.winSig = null; _ccWa.win = null; paintBarterProcess(); });
+  // ✍️ My own message = plain typed WhatsApp → tick only who wrote to us in the last 24 hours on THIS list, untick the rest
+  if(_ccWa.open && _ccWa.mode==="text"){ const sig = (_bpCamp && _bpCamp.id) + "|" + (window.__ccEligible||[]).join(","); if(_ccWa.winSig !== sig){ _ccWa.winSig = sig; ccPickOpenWindows(); } }
   const ta = body.querySelector("#ccWaText"); if(ta) ta.oninput = ()=>{ _ccWa.text = ta.value; };
   const ts = body.querySelector("#ccWaTpl"); if(ts) ts.onchange = ()=>{ _ccWa.tpl = ts.value; paintBarterProcess(); };
   const go = body.querySelector("#ccWaGo"); if(go) go.onclick = ()=> ccWaSend(go);
@@ -6873,14 +6890,15 @@ async function ccWaSend(go){
   const base = (t && t.app_url) || "https://www.bountythreads.geekcreativeagency.com";
   const camp = (t && t.campaign) || (_bpCamp && _bpCamp.name) || "the campaign", brand = (t && t.brand) || "the brand";
   const one = mode==="tpl" ? (_ccTpls.find(x=> x.name===_ccWa.tpl) || _ccTpls.find(x=> x.name==="geek_selected_connect_instagram")) : null;
-  const all = (t && t.targets) || [], seen = new Set(); let noTpl = 0, noCode = 0;
+  const all = (t && t.targets) || [], seen = new Set(); let noTpl = 0, noCode = 0, noWin = 0;
   const list = all.filter(x=> x.phone && !x.opted_out && !seen.has(x.phone) && seen.add(x.phone)).map(x=>{
     const tp = mode==="tpl" ? one : mode==="step" ? ccTplFor(ccStepKey((window.__ccRowByKey||{})[x.key]), t && t.say_code ? x.code : null) : null;
     return Object.assign({}, x, { tp });
-  }).filter(x=> mode==="text" || x.tp || (noTpl++, false))
+  }).filter(x=> mode!=="text" || (_ccWa.win && _ccWa.win.has(x.key)) || (noWin++, false))
+    .filter(x=> mode==="text" || x.tp || (noTpl++, false))
     .filter(x=> !(x.tp && ccTplRoles(x.tp.body).includes("code") && !x.code) || (noCode++, false));
   const noPh = all.filter(x=> !x.phone).length, out = all.filter(x=> x.phone && x.opted_out).length, dup = all.length - seen.size - noPh - out;
-  const skip = [noPh?`${noPh} have no WhatsApp number`:"", out?`${out} said STOP`:"", dup>0?`${dup} share a number`:"", noTpl?`${noTpl} have nothing to send at their step`:"", noCode?`${noCode} have no coupon code yet (add it in 🔗 Links & codes)`:""].filter(Boolean).join(" · ");
+  const skip = [noPh?`${noPh} have no WhatsApp number`:"", out?`${out} said STOP`:"", dup>0?`${dup} share a number`:"", noTpl?`${noTpl} have nothing to send at their step`:"", noWin?`${noWin} haven't written to you in the last 24 hours (typed messages can't reach them)`:"", noCode?`${noCode} have no coupon code yet (add it in 🔗 Links & codes)`:""].filter(Boolean).join(" · ");
   if(!list.length){ gateToast(`Nobody to send to${skip?" — "+skip:""}`); return; }
   const waiting = [...new Set(list.filter(x=> x.tp && x.tp.status && x.tp.status!=="approved").map(x=> ccTplLabel(x.tp)))];
   if(waiting.length && !confirm(`Not approved by Meta yet:\n${waiting.join("\n")}\n\nWhatsApp may refuse these until then. Try anyway?`)) return;
@@ -6890,7 +6908,7 @@ async function ccWaSend(go){
   for(let k=0; k<list.length; k++){
     const x = list[k]; go.textContent = `Sending ${k+1} / ${list.length}…`;
     const link = base + (x.route || "/app.html");
-    const body = mode==="text" ? { to_phone: x.phone, subject: camp, text, to_name: x.name || "", link }
+    const body = mode==="text" ? { to_phone: x.phone, subject: camp, text, to_name: x.name || "", link, no_template: true }
       : { to_phone: x.phone, subject: camp, template: x.tp.name, lang: "en",
           variables: ccTplRoles(x.tp.body).map(r=> r==="name" ? x.name : r==="campaign" ? camp : r==="brand" ? brand : r==="code" ? (x.code||"") : r==="link" ? link : "") };
     const { data:r, error:e } = await sb.functions.invoke("wa-send", { body }).then(v=>v, er=>({error:er}));
