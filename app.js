@@ -7986,7 +7986,8 @@ function openBpMetrics(part){
 // invited / uploaded creator: every message sent so far + their WhatsApp chat, and a box to message them
 const _invChat = {};
 function inviteChatHtml(id, d){
-  const M = (d.messages||[]), digits = String(d.phone||"").replace(/\D/g,"");
+  // the chat is WhatsApp only — emails stay in their own place, they don't belong in a WhatsApp thread
+  const M = (d.messages||[]).filter(x=> x.channel!=="email"), digits = String(d.phone||"").replace(/\D/g,"");
   let day = "";
   const tick = x=> x.status==="failed" ? `<span class="wa-fail" title="${esc(x.error||"")}">❗ not delivered</span>` : x.status==="queued" ? "🕓" : x.status==="read" ? `<span class="wa-read">✓✓</span>` : x.status==="delivered" ? "✓✓" : "✓";
   const bubbles = M.map(x=>{
