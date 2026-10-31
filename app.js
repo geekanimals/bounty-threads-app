@@ -9101,7 +9101,7 @@ async function adminMsgSwitches(){
   const d = data||{};
   box.innerHTML = `<h3 style="margin-top:0">📣 Automatic messages — whole platform</h3>
     <p class="muted" style="font-size:12.5px;margin:0 0 10px">This is the master switch. <b>OFF</b> stops every automatic message on that channel for <b>all campaigns</b> (invites, step updates, reminders, alerts; WhatsApp also pauses the bot) and every campaign shows OFF. <b>ON</b> turns that channel back on for every campaign. Messages held while OFF are not sent later. <b>OFF means OFF everywhere</b> — every campaign, alerts, account messages, test messages and messages the team types by hand. Only login / OTP codes still go (so people can sign in).</p>
-    <div class="msw-row">${mswHtml("wa","💬 WhatsApp", d.wa_on!==false, d.held_wa?`${d.held_wa} held in the last 7 days`:"")}${mswHtml("email","✉️ Email", d.email_on!==false, d.held_email?`${d.held_email} held in the last 7 days`:"")}</div>
+    <div class="msw-row">${mswHtml("wa","💬 WhatsApp", d.wa_on!==false, d.wa_on===false && d.held_wa?`${d.held_wa} stopped while OFF (last 7 days) — never sent`:"")}${mswHtml("email","✉️ Email", d.email_on!==false, d.email_on===false && d.held_email?`${d.held_email} stopped while OFF (last 7 days) — never sent`:"")}</div>
     <div class="muted" style="font-size:12px;margin-top:8px">${d.updated_by?`Last changed by ${esc(d.updated_by)} · ${esc(fmtDateTime(d.updated_at))}`:""}${d.campaigns_off?` · ${d.campaigns_off} campaign${d.campaigns_off>1?"s have":" has"} its own switch off`:""}</div>`;
   box.querySelectorAll("[data-msw]").forEach(b=> b.onclick = async ()=>{
     const ch = b.dataset.msw==="wa" ? "whatsapp" : "email", on = !b.classList.contains("on");
@@ -9119,9 +9119,11 @@ async function campMsgSwitches(campId){
   const d = data||{};
   // Settings is the master switch: when it is OFF the campaign shows OFF and can't be turned on here
   const waOn = d.global_wa_on!==false && d.wa_on!==false, emOn = d.global_email_on!==false && d.email_on!==false;
-  const sub = (globalOn, held)=> globalOn===false ? "🔒 Turned off for all campaigns in Settings" : held ? `${held} held` : "";
+  // the count is of messages stopped while the switch was OFF (they are never sent later) — only worth showing while it is OFF;
+  // when ON, an old "54 held" read as if something is stuck right now
+  const sub = (globalOn, on, held)=> globalOn===false ? "🔒 Turned off for all campaigns in Settings" : (!on && held) ? `${held} stopped while OFF — never sent` : "";
   box.hidden = false;
-  box.innerHTML = `<span class="msw-lbl">📣 Messages for this campaign</span>${mswHtml("wa","💬 WhatsApp", waOn, sub(d.global_wa_on, d.held_wa))}${mswHtml("email","✉️ Email", emOn, sub(d.global_email_on, d.held_email))}`;
+  box.innerHTML = `<span class="msw-lbl">📣 Messages for this campaign</span>${mswHtml("wa","💬 WhatsApp", waOn, sub(d.global_wa_on, waOn, d.held_wa))}${mswHtml("email","✉️ Email", emOn, sub(d.global_email_on, emOn, d.held_email))}`;
   [["wa", d.global_wa_on], ["email", d.global_email_on]].forEach(([k, g])=>{ const b = box.querySelector(`[data-msw="${k}"]`); if(b && g===false){ b.classList.add("locked"); b.title = "Turn it on in Super Admin → Settings first"; } });
   box.querySelectorAll("[data-msw]").forEach(b=> b.onclick = async ()=>{
     if(b.classList.contains("locked")){ gateToast("This is turned off for every campaign in Super Admin → Settings. Turn it on there first."); return; }
