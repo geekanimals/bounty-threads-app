@@ -6830,6 +6830,8 @@ function wireCcSelect(body){
   if(sa) sa.onchange = ()=>{ const el = window.__ccEligible||[]; if(sa.checked) el.forEach(id=> _ccSel.add(id)); else el.forEach(id=> _ccSel.delete(id));
     body.querySelectorAll("[data-ccsel]").forEach(c=> c.checked = _ccSel.has(c.dataset.ccsel)); sync(); };
   const cl = body.querySelector("#ccSelClear"); if(cl) cl.onclick = ()=>{ _ccSel.clear(); paintBarterProcess(); };
+  body.querySelectorAll("[data-ccig]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); _ccSel = new Set([b.dataset.ccig]); _ccWa.open = true; _ccWa.mode = "step"; paintBarterProcess();
+    const w = document.getElementById("ccWa"); if(w) w.scrollIntoView({ behavior:"smooth", block:"center" }); });
   const pk = body.querySelector("#ccPickNoIg"); if(pk) pk.onclick = ()=>{ _ccFilter = "noig"; _ccSel.clear(); paintBarterProcess();
     (window.__ccEligible||[]).forEach(id=> _ccSel.add(id)); _ccWa.open = true; _ccWa.mode = "step"; paintBarterProcess();
     const w = document.getElementById("ccWa"); if(w) w.scrollIntoView({ behavior:"smooth", block:"center" }); };
@@ -6920,11 +6922,12 @@ function ccInviteRowHtml(i, inCamp){
       ${pic?`<img class="ap-pic" src="${esc(safeUrl(pic))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc(String(who).replace(/^@/,"").slice(0,2).toUpperCase())}</span>`}
       <div style="flex:1;min-width:0">
         <div class="r-title"><b>${esc(who)}</b>${i.name&&i.handle?` <span class="muted">${esc(i.name)}</span>`:""}
-          ${inCamp ? NOT_ON_GEEK + (i.registered?`<span class="tag warn">On Geek OS · connect Instagram</span>`:"") : i.registered?`<span class="tag warn">On Geek OS · ${miss.length?esc(miss.map(x=>/whatsapp/i.test(x)?"connect WhatsApp":"connect Instagram").join(" + ")):"joining"}</span>`:`<span class="tag">Invited · not registered</span>`}
+          ${inCamp ? (i.registered ? `<span class="tag warn">📸 On Geek · connect Instagram</span>` : NOT_ON_GEEK) : i.registered?`<span class="tag warn">On Geek OS · ${miss.length?esc(miss.map(x=>/whatsapp/i.test(x)?"connect WhatsApp":"connect Instagram").join(" + ")):"joining"}</span>`:`<span class="tag">Invited · not registered</span>`}
           ${i.ig_connected?'<span class="tag good">📸 Instagram</span>':""}${links.length?`<span class="tag good">🔗 ${links.length} post link${links.length>1?"s":""}</span>`:""}</div>
         <div class="r-sub">${fol!=null?fmtNum(fol)+" followers · ":""}${esc(bkStLabel(st))} <span class="muted">(from the upload)</span>${wa?` · ${esc(wa)}`:""}${i.profile_pct!=null?` · profile ${i.profile_pct}%`:""}</div>
         <div class="bp-stuck">${bpTurnChip(nx)} <b>${esc(nx.title)}</b>${nx.text?` <span class="muted">${esc(nx.text)}</span>`:""}</div></div>
-      <span class="bp-rowacts">${(!i.registered||miss.length) && !(inCamp && st==="posted")?`<button type="button" class="btn sm bp-rowact" data-hubre="${esc(i.invite_id)}" data-ccre="1">↻ Resend invite</button>`:""}<button type="button" class="bp-chatbtn" data-ccinvchat="${esc(i.invite_id)}" title="Messages &amp; WhatsApp">💬</button></span>
+      <span class="bp-rowacts">${!(inCamp && st==="posted") ? (!i.registered ? `<button type="button" class="btn sm bp-rowact" data-hubre="${esc(i.invite_id)}" data-ccre="1">↻ Resend invite</button>`
+        : miss.length && i.phone ? `<button type="button" class="btn sm bp-rowact cc-wabtn" data-ccig="i:${esc(i.invite_id)}" title="They registered — send the Connect Instagram WhatsApp">📸 Send Connect Instagram</button>` : "") : ""}<button type="button" class="bp-chatbtn" data-ccinvchat="${esc(i.invite_id)}" title="Messages &amp; WhatsApp">💬</button></span>
       <span class="bp-caret">${open?"▲":"▼"}</span></div>
     ${open?`<div class="bp-detail"><div class="cc-invchat" data-invchat="${esc(i.invite_id)}">${skel("list",2)}</div><div class="bp-facts">
         ${[i.phone?`📱 <a href="https://wa.me/${esc(String(i.phone).replace(/\D/g,""))}" target="_blank" rel="noopener">${esc(i.phone)}</a>`:"", i.email?`✉️ ${esc(i.email)}`:"", i.city?`📍 ${esc(i.city)}`:"", i.followers?`👥 ${fmtNum(i.followers)} followers`:""].filter(Boolean).map(x=>`<div>${x}</div>`).join("")}
