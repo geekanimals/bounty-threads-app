@@ -6689,13 +6689,14 @@ function paintCampaignCommandInner(body){
       ${(()=>{ const vis = P.map(x=> "p:"+x.participation_id).concat(Iall.map(r=> "i:"+r.i.invite_id)); window.__ccEligible = vis;
           const byKey = window.__ccRowByKey = window.__ccRowByKey || {}; const ppl = {}; ((_bpPeople && _bpPeople.participants)||[]).forEach(z=> ppl[z.participation_id] = z);
           P.forEach(x=> byKey["p:"+x.participation_id] = { kind:"p", x, pp: ppl[x.participation_id]||{} }); Iall.forEach(r=> byKey["i:"+r.i.invite_id] = { kind:"i", i:r.i });
-          const reIds = new Set(Iall.filter(r=> ccCanResend(r.i, inCamp(r))).map(r=> "i:"+r.i.invite_id)); window.__ccResend = reIds;
+          // "Resend invite" is for creators who have not registered yet — registered ones get the Connect Instagram WhatsApp instead
+          const reIds = new Set(Iall.filter(r=> !r.i.registered && ccCanResend(r.i, inCamp(r))).map(r=> "i:"+r.i.invite_id)); window.__ccResend = reIds;
           [..._ccSel].forEach(id=>{ if(!vis.includes(id)) _ccSel.delete(id); });
           if(!vis.length) return "";
           const all = vis.every(id=> _ccSel.has(id)), nRe = [..._ccSel].filter(id=> reIds.has(id)).length;
           return `<div class="cc-selbar"><label><input type="checkbox" id="ccSelAll"${all?" checked":""}> Select all <span class="muted">(${vis.length} shown)</span></label>
             <button type="button" class="btn sm cc-wabtn" id="ccWaSel"${_ccSel.size?"":" disabled"}>🟢 WhatsApp to selected (<span id="ccSelN">${_ccSel.size}</span>)</button>
-            ${reIds.size?`<button type="button" class="btn ghost sm" id="ccSendSel"${nRe?"":" disabled"}>↻ Resend invite to selected (<span id="ccReN">${nRe}</span>)</button>`:""}
+            ${reIds.size?`<button type="button" class="btn ghost sm" id="ccSendSel"${nRe?"":" disabled"} title="Only for creators who have not registered yet">↻ Resend invite to not-registered (<span id="ccReN">${nRe}</span>)</button>`:""}
             ${_ccSel.size?`<button type="button" class="mini-btn ghost" id="ccSelClear">Clear</button>`:""}
             ${_ccFilter!=="noig"?`<button type="button" class="mini-btn ghost" id="ccPickNoIg" title="Show only creators who registered but haven't connected Instagram, and tick them all">📸 Pick everyone without Instagram</button>`:""}</div>
             ${_ccWa.open?ccWaPanelHtml():""}`; })()}
@@ -7537,6 +7538,8 @@ async function pubFill(handles, repaint){
     if(changed && repaint) repaint();
   } finally { _pubBusy = false; }
 }
+// on the campaign = registered on Geek OS; only Instagram is missing (their numbers come from public Instagram meanwhile)
+const ON_GEEK_NO_IG = `<span class="tag warn" title="Registered on Geek OS — Instagram not connected yet (photo and numbers are from their public Instagram)">📸 On Geek · connect Instagram</span>`;
 const NOT_ON_GEEK = `<span class="tag" style="background:rgba(245,158,11,.14);color:#b45309" title="Not connected on Geek OS — photo and numbers are from their public Instagram">📸 Not yet on Geek</span>`;
 function bpTrackerHtml(list){
   if(!list.length) return `<div class="card"><div class="muted">Nobody in this campaign yet. Send the outreach message, or invite creators from the campaign's 🎯 Invite panel.</div></div>`;
@@ -7561,7 +7564,7 @@ function bpTrackerHtml(list){
         <span class="bp-who" data-bpprof="${esc(P)}" title="Open the creator's full profile">${cr.profile_picture_url?`<img class="ap-pic" src="${esc(safeUrl(cr.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((cr.username||"?").slice(0,2).toUpperCase())}</span>`}</span>
         <div style="flex:1;min-width:0">
           <div class="r-title"><span class="bp-who-n" data-bpprof="${esc(P)}" title="Open the creator's full profile">${cr.username?`@${esc(cr.username)}`:esc(cr.name||"Creator")}</span> <button type="button" class="bp-prof-btn" data-bpprof="${esc(P)}">👤 Profile</button>
-            ${pubH ? NOT_ON_GEEK : x.applied_profile && x.applied_profile!==cr.username?`<span class="tag">via @${esc(x.applied_profile)}</span>`:""}
+            ${pubH ? ON_GEEK_NO_IG : x.applied_profile && x.applied_profile!==cr.username?`<span class="tag">via @${esc(x.applied_profile)}</span>`:""}
             ${jvBadge(cr.joined_via, true)}
             ${x.blacklisted?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⛔ Blacklisted</span>':""}
             ${overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':""}
