@@ -9,8 +9,11 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // the approved "campaign update" template (name · update · link) — a typed message outside WhatsApp's 24-hour window goes inside it
-const WA_UPDATE_TEMPLATE = (Deno.env.get("WA_UPDATE_TEMPLATE") || "geek_campaign_update").trim();
-const WA_BACKUP_TEMPLATES = (Deno.env.get("WA_BACKUP_TEMPLATES") || "campaign_update").split(",").map((x) => x.trim()).filter(Boolean);
+// (only if set — "geek_campaign_update" / "campaign_update" were never created in snapto, so they are not defaults any more)
+const WA_UPDATE_TEMPLATE_ENV = (Deno.env.get("WA_UPDATE_TEMPLATE") || "").trim();
+const WA_BACKUP_TEMPLATES = (Deno.env.get("WA_BACKUP_TEMPLATES") || "").split(",").map((x) => x.trim()).filter(Boolean);
+// the approved Utility template every typed message can always fall back to: Hi {{1}} · campaign {{2}} · update {{3}} · {{4}}
+const WA_TEAM_TEMPLATE = (Deno.env.get("WA_TEAM_TEMPLATE") || "geek_team_update").trim();
 const APP_URL_ENV = (Deno.env.get("APP_URL") || "").replace(/\/+$/, "");
 // WhatsApp template parameters may not contain new lines / tabs / 4+ spaces
 const waParam = (s: string, max = 900) => String(s || "").replace(/\s*[\r\n\t]+\s*/g, " · ").replace(/ {4,}/g, "   ").trim().slice(0, max) || "-";
@@ -51,7 +54,9 @@ Deno.serve(async (req) => {
     }
     const { data: consent } = await admin.from("wa_contacts").select("opt_in_at,opt_out_at,verified_at")
       .eq("phone_e164", conv.contact_phone_e164).maybeSingle();
-    if (consent?.opt_out_at) return json({ error: "This contact has opted out of WhatsApp messages." }, 403);
+    // STOP is kept in two places: wa_contacts (members) and wa_phone_optout (any number, incl. creators not on the app yet)
+    const { data: po } = await admin.from("wa_phone_optout").select("opt_out_at").eq("phone_e164", conv.contact_phone_e164).maybeSingle();
+    const optOutAt = [consent?.opt_out_at, (po as any)?.opt_out_at].filter(Boolean).sort().pop() as string | undefined;
     // Super Admin paused this creator's messages (WhatsApp + email together)
     {
       const { data: paused } = await admin.schema("api").rpc("ops_contact_paused", { p_addr: conv.contact_phone_e164 });
@@ -68,6 +73,17 @@ Deno.serve(async (req) => {
       openWindow = !!(w?.[0]?.session_expires_at && new Date(w[0].session_expires_at) > new Date());
     }
 
+    // said STOP → nothing goes, except a typed reply when THEY wrote to us again after the STOP (their 24-hour window is open)
+    if (optOutAt) {
+      let wroteAfter = false;
+      if (!template && openWindow) {
+        const { data: ib } = await admin.from("wa_messages").select("id, wa_conversations!inner(contact_phone_e164)")
+          .eq("direction", "inbound").eq("wa_conversations.contact_phone_e164", conv.contact_phone_e164).gt("created_at", optOutAt).limit(1);
+        wroteAfter = !!ib?.length;
+      }
+      if (!wroteAfter) return json({ error: "This creator said STOP on WhatsApp — nothing is sent to them.", opted_out: true }, 403);
+    }
+
     let res: { wamid?: string | null } | null = null, usedTemplate: string | null = template || null;
     if (template || openWindow) {
       const out = template
@@ -78,7 +94,7 @@ Deno.serve(async (req) => {
       // outside the 24-hour window a typed message can only go inside an approved template — send it in the
       // "campaign update" template (name · the message · app link), the same one every automatic update uses
       if (!String(text || "").trim()) return json({ error: "Type a message first." }, 400);
-      let genTpl = WA_UPDATE_TEMPLATE, genLang = "en", appUrl = APP_URL_ENV;
+      let genTpl = WA_UPDATE_TEMPLATE_ENV, genLang = "en", appUrl = APP_URL_ENV;
       try {
         const { data: ws } = await admin.schema("api").rpc("ops_wa_settings");
         if ((ws as any)?.template) { genTpl = String((ws as any).template); genLang = String((ws as any).lang || "en"); }
@@ -92,14 +108,24 @@ Deno.serve(async (req) => {
         if (uid) { const { data: m } = await admin.from("members").select("name").eq("id", uid).maybeSingle(); if (m?.name) name = String(m.name); }
       } catch (_e) { /* "there" */ }
       const link = appUrl ? `${appUrl}/app.html` : "the Geek OS app";
-      const tries = [genTpl, ...WA_BACKUP_TEMPLATES.filter((b) => b !== genTpl)];
+      // 3-variable templates (name · update · link) set in Settings / secrets first, then the approved
+      // geek_team_update (name · campaign · update · link) that is always there
+      let campName = String(subject || "").trim();
+      if (!campName && campaign_id) {
+        try { const { data: c } = await admin.from("campaigns").select("name").eq("id", campaign_id).maybeSingle(); if ((c as any)?.name) campName = String((c as any).name); } catch (_e) { /* */ }
+      }
+      const upd = waParam(String(text));
+      const tries: { t: string; lang: string; vars: string[] }[] = [
+        ...[genTpl, ...WA_BACKUP_TEMPLATES].filter((t, i, a) => t && t !== WA_TEAM_TEMPLATE && a.indexOf(t) === i)
+          .map((t) => ({ t, lang: t === genTpl ? genLang : "en", vars: [waParam(name, 60), upd, waParam(link, 300)] })),
+        { t: WA_TEAM_TEMPLATE, lang: "en", vars: [waParam(name, 60), waParam(campName || "your campaign", 120), upd, waParam(link, 300)] },
+      ];
       let lastErr: Error | null = null;
-      for (const t of tries) {
+      for (const x of tries) {
         try {
-          res = await getProvider().send({ to: conv.contact_phone_e164, template: t, lang: t === genTpl ? genLang : "en",
-            variables: [waParam(name, 60), waParam(String(text)), waParam(link, 300)] } as any);
-          usedTemplate = t; lastErr = null; break;
-        } catch (e) { lastErr = e as Error; }
+          res = await getProvider().send({ to: conv.contact_phone_e164, template: x.t, lang: x.lang, variables: x.vars } as any);
+          usedTemplate = x.t; lastErr = null; break;
+        } catch (e) { lastErr = e as Error; console.error(`wa-send: template ${x.t} refused:`, (e as Error).message); }
       }
       if (!res) return json({ error: `Couldn't send it as a WhatsApp update (${(lastErr?.message || "template refused").slice(0, 160)}). Use Open in WhatsApp.` }, 502);
     }

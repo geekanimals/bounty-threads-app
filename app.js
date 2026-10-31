@@ -6804,7 +6804,7 @@ function ccWaPanelHtml(){
       : _ccWa.mode==="tpl" ? `<select id="ccWaTpl" class="cc-wa-sel">${_ccTpls.map(x=>`<option value="${esc(x.name)}"${pick&&pick.name===x.name?" selected":""}${x.status==="rejected"||x.status==="manual"?" disabled":""}>${esc(ccTplLabel(x))}</option>`).join("")}</select>${pick?prev(pick):""}`
       : `<textarea id="ccWaText" rows="4" maxlength="900" placeholder="Type the WhatsApp message for everyone ticked…">${esc(_ccWa.text)}</textarea>
          <div class="muted cc-wa-note">Creators who wrote to us in the last 24 hours get it as typed; everyone else gets it inside the approved “campaign update” template (Hi name · your message · app link).</div>`}
-    <div class="cc-wa-foot"><button type="button" class="btn sm cc-wabtn" id="ccWaGo"${n?"":" disabled"}>➤ Send on WhatsApp to ${n}</button><span class="muted" id="ccWaStat"></span></div>
+    <div class="cc-wa-foot"><button type="button" class="btn sm cc-wabtn" id="ccWaGo"${n?"":" disabled"}>➤ Send on WhatsApp to ${n}</button><span class="muted" id="ccWaStat"></span></div>${_ccWa.lastErr?`<div class="cc-wa-err" role="alert">⚠️ ${esc(_ccWa.lastErr)}</div>`:""}
   </div>`;
 }
 function wireCcWaPanel(body){
@@ -6886,7 +6886,7 @@ async function ccWaSend(go){
   if(waiting.length && !confirm(`Not approved by Meta yet:\n${waiting.join("\n")}\n\nWhatsApp may refuse these until then. Try anyway?`)) return;
   const what = mode==="text" ? "your message" : mode==="tpl" ? `“${ccTplLabel(one)}”` : "each creator's step template";
   if(!confirm(`Send ${what} on WhatsApp to ${list.length} creator${list.length>1?"s":""}?${skip?`\n\nLeft out: ${skip}.`:""}`)) return;
-  _ccWa.busy = true; go.disabled = true; let ok = 0; const bad = [];
+  _ccWa.busy = true; _ccWa.lastErr = ""; go.disabled = true; let ok = 0; const bad = [], badKeys = new Set(), okKeys = new Set();
   for(let k=0; k<list.length; k++){
     const x = list[k]; go.textContent = `Sending ${k+1} / ${list.length}…`;
     const link = base + (x.route || "/app.html");
@@ -6896,13 +6896,16 @@ async function ccWaSend(go){
     const { data:r, error:e } = await sb.functions.invoke("wa-send", { body }).then(v=>v, er=>({error:er}));
     let em = e ? (e.message||String(e)) : (r && r.error) || "";
     if(e && e.context && typeof e.context.json==="function"){ try{ const j = await e.context.json(); if(j && j.error) em = j.error; }catch(_){} }
-    if(em){ bad.push(`${x.who}: ${em}`); if(/turned off/i.test(em)) break; } else ok++;
+    if(em){ bad.push(`${x.who}: ${em}`); badKeys.add(x.key); if(/turned off/i.test(em)) break; } else { ok++; okKeys.add(x.key); }
     if(stat) stat.textContent = `${ok} sent${bad.length?` · ${bad.length} failed`:""}`;
   }
   _ccWa.busy = false;
-  gateToast(`🟢 WhatsApp sent to ${ok} creator${ok!==1?"s":""}${bad.length?` · ${bad.length} failed`:""}${skip?` · left out: ${skip}`:""}`);
-  if(bad.length) alert("Not sent:\n\n" + bad.slice(0,30).join("\n"));
-  if(ok){ _ccSel.clear(); _ccWa.open = false; _ccWa.text = ""; }
+  gateToast(`${bad.length?"⚠️":"🟢"} WhatsApp sent to ${ok} creator${ok!==1?"s":""}${bad.length?` · ${bad.length} NOT sent`:""}${skip?` · left out: ${skip}`:""}`);
+  if(bad.length){
+    // keep only the ones that failed ticked + the panel open, so nothing looks "sent" when it wasn't
+    okKeys.forEach(k=> _ccSel.delete(k)); _ccWa.lastErr = `${ok} sent · ${bad.length} NOT sent — still ticked below. ${bad[0]}`;
+    alert(`Sent: ${ok}\nNOT sent: ${bad.length}\n\n` + bad.slice(0,30).join("\n"));
+  } else if(ok){ _ccSel.clear(); _ccWa.open = false; _ccWa.text = ""; _ccWa.lastErr = ""; }
   paintBarterProcess();
 }
 // someone uploaded / invited who isn't in the campaign yet (not registered, or registered and connecting)
