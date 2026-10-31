@@ -14,6 +14,8 @@ const WA_UPDATE_TEMPLATE_ENV = (Deno.env.get("WA_UPDATE_TEMPLATE") || "").trim()
 const WA_BACKUP_TEMPLATES = (Deno.env.get("WA_BACKUP_TEMPLATES") || "").split(",").map((x) => x.trim()).filter(Boolean);
 // the approved Utility template every typed message can always fall back to: Hi {{1}} · campaign {{2}} · update {{3}} · {{4}}
 const WA_TEAM_TEMPLATE = (Deno.env.get("WA_TEAM_TEMPLATE") || "geek_team_update").trim();
+// creator-worded Utility template: Hi {{1}} · update on your application for {{2}}: {{3}} · Open the app here: {{4}}
+const WA_CREATOR_TEMPLATE = (Deno.env.get("WA_CREATOR_TEMPLATE") || "geek_creator_update").trim();
 const APP_URL_ENV = (Deno.env.get("APP_URL") || "").replace(/\/+$/, "");
 // WhatsApp template parameters may not contain new lines / tabs / 4+ spaces
 const waParam = (s: string, max = 900) => String(s || "").replace(/\s*[\r\n\t]+\s*/g, " · ").replace(/ {4,}/g, "   ").trim().slice(0, max) || "-";
@@ -120,6 +122,11 @@ Deno.serve(async (req) => {
           .map((t) => ({ t, lang: t === genTpl ? genLang : "en", vars: [waParam(name, 60), upd, waParam(link, 300)] })),
         { t: WA_TEAM_TEMPLATE, lang: "en", vars: [waParam(name, 60), waParam(campName || "your campaign", 120), upd, waParam(link, 300)] },
       ];
+      // the creator-worded one (name · campaign · update · link) goes first once Meta has approved it
+      try {
+        const { data: st } = await admin.schema("api").rpc("wa_template_status", { p_name: WA_CREATOR_TEMPLATE });
+        if (st === "approved") tries.unshift({ t: WA_CREATOR_TEMPLATE, lang: "en", vars: [waParam(name, 60), waParam(campName || "your campaign", 120), upd, waParam(link, 300)] });
+      } catch (_e) { /* not set up → geek_team_update */ }
       let lastErr: Error | null = null;
       for (const x of tries) {
         try {
