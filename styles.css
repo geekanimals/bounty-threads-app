@@ -2662,3 +2662,9 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .say-code i{font-style:normal;font-size:13px}
 :root[data-theme=dark] .say-code{background:#2a2112;color:#fcd34d}:root[data-theme=dark] .say-code b{color:#fff}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) .say-code{background:#2a2112;color:#fcd34d}:root:not([data-theme=light]) .say-code b{color:#fff}}
+.tk-say{margin:8px 0 10px;padding:10px 12px;border:1.5px dashed #f59e0b;border-radius:12px;background:#fffbeb}
+.tk-say .cp-check{margin:0 0 6px}
+.tk-say-how{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:#57534e;line-height:1.45}
+.tk-say-how code{background:#fef3c7;padding:1px 5px;border-radius:5px;color:#92400e}
+:root[data-theme=dark] .tk-say{background:#2a2112;border-color:#92400e}:root[data-theme=dark] .tk-say-how{color:#e7e5e4}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .tk-say{background:#2a2112;border-color:#92400e}:root:not([data-theme=light]) .tk-say-how{color:#e7e5e4}}

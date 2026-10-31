@@ -1756,7 +1756,14 @@ function openCampaignModal(existing, preset){
         <label class="tk-common">Code for every creator<input name="tk_code" maxlength="30" value="${esc(tk.common_code||'')}" placeholder="OLIO15" style="text-transform:uppercase"></label>
         <label class="tk-per">Make each code from <span class="muted" style="font-weight:400">(optional)</span><input name="tk_prefix" maxlength="12" value="${esc(tk.prefix||'')}" placeholder="OLIO → OLIORIYASHARMA" style="text-transform:uppercase"></label></div>
         <label class="cp-check"><input type="checkbox" name="tk_utm"${tk.utm===false?"":" checked"}> Add tracking tags to the brand's link <span class="muted">(utm_source=geek · utm_content=@creator — the brand sees these visits in its own Google Analytics / Shopify)</span></label>
-        <label class="cp-check tk-anycode"><input type="checkbox" name="tk_say"${tk.say_code?" checked":""}> 🎟️ <b>Creators say their own code in the video</b> <span class="muted">— each creator's code goes into their video brief + the brief WhatsApp. Write <code>{code}</code> in the brief where they say it (e.g. "Use my code {code} for 15% off").</span></label>
+        <div class="tk-say tk-anycode">
+          <label class="cp-check"><input type="checkbox" name="tk_say"${tk.say_code?" checked":""}> 🎟️ <b>Creators say their own code in the video</b></label>
+          <div class="tk-say-how">
+            <div><b>1 · Codes</b> — type each one on the campaign page → <b>🔗 Links &amp; codes</b>, paste the brand's list there (<code>@handle, CODE</code>), add a <b>Coupon code</b> column to the bulk-upload sheet, or set a prefix above and they're made for you.</div>
+            <div><b>2 · Brief</b> — write <code>{code}</code> where they say it, e.g. <i>"Use my code {code} for 15% off"</i>. <button type="button" class="mini-btn" id="tkInsCode">+ Insert {code} in Key messages</button></div>
+            <div><b>3 · Creator</b> — sees their own code on top of the video brief (with Copy) and gets it in the brief email + WhatsApp. Creators without a code yet show as missing in 🔗 Links &amp; codes.</div>
+          </div>
+        </div>
         <label class="cp-check tk-anycode"><input type="checkbox" name="tk_shop"${tk.shopify_code?" checked":""}> Shopify store — apply the creator's code automatically at checkout</label>
         <div class="muted" style="font-size:12px;margin:-2px 0 6px">A different brand link for some creators? Set it per creator on the campaign page → <b>🔗 Links &amp; codes</b> (type it, or paste <b>@handle, https://…</b>) — they still share their own Geek link, so every click is counted.</div>
         <div class="muted tk-per" style="font-size:12px;margin-top:-4px">Leave it empty to type or paste each creator's own code on the campaign page → <b>🔗 Links &amp; codes</b>. A prefix makes them for you (prefix + the creator's handle) — create the same codes in the brand's store.</div>
@@ -1844,7 +1851,10 @@ function openCampaignModal(existing, preset){
   { const on = form.querySelector("[name=tk_on]"), md = form.querySelector("[name=tk_mode]"), bx = form.querySelector(".tk-box");
     const tkPaint = ()=>{ if(bx) bx.hidden = !on.checked; form.querySelectorAll(".tk-common").forEach(x=> x.hidden = md.value!=="common");
       form.querySelectorAll(".tk-per").forEach(x=> x.hidden = md.value!=="per_creator"); form.querySelectorAll(".tk-anycode").forEach(x=> x.hidden = md.value==="none"); };
-    if(on && md){ on.onchange = tkPaint; md.onchange = tkPaint; tkPaint(); } }
+    if(on && md){ on.onchange = tkPaint; md.onchange = tkPaint; tkPaint(); }
+    const ins = form.querySelector("#tkInsCode"), km = form.querySelector("[name=vb_msg]");
+    if(ins && km) ins.onclick = ()=>{ if(!/\{\s*code\s*\}/i.test(km.value)) km.value = (km.value.trim() ? km.value.trim() + "\n" : "") + "Use my code {code} for an extra discount";
+      km.focus(); km.scrollIntoView({ behavior:"smooth", block:"center" }); const sc = form.querySelector("[name=tk_say]"); if(sc) sc.checked = true; }; }
   { const srcs = ["brief","vb_shoot","vb_msg","vb_dos","vb_donts","vb_note"].map(n=> form.querySelector(`[name=${n}]`)).filter(Boolean);
     const put = (name, v, label, show)=>{ const el = form.querySelector(`[name=${name}]`); if(!el || v==null || v==="" ) return null;
       if(String(el.value||"").trim() && el.dataset.auto!=="1") return null;       // never overwrite what the team typed
@@ -1978,7 +1988,7 @@ function openCampaignModal(existing, preset){
         if(mode==="common" && f.get("tk_on") && !/^[A-Z0-9_-]{2,30}$/.test(code)) throw new Error("Type the coupon code for every creator (2–30 letters / numbers, no spaces).");
         row.tracking = { enabled: !!f.get("tk_on"), dest_url: dest || null, discount: txt("tk_disc") || null, mode,
           common_code: mode==="common" ? code : null, prefix: mode==="per_creator" ? (pre || null) : null, auto_codes: mode==="per_creator" && !!pre,
-          utm: !!f.get("tk_utm"), shopify_code: mode!=="none" && !!f.get("tk_shop"), say_code: mode!=="none" && !!f.get("tk_say") }; }
+          utm: !!f.get("tk_utm"), shopify_code: mode!=="none" && !!f.get("tk_shop"), say_code: !!f.get("tk_on") && mode!=="none" && !!f.get("tk_say") }; }
       if(isReq){                          // a brand's request: send the whole form to the Geek team, create nothing
         row.brand_id = preset.brand_id || null; row.brand = preset.brand || row.brand; delete row.status;
         const { error:re } = await sb.schema("api").rpc("brand_campaign_request", { p:{ brand_id: preset.brand_id || null, name: row.name, form: row } }).then(r=>r, er=>({error:er}));
@@ -5725,7 +5735,9 @@ const BK_FIELDS = [
   ["state","State", /^(state|province)\b/i],
   ["pincode","PIN code", /(pin ?code|^pin\b|zip|postal|post ?code)/i],
   ["courier","Courier", /(courier|carrier|delivery partner|shipping partner)/i],
-  ["tracking","Tracking", /(track|awb|consignment|docket|waybill)/i]
+  ["tracking","Tracking", /(track|awb|consignment|docket|waybill)/i],
+  // each creator's own coupon code (the code they say in the video / share) → 🔗 Links & codes
+  ["coupon","Coupon code", /^(?!.*(barter|track|awb|pin|zip|postal)).*(coupon|promo ?code|discount ?code|voucher|creator ?code|^code$)/i]
 ];
 // each creator can already be on any step — the sheet's Status column uses these exact words (= the Barter process steps)
 // [key, write this in the sheet, what happens, message the creator gets]
@@ -5946,7 +5958,7 @@ function bkRowData(r){
   return { name:g("name"), handle:g("handle"), phone:g("phone"), email:g("email"), city:g("city"), followers:g("followers"),
            status: bkServerStatus(r.status||"registered"), approved: bkStRank(r.status||"registered")>=4,
            address:g("address"), state:g("state"), pincode:g("pincode"), courier:g("courier"), tracking:g("tracking"),
-           post_link:g("post_link"), video_link:g("video_link"),
+           post_link:g("post_link"), video_link:g("video_link"), coupon:g0("coupon").toUpperCase().replace(/\s+/g,""),
            fee:g("fee"), advance_pct:g("advance_pct"), pay_days:g("pay_days"), pay_terms:g("pay_terms"), upi:g("upi"), account_no:g("account_no"), ifsc:g("ifsc"), account_name:g("account_name") };
 }
 // the same person on several rows: keep the first row, take the furthest step and every link / missing detail
@@ -6234,6 +6246,10 @@ function wireBulk(){
     _bk.busy = false;
     if(error){ paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = error.message||String(error); return; }
     const d = data||{};
+    // the sheet's Coupon code column → each creator's own code (🔗 Links & codes), matched by their Instagram handle
+    const codes = rows.filter(x=> x.coupon && x.handle).map(x=> ({ handle: String(x.handle).replace(/^@/,""), code: x.coupon }));
+    if(codes.length){ const cr = await sb.schema("api").rpc("track_codes_bulk", { p_campaign:_bpCamp.id, p_rows: codes, p_overwrite: true }).then(r=>r, e=>({error:e}));
+      setTimeout(()=> gateToast(cr.error ? `🎟️ Codes not saved: ${cr.error.message||cr.error}` : `🎟️ ${(cr.data&&cr.data.set)||0} coupon code${((cr.data&&cr.data.set)||0)!==1?"s":""} saved${cr.data&&cr.data.skipped?` · ${cr.data.skipped} not matched (check the handle / code — letters, numbers, - or _)`:""}`), 900); }
     _bk.rows = null; _bk.preview = null; paintBulk();
     const held = [d.posted_without_link?`${d.posted_without_link} without the post link`:"", d.without_video?`${d.without_video} without the video link`:"", d.without_courier?`${d.without_courier} without courier + tracking`:""].filter(Boolean);
     if(held.length) setTimeout(()=> gateToast(`⚠️ Some rows were put one step back: ${held.join(" · ")} — add those columns and upload again to move them on`), 400);
