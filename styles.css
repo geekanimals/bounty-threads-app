@@ -2633,7 +2633,7 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .cc-tile[data-cctile="noig"]{border-color:#f5b041;background:#fff8ec}
 .cc-tile[data-cctile="noig"] b{color:#c2410c}
 .cc-tile[data-cctile="noig"].on{box-shadow:0 0 0 2px #f59e0b inset}
-@media (prefers-color-scheme: dark){ .cc-tile[data-cctile="noig"]{background:rgba(245,158,11,.1)} .cc-tile[data-cctile="noig"] b{color:#fbbf24} }
+[data-theme="dark"] .cc-tile[data-cctile="noig"]{background:rgba(245,158,11,.1)} [data-theme="dark"] .cc-tile[data-cctile="noig"] b{color:#fbbf24}
 /* campaign list: one WhatsApp to every ticked creator */
 .cc-wabtn{background:#16a34a!important;border-color:#16a34a!important;color:#fff!important}
 .cc-wabtn:disabled{opacity:.5}
@@ -2650,8 +2650,7 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .cc-wa-note{font-size:12.5px;margin-top:6px}
 .cc-wa-foot{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
 .bp-head .cc-sel{margin-right:4px}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .cc-wa{background:var(--card);border-color:#14532d}}
-:root[data-theme=dark] .cc-wa{background:var(--card);border-color:#14532d}
+[data-theme="dark"] .cc-wa{background:var(--card);border-color:#14532d}
 .cc-wa-groups{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
 .cc-wa-grp{padding:8px 12px;border:1px solid var(--line,#e5e7eb);border-radius:10px;background:var(--card,#fff);font-size:13.5px}
 .cc-wa-grp b{color:#16a34a}
@@ -2660,11 +2659,13 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .say-code{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 10px;padding:12px 14px;border-radius:12px;border:2px dashed #f59e0b;background:#fffbeb;color:#78350f}
 .say-code span{font-weight:600}.say-code b{font-size:20px;letter-spacing:1.5px;font-family:ui-monospace,Menlo,monospace;color:#111}
 .say-code i{font-style:normal;font-size:13px}
-:root[data-theme=dark] .say-code{background:#2a2112;color:#fcd34d}:root[data-theme=dark] .say-code b{color:#fff}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .say-code{background:#2a2112;color:#fcd34d}:root:not([data-theme=light]) .say-code b{color:#fff}}
+[data-theme="dark"] .say-code{background:#2a2112;color:#fcd34d}[data-theme="dark"] .say-code b{color:#fff}
 .tk-say{margin:8px 0 10px;padding:10px 12px;border:1.5px dashed #f59e0b;border-radius:12px;background:#fffbeb}
 .tk-say .cp-check{margin:0 0 6px}
 .tk-say-how{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:#57534e;line-height:1.45}
 .tk-say-how code{background:#fef3c7;padding:1px 5px;border-radius:5px;color:#92400e}
-:root[data-theme=dark] .tk-say{background:#2a2112;border-color:#92400e}:root[data-theme=dark] .tk-say-how{color:#e7e5e4}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .tk-say{background:#2a2112;border-color:#92400e}:root:not([data-theme=light]) .tk-say-how{color:#e7e5e4}}
+[data-theme="dark"] .tk-say{background:#2a2112;border-color:#92400e}[data-theme="dark"] .tk-say-how{color:#e7e5e4}
+/* checkboxes inside the campaign form: one line, normal case (the form's labels are stacked + uppercase) */
+.modal-form label.cp-check{flex-direction:row;align-items:flex-start;gap:9px;text-transform:none;letter-spacing:0;font-size:13px;font-weight:500;color:var(--ink,#111)}
+.modal-form label.cp-check input{margin-top:2px;flex:0 0 auto}
+.modal-form label.cp-check .muted{font-weight:400}

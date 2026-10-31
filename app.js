@@ -6750,7 +6750,7 @@ function ccTplRoles(body){
     return n===last ? "link" : "campaign";
   });
 }
-const CC_TPL_LABEL = { geek_selected_connect_instagram:"Connect Instagram (selected · log in with Instagram)", geek_campaign_access:"Invite · approved, register & join",
+const CC_TPL_LABEL = { geek_selected_connect_instagram:"Connect Instagram · you are selected", geek_campaign_access:"Invite · approved, register & join",
   geek_join_invite:"Registration · complete it & connect Instagram", geek_step_contract:"Contract · read & sign", geek_step_contract_bp:"Contract · barter + paid",
   geek_step_contract_paid:"Contract · paid", geek_step_address:"Address · confirm delivery address", geek_step_shipped:"Courier sent · on its way",
   geek_step_brief:"Parcel received · video brief", geek_step_brief_code:"Video brief + their own code", geek_step_brief_paid:"Video brief (paid)", geek_step_video_due:"Video due soon", geek_step_video_overdue:"Video overdue",
