@@ -27,13 +27,16 @@ on conflict (wa_template) do nothing;
 
 create or replace function api.campaign_wa_targets(p_campaign uuid, p_invites uuid[] default '{}', p_parts uuid[] default '{}')
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare v_name text;
+declare v_name text; v_brand text; v_url text;
 begin
   perform intel.ci_assert_api_enabled('operational_pilot');
   p_campaign := intel.ci_resolve_campaign(p_campaign);   -- the app's campaign id → the campaign the creators sit on
   if p_campaign is null or not intel.ci_can_manage_campaign(p_campaign) then raise exception 'not your campaign' using errcode = '42501'; end if;
-  select c.name into v_name from intel.ci_campaign c where c.campaign_id = p_campaign;
-  return jsonb_build_object('campaign', v_name, 'tpl_status',
+  select c.name, coalesce(c.submitted_brand_name, b.name) into v_name, v_brand
+    from intel.ci_campaign c left join intel.ci_brand b on b.brand_id = c.brand_id where c.campaign_id = p_campaign;
+  -- links always on the live domain (never a *.vercel.app host the team happens to be on)
+  begin select (api.ops_wa_settings())->>'app_url' into v_url; exception when others then v_url := null; end;
+  return jsonb_build_object('campaign', v_name, 'brand', v_brand, 'app_url', rtrim(coalesce(v_url, ''), '/'), 'tpl_status',
       (select s.status from private.ci_step_wa_status s where s.wa_template = 'geek_selected_connect_instagram'),
     'targets', coalesce((select jsonb_agg(t) from (
       select jsonb_build_object('key', 'i:' || i.invite_id, 'phone', i.phone_e164,
@@ -57,3 +60,17 @@ begin
 end $$;
 revoke all on function api.campaign_wa_targets(uuid, uuid[], uuid[]) from public, anon;
 grant execute on function api.campaign_wa_targets(uuid, uuid[], uuid[]) to authenticated;
+
+-- 3) the WhatsApp templates the team can pick on the list (every step template + its status), and the targets' brand + live app URL
+create or replace function api.wa_template_choices()
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+begin
+  if auth.uid() is null then raise exception 'sign in first' using errcode = '42501'; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('name', x.wa_template, 'status', x.status, 'keys', x.keys, 'body', x.body) order by x.wa_template)
+    from (select w.wa_template, coalesce(s.status, 'approved') status, array_agg(distinct w.template_key) keys, min(w.body) body
+            from intel.ci_step_wa w left join private.ci_step_wa_status s on s.wa_template = w.wa_template
+           where w.wa_template <> 'geek_team_update'
+           group by w.wa_template, s.status) x), '[]'::jsonb);
+end $$;
+revoke all on function api.wa_template_choices() from public, anon;
+grant execute on function api.wa_template_choices() to authenticated;
