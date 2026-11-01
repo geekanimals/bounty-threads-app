@@ -2674,3 +2674,16 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .modal-form label.cp-check .muted{font-weight:400}
 .modal-form [hidden]{display:none!important}   /* hidden form parts really hide (labels are display:flex) */
 .trk-say{flex-basis:100%}
+
+/* 🔗 Settings → short links & click tracking */
+.sl-card{margin-top:14px}
+.sl-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.sl-days{padding:6px 10px;border-radius:8px;border:1px solid var(--line,#e7e9f3);background:transparent;color:inherit}
+.sl-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0 4px}
+.sl-kpis>div{border:1px solid var(--line,#e7e9f3);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.sl-kpis b{font-size:20px}
+.sl-kpis span{font-size:12px;color:var(--muted,#5d6380)}
+.sl-tw{overflow-x:auto}
+.sl-t{width:100%;border-collapse:collapse;font-size:13px}
+.sl-t th,.sl-t td{padding:7px 8px;border-bottom:1px solid var(--line,#e7e9f3);text-align:left;white-space:nowrap}
+.sl-t th{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#5d6380)}

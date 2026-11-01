@@ -99,6 +99,10 @@
     {
       "source": "/go/:slug",
       "destination": "/go.html"
+    },
+    {
+      "source": "/s/:slug",
+      "destination": "/s.html"
     }
   ]
 }

@@ -88,7 +88,17 @@ Deno.serve(async (req) => {
       skipped++; continue;
     }
     const p = row.payload || {};
-    const link = deepLink(p.action_route ?? p.action_url);
+    // 🔗 the link goes out as a short /s/… link (click + time-on-page tracking; Super Admin → Settings switch).
+    // Same link reused when this row is retried; if anything fails the full link goes as before.
+    let link = deepLink(p.action_route ?? p.action_url);
+    if (link) {
+      try {
+        const { data: sl } = await api.rpc("ops_short_link", { p_url: link, p_channel: row.channel, p_outbox: row.outbox_id,
+          p_campaign: row.campaign_id ?? null, p_recipient: row.to_address ?? null, p_member: row.recipient_member_id ?? null,
+          p_template: row.template_key ?? null });
+        if (typeof sl === "string" && /^https?:\/\//.test(sl)) link = sl;
+      } catch (_e) { /* full link */ }
+    }
     const prefs = await prefsOf(row.recipient_member_id);
     let waUsed: string | null = null;
     try {

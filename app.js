@@ -9119,9 +9119,45 @@ async function cuLoadList(){
 function adminTeamSettings(body){
   const t = document.createElement("div"); t.innerHTML = renderSettings();
   const h = t.querySelector(".page-head, .ph, header"); if(h) h.remove();
-  body.innerHTML = `<div class="card msw-card" id="msgSwCard"></div>` + t.innerHTML;
-  adminMsgSwitches();
+  body.innerHTML = `<div class="card msw-card" id="msgSwCard"></div><div class="card sl-card" id="shortLinkCard"></div>` + t.innerHTML;
+  adminMsgSwitches(); adminShortLinks();
   try{ renderIntegrations(); wireInviteForm(); loadTeam(); wireOrgProfileForm(); loadOrgProfile(); }catch(e){ console.warn("settings", e); }
+}
+// 🔗 Super Admin → Settings: short links in every message + who clicked, when, on what, how long they stayed
+let _slDays = 7;
+async function adminShortLinks(){
+  const box = document.getElementById("shortLinkCard"); if(!box) return;
+  if(!box.innerHTML) box.innerHTML = typeof skel==="function" ? skel("list",3) : "Loading…";
+  const { data, error } = await sb.schema("api").rpc("admin_short_links_report", { p_days: _slDays }).then(r=>r, e=>({error:e}));
+  if(error){ box.innerHTML = `<h3 style="margin-top:0">🔗 Short links &amp; click tracking</h3><div class="muted">${esc(error.message||String(error))}</div>`; return; }
+  const d = data||{}, t = d.totals||{}, on = d.on!==false;
+  const secs = v=> v==null ? "—" : v<60 ? `${v}s` : `${Math.floor(v/60)}m ${String(v%60).padStart(2,"0")}s`;
+  const pct = (a,b)=> b ? Math.round(100*a/b)+"%" : "—";
+  const kind = k=> String(k||"other").replace(/_/g," ").replace(/^geek /,"");
+  const dev = Object.entries(d.by_device||{}).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${esc(k)} ${n}`).join(" · ") || "—";
+  box.innerHTML = `<div class="sl-head"><h3 style="margin:0">🔗 Short links &amp; click tracking</h3>
+      <select id="slDays" class="sl-days">${[1,7,30,90].map(n=>`<option value="${n}"${n===_slDays?" selected":""}>Last ${n===1?"24 hours":n+" days"}</option>`).join("")}</select></div>
+    <p class="muted" style="font-size:12.5px;margin:6px 0 10px">Every link in a WhatsApp / email message goes out short (<code>${esc(location.host)}/s/…</code>). A click is logged with the device and how long after the message it came; on our own pages the time they stayed — and how long they were active (mouse / touch / scroll) — is logged too. Link-preview bots are not counted.</p>
+    <div class="msw-row">${mswHtml("sl","🔗 Short links + tracking", on, on ? "New messages carry short links" : "New messages carry the full link — nothing is tracked")}</div>
+    <div class="sl-kpis">
+      <div><b>${t.links||0}</b><span>links sent</span></div>
+      <div><b>${t.clicked||0}</b><span>opened · ${pct(t.clicked||0, t.links||0)}</span></div>
+      <div><b>${t.clicks||0}</b><span>clicks · ${t.people||0} people</span></div>
+      <div><b>${secs(t.avg_seconds)}</b><span>avg time on page</span></div>
+      <div><b>${secs(t.avg_active)}</b><span>avg active (mouse / touch)</span></div>
+      <div><b>${t.median_minutes_to_click!=null?t.median_minutes_to_click+"m":"—"}</b><span>median time to click</span></div>
+    </div>
+    <div class="muted" style="font-size:12px;margin:6px 0 12px">Devices: ${dev}${t.bots?` · ${t.bots} link-preview bot hits not counted`:""}</div>
+    ${(d.by_message||[]).length ? `<div class="sl-tw"><table class="sl-t"><thead><tr><th>Message</th><th>Channel</th><th>Sent</th><th>Opened</th><th>Rate</th><th>Avg time</th></tr></thead><tbody>
+      ${(d.by_message||[]).map(r=>`<tr><td>${esc(kind(r.kind))}</td><td>${r.channel==="email"?"✉️":"💬"}</td><td>${r.sent}</td><td>${r.clicked}</td><td>${r.ctr}%</td><td>${secs(r.avg_seconds)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="muted">No links sent in this period yet.</div>`}
+    ${(d.recent||[]).length ? `<h4 style="margin:14px 0 6px">Recent clicks</h4><div class="sl-tw"><table class="sl-t"><thead><tr><th>When</th><th>Who</th><th>Message</th><th>Campaign</th><th>Device</th><th>Clicked after</th><th>Time on page</th></tr></thead><tbody>
+      ${(d.recent||[]).map(r=>`<tr><td>${esc(fmtDateTime(r.at))}</td><td>${esc(r.who||"—")}</td><td>${r.channel==="email"?"✉️":"💬"} ${esc(kind(r.kind))}</td><td>${esc(r.campaign||"—")}</td><td>${esc([r.os,r.browser].filter(Boolean).join(" · ")||r.device||"—")}</td><td>${r.minutes_after_send!=null?(r.minutes_after_send<60?r.minutes_after_send+"m":Math.round(r.minutes_after_send/60)+"h"):"—"}</td><td>${r.seconds!=null?`${secs(r.seconds)} <span class="muted">(${secs(r.active_seconds)} active)</span>`:'<span class="muted">—</span>'}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+  const ds = box.querySelector("#slDays"); if(ds) ds.onchange = ()=>{ _slDays = +ds.value || 7; adminShortLinks(); };
+  const sw = box.querySelector('[data-msw="sl"]'); if(sw) sw.onclick = async ()=>{
+    const want = !sw.classList.contains("on"); sw.disabled = true;
+    const { error:e } = await sb.schema("api").rpc("admin_set_short_links", { p_on: want }).then(x=>x, er=>({error:er}));
+    if(e){ sw.disabled = false; gateToast(e.message||String(e)); return; }
+    gateToast(want ? "🔗 Short links ON ✓" : "Short links OFF — new messages carry the full link"); adminShortLinks(); };
 }
 // one switch: tap to turn ON / OFF
 function mswHtml(key, label, on, sub){

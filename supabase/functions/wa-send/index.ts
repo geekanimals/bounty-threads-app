@@ -91,11 +91,34 @@ Deno.serve(async (req) => {
       return json({ error: "They haven't written to you in the last 24 hours — WhatsApp only lets a typed message go inside that window.", window_closed: true }, 409);
     }
 
+    // 🔗 every link in the message goes out as a short /s/… link (click + time-on-page tracking). Fails → full link.
+    const shortCache = new Map<string, string>();
+    const short = async (u: string, tpl: string | null): Promise<string> => {
+      if (!/^https?:\/\//i.test(u)) return u;
+      if (shortCache.has(u)) return shortCache.get(u)!;
+      let out = u;
+      try {
+        const { data: sl } = await admin.schema("api").rpc("ops_short_link", { p_url: u, p_channel: "whatsapp", p_outbox: null,
+          p_campaign: campaign_id ?? check_campaign ?? null, p_recipient: conv.contact_phone_e164, p_member: null,
+          p_template: tpl || "typed", p_sent_by: user.id });
+        if (typeof sl === "string" && /^https?:\/\//.test(sl)) out = sl;
+      } catch (_e) { /* full link */ }
+      shortCache.set(u, out); return out;
+    };
+    const shortText = async (t: string, tpl: string | null): Promise<string> => {
+      // a full stop / comma right after a link belongs to the sentence, not the link
+      const urls = [...new Set((String(t || "").match(/https?:\/\/[^\s<>"')]+/gi) || []).map((u) => u.replace(/[.,!?;:]+$/, "")))];
+      let o = String(t || "");
+      for (const u of urls) o = o.split(u).join(await short(u, tpl));
+      return o;
+    };
+    const varsShort = Array.isArray(variables) ? await Promise.all((variables as unknown[]).map((v) => typeof v === "string" ? short(v, template || null) : v)) : variables;
+
     let res: { wamid?: string | null } | null = null, usedTemplate: string | null = template || null;
     if (template || openWindow) {
       const out = template
-        ? { to: conv.contact_phone_e164, template, lang, variables, components }
-        : { to: conv.contact_phone_e164, text: String(text || "") };
+        ? { to: conv.contact_phone_e164, template, lang, variables: varsShort, components }
+        : { to: conv.contact_phone_e164, text: await shortText(String(text || ""), null) };
       res = await getProvider().send(out as any);
     } else {
       // outside the 24-hour window a typed message can only go inside an approved template — send it in the
@@ -116,14 +139,14 @@ Deno.serve(async (req) => {
       } catch (_e) { /* "there" */ }
       // the panel sends each creator's own link (an invite link for someone not registered yet) — only our own app
       const own = String(linkIn || "").trim();
-      const link = own && appUrl && own.startsWith(appUrl + "/") ? own : appUrl ? `${appUrl}/app.html` : "the Geek OS app";
+      const link = await short(own && appUrl && own.startsWith(appUrl + "/") ? own : appUrl ? `${appUrl}/app.html` : "the Geek OS app", "typed");
       // 3-variable templates (name · update · link) set in Settings / secrets first, then the approved
       // geek_team_update (name · campaign · update · link) that is always there
       let campName = String(subject || "").trim();
       if (!campName && campaign_id) {
         try { const { data: c } = await admin.from("campaigns").select("name").eq("id", campaign_id).maybeSingle(); if ((c as any)?.name) campName = String((c as any).name); } catch (_e) { /* */ }
       }
-      const upd = waParam(String(text));
+      const upd = waParam(await shortText(String(text), "typed"));
       const tries: { t: string; lang: string; vars: string[] }[] = [
         ...[genTpl, ...WA_BACKUP_TEMPLATES].filter((t, i, a) => t && t !== WA_TEAM_TEMPLATE && a.indexOf(t) === i)
           .map((t) => ({ t, lang: t === genTpl ? genLang : "en", vars: [waParam(name, 60), upd, waParam(link, 300)] })),
