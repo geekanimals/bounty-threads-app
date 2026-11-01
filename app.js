@@ -6929,6 +6929,12 @@ async function ccWaSend(go){
   } else if(ok){ _ccSel.clear(); _ccWa.open = false; _ccWa.text = ""; _ccWa.lastErr = ""; }
   paintBarterProcess();
 }
+// team side: a Drive link the brand can't open → say why, and let the team save it anyway if they're sure
+async function teamVideoLinkOk(url){
+  if(!url || !window.geekCheckVideoLink) return true;
+  const c = await window.geekCheckVideoLink(url);
+  return c.ok || confirm(`⚠️ The brand can't open this video link.\n\n${c.message||""}\n\nSave it anyway?`);
+}
 // someone uploaded / invited who isn't in the campaign yet (not registered, or registered and connecting)
 function ccInviteRowHtml(i, inCamp){
   const open = _ccInvOpen === i.invite_id, st = i.status==="invited" ? "registered" : (i.status||"registered");
@@ -6996,6 +7002,7 @@ function ccNeedsForm(title, what, needs, onSave){
     if(f.get("courier")) payload.courier = String(f.get("courier")).trim();
     if(f.get("tracking")){ const t = String(f.get("tracking")).trim(); if(/^https?:\/\//i.test(t)) payload.tracking_url = t; payload.tracking = t; }
     if(f.get("video_url")) payload.video_url = String(f.get("video_url")).trim();
+    if(payload.video_url && !await teamVideoLinkOk(payload.video_url)) return;
     if(posts.length) payload.post_urls = posts;
     btn.disabled = true; btn.textContent = "Saving…";
     const res = await onSave(payload);
@@ -7032,6 +7039,7 @@ function wireCcInvites(body){
     document.getElementById("ccIL").onsubmit = async e=>{ e.preventDefault();
       const f = new FormData(e.target), posts = String(f.get("posts")||"").split(/[\s,]+/).filter(Boolean), t = String(f.get("tracking")||"").trim();
       const payload = { courier: String(f.get("courier")||"").trim()||null, tracking: t||null, video_url: String(f.get("video_url")||"").trim()||null, post_urls: posts, notify:false };
+      if(payload.video_url && payload.video_url !== (i.video_url||"") && !await teamVideoLinkOk(payload.video_url)) return;
       const target = posts.length ? "posted" : (i.status||"registered");
       const r = await sb.schema("api").rpc("invite_set_step", { p_invite:i.invite_id, p_status: target, p_payload: payload }).then(x=>x, e2=>({error:e2}));
       if(r.error){ document.getElementById("ccILErr").textContent = r.error.message||String(r.error); return; }
@@ -7495,6 +7503,7 @@ function wireHubSetStep(d){
     if(r>=8 && r<=9 && !d.has_courier && (!courier || !track)){ err.textContent = "Add the courier name and the tracking ID / link."; return; }
     if(r>=11 && r<=12 && !d.has_video && !video){ err.textContent = "Add the video link."; return; }
     if(video && !/^https?:\/\//i.test(video)){ err.textContent = "The video link must start with https://"; return; }
+    if(video && !await teamVideoLinkOk(video)) return;
     if(posts.some(x=> !/instagram\.com\/(reel|reels|p|tv|stories)\//i.test(x))){ err.textContent = "Paste Instagram post links (instagram.com/reel/… , /p/… or /stories/…)."; return; }
     if(r>=13 && posts.length < left){ err.textContent = `Add the link of every post — ${left} needed, ${posts.length} added.`; return; }
     const lbl = bkStLabel(sel.value);

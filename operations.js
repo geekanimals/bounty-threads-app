@@ -10,6 +10,16 @@
 
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function api(fn,args){ return window.sb.schema("api").rpc(fn, args||{}); }
+  // Can the brand open this video link? Google Drive / Docs links are opened on the server like a logged-out person would.
+  // Anything else isn't checked. If the checker can't be reached the link is let through (never blocks a creator by itself).
+  window.geekCheckVideoLink = async function(url){
+    if(!/^https?:\/\/(drive|docs)\.google\.com\//i.test(String(url||"").trim())) return { ok:true, checked:false };
+    try{
+      var r = await window.sb.functions.invoke("video-link-check", { body:{ url:String(url).trim() } });
+      if(r.error || !r.data || typeof r.data.ok !== "boolean") return { ok:true, checked:false };
+      return r.data;
+    }catch(e){ return { ok:true, checked:false }; }
+  };
   function safeLink(u){ u=String(u||""); return /^https?:\/\//i.test(u)?u:"#"; }
   function campTypeLabel(t,st){ var T={barter:"Barter",paid:"Paid",barter_paid:"Barter + Paid"}, S={celebrity_story:"Story",normal_barter:"Normal barter",pr_package:"PR package"}; return (T[t]||t||"")+(st&&S[st]?" · "+S[st]:""); }
   // A creator who signed in with WhatsApp/email has no creator identity until the first profile action.
@@ -1324,11 +1334,15 @@
       + '<div class="cp-ob-actions"><button class="btn sm ghost" id="opsVidCancel">Cancel</button><button class="btn sm" id="opsVidSave">Submit for review</button></div>'
       + '<div class="ci-hint cp-err-inline" id="opsVidErr"></div>');
     document.getElementById("opsMx").onclick=closeModal; document.getElementById("opsVidCancel").onclick=closeModal;
-    document.getElementById("opsVidSave").onclick=function(){
+    document.getElementById("opsVidSave").onclick=async function(){
       var err=document.getElementById("opsVidErr"); err.textContent="";
       var url=(document.getElementById("opsVidUrl").value||"").trim(), note=(document.getElementById("opsVidNote").value||"").trim();
       if(!/^https?:\/\//i.test(url)){ err.textContent="Paste a link that starts with https://"; return; }
-      var btn=this; btn.disabled=true; btn.textContent="Submitting…";
+      var btn=this; btn.disabled=true; btn.textContent="Checking the link…";
+      // the brand must be able to open it — a private / deleted Drive link is stopped here, before it is submitted
+      var chk=await window.geekCheckVideoLink(url);
+      if(!chk.ok){ err.textContent="⚠️ "+(chk.message||"The brand can't open this link."); btn.disabled=false; btn.textContent="Submit for review"; return; }
+      btn.textContent="Submitting…";
       api("submit_campaign_video",{p_participation:part,p_url:url,p_note:note||null}).then(function(r){
         if(r.error){ err.textContent=r.error.message||r.error; btn.disabled=false; btn.textContent="Submit for review"; return; }
         closeModal(); loadMyCampaigns(); updateAlertsBadge();
