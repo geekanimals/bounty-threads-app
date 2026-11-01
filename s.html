@@ -31,7 +31,8 @@
   var fail = function(){ box.innerHTML = '<h2>Link not found</h2><p class="sub">This link isn\'t active any more. <a href="/app.html">Open Geek OS</a></p>'; };
   if(!slug || !URL_ || !KEY){ fail(); return; }
   var vid = ""; try{ vid = localStorage.getItem("gk_v") || ""; if(!vid){ vid = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("gk_v", vid); } }catch(e){}
-  var ref = ""; try{ ref = document.referrer ? new URL(document.referrer).hostname : ""; }catch(e){}
+  // where they came from: passed on by the home page forward (?r=), else the referrer — never our own domain
+  var ref = new URLSearchParams(location.search).get("r") || ""; try{ if(!ref && document.referrer){ var rh = new URL(document.referrer).hostname; if(rh !== location.hostname) ref = rh; } }catch(e){}
   var done = false, t = setTimeout(function(){ if(!done) fail(); }, 9000);
   // approximate city / country from our own host's edge (no third party) — given up after 1.2 s so the link stays fast
   var geo = Promise.race([ fetch("/api/geo", { cache:"no-store" }).then(function(r){ return r.json(); }).catch(function(){ return {}; }),

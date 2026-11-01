@@ -3,7 +3,8 @@
 <head>
 <script>/* short links on hosts without rewrites (nginx sends every unknown path to this page): /s/<slug> → s.html, /go/<slug> → go.html, /kit/<user> → p.html */
 (function(){ var p = location.pathname, q = location.search ? "&" + location.search.slice(1) : "", m;
-  if((m = p.match(/^\/(s|go)\/([A-Za-z0-9-]{3,40})\/?$/))){ location.replace("/" + (m[1]==="s" ? "s.html" : "go.html") + "?s=" + encodeURIComponent(m[2]) + q); return; }
+  if((m = p.match(/^\/(s|go)\/([A-Za-z0-9-]{3,40})\/?$/))){ var r = ""; try{ r = document.referrer ? new URL(document.referrer).hostname : ""; }catch(e){}
+    location.replace("/" + (m[1]==="s" ? "s.html" : "go.html") + "?s=" + encodeURIComponent(m[2]) + (r && r !== location.hostname ? "&r=" + encodeURIComponent(r) : "") + q); return; }
   if((m = p.match(/^\/kit\/([^\/?#]+)\/?$/))){ location.replace("/p.html?u=" + m[1] + q); } })();</script>
 
   <meta charset="UTF-8">
