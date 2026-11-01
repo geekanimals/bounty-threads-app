@@ -9119,9 +9119,99 @@ async function cuLoadList(){
 function adminTeamSettings(body){
   const t = document.createElement("div"); t.innerHTML = renderSettings();
   const h = t.querySelector(".page-head, .ph, header"); if(h) h.remove();
-  body.innerHTML = `<div class="card msw-card" id="msgSwCard"></div><div class="card sl-card" id="shortLinkCard"></div>` + t.innerHTML;
-  adminMsgSwitches(); adminShortLinks();
+  body.innerHTML = `<div class="card msw-card" id="msgSwCard"></div>` + t.innerHTML;
+  adminMsgSwitches();
   try{ renderIntegrations(); wireInviteForm(); loadTeam(); wireOrgProfileForm(); loadOrgProfile(); }catch(e){ console.warn("settings", e); }
+}
+// 🔗 Super Admin → Settings → Link shortener: paste ANY link → short link + full analytics. Below: the message links report.
+// (Campaign creator links /go/… are separate — Links & codes on each campaign.)
+let _lkQ = "", _lkOpen = null, _lkDays = 30, _lkData = null;
+const lkSecs = v=> v==null ? "—" : v<60 ? `${v}s` : `${Math.floor(v/60)}m ${String(v%60).padStart(2,"0")}s`;
+async function lkCopy(t, btn){
+  try{ await navigator.clipboard.writeText(t); }catch(e){ const x = document.createElement("textarea"); x.value = t; document.body.appendChild(x); x.select(); document.execCommand("copy"); x.remove(); }
+  if(btn){ const o = btn.textContent; btn.textContent = "✓ Copied"; setTimeout(()=> btn.textContent = o, 1400); } else gateToast("Copied ✓");
+}
+function adminLinks(body){
+  body.innerHTML = `<div class="card lk-card">
+      <h3 style="margin-top:0">🔗 Make a short link</h3>
+      <p class="muted" style="font-size:12.5px;margin:0 0 10px">Paste any link — a shop page, a form, a Drive file, a reel. You get <code>${esc(location.host)}/s/…</code> and every click is tracked: when, where (city), which phone / browser, where they came from, and — on our own pages — how long they stayed and how long they were active. Campaign creator links (🔗 Links &amp; codes on a campaign) stay separate.</p>
+      <form id="lkForm" class="lk-form">
+        <label class="lk-f"><span>Link</span><input name="url" type="url" required placeholder="https://…"></label>
+        <label class="lk-f"><span>Name (only you see it)</span><input name="title" maxlength="80" placeholder="Diwali offer — Instagram bio"></label>
+        <label class="lk-f"><span>Custom ending (optional)</span><input name="slug" maxlength="40" placeholder="diwali-offer"></label>
+        <button class="btn" type="submit">🔗 Shorten</button>
+      </form>
+      <div id="lkNew"></div>
+    </div>
+    <div class="card lk-card"><div class="sl-head"><h3 style="margin:0">Your links</h3><input id="lkQ" class="lk-q" placeholder="🔎 Search name / link…" value="${esc(_lkQ)}"></div><div id="lkList">${skel("table")}</div></div>
+    <div class="card sl-card" id="shortLinkCard"></div>`;
+  const f = body.querySelector("#lkForm");
+  f.onsubmit = async e=>{ e.preventDefault();
+    const d = new FormData(f), btn = f.querySelector("button"), out = body.querySelector("#lkNew");
+    btn.disabled = true; btn.textContent = "Shortening…";
+    const { data, error } = await sb.schema("api").rpc("admin_link_create", { p_url: String(d.get("url")||"").trim(),
+      p_title: String(d.get("title")||"").trim() || null, p_slug: String(d.get("slug")||"").trim() || null }).then(r=>r, e2=>({error:e2}));
+    btn.disabled = false; btn.textContent = "🔗 Shorten";
+    if(error){ out.innerHTML = `<div class="cc-wa-err">${esc(error.message||String(error))}</div>`; return; }
+    out.innerHTML = `<div class="lk-made"><span>✅ Ready (copied):</span> <a href="${esc(data.short)}" target="_blank" rel="noopener"><b>${esc(data.short.replace(/^https?:\/\//,""))}</b></a> <button type="button" class="btn sm" id="lkCopyNew">Copy</button></div>`;
+    out.querySelector("#lkCopyNew").onclick = ev=> lkCopy(data.short, ev.target);
+    lkCopy(data.short, null); f.reset(); _lkOpen = data.slug; adminLinksList(); };
+  const q = body.querySelector("#lkQ"); q.oninput = ()=>{ _lkQ = q.value; adminLinksList(true); };
+  adminLinksList(); adminShortLinks();
+}
+async function adminLinksList(local){
+  const box = document.getElementById("lkList"); if(!box) return;
+  if(!local || !_lkData){
+    const { data, error } = await sb.schema("api").rpc("admin_links_list").then(r=>r, e=>({error:e}));
+    if(error){ box.innerHTML = `<div class="muted">${esc(error.message||String(error))}</div>`; return; }
+    _lkData = data||{};
+  }
+  const base = _lkData.base || location.origin, q = _lkQ.trim().toLowerCase();
+  const rows = (_lkData.links||[]).filter(l=> !q || [l.title,l.url,l.slug].some(x=> String(x||"").toLowerCase().includes(q)));
+  if(!rows.length){ box.innerHTML = `<div class="muted">${(_lkData.links||[]).length ? "Nothing matches." : "No links yet — paste one above."}</div>`; return; }
+  box.innerHTML = `<div class="sl-tw"><table class="sl-t lk-t"><thead><tr><th>Link</th><th>Short link</th><th>Clicks</th><th>People</th><th>Last 24 h</th><th>Avg time</th><th>Last click</th><th></th></tr></thead><tbody>
+    ${rows.map(l=>{ const sh = `${base}/s/${l.slug}`;
+      return `<tr class="${l.active?"":"lk-off"}"><td><b>${esc(l.title||l.slug)}</b><div class="muted lk-url-s" title="${esc(l.url)}">${esc(l.url)}</div><div class="muted" style="font-size:11px">${esc(fmtDateTime(l.created_at))}${l.created_by?` · ${esc(l.created_by)}`:""}${l.active?"":" · ⏸ stopped"}</div></td>
+        <td><a href="${esc(sh)}" target="_blank" rel="noopener">${esc(sh.replace(/^https?:\/\//,""))}</a> <button type="button" class="mini-btn" data-lkcopy="${esc(sh)}">Copy</button></td>
+        <td><b>${l.clicks||0}</b></td><td>${l.people||0}</td><td>${l.clicks_24h||0}</td><td>${lkSecs(l.avg_seconds)}</td><td>${l.last_click_at?esc(fmtDateTime(l.last_click_at)):"—"}</td>
+        <td style="white-space:nowrap"><button type="button" class="btn sm ghost" data-lkstats="${esc(l.slug)}">📊 ${_lkOpen===l.slug?"Hide":"Analytics"}</button>
+          <button type="button" class="btn sm ghost" data-lkact="${esc(l.slug)}" data-on="${l.active?1:0}" title="${l.active?"Stop this link — it shows “Link not found”":"Turn this link back on"}">${l.active?"⏸ Stop":"▶ Turn on"}</button></td></tr>
+        ${_lkOpen===l.slug?`<tr class="lk-stats-row"><td colspan="8"><div id="lkStats">${skel("list",3)}</div></td></tr>`:""}`; }).join("")}</tbody></table></div>`;
+  box.querySelectorAll("[data-lkcopy]").forEach(b=> b.onclick = ()=> lkCopy(b.dataset.lkcopy, b));
+  box.querySelectorAll("[data-lkstats]").forEach(b=> b.onclick = ()=>{ _lkOpen = _lkOpen===b.dataset.lkstats ? null : b.dataset.lkstats; adminLinksList(true); });
+  box.querySelectorAll("[data-lkact]").forEach(b=> b.onclick = async ()=>{ const on = b.dataset.on!=="1";
+    if(!on && !confirm("Stop this link? Anyone who opens it will see “Link not found”. You can turn it back on any time.")) return;
+    const { error } = await sb.schema("api").rpc("admin_link_toggle", { p_slug: b.dataset.lkact, p_active: on }).then(r=>r, e=>({error:e}));
+    if(error){ gateToast(error.message||String(error)); return; } adminLinksList(); });
+  if(_lkOpen && rows.some(l=> l.slug===_lkOpen)) adminLinkStats(_lkOpen);
+}
+function lkOrd(n){ const s = ["th","st","nd","rd"], v = n % 100; return n + (s[(v-20)%10] || s[v] || s[0]); }
+async function adminLinkStats(slug){
+  const box = document.getElementById("lkStats"); if(!box) return;
+  const { data, error } = await sb.schema("api").rpc("admin_link_stats", { p_slug: slug, p_days: _lkDays }).then(r=>r, e=>({error:e}));
+  if(error){ box.innerHTML = `<div class="muted">${esc(error.message||String(error))}</div>`; return; }
+  const d = data||{}, t = d.totals||{};
+  const bars = arr=>{ const a = arr||[], max = Math.max(1, ...a.map(x=> x.n)); return a.length ? a.map(x=>`<div class="lk-bar"><span class="lk-bl" title="${esc(x.k)}">${esc(x.k)}</span><span class="lk-bt"><i style="width:${Math.round(100*x.n/max)}%"></i></span><b>${x.n}</b></div>`).join("") : `<div class="muted">—</div>`; };
+  const days = d.per_day||[], dmax = Math.max(1, ...days.map(x=> x.clicks));
+  const hours = d.by_hour||{}, hmax = Math.max(1, ...Object.values(hours).map(Number));
+  box.innerHTML = `<div class="sl-head"><div class="muted" style="font-size:12.5px;min-width:0;overflow:hidden;text-overflow:ellipsis">→ <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.url)}</a></div>
+      <select id="lkDays" class="sl-days">${[1,7,30,90,365].map(n=>`<option value="${n}"${n===_lkDays?" selected":""}>Last ${n===1?"24 hours":n===365?"year":n+" days"}</option>`).join("")}</select></div>
+    <div class="sl-kpis">
+      <div><b>${t.clicks||0}</b><span>clicks</span></div><div><b>${t.people||0}</b><span>people</span></div>
+      <div><b>${lkSecs(t.avg_seconds)}</b><span>avg time on page</span></div><div><b>${lkSecs(t.avg_active)}</b><span>avg active (mouse / touch)</span></div>
+      <div><b>${lkSecs(t.max_seconds)}</b><span>longest stay</span></div><div><b>${t.bots||0}</b><span>preview bots (not counted)</span></div></div>
+    <div class="muted" style="font-size:12px;margin:2px 0 10px">${t.first?`First click ${esc(fmtDateTime(t.first))} · last ${esc(fmtDateTime(t.last))}. `:"No clicks in this period yet. "}Time on page is measured only when the link opens one of our own pages.</div>
+    ${days.length?`<h4 class="lk-h">Clicks per day</h4><div class="lk-days">${days.map(x=>`<div class="lk-day" title="${esc(x.day)}: ${x.clicks}"><i style="height:${Math.max(4,Math.round(64*x.clicks/dmax))}px"></i><span>${esc(String(x.day).slice(5))}</span></div>`).join("")}</div>`:""}
+    ${Object.keys(hours).length?`<h4 class="lk-h">Time of day (IST)</h4><div class="lk-days lk-hours">${Array.from({length:24},(_,h)=>`<div class="lk-day" title="${h}:00 — ${hours[h]||0} clicks"><i style="height:${Math.max(2,Math.round(48*(hours[h]||0)/hmax))}px"></i><span>${h%3===0?h:""}</span></div>`).join("")}</div>`:""}
+    <div class="lk-grid">
+      <div><h4 class="lk-h">📍 City</h4>${bars(d.by_city)}</div>
+      <div><h4 class="lk-h">📱 Phone / computer</h4>${bars(d.by_os)}${bars(d.by_device)}</div>
+      <div><h4 class="lk-h">🌐 Browser / app</h4>${bars(d.by_browser)}</div>
+      <div><h4 class="lk-h">↪ Came from</h4>${bars(d.by_ref)}</div>
+    </div>
+    ${(d.recent||[]).length?`<h4 class="lk-h">Every click</h4><div class="sl-tw"><table class="sl-t"><thead><tr><th>When</th><th>Where</th><th>Device</th><th>From</th><th>Visit</th><th>Time on page</th></tr></thead><tbody>
+      ${(d.recent||[]).map(r=>`<tr><td>${esc(fmtDateTime(r.at))}</td><td>${esc(r.place||"—")}</td><td>${esc([r.os,r.browser].filter(Boolean).join(" · ")||r.device||"—")}</td><td>${esc(r.ref||"direct / app")}</td><td>${r.visit_no>1?esc(lkOrd(r.visit_no))+" visit":"first"}</td><td>${r.seconds!=null?`${lkSecs(r.seconds)} <span class="muted">(${lkSecs(r.active_seconds)} active)</span>`:'<span class="muted">—</span>'}</td></tr>`).join("")}</tbody></table></div>`:""}`;
+  const ds = box.querySelector("#lkDays"); if(ds) ds.onchange = ()=>{ _lkDays = +ds.value || 30; adminLinkStats(slug); };
 }
 // 🔗 Super Admin → Settings: short links in every message + who clicked, when, on what, how long they stayed
 let _slDays = 7;
@@ -9135,7 +9225,7 @@ async function adminShortLinks(){
   const pct = (a,b)=> b ? Math.round(100*a/b)+"%" : "—";
   const kind = k=> String(k||"other").replace(/_/g," ").replace(/^geek /,"");
   const dev = Object.entries(d.by_device||{}).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${esc(k)} ${n}`).join(" · ") || "—";
-  box.innerHTML = `<div class="sl-head"><h3 style="margin:0">🔗 Short links &amp; click tracking</h3>
+  box.innerHTML = `<div class="sl-head"><h3 style="margin:0">💬 Links in WhatsApp / email messages</h3>
       <select id="slDays" class="sl-days">${[1,7,30,90].map(n=>`<option value="${n}"${n===_slDays?" selected":""}>Last ${n===1?"24 hours":n+" days"}</option>`).join("")}</select></div>
     <p class="muted" style="font-size:12.5px;margin:6px 0 10px">Every link in a WhatsApp / email message goes out short (<code>${esc(location.host)}/s/…</code>). A click is logged with the device and how long after the message it came; on our own pages the time they stayed — and how long they were active (mouse / touch / scroll) — is logged too. Link-preview bots are not counted.</p>
     <div class="msw-row">${mswHtml("sl","🔗 Short links + tracking", on, on ? "New messages carry short links" : "New messages carry the full link — nothing is tracked")}</div>
@@ -9447,9 +9537,9 @@ async function adminActivityTimeline(member, row, target){
 
 // the tools that live under ⚙️ Advanced (no tab row any more — the sidebar opens each page)
 // ⚙️ Settings — every platform / team setting on one page (tabs), nothing duplicated from the sidebar
-const ADMIN_ADVANCED = [["settings","👥 Team & integrations"],["admins","🛡 Super admins"],["orgs","🏢 Workspaces"],["audit","📜 Audit log"],["data","🗄 Data browser"],["check","🩺 System check"],["campaigns","🗑 Campaign delete requests"]];
+const ADMIN_ADVANCED = [["settings","👥 Team & integrations"],["links","🔗 Link shortener"],["admins","🛡 Super admins"],["orgs","🏢 Workspaces"],["audit","📜 Audit log"],["data","🗄 Data browser"],["check","🩺 System check"],["campaigns","🗑 Campaign delete requests"]];
 const ADMIN_TITLES = { overview:"Command centre", applications:"All applications", creators:"Creators", users:"All users", delivery:"WhatsApp & email", bot:"WhatsApp bot",
-  upload:"Creator upload", activity:"Activity", check:"Settings", advanced:"Settings", settings:"Settings", orgs:"Settings", data:"Settings", audit:"Settings", admins:"Settings",
+  upload:"Creator upload", activity:"Activity", links:"Settings", check:"Settings", advanced:"Settings", settings:"Settings", orgs:"Settings", data:"Settings", audit:"Settings", admins:"Settings",
   approvals:"Approvals", campaigns:"Settings" };
 function renderAdmin(){
   let html = pageHead("Super Admin" + (ADMIN_TITLES[_adminTab] ? " · " + ADMIN_TITLES[_adminTab] : ""), "Full cross-workspace control — every record, every change, with timestamps.");
@@ -9463,7 +9553,7 @@ function loadAdmin(){
   const body = document.getElementById("adminBody");
   if(!body || !window.sb) return;
   if(_adminTab==="advanced") _adminTab = "settings";
-  ({ settings:adminTeamSettings, advanced:adminTeamSettings, overview:adminOverview, creators:adminCreators, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, delivery:adminDelivery, bot:adminBotPage, upload:adminCreatorUpload, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins }[_adminTab] || adminOverview)(body);
+  ({ settings:adminTeamSettings, advanced:adminTeamSettings, overview:adminOverview, creators:adminCreators, users:adminUsers, campaigns:adminCampaigns, applications:adminApplications, delivery:adminDelivery, bot:adminBotPage, upload:adminCreatorUpload, activity:adminActivity, orgs:adminOrgs, data:adminData, audit:adminAudit, check:adminSystemCheck, approvals:adminApprovals, admins:adminAdmins, links:adminLinks }[_adminTab] || adminOverview)(body);
 }
 
 /* System check — live-verifies the deployed database matches the code (tables, columns, RPCs).

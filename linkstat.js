@@ -4,7 +4,7 @@
   "use strict";
   var q; try{ q = new URLSearchParams(location.search); }catch(e){ return; }
   var slug = (q.get("gl") || "").toLowerCase(); try{ if(slug) sessionStorage.setItem("gk_gl", slug); else slug = sessionStorage.getItem("gk_gl") || ""; }catch(e){}
-  if(!/^[a-z0-9]{5,16}$/.test(slug)) return;
+  if(!/^[a-z0-9-]{3,40}$/.test(slug)) return;
   var C = window.GEEK_CONFIG || {}; if(!C.supabaseUrl || !C.supabaseKey) return;
   var vid = ""; try{ vid = localStorage.getItem("gk_v") || ""; }catch(e){}
   var seen = 0, active = 0, lastAct = Date.now(), lastTick = Date.now(), sent = -1;

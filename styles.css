@@ -2687,3 +2687,27 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .sl-t{width:100%;border-collapse:collapse;font-size:13px}
 .sl-t th,.sl-t td{padding:7px 8px;border-bottom:1px solid var(--line,#e7e9f3);text-align:left;white-space:nowrap}
 .sl-t th{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#5d6380)}
+
+/* 🔗 Settings → Link shortener */
+.lk-card{margin-bottom:14px}
+.lk-form{display:grid;grid-template-columns:2fr 1.3fr 1fr auto;gap:10px;align-items:end}
+.lk-f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted,#5d6380)}
+.lk-f input{padding:10px 12px;border-radius:10px;border:1px solid var(--line,#e7e9f3);background:transparent;color:inherit;font-size:14px}
+@media (max-width:900px){ .lk-form{grid-template-columns:1fr} }
+.lk-made{margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(34,197,94,.12);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lk-q{padding:8px 12px;border-radius:10px;border:1px solid var(--line,#e7e9f3);background:transparent;color:inherit;min-width:220px}
+.lk-t td{vertical-align:top}
+.lk-url-s{max-width:280px;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.lk-off{opacity:.55}
+.lk-stats-row>td{white-space:normal!important;background:rgba(91,91,240,.04)}
+.lk-h{margin:14px 0 6px;font-size:13px}
+.lk-days{display:flex;align-items:flex-end;gap:3px;min-height:80px;overflow-x:auto;padding-bottom:2px}
+.lk-day{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:18px;flex:1}
+.lk-day i{display:block;width:100%;max-width:22px;border-radius:4px 4px 0 0;background:linear-gradient(180deg,#8f6bff,#5b5bf0)}
+.lk-day span{font-size:10px;color:var(--muted,#5d6380)}
+.lk-hours{min-height:60px}
+.lk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.lk-bar{display:grid;grid-template-columns:minmax(80px,1.2fr) 2fr auto;gap:8px;align-items:center;font-size:12.5px;margin:4px 0}
+.lk-bl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lk-bt{height:8px;border-radius:6px;background:rgba(127,127,160,.15);overflow:hidden}
+.lk-bt i{display:block;height:100%;background:#5b5bf0;border-radius:6px}

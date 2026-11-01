@@ -25,17 +25,21 @@
 // 🔗 Message short link (<app>/s/<slug>): log the click, then open the real page. Link-preview bots don't run this.
 (function(){
   var C = window.GEEK_CONFIG || {}, URL_ = C.supabaseUrl, KEY = C.supabaseKey;
-  var m = location.pathname.match(/\/s\/([a-z0-9]{5,16})/i), slug = (m && m[1]) || new URLSearchParams(location.search).get("s") || "";
+  var m = location.pathname.match(/\/s\/([a-z0-9-]{3,40})/i), slug = (m && m[1]) || new URLSearchParams(location.search).get("s") || "";
   var box = document.getElementById("box");
   var fail = function(){ box.innerHTML = '<h2>Link not found</h2><p class="sub">This link isn\'t active any more. <a href="/app.html">Open Geek OS</a></p>'; };
   if(!slug || !URL_ || !KEY){ fail(); return; }
   var vid = ""; try{ vid = localStorage.getItem("gk_v") || ""; if(!vid){ vid = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("gk_v", vid); } }catch(e){}
   var ref = ""; try{ ref = document.referrer ? new URL(document.referrer).hostname : ""; }catch(e){}
-  var done = false, t = setTimeout(function(){ if(!done) fail(); }, 8000);
-  fetch(URL_ + "/rest/v1/rpc/msg_link_open", { method:"POST", keepalive:true,
-    headers:{ "apikey":KEY, "Authorization":"Bearer " + KEY, "Content-Type":"application/json" },
-    body: JSON.stringify({ p_slug: slug, p_visitor: vid, p_device: /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? "mobile" : "desktop",
-                           p_ua: navigator.userAgent, p_ref: ref }) })
+  var done = false, t = setTimeout(function(){ if(!done) fail(); }, 9000);
+  // approximate city / country from our own host's edge (no third party) — given up after 1.2 s so the link stays fast
+  var geo = Promise.race([ fetch("/api/geo", { cache:"no-store" }).then(function(r){ return r.json(); }).catch(function(){ return {}; }),
+                           new Promise(function(res){ setTimeout(function(){ res({}); }, 1200); }) ]);
+  geo.then(function(g){ g = g || {};
+    return fetch(URL_ + "/rest/v1/rpc/msg_link_open", { method:"POST", keepalive:true,
+      headers:{ "apikey":KEY, "Authorization":"Bearer " + KEY, "Content-Type":"application/json" },
+      body: JSON.stringify({ p_slug: slug, p_visitor: vid, p_device: /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? "mobile" : "desktop",
+                             p_ua: navigator.userAgent, p_ref: ref, p_city: g.city || null, p_region: g.region || null, p_country: g.country || null }) }); })
   .then(function(r){ return r.json(); })
   .then(function(d){ done = true; clearTimeout(t);
     if(!d || !d.ok || !/^https?:\/\//i.test(d.dest || "")){ fail(); return; }
