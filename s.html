@@ -24,7 +24,8 @@
 <script>
 // 🔗 Message short link (<app>/s/<slug>): log the click, then open the real page. Link-preview bots don't run this.
 (function(){
-  var C = window.GEEK_CONFIG || {}, URL_ = C.supabaseUrl, KEY = C.supabaseKey;
+  // same public project + publishable key as go.html: some hosts (nginx) don't serve /api/config
+  var C = window.GEEK_CONFIG || {}, URL_ = C.supabaseUrl || "https://edibibytqfrrxfztukpm.supabase.co", KEY = C.supabaseKey || "sb_publishable_3tB8b43BqyJSO6_5HIVbTw_d5QOZqDf";
   var m = location.pathname.match(/\/s\/([a-z0-9-]{3,40})/i), slug = (m && m[1]) || new URLSearchParams(location.search).get("s") || "";
   var box = document.getElementById("box");
   var fail = function(){ box.innerHTML = '<h2>Link not found</h2><p class="sub">This link isn\'t active any more. <a href="/app.html">Open Geek OS</a></p>'; };
