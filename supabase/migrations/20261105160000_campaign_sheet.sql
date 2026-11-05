@@ -19,7 +19,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       'name', coalesce(nullif(btrim(m.name), ''), card->>'name', inv.full_name),
       'instagram', coalesce(card->>'username', p.applied_profile, inv.handle),
       'whatsapp', coalesce(intel.ci_member_phone(mid.mid), inv.phone_e164),
-      'email', coalesce(case when m.email !~* '@creators\.bountythreads\.app$' then nullif(m.email, '') end, inv.email),
+      'email', coalesce(case when m.email !~* '@creators\.bountythreads\.app$' then nullif(m.email, '') end, (select nullif(btrim(cc.email), '') from private.creator_contact cc where cc.identity_id = p.identity_id and cc.email !~* '@creators\.bountythreads\.app$' limit 1), inv.email),
       'city', coalesce(ad.city, inv.city, card->>'city'),
       'status_key', st.k, 'status', case when st.out then 'Out — ' || replace(p.stage, '_', ' ') else intel.ci_sheet_status_label(st.k) end,
       'address', coalesce(nullif(concat_ws(', ', nullif(btrim(ad.line1), ''), nullif(btrim(ad.line2), ''), nullif(btrim(ad.landmark), ''), nullif(btrim(ad.city), '')), ''),

@@ -23,7 +23,7 @@ begin
       select 'i:' || i.invite_id key, i.phone_e164 phone, i.email, i.city, coalesce(i.claimed_by, i.reserved_by) mid, i.created_at since
         from intel.ci_campaign_invite i where i.campaign_id = v_c and i.participation_id is null
       union all
-      select 'p:' || p.participation_id, coalesce(intel.ci_member_phone(mm.mid), inv.phone_e164), coalesce(case when m.email !~* '@creators\.bountythreads\.app$' then nullif(m.email, '') end, inv.email, nullif(m.email, '')), inv.city, mm.mid,
+      select 'p:' || p.participation_id, coalesce(intel.ci_member_phone(mm.mid), inv.phone_e164), coalesce(case when m.email !~* '@creators\.bountythreads\.app$' then nullif(m.email, '') end, (select nullif(btrim(cc.email), '') from private.creator_contact cc where cc.identity_id = p.identity_id and cc.email !~* '@creators\.bountythreads\.app$' limit 1), inv.email, nullif(m.email, '')), inv.city, mm.mid,
              coalesce(inv.created_at, p.created_at)
         from intel.ci_campaign_participation p
         left join lateral (select intel.ci_member_of_identity(p.identity_id) as mid) mm on true
