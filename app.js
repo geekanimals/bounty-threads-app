@@ -1480,7 +1480,7 @@ function renderCampaignWorkspace(c, apps, barter, pipe){
     </div>
     <div class="cc-actions">
       <button class="btn" id="ccMatch" data-wspanel="invPanel">🎯 Find matching creators</button>
-      <button class="btn ghost" data-ccsec="bulk">📄 Sheet</button>
+      <button class="btn ghost" data-ccsec="bulk">📄 Bulk sheet</button>
       ${window.__isAdmin && ["paid","barter_paid"].includes(c.campaign_type) ? `<button class="btn ghost" data-ccsec="payments">💰 Payments</button>` : ""}
       ${window.__isAdmin ? `<button class="btn ghost" data-ccsec="messages">💬 Messages &amp; templates</button>` : ""}
       <button class="btn ghost" data-ccsec="terms">📜 Contract &amp; video brief</button>
@@ -7011,7 +7011,7 @@ function paintBarterProcess(){
   const failed = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
   const done = s => list.filter(x=> !failed(x.stage) && bpEffectiveIndex(x) >= bpStageIndex(s)).length;
   const needsYou = list.filter(x=> ["applied","eligible","sent_to_brand","address_confirmed","product_sent","content_submitted","published"].includes(x.stage)).length;
-  const tabs = [["tracker",`👥 Creators (${list.length})`],["bulk","📄 Sheet"],["terms","📜 Contract & video brief"],["analytics","📈 Analytics"],["outreach","✉️ Outreach message"],["shortlist","📋 List for the brand"]];
+  const tabs = [["tracker",`👥 Creators (${list.length})`],["bulk","📄 Bulk sheet"],["terms","📜 Contract & video brief"],["analytics","📈 Analytics"],["outreach","✉️ Outreach message"],["shortlist","📋 List for the brand"]];
   if(window.__isAdmin){ if(typeof payHtml==="function" && bkKind()!=="barter") tabs.push(["payments","💰 Payments"]); if(typeof msgMapHtml==="function") tabs.push(["messages","💬 Messages"]); }
   const pb = d.playbook||{};
   body.innerHTML = `<div class="ac360-head"><div style="flex:1;min-width:0"><h3>${bpProcName()}</h3>
@@ -7166,7 +7166,7 @@ function paintCampaignCommandInner(body){
       const l = document.querySelector("#bpBody .cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); }; }
   const TILES = bpNoShip() ? CC_TILES.filter(t=> !BP_SHIP.includes(t[0])) : CC_TILES;
   const tile = t => `<button type="button" class="cc-tile${_ccFilter===t[0]?" on":""}" data-cctile="${t[0]}" title="${esc(t[2]||t[1])}"><b>${rows.filter(r=>ccMatch(t[0], r)).length}</b><span>${esc(t[1])}</span>${t[2]&&t[0]!=="all"?`<i>${esc(t[2])}</i>`:""}</button>`;
-  const secTitle = { messages:"💬 Messages & templates — every step: WhatsApp · email · app", payments:"💰 Payments — every creator A–Z (Super Admins only)", bulk:"📄 Sheet — upload, download &amp; Google Sheet", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand", tracking:"🔗 Links & codes — every creator's own link and code: clicks, code copies, orders, sales" }[_bpTab];
+  const secTitle = { messages:"💬 Messages & templates — every step: WhatsApp · email · app", payments:"💰 Payments — every creator A–Z (Super Admins only)", bulk:"📄 Bulk sheet — upload, download &amp; Google Sheet", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand", tracking:"🔗 Links & codes — every creator's own link and code: clicks, code copies, orders, sales" }[_bpTab];
   const P0 = shown.filter(r=>r.kind==="p").map(r=>r.x), Iall0 = shown.filter(r=>r.kind==="i");
   const fP = x=> { const c = x.creator||{}; return { fol: c.followers ?? ((pubOf(c.username||x.applied_profile)||{}).followers), geek: c.followers!=null && !!c.username,
       posted: (x.posts||[]).length>0, name: String(c.username||c.name||x.applied_profile||"").toLowerCase(), step: bpEffectiveIndex(x)*10,
@@ -7214,7 +7214,7 @@ function paintCampaignCommandInner(body){
       <div class="cc-hint muted">Tap a creator to open everything — every step with its time, contract, address, courier, video, posts with their numbers — and do any action right there. Changing a step asks only for what it needs (courier, video link, the link of every post).</div>
       ${ccSortedHtml(P, Ion, fP, fI)}
       ${I.length ? `<div class="cc-invh">${P.length||Ion.length?"Uploaded / invited — not in the campaign yet":""}</div>` + I.map(r=>ucInvHtml(r.i)).join("") : ""}
-      ${!(P.length+Iall.length)?`<div class="muted" style="padding:14px">${rows.length?"Nobody here.":"Nobody on this campaign yet — use 🎯 Find matching creators or 📄 Sheet."}</div>`:""}
+      ${!(P.length+Iall.length)?`<div class="muted" style="padding:14px">${rows.length?"Nobody here.":"Nobody on this campaign yet — use 🎯 Find matching creators or 📄 Bulk sheet."}</div>`:""}
     </div>`;
   body.querySelectorAll("[data-cctile]").forEach(b=> b.onclick = ()=>{ _ccFilter = _ccFilter===b.dataset.cctile && b.dataset.cctile!=="all" ? "all" : b.dataset.cctile; paintBarterProcess();
     const l = body.querySelector(".cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); });
