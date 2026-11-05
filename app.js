@@ -6988,6 +6988,15 @@ async function loadBpAnalytics(quiet){
 function bpStageIndex(stage){ stage = BP_ALIAS[stage] || stage; const i = BARTER_STEPS.findIndex(s=>s[0]===stage); return i<0 ? 0 : i; }
 // a creator whose parcel is delivered sits between "courier sent" and "video brief sent"
 function bpEffectiveIndex(x){ const i = bpStageIndex(x.stage); return (x.stage==="product_sent" && x.shipment && x.shipment.status==="delivered") ? bpStageIndex("product_delivered") : i; }
+// ▼ open / close a creator: the page repaints, but the card you tapped stays exactly where it was on screen
+// (no jump up / down when another open card above it closes, or the list redraws)
+function bpKeepPlace(el, attr, paint){
+  const v = el.getAttribute(attr), same = [...document.querySelectorAll(`[${attr}="${CSS.escape(v)}"]`)], idx = Math.max(0, same.indexOf(el));
+  const top = el.getBoundingClientRect().top;
+  paint();
+  const fix = ()=>{ const n = document.querySelectorAll(`[${attr}="${CSS.escape(v)}"]`)[idx]; if(n){ const d = n.getBoundingClientRect().top - top; if(Math.abs(d) > 1) window.scrollBy(0, d); } };
+  fix(); requestAnimationFrame(fix); setTimeout(fix, 120);
+}
 function paintBarterProcess(){
   if(_wsMode && _wsCampaign && _wsCampaign.id) navSave({ camp: _wsCampaign.id, bpTab: _bpTab });
   const body = document.getElementById("bpBody"); if(!body) return;
@@ -7087,7 +7096,9 @@ function ucWire(root, after){
 // every list of creators in a campaign shows the one card (photo + %, number, email, followers, city, step bar, stuck, turn, messages, action)
 function ucPartsHtml(list){ if(!list.length) return bpTrackerHtml(list); ucStatsLoad(ucAfterStats); return list.map(x=> ucFromPart(x, x.from_bulk ? "via upload" : "")).join(""); }
 function ucInvHtml(i, inCamp){ ucStatsLoad(ucAfterStats); return ucFromInvite(i, inCamp, i.source==="bulk" || i.batch_id ? "via upload" + (i.created_at?` · ${fmtDate(i.created_at)}`:"") : ""); }
-function ucAfterStats(){ if(document.getElementById("bpBody") && typeof paintBarterProcess==="function") paintBarterProcess(); }
+function ucAfterStats(){ if(!document.getElementById("bpBody") || typeof paintBarterProcess!=="function") return;
+  // the message counts arrived — redraw without moving the page
+  const y = window.scrollY; paintBarterProcess(); if(Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y); }
 function ccSortedHtml(P, Ion, fP, fI){
   const items = P.map(x=>({ kind:"p", x, f:fP(x) })).concat(Ion.map(r=>({ kind:"i", i:r.i, f:fI(r.i) })));
   const num = v => v==null ? -1 : +v;
@@ -7511,7 +7522,7 @@ async function ccSetInviteStep(i, st, sel){
 }
 function wireCcInvites(body){
   const inv = ((_bpPeople && _bpPeople.invites)||[]), find = id => inv.find(x=>x.invite_id===id);
-  body.querySelectorAll("[data-ccinvopen]").forEach(h=> h.onclick = e=>{ if(e.target.closest("a,button,select,label,input")) return; _ccInvOpen = _ccInvOpen===h.dataset.ccinvopen ? null : h.dataset.ccinvopen; paintBarterProcess(); });
+  body.querySelectorAll("[data-ccinvopen]").forEach(h=> h.onclick = e=>{ if(e.target.closest("a,button,select,label,input")) return; _ccInvOpen = _ccInvOpen===h.dataset.ccinvopen ? null : h.dataset.ccinvopen; bpKeepPlace(h, "data-ccinvopen", paintBarterProcess); });
   body.querySelectorAll("[data-ccinvset]").forEach(sel=> sel.onchange = ()=>{ const i = find(sel.dataset.ccinvset); if(i) ccSetInviteStep(i, sel.value, sel); });
   body.querySelectorAll("[data-ccinvlinks]").forEach(b=> b.onclick = ()=>{ const i = find(b.dataset.ccinvlinks); if(!i) return;
     const m = bpModal("Add links / courier", `<form class="modal-form" id="ccIL">
@@ -8388,7 +8399,7 @@ function wireBarterProcess(){
   ucWire(body);
   const again = ()=> loadBarterProcess(true);
   body.querySelectorAll("[data-bpprof]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); bpCreatorProfile(b.dataset.bpprof); });
-  body.querySelectorAll("[data-bpopen]").forEach(h=> h.onclick = e=>{ if(e.target.closest("button,a,select,input,label")) return; _bpOpen = _bpOpen===h.dataset.bpopen ? null : h.dataset.bpopen; paintBarterProcess(); });
+  body.querySelectorAll("[data-bpopen]").forEach(h=> h.onclick = e=>{ if(e.target.closest("button,a,select,input,label")) return; _bpOpen = _bpOpen===h.dataset.bpopen ? null : h.dataset.bpopen; bpKeepPlace(h, "data-bpopen", paintBarterProcess); });
   wireBpActions(body, again);
   const rep = body.querySelector("#bpRepCsv"); if(rep) rep.onclick = ()=> bpDownloadReport();
   body.querySelectorAll("[data-repshot]").forEach(b=> b.onclick = ()=> openRepShot((window._bpRepRows||[])[+b.dataset.repshot]));
