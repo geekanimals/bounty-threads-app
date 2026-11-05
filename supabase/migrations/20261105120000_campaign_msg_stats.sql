@@ -7,7 +7,7 @@ begin
   v_c := intel.ci_resolve_campaign(p_campaign);
   if v_c is null or not intel.ci_can_manage_campaign(v_c) then raise exception 'not your campaign' using errcode = '42501'; end if;
   return coalesce((select jsonb_object_agg(t.key, jsonb_build_object(
-      'email', t.email, 'city', t.city,
+      'email', t.email, 'city', t.city, 'phone', t.phone,
       'wa', (select count(*) from intel.ci_outbox o where o.campaign_id = v_c and o.channel = 'whatsapp' and o.status = 'sent'
                and (o.to_address = t.phone or (t.mid is not null and o.recipient_member_id = t.mid)))
             + (select count(*) from public.wa_messages m join public.wa_conversations c on c.id = m.conversation_id

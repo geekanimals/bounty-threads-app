@@ -2745,6 +2745,8 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .uc-via{font-size:11.5px;font-weight:600;color:#6d5efc;background:rgba(109,94,252,.1);padding:2px 8px;border-radius:10px}
 .uc-l2{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted)}
 .uc-l2 b{color:var(--ink)}
+.uc-l2 a{color:inherit;text-decoration:none}.uc-l2 a:hover b{text-decoration:underline}
+.uc-wa b{color:#15803d!important}.uc-none{opacity:.6;font-style:italic}
 .uc-l3{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:13px}
 .uc-bar{display:inline-flex;gap:3px}
 .uc-bar i{width:18px;height:5px;border-radius:3px;background:#e5e7eb}

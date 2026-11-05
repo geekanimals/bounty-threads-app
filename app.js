@@ -6208,7 +6208,7 @@ function ucDetailOf(html){ try{ const t = document.createElement("div"); t.inner
 function ucCardHtml(c){
   // c: { key, pic, handle, name, phone, email, city, followers, pct, via, tags, filled, total, stepTxt, nx, days, acts, chat, openAttr, open, detail }
   const st = (_ucStats && _ucStats.camp===(_bpCamp&&_bpCamp.id) && _ucStats.data && _ucStats.data[c.key]) || null;
-  const email = c.email || (st && st.email), city = c.city || (st && st.city);
+  const email = c.email || (st && st.email), city = c.city || (st && st.city); c.phone = c.phone || (st && st.phone);
   const ini = esc(String(c.handle||c.name||"?").replace(/^@/,"").slice(0,2).toUpperCase());
   const pct = c.pct!=null ? Math.max(0, Math.min(100, +c.pct||0)) : null;
   const ring = pct!=null ? `style="--uc-p:${pct}"` : "";
@@ -6221,7 +6221,7 @@ function ucCardHtml(c){
       <span class="uc-av${pct!=null?" ring":""}" ${ring}>${c.pic?`<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${ini}'}))">`:`<span>${ini}</span>`}${pct!=null?`<em>${pct}%</em>`:""}</span>
       <div class="uc-main">
         <div class="uc-l1"><b class="uc-name">${esc(c.name || (c.handle?"@"+c.handle:"Creator"))}</b>${c.handle?igLink(c.handle):""}${c.via?`<span class="uc-via">${esc(c.via)}</span>`:""}${c.tags||""}</div>
-        <div class="uc-l2">${c.phone?`<span>📞 ${esc(c.phone)}</span>`:""}${email && !ucIsFakeEmail(email)?`<span>✉️ ${esc(email)}</span>`:""}${c.followers!=null?`<span>👥 <b>${fmtNum(c.followers)}</b> followers</span>`:""}${city?`<span>📍 ${esc(city)}</span>`:""}</div>
+        <div class="uc-l2">${c.phone?`<a class="uc-wa" href="https://wa.me/${esc(String(c.phone).replace(/\D/g,""))}" target="_blank" rel="noopener" title="Open their WhatsApp">🟢 WhatsApp <b>${esc(c.phone)}</b></a>`:`<span class="uc-none">🟢 WhatsApp —</span>`}${email && !ucIsFakeEmail(email)?`<a class="uc-mail" href="mailto:${esc(email)}" title="Email them">✉️ <b>${esc(email)}</b></a>`:`<span class="uc-none">✉️ no email</span>`}${c.followers!=null?`<span>👥 <b>${fmtNum(c.followers)}</b> followers</span>`:""}${city?`<span>📍 ${esc(city)}</span>`:""}</div>
         <div class="uc-l3"><span class="uc-bar">${seg}</span><span class="uc-step">${c.stepTxt||""}</span></div>
         <div class="uc-l4">${bpTurnChip(c.nx)} <b class="uc-stuck">${esc(c.nx.title)}</b>${c.days?` <span class="muted">· ${esc(c.days)}</span>`:""}
           <span class="uc-cnts"${last}>${cnt("🟢","WhatsApp", st&&st.wa)}${cnt("✉️","Email", st&&st.em)}${cnt("🔔","Reminders", st&&st.rem)}</span></div>
@@ -6231,7 +6231,7 @@ function ucCardHtml(c){
     ${c.open ? c.detail : ""}
   </div>`;
 }
-function ucFromInvite(i, inCamp, via){
+function ucFromInvite(i, inCamp, via, h){ h = h||{};
   const st = i.status==="invited" ? "registered" : (i.status||"registered"), miss = i.needs||[];
   const pp = i.handle ? pubOf(i.handle) : null;
   const nx = inCamp && st==="posted" ? { turn:"done", title:"Done ✓" }
@@ -6241,7 +6241,7 @@ function ucFromInvite(i, inCamp, via){
   const open = _ccInvOpen === i.invite_id;
   const act = !(inCamp && st==="posted") ? (!i.registered ? `<button type="button" class="btn sm bp-rowact" data-hubre="${esc(i.invite_id)}" data-ccre="1">↻ Resend invite</button>`
       : miss.length && i.phone ? `<button type="button" class="btn sm bp-rowact cc-wabtn" data-ccig="i:${esc(i.invite_id)}">📸 Connect Instagram</button>` : "") : "";
-  return ucCardHtml({ key:"i:"+i.invite_id, pic: pp && pp.profile_picture_url, handle:i.handle, name:i.name, phone:i.phone, email:i.email, city:i.city,
+  return ucCardHtml({ key:"i:"+i.invite_id, pic: pp && pp.profile_picture_url, handle:i.handle||h.handle, name:i.name||h.name, phone:i.phone||h.phone, email:i.email||h.email, city:i.city||h.city,
     followers: (pp && pp.followers) ?? i.followers, pct: i.profile_pct!=null ? i.profile_pct : null, via,
     tags: i.registered ? `<span class="tag warn">📸 On Geek · connect Instagram</span>` : "",
     filled: i.registered ? 1 : 0, total: bpJourney().length,
@@ -6250,14 +6250,14 @@ function ucFromInvite(i, inCamp, via){
     acts: act, chat: `<button type="button" class="bp-chatbtn uc-chat" data-ccinvchat="${esc(i.invite_id)}" title="Messages &amp; WhatsApp">💬</button>`,
     openAttr: `data-ccinvopen="${esc(i.invite_id)}"`, open, detail: open ? ucDetailOf(ccInviteRowHtml(i, inCamp)) : "" });
 }
-function ucFromPart(x, via){
+function ucFromPart(x, via, h){ h = h||{};
   const cr0 = x.creator||{}, pubH = cr0.followers==null && (cr0.username || x.applied_profile) ? pubHandle(cr0.username || x.applied_profile) : "", pp = pubH ? pubOf(pubH) : null;
   const cr = Object.assign({}, cr0, { username: cr0.username || pubH, profile_picture_url: cr0.profile_picture_url || (pp && pp.profile_picture_url) || null, followers: cr0.followers ?? (pp && pp.followers) });
   const P = x.participation_id, nx = bpNext(x), J = bpJourney(), j = bpJIndex(x), open = _bpOpen === P;
   const today = new Date().toISOString().slice(0,10);
   const overdue = x.due_on && x.due_on < today && ["content_created","changes_requested"].includes(x.stage);
   const lastAt = Object.values(x.steps||{}).filter(Boolean).sort().pop() || x.applied_at;
-  return ucCardHtml({ key:"p:"+P, pic: cr.profile_picture_url, handle: cr.username, name: cr.name, phone: x.phone, email: null, city: null,
+  return ucCardHtml({ key:"p:"+P, pic: cr.profile_picture_url, handle: cr.username||h.handle, name: cr.name||h.name, phone: x.phone||h.phone, email: x.email||h.email||null, city: x.city||h.city||null,
     followers: cr.followers, pct: cr.profile_pct!=null ? cr.profile_pct : (x.profile_pct!=null ? x.profile_pct : null), via,
     tags: (pubH ? `<span class="tag warn">📸 On Geek · connect Instagram</span>` : "") + jvBadge(cr.joined_via, true) + (overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':"") + (x.blocked_at?'<span class="tag" style="background:rgba(239,68,68,.15);color:#dc2626">⛔ Blocked</span>':""),
     filled: j+1, total: J.length, stepTxt: `Step ${j+1}/${J.length} · <b>${esc((J[j]||[])[1]||"")}</b>`,
@@ -6285,7 +6285,7 @@ function bkHistHtml(){
   const card = (c, u)=>{
     const x = c.participation_id && byP[c.participation_id], i = byI[c.invite_id];
     const via = `via upload · ${fmtDate(u.at)}`;
-    const html = x ? ucFromPart(x, via) : i ? ucFromInvite(i, bkStRank(i.status||"registered") >= bkStRank("approved"), via)
+    const html = x ? ucFromPart(x, via, c) : i ? ucFromInvite(i, bkStRank(i.status||"registered") >= bkStRank("approved"), via, c)
       : `<div class="card bp-card"><div class="bp-head"><span class="avatar">${esc(String(c.handle||c.name||"?").slice(0,2).toUpperCase())}</span><div><b>${esc(c.handle?"@"+c.handle:c.name||"—")}</b><div class="r-sub">${esc([c.name, c.phone, c.email, c.city].filter(Boolean).join(" · "))}</div><div class="muted" style="font-size:12px">Not on this campaign's list any more</div></div></div></div>`;
     return `<div class="bk-hist-card">${html}<span class="bk-hist-tag ${c.action==="new"?"new":"upd"}">${c.action==="new"?"🆕 New in this upload":"✏️ Updated by this upload"}${c.sheet_status?` · sheet said “${esc((bkStatuses().find(z=> z[0]===c.sheet_status)||[])[1]||c.sheet_status)}”`:""}</span></div>`;
   };
