@@ -6360,33 +6360,30 @@ function bkHistHtml(){
   window.__bkHistKeys = ups.map(u=> [...new Set((u.items||[]).map(keyOf).filter(Boolean))]);
   ucStatsLoad(()=>{ const box = document.getElementById("bkHist"); if(box && _bkHist && !_bkHist.loading){ box.innerHTML = bkHistHtml(); bkWireFolds(box); bkHistWire(); } });
   const nSel = [..._ccSel].length;
-  const viewBar = `<div class="bk-hist-view"><span class="muted">Group by</span>${[["step","📍 Where they are"],["upload","📅 Upload"]].map(([v,l])=>`<button type="button" class="${_bkHistView===v?"on":""}" data-bkhview="${v}">${l}</button>`).join("")}</div>`;
-  if(_bkHistView==="step"){
-    // everyone from every upload once (their latest upload), grouped by where they are now
+  // 📍 inside every upload: its creators grouped by where they are now (who reached which step from this upload)
+  const today = new Date().toISOString().slice(0,10);
+  window.__bkGKeys = {};
+  const grpHtml = (u, k)=>{
     const seen = new Map();
-    ups.forEach(u=> (u.items||[]).forEach(c=>{ const k = keyOf(c); if(k && !seen.has(k)) seen.set(k, { c, u, x: c.participation_id && byP[c.participation_id], i: byI[c.invite_id] }); }));
-    const today = new Date().toISOString().slice(0,10), G = {};
-    seen.forEach((e,k)=>{ const g = ucGroupOf(e.x, e.i); if(!g) return; (G[g] = G[g] || []).push(Object.assign(e, { k })); });
-    window.__bkGKeys = {}; UC_GROUPS.forEach(([g])=> window.__bkGKeys[g] = (G[g]||[]).map(e=> e.k));
+    (u.items||[]).forEach(c=>{ const kk = keyOf(c); if(kk && !seen.has(kk)) seen.set(kk, { c, u, x: c.participation_id && byP[c.participation_id], i: byI[c.invite_id], k: kk }); });
+    const G = {}; seen.forEach(e=>{ const g = ucGroupOf(e.x, e.i); if(g) (G[g] = G[g] || []).push(e); });
     const sub = (g, list)=> g==="video" ? (()=>{ const n = list.filter(e=> e.x && e.x.due_on && e.x.due_on < today).length; return n ? `${n} overdue` : "video due"; })() : (UC_GROUPS.find(z=> z[0]===g)||[])[2];
     const rem = list=> list.filter(e=> e.x && ucStepMsg(e.x, bpNext(e.x))).length;
     const shown = UC_GROUPS.filter(([g])=> (G[g]||[]).length);
-    return `${viewBar}
-      <div class="bk-hist-sum"><b>${seen.size}</b> creator${seen.size!==1?"s":""} from ${ups.length} upload${ups.length>1?"s":""} — everyone in the same place sits together · tick a whole group (or several) → one WhatsApp to all of them
-        <span class="bk-hist-selbar"><span class="muted"><b id="bkHSelN">${nSel}</b> selected</span><button type="button" class="btn sm cc-wabtn" id="bkHWaSel"${nSel?"":" disabled"}>🟢 WhatsApp to selected</button><button type="button" class="btn sm ghost" id="bkHSelClr"${nSel?"":" disabled"}>Clear</button></span></div>
-      <div class="uc-tiles">${shown.map(([g,l,,col])=>`<button type="button" class="uc-tile" style="--uc-c:${col}" data-bkgjump="${g}"><b>${G[g].length}</b><span>${esc(l)}</span><em>${esc(sub(g, G[g])||"")}</em></button>`).join("")}</div>
-      ${shown.map(([g,l,,col])=>{ const list = G[g], ks = window.__bkGKeys[g], all = ks.every(x=> _ccSel.has(x)), lim = _bkHistAll.has("g:"+g) ? list.length : 5, nr = rem(list);
-        return `<details class="uc-grp" style="--uc-c:${col}" data-bkgfold="${g}" id="bkG-${g}"${_bkGClosed.has(g)?"":" open"}><summary><b>${esc(l)}</b> <span class="uc-grp-n">${list.length}</span> <span class="muted">${esc(sub(g, list)||"")}</span></summary>
-          <div class="bk-hist-acts"><label class="bk-hist-all"><input type="checkbox" data-bkgsel="${g}"${all?" checked":""}> Select all ${list.length}</label><span style="flex:1"></span>
-            ${g==="nog" ? `<button type="button" class="btn sm" data-bkgresend="${g}">↻ Resend invite to ${list.length}</button>` : ""}
-            ${nr ? `<button type="button" class="btn sm" data-bkgremind="${g}">🔔 Send each one's step reminder (${nr})</button>` : ""}
-            <button type="button" class="btn sm ghost" data-bkgdl="${g}" title="Excel in the bulk-upload columns">⬇ Download</button>
-            <button type="button" class="btn sm cc-wabtn" data-bkgwa="${g}">🟢 WhatsApp all ${list.length}</button></div>
+    shown.forEach(([g])=> window.__bkGKeys[k+"|"+g] = G[g].map(e=> e.k));
+    if(!shown.length) return `<div class="muted">No creators to show for this upload.</div>`;
+    return `<div class="uc-tiles">${shown.map(([g,l,,col])=>`<button type="button" class="uc-tile" style="--uc-c:${col}" data-bkgjump="${k}|${g}"><b>${G[g].length}</b><span>${esc(l)}</span><em>${esc(sub(g, G[g])||"")}</em></button>`).join("")}</div>
+      ${shown.map(([g,l,,col])=>{ const id = k+"|"+g, list = G[g], ks = window.__bkGKeys[id], all = ks.every(x=> _ccSel.has(x)), lim = _bkHistAll.has("g:"+id) ? list.length : 5, nr = rem(list);
+        return `<details class="uc-grp" style="--uc-c:${col}" data-bkgfold="${id}" id="bkG-${k}-${g}"${_bkGClosed.has(id)?"":" open"}><summary><b>${esc(l)}</b> <span class="uc-grp-n">${list.length}</span> <span class="muted">${esc(sub(g, list)||"")}</span></summary>
+          <div class="bk-hist-acts"><label class="bk-hist-all"><input type="checkbox" data-bkgsel="${id}"${all?" checked":""}> Select all ${list.length}</label><span style="flex:1"></span>
+            ${g==="nog" ? `<button type="button" class="btn sm" data-bkgresend="${id}">↻ Resend invite to ${list.length}</button>` : ""}
+            ${nr ? `<button type="button" class="btn sm" data-bkgremind="${id}">🔔 Send each one's step reminder (${nr})</button>` : ""}
+            <button type="button" class="btn sm ghost" data-bkgdl="${id}" title="Excel in the bulk-upload columns">⬇ Download</button>
+            <button type="button" class="btn sm cc-wabtn" data-bkgwa="${id}">🟢 WhatsApp all ${list.length}</button></div>
           <div class="bk-hist-list">${list.slice(0, lim).map(e=> card(e.c, e.u)).join("")}</div>
-          ${list.length > lim ? `<div class="bk-hist-more">+ ${list.length - lim} more in this group · <a href="#" data-bkhmore="g:${g}">Show all</a></div>` : ""}</details>`; }).join("")}
-      <div class="muted bk-mini">↻ Resend, 📸 Connect Instagram and 🔔 reminders ask once and send right here. 🟢 WhatsApp opens the message window here — pick what to send, then Send.</div>`;
-  }
-  return `${viewBar}<div class="bk-hist-sum"><b>${ups.length}</b> upload${ups.length>1?"s":""} · <b>${tot}</b> creator${tot!==1?"s":""} came in this way
+          ${list.length > lim ? `<div class="bk-hist-more">+ ${list.length - lim} more in this group · <a href="#" data-bkhmore="g:${id}">Show all</a></div>` : ""}</details>`; }).join("")}`;
+  };
+  return `<div class="bk-hist-sum"><b>${ups.length}</b> upload${ups.length>1?"s":""} · <b>${tot}</b> creator${tot!==1?"s":""} came in this way
       <span class="bk-hist-selbar"><span class="muted"><b id="bkHSelN">${nSel}</b> selected</span><button type="button" class="btn sm cc-wabtn" id="bkHWaSel"${nSel?"":" disabled"}>🟢 WhatsApp to selected</button><button type="button" class="btn sm ghost" id="bkHSelClr"${nSel?"":" disabled"}>Clear</button></span></div>
     ${ups.map((u,k)=>{ const items = u.items||[], key = "h:"+u.at;
       const isRep = x=> /^(Repeat|Already in)/.test(x.reason||"");
@@ -6402,12 +6399,11 @@ function bkHistHtml(){
       const bits = [nu.length?`<b style="color:#dc2626">⚠️ ${nu.length} not uploaded</b>`:"", u.new_count?`<b>${u.new_count}</b> new`:"", u.updated_count?`<b>${u.updated_count}</b> updated`:"", (rep.length||u.duplicates)?`<b style="color:#b45309">🔁 ${rep.length||u.duplicates} duplicate${(rep.length||u.duplicates)>1?"s":""}</b>`:"", u.skipped&&!nu.length?`${u.skipped} skipped`:""].filter(Boolean).join(" · ") || "no new creators (only existing rows changed)";
       return bkFold(key, `📅 ${esc(fmtDateTime(u.at))} <span class="muted">· by ${esc(u.who||"—")}</span> <span class="bk-hist-n">${bits}</span>${k===0?' <span class="tag">latest</span>':""}`,
         `${nuHtml}${u.exact?"":`<div class="muted bk-mini">Older upload: the creators it added are shown (rows it only updated weren't logged then).</div>`}
-         ${items.length?(()=>{ const ks = window.__bkHistKeys[k], all = ks.length && ks.every(x=> _ccSel.has(x)), lim = _bkHistAll.has(key) ? items.length : 10;
+         ${items.length?(()=>{ const ks = window.__bkHistKeys[k], all = ks.length && ks.every(x=> _ccSel.has(x)), lim = 0;
             return `<div class="bk-hist-acts"><label class="bk-hist-all"><input type="checkbox" data-bkhsel="${k}"${all?" checked":""}> Select all ${ks.length}</label>
               <span class="muted">${items.filter(c=> c.action==="new").length} new · ${items.filter(c=> c.action!=="new").length} updated</span>
               <span style="flex:1"></span><button type="button" class="btn sm cc-wabtn" data-bkhwa="${k}">🟢 WhatsApp all ${ks.length}</button></div>
-              <div class="bk-hist-list">${items.slice(0, lim).map(c=> card(c, u)).join("")}</div>
-              ${items.length > lim ? `<div class="bk-hist-more">+ ${items.length - lim} more in this upload · <a href="#" data-bkhmore="${esc(key)}">Show all</a></div>` : ""}`; })():`<div class="muted">No creators to show for this upload.</div>`}`, "bk-hist-up"); }).join("")}
+              ${grpHtml(u, k)}`; })():`<div class="muted">No creators to show for this upload.</div>`}`, "bk-hist-up"); }).join("")}
       <div class="muted bk-mini">Tick creators (or a whole upload) → 🟢 WhatsApp opens the message window here — nothing goes until you press Send.</div>`;
 }
 async function bkHistLoad(force){
@@ -6440,12 +6436,12 @@ function bkHistWire(){
 
   document.querySelectorAll("#bkHist [data-bkhview]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); _bkHistView = b.dataset.bkhview; repaint(); });
   document.querySelectorAll("#bkHist [data-bkgfold]").forEach(d=> d.ontoggle = ()=>{ d.open ? _bkGClosed.delete(d.dataset.bkgfold) : _bkGClosed.add(d.dataset.bkgfold); });
-  document.querySelectorAll("#bkHist [data-bkgjump]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); const d = document.getElementById("bkG-"+b.dataset.bkgjump); if(d){ d.open = true; d.scrollIntoView({ behavior:"smooth", block:"start" }); } });
+  document.querySelectorAll("#bkHist [data-bkgjump]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); const d = document.getElementById("bkG-"+b.dataset.bkgjump.replace("|","-")); if(d){ d.open = true; d.scrollIntoView({ behavior:"smooth", block:"start" }); } });
   const gk = g=> (window.__bkGKeys||{})[g] || [];
   document.querySelectorAll("#bkHist [data-bkgsel]").forEach(c=>{ c.onclick = e=> e.stopPropagation(); c.onchange = ()=>{ gk(c.dataset.bkgsel).forEach(x=> c.checked ? _ccSel.add(x) : _ccSel.delete(x)); selSync();
     document.querySelectorAll("#bkHist [data-bkgsel]").forEach(o=>{ const ks = gk(o.dataset.bkgsel); o.checked = ks.length && ks.every(x=> _ccSel.has(x)); }); }; });
   document.querySelectorAll("#bkHist [data-bkgdl]").forEach(b=> b.onclick = async e=>{ e.stopPropagation(); b.disabled = true;
-    try{ await shDownload("xlsx", { keys: new Set(gk(b.dataset.bkgdl)), label: (UC_GROUPS.find(z=> z[0]===b.dataset.bkgdl)||[])[1]||"group" }); }catch(e2){ gateToast(e2.message||String(e2)); } b.disabled = false; });
+    try{ await shDownload("xlsx", { keys: new Set(gk(b.dataset.bkgdl)), label: (UC_GROUPS.find(z=> z[0]===String(b.dataset.bkgdl).split("|").pop())||[])[1]||"group" }); }catch(e2){ gateToast(e2.message||String(e2)); } b.disabled = false; });
   document.querySelectorAll("#bkHist [data-bkgwa]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); openWa(gk(b.dataset.bkgwa)); });
   // ↻ resend invites: tick them in the creator list → its "Resend invite to N" button (asks first, then sends)
   document.querySelectorAll("#bkHist [data-bkgresend]").forEach(b=> b.onclick = e=>{ e.stopPropagation();
