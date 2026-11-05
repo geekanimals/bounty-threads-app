@@ -9493,7 +9493,7 @@ async function adminCreatorProfile(member, row){
 }
 
 // Super Admin → WhatsApp & email: is every alert actually reaching people? (outbox health, reasons, retry, test)
-let _dlvTimer = null;
+let _dlvTimer = null, _dlvTab = "msgs", _dlvF = "all";
 // The one WhatsApp template that carries every campaign update (any campaign, any step). Meta allows free text
 // only within 24 h of the creator's last message, so without an approved template WhatsApp updates are held.
 const WA_UPD_NAME = "geek_campaign_update";
@@ -9510,12 +9510,12 @@ async function adminWaSettingsCard(){
       ${d.held?` <b style="color:#b45309">${esc(d.held)} update(s) are waiting</b> and go out the moment you save an approved template.`:""}</p>
     <div class="wa-health" style="font-size:13px;margin:0 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px"><span>Last 3 days on WhatsApp:</span> <b style="color:#12b76a">${esc(d.sent||0)} sent</b> · <b${d.failed?' style="color:#dc2626"':''}>${esc(d.failed||0)} failed</b> · <b>${esc(d.held||0)} waiting</b>
       ${d.last_error?`<div style="margin-top:6px;color:#b45309;word-break:break-word"><b>Latest problem:</b> ${esc(d.last_error)}</div>`:""}</div>
-    <div class="wa-steps">
+    <details class="wa-how"${d.__default?" open":""}><summary>📋 How this template is set up in snapto (copy body / footer)</summary><div class="wa-steps">
       <div><b>1.</b> In <b>snapto</b> → Templates → New: category <b>Utility</b>, language <b>English</b>, name <code>${WA_UPD_NAME}</code> <button class="mini-btn ghost" data-wacopy="${WA_UPD_NAME}">⧉</button></div>
       <div><b>2.</b> Body <button class="mini-btn ghost" data-wacopy="${esc(WA_UPD_BODY)}">Copy body</button> · Footer <button class="mini-btn ghost" data-wacopy="${esc(WA_UPD_FOOT)}">Copy footer</button>
         <pre class="wa-pre">${esc(WA_UPD_BODY)}\n— ${esc(WA_UPD_FOOT)}</pre>
         <span class="muted" style="font-size:12px">Sample values for Meta: {{1}} Asha · {{2}} Your contract is ready — please sign it in the app · {{3}} ${esc(window.appOrigin())}/app.html</span></div>
-      <div><b>3.</b> Once snapto shows it <b>Approved</b>, put the name here and save:</div></div>
+      <div><b>3.</b> Once snapto shows it <b>Approved</b>, put the name here and save:</div></div></details>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
       <input id="waTplName" value="${esc(d.template||"")}" placeholder="${WA_UPD_NAME}" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;min-width:240px">
       <select id="waTplLang" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit">
@@ -10045,7 +10045,7 @@ async function adminDelivery(body, silent){
   const stuck = d.oldest_queued && (Date.now()-new Date(d.oldest_queued).getTime()) > 5*60000;
   const checks = [
     [d.worker_configured, "Dispatcher connected", d.worker_configured ? "Database can trigger sends instantly" : "Run the one-time connect command (see below) after deploying ops-notify-dispatch"],
-    [jobs.some(j=>j.name==="ci-notify-dispatch" && j.active), "Every-minute safety run", jobs.length ? jobs.map(j=>`${j.name} (${j.schedule})`).join(", ") : "pg_cron schedule not found"],
+    [jobs.some(j=>j.name==="ci-notify-dispatch" && j.active), "Every-minute safety run", jobs.length ? `Sends every minute · ${jobs.filter(j=>j.active).length} background jobs running` : "pg_cron schedule not found"],
     [!stuck, "Queue moving", stuck ? `Oldest queued message waiting since ${ago(d.oldest_queued)}` : "No messages stuck in the queue"],
     [n("whatsapp:sent")>0 && !waSkippedNoTpl && !waWaiting, waWaiting ? "⏳ WhatsApp waiting for template approval" : "WhatsApp delivering",
       waWaiting ? `${waWaiting} WhatsApp alert(s) are parked until Meta approves the template — they will send automatically (checked every 10 min)`
@@ -10053,30 +10053,45 @@ async function adminDelivery(body, silent){
       : n("whatsapp:sent") ? `Last sent ${ago(d.last_sent&&d.last_sent.whatsapp)}` : "Nothing sent on WhatsApp yet"],
     [n("email:sent")>0 && !n("email:failed"), "Email delivering", n("email:failed") ? `${n("email:failed")} failed in 7 days — check SMTP secrets` : n("email:sent") ? `Last sent ${ago(d.last_sent&&d.last_sent.email)}` : "Nothing sent by email yet"]];
   const tag = s=> ({sent:'<span class="tag good">sent</span>', queued:'<span class="tag warn">queued</span>', sending:'<span class="tag warn">sending</span>', failed:'<span class="tag bad" style="background:rgba(239,68,68,.12);color:#dc2626">failed</span>', skipped:'<span class="tag">skipped</span>', waiting:'<span class="tag warn">⏳ waiting</span>'})[s] || esc(s);
+  const isWait = r=> r.status==="skipped" && /^(Waiting for WhatsApp template approval|WhatsApp 24h window closed)/i.test(r.error||"");
+  // the tiles on top are the filters for "Latest messages"
+  const T = [["all","📨","All messages",recent.length,"latest messages",r=>true,"info"],
+    ["wa_sent","💬","WhatsApp sent",n("whatsapp:sent"),"last 7 days",r=>r.channel==="whatsapp"&&r.status==="sent","good"],
+    ["wa_not","⚠️","WhatsApp not sent",n("whatsapp:skipped")+n("whatsapp:failed"),"skipped / failed · 7 days",r=>r.channel==="whatsapp"&&["skipped","failed"].includes(r.status),"warn"],
+    ["em_sent","✉️","Emails sent",n("email:sent"),"last 7 days",r=>r.channel==="email"&&r.status==="sent","good"],
+    ["em_not","📭","Emails not sent",n("email:failed")+n("email:skipped"),"skipped / failed · 7 days",r=>r.channel==="email"&&["skipped","failed"].includes(r.status),"warn"],
+    ["queue","⏳","In queue",n("whatsapp:queued")+n("email:queued")+n("whatsapp:sending")+n("email:sending"),"sending now",r=>["queued","sending"].includes(r.status),"info"]];
+  if(!T.find(x=>x[0]===_dlvF)) _dlvF = "all";
+  const tf = T.find(x=>x[0]===_dlvF), list = recent.filter(tf[5]);
+  const okAll = checks.every(c=>c[0]);
+  const TABS = [["msgs","📨 Messages & health"],["wa","⚙️ WhatsApp template"],["doctor","🩺 Delivery doctor"],["opt","🚫 Opted out"],["tpl","🧩 Campaign templates"]];
+  const msgCard = r=>{ const st = isWait(r) ? "waiting" : r.status;
+    return `<div class="dl-msg ${esc(st)}"><span class="dl-ch">${r.channel==="whatsapp"?"💬":"✉️"}</span>
+      <div class="dl-main"><div class="dl-top"><b>${esc(r.who||"—")}</b>${r.role?` <span class="au-role ${esc(r.role)}">${esc(r.role)}</span>`:""} <span class="muted">${esc(r.to||"")}</span></div>
+        <div class="dl-title">${esc(r.title||r.template||"")}</div>${r.error?`<div class="dl-why">${esc(r.error)}</div>`:""}</div>
+      <div class="dl-side">${tag(st)}${r.attempts>1?` <span class="muted" style="font-size:11px">×${r.attempts}</span>`:""}<span class="muted" title="${esc(fmtDateTime(r.created_at))}">${esc(fmtDateTime(r.created_at))}</span>${r.sent_at?`<span class="muted">sent ${ago(r.sent_at)}</span>`:""}</div></div>`; };
   body.innerHTML = `
-    <div class="rp-kpis">
-      <div><b>${n("whatsapp:sent")}</b>WhatsApp sent · 7d</div><div><b>${n("whatsapp:skipped")+n("whatsapp:failed")}</b>WhatsApp not sent</div>
-      <div><b>${n("email:sent")}</b>Emails sent · 7d</div><div><b>${n("email:failed")+n("email:skipped")}</b>Emails not sent</div>
-      <div><b>${n("whatsapp:queued")+n("email:queued")+n("whatsapp:sending")+n("email:sending")}</b>In queue</div></div>
-    <div class="card wa-set" id="dlvWaSet"></div>
-    <div class="card" id="dlvDoctor" style="margin-top:12px"></div>
-    <div class="card"><h3 style="margin-top:0">Health</h3><div class="list">${checks.map(([ok,t,s])=>`<div class="row"><span class="dot ${ok?"good":"warn"}"></span>
-        <div class="r-main"><div class="r-title">${ok?"✅":"⚠️"} ${esc(t)}</div><div class="r-sub">${esc(s)}</div></div></div>`).join("")}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-        <button class="mini-btn" id="dlvRetry">↻ Retry skipped / failed (3 days)</button>
-        <input id="dlvPhone" placeholder="+91… WhatsApp" style="padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;min-width:150px">
-        <input id="dlvEmail" placeholder="email" style="padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;min-width:170px">
-        <button class="mini-btn ghost" id="dlvTest">Send test</button><span class="muted" id="dlvMsg" style="font-size:12px;align-self:center"></span></div>
-      ${runs.length?`<div class="muted" style="font-size:12px;margin-top:10px">Last runs: ${runs.slice(0,3).map(r=>`${esc(r.job)} ${esc(r.status)} ${ago(r.at)}`).join(" · ")}</div>`:""}</div>
-    <div class="card" style="margin-top:14px"><h3 style="margin-top:0">Latest messages <span class="muted" style="font-size:12px;font-weight:400">· every alert goes in-app + WhatsApp + email</span></h3>
-      <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>When</th><th>Channel</th><th>To</th><th>Alert</th><th>Status</th><th>Why / note</th></tr></thead><tbody>
-      ${recent.map(r=>`<tr><td style="white-space:nowrap;font-size:12px">${esc(fmtDateTime(r.created_at))}</td><td>${r.channel==="whatsapp"?"💬 WhatsApp":"✉️ Email"}</td>
-        <td style="font-size:12px"><b>${esc(r.who||"—")}</b>${r.role?` <span class="muted">${esc(r.role)}</span>`:""}<div class="muted">${esc(r.to)}</div></td>
-        <td style="font-size:12px;max-width:280px">${esc(r.title||r.template||"")}</td><td>${tag(r.status==="skipped" && /^(Waiting for WhatsApp template approval|WhatsApp 24h window closed)/i.test(r.error||"") ? "waiting" : r.status)}${r.attempts>1?` <span class="muted" style="font-size:11px">×${r.attempts}</span>`:""}</td>
-        <td style="font-size:12px;max-width:260px" class="muted">${esc(r.error||(r.sent_at?"Sent "+ago(r.sent_at):""))}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">No messages yet.</td></tr>`}
-      </tbody></table></div></div>
-    <div class="card" style="margin-top:14px" id="dlvOpt"></div>
-    <div class="card" style="margin-top:14px" id="dlvTpl"></div>`;
+    <div class="ap-tiles dl-tiles">${T.map(([k,ic,l,v,sub,,tone])=>`<button type="button" class="ap-tile ${tone}${_dlvF===k&&_dlvTab==="msgs"?" on":""}" data-dlf="${k}"><span class="ap-tile-ic">${ic}</span><b>${fmtNum(v)}</b><span class="ap-tile-l">${l}</span><span class="ap-tile-s">${_dlvF===k&&_dlvTab==="msgs"?"● showing now":sub}</span></button>`).join("")}</div>
+    <div class="dl-tabs">${TABS.map(([k,l])=>`<button type="button" class="${_dlvTab===k?"on":""}" data-dlt="${k}">${l}</button>`).join("")}</div>
+    <div data-dlpane="msgs"${_dlvTab==="msgs"?"":" hidden"}>
+      <div class="card dl-health"><div class="ov-h"><h3>${okAll?"✅ Everything is delivering":"⚠️ Needs a look"}</h3><span class="muted">${runs.length?`last run ${ago(runs[0].at)}`:""}</span></div>
+        <div class="dl-checks">${checks.map(([ok,t,sub])=>`<div class="dl-check ${ok?"ok":"bad"}"><span>${ok?"✅":"⚠️"}</span><div><b>${esc(t)}</b><small>${esc(sub)}</small></div></div>`).join("")}</div>
+        <div class="dl-test"><button class="mini-btn" id="dlvRetry">↻ Retry skipped / failed (3 days)</button>
+          <span class="dl-test-l">Send a test to yourself:</span>
+          <input id="dlvPhone" placeholder="+91… WhatsApp"><input id="dlvEmail" placeholder="email">
+          <button class="mini-btn ghost" id="dlvTest">Send test</button><span class="muted" id="dlvMsg" style="font-size:12px"></span></div></div>
+      <div class="card" style="margin-top:14px"><div class="ov-h"><h3>${tf[1]} ${esc(tf[2])} <span class="muted" style="font-size:13px;font-weight:500">· ${list.length} in the latest ${recent.length}</span>${_dlvF!=="all"?` <button type="button" class="mini-btn ghost" data-dlf="all">✕ Show all</button>`:""}</h3>
+          <span class="muted">every alert goes in-app + WhatsApp + email</span></div>
+        <div class="dl-list">${list.map(msgCard).join("") || `<div class="muted" style="padding:12px">Nothing here.</div>`}</div></div></div>
+    <div data-dlpane="wa"${_dlvTab==="wa"?"":" hidden"}><div class="card wa-set" id="dlvWaSet"></div></div>
+    <div data-dlpane="doctor"${_dlvTab==="doctor"?"":" hidden"}><div class="card" id="dlvDoctor"></div></div>
+    <div data-dlpane="opt"${_dlvTab==="opt"?"":" hidden"}><div class="card" id="dlvOpt"></div></div>
+    <div data-dlpane="tpl"${_dlvTab==="tpl"?"":" hidden"}><div class="card" id="dlvTpl"></div></div>`;
+  const showTab = k=>{ _dlvTab = k; body.querySelectorAll("[data-dlt]").forEach(b=> b.classList.toggle("on", b.dataset.dlt===k));
+    body.querySelectorAll("[data-dlpane]").forEach(p=> p.hidden = p.dataset.dlpane!==k);
+    body.querySelectorAll("[data-dlf]").forEach(b=>{ if(b.classList.contains("ap-tile")) b.classList.toggle("on", k==="msgs" && b.dataset.dlf===_dlvF); }); };
+  body.querySelectorAll("[data-dlt]").forEach(b=> b.onclick = ()=> showTab(b.dataset.dlt));
+  body.querySelectorAll("[data-dlf]").forEach(b=> b.onclick = ()=>{ _dlvF = b.dataset.dlf; _dlvTab = "msgs"; adminDelivery(body, true); });
   adminWaTemplates(); adminWaSettingsCard(); adminDeliveryDoctor(); adminOptouts();
   document.getElementById("dlvRetry").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_retry", { p_channel: null });
     document.getElementById("dlvMsg").textContent = e ? e.message : `${k||0} message(s) re-queued`; setTimeout(()=>adminDelivery(body,true), 3000); };
@@ -10085,7 +10100,7 @@ async function adminDelivery(body, silent){
   clearInterval(_dlvTimer);
   _dlvTimer = setInterval(()=>{ const b = document.getElementById("adminBody");
     if(currentPage!=="admin" || _adminTab!=="delivery" || !b){ clearInterval(_dlvTimer); return; }
-    if(document.visibilityState!=="visible" || ["dlvPhone","dlvEmail"].includes(document.activeElement?.id)) return;
+    if(document.visibilityState!=="visible" || _dlvTab!=="msgs" || ["dlvPhone","dlvEmail"].includes(document.activeElement?.id)) return;
     adminDelivery(b, true); }, 20000);
 }
 
