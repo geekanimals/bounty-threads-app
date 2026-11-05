@@ -14,9 +14,13 @@ begin
                 where c.contact_phone_e164 = t.phone and m.direction = 'outbound' and m.sender_user_id is not null and m.created_at >= t.since),
       'em', (select count(*) from intel.ci_outbox o where o.campaign_id = v_c and o.channel = 'email' and o.status = 'sent'
                and (o.to_address = t.email or (t.mid is not null and o.recipient_member_id = t.mid))),
-      'rem', (select count(*) from intel.ci_outbox o where o.campaign_id = v_c and o.status = 'sent'
-                and o.template_key ~* 'remind|due|overdue|nudge|restore'
+      -- reminders: step reminders that went (video due / overdue / restore…), the campaign's own reminder timers that fired,
+      -- and for someone not registered yet every time the invite was sent again
+      'rem', greatest((select count(*) from intel.ci_outbox o where o.campaign_id = v_c and o.status in ('sent','delivered','read')
+                and o.template_key ~* 'remind|due|overdue|nudge|restore|warning'
                 and (o.to_address in (t.phone, t.email) or (t.mid is not null and o.recipient_member_id = t.mid))),
+              case when t.key like 'p:%' then (select count(*) from intel.ci_reminder r where r.participation_id = substr(t.key, 3)::uuid and r.fired_at is not null) else 0 end)
+             + case when t.key like 'i:%' then greatest(coalesce((select i3.invites_sent from intel.ci_campaign_invite i3 where i3.invite_id = substr(t.key, 3)::uuid), 0) - 1, 0) else 0 end,
       'last', (select jsonb_build_object('at', z.ts, 'status', z.status, 'channel', z.channel, 'by', z.src) from (
                  select coalesce(o.sent_at, o.created_at) as ts, o.status::text as status, o.channel::text as channel, 'auto'::text as src from intel.ci_outbox o
                   where o.campaign_id = v_c and o.channel in ('whatsapp','email') and o.status in ('sent','delivered','read','failed')
