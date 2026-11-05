@@ -9118,7 +9118,7 @@ async function adminUsers(body, silent){
   }, 30000);
 }
 // Super Admin → Creators: live directory of every creator + Creator 360 (profile, Instagram, campaigns, activity)
-let _acrQ = "", _acrF = "all", _acrSort = "new", _acrTimer = null, _acrSig = "", _acrData = [], _acrPage = 0;
+let _acrQ = "", _acrF = "ig", _acrSort = "new", _acrTimer = null, _acrSig = "", _acrData = [], _acrPage = 0;
 // card view (default) or list view — remembered on this device
 let _acrView = (()=>{ try{ return localStorage.getItem("geek_acr_view") === "list" ? "list" : "card"; }catch(e){ return "card"; } })();
 const ACR_PAGE = 24;
@@ -9411,12 +9411,20 @@ async function adminCreatorProfile(member, row){
         ${r("Connected", esc(fmtDateTime(ig.connected_at)))}${r("Last synced", agoTxt(ig.synced_at))}</div>
       <div class="ac360-media">${media.map(m=>`<a href="${esc(safeUrl(m.permalink||"#"))}" target="_blank" rel="noopener" class="ac360-post">${m.img?`<img src="${esc(safeUrl(m.img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:""}
           <span>❤ ${kNum(m.likes||0)} · 💬 ${kNum(m.comments||0)}</span></a>`).join("")||'<div class="muted">No recent posts synced.</div>'}</div>`,
-    campaigns: `<div class="card">${camps.length||mk.length ? `<div class="list">${camps.map(c=>`<div class="row ac-camp" data-accamp="${esc(c.participation_id)}" data-accampname="${esc(c.campaign||"")}" title="Open this creator inside the campaign"><div class="r-main">
-          <div class="r-title">${esc(c.campaign||"Campaign")} ${typeTag(c.campaign_type)}</div>
-          <div class="r-sub">${esc([c.brand,c.org_name].filter(Boolean).join(" · "))}${c.applied_profile?` · as <b>@${esc(c.applied_profile)}</b>`:""} · applied ${esc(fmtDate(c.applied_at))}${c.starts_on?` · runs ${esc(fmtDate(c.starts_on))} – ${esc(fmtDate(c.ends_on))}`:""}${c.reason?` · <i>${esc(c.reason)}</i>`:""}</div></div>
-          ${stageTag(c.stage)}<button class="mini-btn" data-accamp="${esc(c.participation_id)}" data-accampname="${esc(c.campaign||"")}">Open in campaign →</button></div>`).join("")}
+    campaigns: `<div class="card">${camps.length||mk.length ? `<div class="list ac-ccards">${camps.map(c=>{
+          // the same creator card as inside the campaign: step bar, where they are, and the actions — right here
+          const fail = ["dropped","rejected","ineligible","brand_declined"].includes(c.stage), idx = bpStageIndex(c.stage), tot = BARTER_STEPS.length;
+          const seg = Array.from({length: tot}, (_,n)=> `<i class="${fail ? "" : n < idx ? "on" : n===idx ? (c.stage==="completed" ? "on" : "now") : ""}"></i>`).join("");
+          return `<div class="card bp-card uc-card ac-ccard"><div class="bp-head uc-head" style="cursor:default">
+            <div class="uc-main">
+              <div class="uc-l1"><b class="uc-name">${esc(c.campaign||"Campaign")}</b>${typeTag(c.campaign_type)}${stageTag(c.stage)}</div>
+              <div class="uc-l2">${[c.brand||c.org_name ? `<span>🏢 ${esc([c.brand,c.org_name].filter(Boolean).join(" · "))}</span>` : "", c.applied_profile?`<span>as <b>@${esc(c.applied_profile)}</b></span>`:"", c.applied_at?`<span>📅 applied ${esc(fmtDate(c.applied_at))}</span>`:"", c.starts_on?`<span>🗓 runs ${esc(fmtDate(c.starts_on))} – ${esc(fmtDate(c.ends_on))}</span>`:""].filter(Boolean).join("")}</div>
+              <div class="uc-l3"><span class="uc-bar">${seg}</span><span class="uc-step">${fail ? `<b>Out</b> · ${esc(String(c.stage).replace(/_/g," "))}${c.reason?` — <i>${esc(c.reason)}</i>`:""}` : `Step ${idx+1}/${tot} · <b>${esc((BARTER_STEPS[idx]||[])[1]||"")}</b>`}</span></div>
+            </div>
+            <span class="bp-rowacts uc-acts"><button type="button" class="btn sm bp-rowact" data-achub="${esc(c.participation_id)}" data-achubtab="overview">📋 Full card &amp; actions</button><button type="button" class="bp-chatbtn uc-chat" data-achub="${esc(c.participation_id)}" data-achubtab="whatsapp" title="WhatsApp chat">💬</button><button type="button" class="mini-btn ghost" data-accamp="${esc(c.participation_id)}" data-accampname="${esc(c.campaign||"")}" title="Go to the campaign page with this creator open">Open in campaign →</button></span>
+          </div></div>`; }).join("")}
         ${mk.map(a=>`<div class="row"><div class="r-main"><div class="r-title">${esc(a.campaign_name||a.campaign||"Marketplace campaign")}</div><div class="r-sub">Marketplace · applied ${esc(fmtDate(a.applied_at))}</div></div><span class="tag ${a.status==="Approved"?"good":a.status==="Rejected"?"":"warn"}">${esc(a.status||"Applied")}</span></div>`).join("")}</div>
-        <div class="muted" style="margin-top:10px;font-size:12.5px">Tap a campaign to open it with this creator's full card — steps, contract, courier, video, posts and numbers.</div>`
+        <div class="muted" style="margin-top:10px;font-size:12.5px">📋 Full card &amp; actions opens everything for this creator on that campaign right here — every step with its time, change the step, contract, courier, video, posts, messages. 💬 opens their WhatsApp.</div>`
         : `<div class="muted">No campaign applications yet.</div>`}</div>`,
     activity: `<div class="card"><div id="ac360Act">${skel("list",3)}</div></div>`,
     intel: `<div class="card"><div id="ac360Intel">${skel("list",3)}</div></div>` };
@@ -9437,6 +9445,7 @@ async function adminCreatorProfile(member, row){
       const b = document.getElementById("adminBody"); if(b && currentPage==="admin"){ _acrSig = ""; _auSig = ""; (_adminTab==="users" ? adminUsers : adminCreators)(b, true); } });
     bodyEl.querySelectorAll("[data-ac360]").forEach(b=> b.onclick = ()=>{ _ac360Tab = b.dataset.ac360; paint(); });
     bodyEl.querySelectorAll("[data-accamp]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); close(); openCampaignForCreator(b.dataset.accampname, b.dataset.accamp); });
+    bodyEl.querySelectorAll("[data-achub]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); openCreatorHub(b.dataset.achub, b.dataset.achubtab || "overview"); });
     if(_ac360Tab==="activity") creatorActivityPanel(member, bodyEl.querySelector("#ac360Act"));
     if(_ac360Tab==="intel" && window.ciIntel) window.ciIntel.openCard(D.identity_id, "ac360Intel");
     const strip = bodyEl.querySelector("#ac360Strip"); if(strip) acActivityStrip(member, strip);
