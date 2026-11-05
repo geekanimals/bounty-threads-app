@@ -6087,6 +6087,7 @@ function bulkHtml(){
   const noAddr = live.filter(r=>r._addrMissing).length;
   return `<div class="card bk-card">
       <h3 style="margin:0 0 4px">📥 Upload creators in bulk <span class="tag">${BK_KIND_LABEL[bkKind()]} campaign</span></h3>
+      ${rows.length ? "" : `<div id="shBox">${shPanelHtml()}</div>`}
       ${rows.length ? `<div class="bk-loaded">✅ <b>${rows.length}</b> row${rows.length>1?"s":""} loaded from <b>${bkEsc(_bk.src)}</b> — check the preview below</div>` : ""}
       ${bkWaLine()}
       ${rows.length ? `<details class="bk-guide bk-chg" data-bkfold="chg"${_bkFold.has("chg")||sh.e.length?" open":""}><summary>✎ Change sheet / columns · guide</summary>` : ""}
@@ -6359,6 +6360,7 @@ function bkHistHtml(){
           <div class="bk-hist-acts"><label class="bk-hist-all"><input type="checkbox" data-bkgsel="${g}"${all?" checked":""}> Select all ${list.length}</label><span style="flex:1"></span>
             ${g==="nog" ? `<button type="button" class="btn sm" data-bkgresend="${g}">↻ Resend invite to ${list.length}</button>` : ""}
             ${nr ? `<button type="button" class="btn sm" data-bkgremind="${g}">🔔 Send each one's step reminder (${nr})</button>` : ""}
+            <button type="button" class="btn sm ghost" data-bkgdl="${g}" title="Excel in the bulk-upload columns">⬇ Download</button>
             <button type="button" class="btn sm cc-wabtn" data-bkgwa="${g}">🟢 WhatsApp all ${list.length}</button></div>
           <div class="bk-hist-list">${list.slice(0, lim).map(e=> card(e.c, e.u)).join("")}</div>
           ${list.length > lim ? `<div class="bk-hist-more">+ ${list.length - lim} more in this group · <a href="#" data-bkhmore="g:${g}">Show all</a></div>` : ""}</details>`; }).join("")}
@@ -6433,6 +6435,8 @@ function bkHistWire(){
   const gk = g=> (window.__bkGKeys||{})[g] || [];
   document.querySelectorAll("#bkHist [data-bkgsel]").forEach(c=>{ c.onclick = e=> e.stopPropagation(); c.onchange = ()=>{ gk(c.dataset.bkgsel).forEach(x=> c.checked ? _ccSel.add(x) : _ccSel.delete(x)); selSync();
     document.querySelectorAll("#bkHist [data-bkgsel]").forEach(o=>{ const ks = gk(o.dataset.bkgsel); o.checked = ks.length && ks.every(x=> _ccSel.has(x)); }); }; });
+  document.querySelectorAll("#bkHist [data-bkgdl]").forEach(b=> b.onclick = async e=>{ e.stopPropagation(); b.disabled = true;
+    try{ await shDownload("xlsx", { keys: new Set(gk(b.dataset.bkgdl)), label: (UC_GROUPS.find(z=> z[0]===b.dataset.bkgdl)||[])[1]||"group" }); }catch(e2){ gateToast(e2.message||String(e2)); } b.disabled = false; });
   document.querySelectorAll("#bkHist [data-bkgwa]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); openWa(gk(b.dataset.bkgwa)); });
   // ↻ resend invites: tick them in the creator list → its "Resend invite to N" button (asks first, then sends)
   document.querySelectorAll("#bkHist [data-bkgresend]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); const ks = gk(b.dataset.bkgresend); if(!ks.length) return;
@@ -6539,6 +6543,7 @@ function wireBulk(){
       .then(([r, ms])=>{ _bk.wa = r && !r.error ? Object.assign({}, r.data||{}, { ms: (ms && !ms.error && ms.data) || null }) : null; paintBulk(); }, ()=>{ _bk.wa = null; }); }
   const sw = $b("bkSetWa"); if(sw) sw.onclick = e=>{ e.preventDefault(); if(window.__bpClose) window.__bpClose(); _adminTab = "delivery"; currentPage = "admin"; renderShell(); };
   bkWireFolds(document);
+  if(document.getElementById("shBox")) wireSheetPanel(document.getElementById("shBox"));
   if(_bkFold.has("hist")){ bkHistLoad(); bkHistWire(); }
   const xl = $b("bkXlsx"); if(xl) xl.onclick = async ()=>{ xl.disabled = true; try{ await bkDownloadXlsx(); }catch(e){ err.textContent = e.message||String(e); } xl.disabled = false; };
   const ct = $b("bkCopyTpl"); if(ct) ct.onclick = async ()=>{ try{ await navigator.clipboard.writeText(ct.dataset.tsv); ct.textContent = "✓ Copied — paste in cell A1"; }catch(e){ err.textContent = "Couldn't copy — use the Excel or CSV template instead."; } };
@@ -6582,6 +6587,136 @@ function wireBulk(){
     loadBulkList(); _bk.justUploaded = true; await loadBarterProcess(false);   // tiles + creator list update right away
   };
   wireBulkList();
+}
+
+/* ================= 📄 CAMPAIGN SHEET — every creator in the bulk-upload format =================
+ * ⬇ Download (all / one step / only the ticked ones) as Excel or CSV — upload it again as it is.
+ * 🔗 A linked Google Sheet that keeps itself up to date: a small script in the sheet pulls the rows with the campaign's
+ *    secret link every 10 minutes — fills what's missing (address, courier, video, posts), moves Status forward,
+ *    adds new creators. Nothing the team typed in the sheet is overwritten.                                        */
+const SH_COLS = { "Name":"name", "Instagram":"instagram", "WhatsApp":"whatsapp", "Email":"email", "City":"city", "Status":"status", "Address":"address",
+  "State":"state", "PIN code":"pincode", "Courier":"courier", "Tracking":"tracking", "Video link":"video_link", "Post link":"post_link" };
+let _sh = null;   // { camp, rows, link, loading, err }
+function shHead(){ return bkSample()[0].filter(h=> SH_COLS[h]); }
+function shAoa(rows){
+  const H = shHead();
+  return [H, ...rows.map(r=> H.map(h=>{ const k = SH_COLS[h], v = r[k]; return k==="instagram" && v ? "@"+String(v).replace(/^@/,"") : (v==null ? "" : String(v)); }))];
+}
+async function shLoad(force){
+  const camp = _bpCamp && _bpCamp.id; if(!camp) return null;
+  if(!force && _sh && _sh.camp===camp && _sh.rows) return _sh;
+  const [r, l] = await Promise.all([sb.schema("api").rpc("campaign_sheet_rows", { p_campaign: camp }).then(x=>x, e=>({error:e})),
+                                    sb.schema("api").rpc("campaign_sheet_link_get", { p_campaign: camp }).then(x=>x, e=>({error:e}))]);
+  if(r.error) throw new Error(r.error.message||String(r.error));
+  _sh = { camp, rows: (r.data && r.data.rows) || [], name: (r.data && r.data.campaign) || "campaign", link: (l && !l.error && l.data) || null };
+  return _sh;
+}
+// keys: a Set of "i:<invite>" / "p:<participation>" (ticked / a group), or null = everyone; step: a status key or "" = all
+async function shDownload(fmt, opts){
+  opts = opts||{};
+  const d = await shLoad(true);
+  let rows = d.rows;
+  if(opts.keys) rows = rows.filter(r=> opts.keys.has(r.key));
+  if(opts.step) rows = rows.filter(r=> opts.step==="out" ? /^Out/.test(r.status||"") : r.status_key===opts.step && !/^Out/.test(r.status||""));
+  if(!rows.length){ gateToast("No creators to download for that choice."); return; }
+  const aoa = shAoa(rows), base = `${String(d.name).replace(/[^\w\- ]+/g,"").trim().replace(/\s+/g,"-").slice(0,40)||"campaign"}-creators${opts.label?"-"+opts.label.replace(/[^\w]+/g,"-").toLowerCase():""}-${new Date().toISOString().slice(0,10)}`;
+  if(fmt==="csv"){
+    const csv = aoa.map(r=> r.map(c=> /[",\n]/.test(c) ? `"${c.replace(/"/g,'""')}"` : c).join(",")).join("\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8" })); a.download = base+".csv"; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  } else {
+    await bkLoadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
+    const ws = XLSX.utils.aoa_to_sheet(aoa); ws["!cols"] = aoa[0].map(h=> ({ wch: h==="Address"?40 : /link/i.test(h)?34 : 16 }));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Creators"); XLSX.writeFile(wb, base+".xlsx");
+  }
+  gateToast(`⬇ ${rows.length} creator${rows.length!==1?"s":""} downloaded — same columns as the bulk upload, so you can upload it again`);
+}
+function shScript(token){
+  const url = String(typeof SUPABASE_URL!=="undefined" ? SUPABASE_URL : "").replace(/\/$/,""), key = typeof SUPABASE_KEY!=="undefined" ? SUPABASE_KEY : "";
+  return `// Geek OS → this sheet. Keeps the "Creators" tab up to date with the campaign.
+// Fills empty cells (address, courier, tracking, video, posts…), moves Status forward and adds new creators.
+// Nothing you typed is overwritten. Runs every 10 minutes once you press Geek OS → Turn on auto-update.
+const GEEK_URL = ${JSON.stringify(url + "/rest/v1/rpc/campaign_sheet_feed")};
+const GEEK_KEY = ${JSON.stringify(key)};
+const GEEK_TOKEN = ${JSON.stringify(token)};
+const TAB = "Creators";
+const COLS = ${JSON.stringify(shHead())};
+const STEPS = ["Applied","Screened","Sent to brand","Approved","Contract sent","Contract signed","Address confirmed","Courier sent","Courier delivered","Video brief sent","Video submitted","Client approved","Posted / Done"];
+const FIELD = ${JSON.stringify(SH_COLS)};
+function onOpen(){ SpreadsheetApp.getUi().createMenu("Geek OS").addItem("Update now","geekSync").addItem("Turn on auto-update (every 10 min)","geekAuto").addToUi(); }
+function geekAuto(){ ScriptApp.getProjectTriggers().forEach(t=>{ if(t.getHandlerFunction()==="geekSync") ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("geekSync").timeBased().everyMinutes(10).create(); geekSync(); }
+function geekSync(){
+  const res = UrlFetchApp.fetch(GEEK_URL, { method:"post", contentType:"application/json", muteHttpExceptions:true,
+    headers:{ apikey: GEEK_KEY, Authorization: "Bearer " + GEEK_KEY, "Content-Profile":"public" }, payload: JSON.stringify({ p_token: GEEK_TOKEN }) });
+  if(res.getResponseCode() !== 200) throw new Error("Geek OS: " + res.getContentText().slice(0, 300));
+  const feed = JSON.parse(res.getContentText()), rows = feed.rows || [];
+  const ss = SpreadsheetApp.getActiveSpreadsheet(); let sh = ss.getSheetByName(TAB) || ss.insertSheet(TAB);
+  let data = sh.getDataRange().getValues();
+  if(data.length < 1 || data[0].join("") === ""){ sh.getRange(1, 1, 1, COLS.length).setValues([COLS]).setFontWeight("bold"); sh.setFrozenRows(1); data = [COLS]; }
+  let head = data[0].map(h=> String(h).trim());
+  COLS.forEach(c=>{ if(head.indexOf(c) < 0){ head.push(c); sh.getRange(1, head.length).setValue(c).setFontWeight("bold"); } });
+  const col = c=> head.indexOf(c), norm = {
+    ig: v=> String(v||"").trim().toLowerCase().replace(/^@/,"").replace(/^(https?:\\/\\/)?(www\\.|m\\.)?instagram\\.com\\//,"").replace(/[\\/?#].*$/,""),
+    ph: v=> String(v||"").replace(/\\D/g,"").slice(-10), em: v=> String(v||"").trim().toLowerCase() };
+  const find = r=>{ for(let i=1;i<data.length;i++){ const d = data[i];
+      if(r.instagram && col("Instagram")>=0 && norm.ig(d[col("Instagram")]) === norm.ig(r.instagram)) return i;
+      if(r.whatsapp && col("WhatsApp")>=0 && norm.ph(d[col("WhatsApp")]).length===10 && norm.ph(d[col("WhatsApp")]) === norm.ph(r.whatsapp)) return i;
+      if(r.email && col("Email")>=0 && norm.em(d[col("Email")]) && norm.em(d[col("Email")]) === norm.em(r.email)) return i; } return -1; };
+  const val = (r, c)=>{ const v = r[FIELD[c]]; return v == null ? "" : (c==="Instagram" && v ? "@" + String(v).replace(/^@/,"") : String(v)); };
+  let filled = 0, moved = 0, added = 0; const add = [];
+  rows.forEach(r=>{
+    const i = find(r);
+    if(i < 0){ const line = head.map(h=> FIELD[h] ? val(r, h) : ""); add.push(line); data.push(line); added++; return; }
+    COLS.forEach(c=>{ const j = col(c), v = val(r, c); if(j < 0 || !v) return; const cur = String(data[i][j] == null ? "" : data[i][j]).trim();
+      if(c === "Status"){ const a = STEPS.indexOf(cur), b = STEPS.indexOf(v); if(cur === v) return; if(a < 0 && cur && !/^Out/.test(v)) return; if(a >= 0 && b >= 0 && b <= a) return;
+        sh.getRange(i+1, j+1).setValue(v); data[i][j] = v; moved++; return; }
+      if(cur === ""){ sh.getRange(i+1, j+1).setValue(v); data[i][j] = v; filled++; } });
+  });
+  if(add.length) sh.getRange(sh.getLastRow()+1, 1, add.length, head.length).setValues(add);
+  ss.toast(\`\${added} new creator\${added!==1?"s":""} · \${filled} detail\${filled!==1?"s":""} filled in · \${moved} step\${moved!==1?"s":""} moved\`, "Geek OS — " + (feed.campaign || "campaign"), 6);
+}`;
+}
+function shPanelHtml(){
+  const d = _sh && _sh.camp===(_bpCamp&&_bpCamp.id) ? _sh : null, l = d && d.link, nSel = _ccSel.size;
+  const steps = bkStatuses().map(([k,lab])=> [k, lab]).concat([["out","Out of the campaign"]]);
+  const cnt = k=> d && d.rows ? d.rows.filter(r=> k==="" ? true : k==="out" ? /^Out/.test(r.status||"") : r.status_key===k && !/^Out/.test(r.status||"")).length : null;
+  return `<div class="sh-panel">
+    <div class="sh-h"><b>📄 Campaign sheet</b> <span class="muted">— every creator in the same columns as the bulk upload: download it, edit it, upload it again · or link a Google Sheet that keeps itself up to date</span></div>
+    <div class="sh-row"><span class="sh-lbl">⬇ Download</span>
+      <select id="shStep"><option value="">All creators${cnt("")!=null?` (${cnt("")})`:""}</option>${steps.map(([k,lab])=>{ const n = cnt(k); return n===0 ? "" : `<option value="${k}">${esc(lab)}${n!=null?` (${n})`:""}</option>`; }).join("")}</select>
+      <button type="button" class="btn sm" data-shdl="xlsx">⬇ Excel</button><button type="button" class="btn sm ghost" data-shdl="csv">⬇ CSV</button>
+      <span class="sh-or muted">or</span><button type="button" class="btn sm ghost" id="shDlSel"${nSel?"":" disabled"}>⬇ Only the ticked (${nSel})</button></div>
+    <div class="sh-row"><span class="sh-lbl">🔗 Google Sheet</span>
+      <input id="shUrl" placeholder="Paste your Google Sheet link (https://docs.google.com/spreadsheets/…)" value="${esc((l&&l.sheet_url)||"")}">
+      <button type="button" class="btn sm" id="shLinkGo">${l?"Save":"Link it"}</button>
+      ${l&&l.sheet_url?`<a class="btn sm ghost" href="${esc(safeUrl(l.sheet_url))}" target="_blank" rel="noopener">Open sheet ↗</a>`:""}</div>
+    ${l ? `<div class="sh-sync">${l.last_pull_at?`✅ Last updated <b>${esc(fmtDateTime(l.last_pull_at))}</b> · ${esc(l.pulls||0)} update${(l.pulls||0)!==1?"s":""}`:`⏳ Not updated yet — finish the 4 steps below once`}</div>
+      <details class="sh-how"${l.last_pull_at?"":" open"}><summary>How to turn it on (one time, 2 minutes)</summary>
+        <ol><li>Open the sheet → <b>Extensions → Apps Script</b>.</li>
+          <li>Delete what's there, paste this script (<button type="button" class="mini-btn" id="shCopy">📋 Copy script</button>) and press 💾 Save.</li>
+          <li>Back in the sheet, reload it → a <b>Geek OS</b> menu appears → <b>Turn on auto-update</b> → allow it (Google asks once).</li>
+          <li>Done — the <b>Creators</b> tab fills in now and updates every 10 minutes. <b>Geek OS → Update now</b> any time.</li></ol>
+        <div class="muted bk-mini">The script fills empty cells (address, courier, tracking, video, post links), moves Status forward and adds new creators at the bottom — it never overwrites what your team typed. To upload changes back, use the bulk upload with this sheet's link. The script carries this campaign's secret link — share the sheet only with your team. <a href="#" id="shNewTok">Change the secret link</a> (the old script stops working).</div>
+      </details>` : ""}
+  </div>`;
+}
+function wireSheetPanel(root){
+  root = root || document; const q = id=> root.querySelector("#"+id) || document.getElementById(id);
+  const repaint = ()=>{ const box = document.getElementById("shBox"); if(box){ box.innerHTML = shPanelHtml(); wireSheetPanel(box); } };
+  if(!_sh || _sh.camp !== (_bpCamp&&_bpCamp.id)) shLoad().then(repaint, e=>{ const box = document.getElementById("shBox"); if(box) box.insertAdjacentHTML("beforeend", `<div class="cc-wa-err">${esc(e.message||e)}</div>`); });
+  (root.querySelectorAll ? root : document).querySelectorAll("[data-shdl]").forEach(b=> b.onclick = async ()=>{ const st = q("shStep"), o = st && st.value;
+    b.disabled = true; try{ await shDownload(b.dataset.shdl, { step: o||"", label: o ? (o==="out"?"out":bkStLabel(o)) : "" }); }catch(e){ gateToast(e.message||String(e)); } b.disabled = false; });
+  const ds = q("shDlSel"); if(ds) ds.onclick = async ()=>{ if(!_ccSel.size) return; ds.disabled = true; try{ await shDownload("xlsx", { keys: new Set(_ccSel), label:"ticked" }); }catch(e){ gateToast(e.message||String(e)); } ds.disabled = false; };
+  const go = q("shLinkGo"); if(go) go.onclick = async ()=>{ const u = (q("shUrl").value||"").trim();
+    if(u && !/^https:\/\/docs\.google\.com\/spreadsheets\//i.test(u)){ gateToast("Paste the Google Sheet link (https://docs.google.com/spreadsheets/…)"); return; }
+    go.disabled = true; const r = await sb.schema("api").rpc("campaign_sheet_link", { p_campaign: _bpCamp.id, p_sheet_url: u||null, p_new_token: false }).then(x=>x, e=>({error:e})); go.disabled = false;
+    if(r.error){ gateToast(r.error.message||String(r.error)); return; }
+    _sh = Object.assign(_sh||{ camp:_bpCamp.id }, { link: r.data }); repaint(); gateToast("🔗 Sheet linked — follow the 4 steps once to turn on auto-update"); };
+  const cp = q("shCopy"); if(cp) cp.onclick = async e=>{ e.preventDefault(); const l = _sh && _sh.link; if(!l) return;
+    try{ await navigator.clipboard.writeText(shScript(l.token)); cp.textContent = "✓ Copied — paste it in Apps Script"; }catch(e2){ gateToast("Couldn't copy — allow clipboard access and try again."); } };
+  const nt = q("shNewTok"); if(nt) nt.onclick = async e=>{ e.preventDefault(); if(!confirm("Make a new secret link? The script already in the sheet stops working until you paste the new one.")) return;
+    const r = await sb.schema("api").rpc("campaign_sheet_link", { p_campaign: _bpCamp.id, p_sheet_url: null, p_new_token: true }).then(x=>x, e2=>({error:e2}));
+    if(r.error){ gateToast(r.error.message||String(r.error)); return; } _sh.link = r.data; repaint(); gateToast("New secret link — copy the script again and paste it in Apps Script."); };
 }
 
 /* ================= BARTER PROCESS — one creator at a time, start to finish =================
@@ -7023,7 +7158,7 @@ function paintCampaignCommandInner(body){
           return `<div class="cc-selbar"><label><input type="checkbox" id="ccSelAll"${all?" checked":""}> Select all <span class="muted">(${vis.length} shown)</span></label>
             <button type="button" class="btn sm cc-wabtn" id="ccWaSel"${_ccSel.size?"":" disabled"}>🟢 WhatsApp to selected (<span id="ccSelN">${_ccSel.size}</span>)</button>
             ${reIds.size?`<button type="button" class="btn ghost sm" id="ccSendSel"${nRe?"":" disabled"} title="Only for creators who have not registered yet">↻ Resend invite to not-registered (<span id="ccReN">${nRe}</span>)</button>`:""}
-            ${_ccSel.size?`<button type="button" class="mini-btn ghost" id="ccSelClear">Clear</button>`:""}
+            ${_ccSel.size?`<button type="button" class="btn ghost sm" id="ccDlSel" title="Same columns as the bulk upload — edit and upload it again">⬇ Download selected</button><button type="button" class="mini-btn ghost" id="ccSelClear">Clear</button>`:""}
             ${_ccFilter!=="noig"?`<button type="button" class="mini-btn ghost" id="ccPickNoIg" title="Show only creators who registered but haven't connected Instagram, and tick them all">📸 Pick everyone without Instagram</button>`:""}</div>
             ${_ccWa.open?ccWaPanelHtml():""}`; })()}
       <div class="cc-hint muted">Tap a creator to open everything — every step with its time, contract, address, courier, video, posts with their numbers — and do any action right there. Changing a step asks only for what it needs (courier, video link, the link of every post).</div>
@@ -7175,6 +7310,7 @@ function wireCcSelect(body){
   if(sa) sa.onchange = ()=>{ const el = window.__ccEligible||[]; if(sa.checked) el.forEach(id=> _ccSel.add(id)); else el.forEach(id=> _ccSel.delete(id));
     body.querySelectorAll("[data-ccsel]").forEach(c=> c.checked = _ccSel.has(c.dataset.ccsel)); sync(); };
   const cl = body.querySelector("#ccSelClear"); if(cl) cl.onclick = ()=>{ _ccSel.clear(); paintBarterProcess(); };
+  const dl = body.querySelector("#ccDlSel"); if(dl) dl.onclick = async ()=>{ if(!_ccSel.size) return; dl.disabled = true; try{ await shDownload("xlsx", { keys: new Set(_ccSel), label:"selected" }); }catch(e){ gateToast(e.message||String(e)); } dl.disabled = false; };
   body.querySelectorAll("[data-ccig]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); _ccSel = new Set([b.dataset.ccig]); _ccWa.open = true; _ccWa.mode = "step"; paintBarterProcess();
     const w = document.getElementById("ccWa"); if(w) w.scrollIntoView({ behavior:"smooth", block:"center" }); });
   const pk = body.querySelector("#ccPickNoIg"); if(pk) pk.onclick = ()=>{ _ccFilter = "noig"; _ccSel.clear(); paintBarterProcess();
