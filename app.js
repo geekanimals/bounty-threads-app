@@ -6216,12 +6216,17 @@ function bkHistHtml(){
   window.__bkHistKeys = ups.map(u=> [...new Set((u.items||[]).map(keyOf).filter(Boolean))]);
   return `<div class="bk-hist-sum"><b>${ups.length}</b> upload${ups.length>1?"s":""} · <b>${tot}</b> creator${tot!==1?"s":""} came in this way</div>
     ${ups.map((u,k)=>{ const items = u.items||[], key = "h:"+u.at;
-      const nu = u.not_uploaded || [];
-      const nuHtml = nu.length ? `<div class="bk-nu"><div class="bk-err-line bad">⚠️ <b>Not uploaded (${nu.length})</b> — these rows of the sheet didn't go, and why:</div>
-        <div class="bk-tablewrap" style="max-height:none"><table class="bk-table"><thead><tr><th>Row</th><th>Name</th><th>Instagram</th><th>WhatsApp · email</th><th>Step in sheet</th><th>Why</th></tr></thead><tbody>
-        ${nu.map(x=>`<tr><td>${esc(x.row||"—")}</td><td>${esc(x.name||"—")}</td><td>${x.handle?"@"+esc(String(x.handle).replace(/^@/,"").replace(/^(https?:\/\/)?(www\.)?instagram\.com\//,"").replace(/[\/?#].*$/,"")):"—"}</td><td>${esc([x.phone, x.email].filter(Boolean).join(" · ")||"—")}</td><td>${esc(x.status?bkStLabel(x.status):"—")}</td><td><span class="tag bad">${esc(x.reason||"—")}</span></td></tr>`).join("")}
-        </tbody></table></div></div>` : (u.skipped ? `<div class="muted bk-mini">⚠️ ${u.skipped} row${u.skipped>1?"s":""} had no WhatsApp / email / Instagram and were skipped (older upload — names weren't logged then).</div>` : "");
-      const bits = [nu.length?`<b style="color:#dc2626">⚠️ ${nu.length} not uploaded</b>`:"", u.new_count?`<b>${u.new_count}</b> new`:"", u.updated_count?`<b>${u.updated_count}</b> updated`:"", u.duplicates?`${u.duplicates} duplicate${u.duplicates>1?"s":""}`:"", u.skipped&&!nu.length?`${u.skipped} skipped`:""].filter(Boolean).join(" · ") || "no new creators (only existing rows changed)";
+      const isRep = x=> /^(Repeat|Already in)/.test(x.reason||"");
+      const nuAll = u.not_uploaded || [], nu = nuAll.filter(x=> !isRep(x)), rep = nuAll.filter(isRep);
+      const nuTable = (list, cls)=> `<div class="bk-tablewrap" style="max-height:none"><table class="bk-table"><thead><tr><th>Row</th><th>Name</th><th>Instagram</th><th>WhatsApp · email</th><th>Step in sheet</th><th>Why</th></tr></thead><tbody>
+        ${list.map(x=>`<tr><td>${esc(x.row||"—")}</td><td>${esc(x.name||"—")}</td><td>${x.handle?"@"+esc(String(x.handle).replace(/^@/,"").replace(/^(https?:\/\/)?(www\.)?instagram\.com\//,"").replace(/[\/?#].*$/,"")):"—"}</td><td>${esc([x.phone, x.email].filter(Boolean).join(" · ")||"—")}</td><td>${esc(x.status?bkStLabel(x.status):"—")}</td><td><span class="tag ${cls}">${esc(x.reason||"—")}</span></td></tr>`).join("")}
+        </tbody></table></div>`;
+      const old = [u.skipped && !nu.length ? `${u.skipped} row${u.skipped>1?"s":""} had no WhatsApp / email / Instagram and were skipped` : "",
+                   u.duplicates && !rep.length ? `${u.duplicates} row${u.duplicates>1?"s were repeats":" was a repeat"} of the same person (same WhatsApp / email / Instagram as another row) — merged, not a second creator` : ""].filter(Boolean);
+      const nuHtml = (nu.length ? `<div class="bk-nu"><div class="bk-err-line bad">⚠️ <b>Not uploaded (${nu.length})</b> — these rows of the sheet didn't go, and why:</div>${nuTable(nu, "bad")}</div>` : "")
+        + (rep.length ? `<div class="bk-nu"><div class="bk-err-line warn">🔁 <b>Duplicates / already in (${rep.length})</b> — the same person again, so not added twice:</div>${nuTable(rep, "warn")}</div>` : "")
+        + (old.length ? `<div class="bk-nu"><div class="bk-err-line warn">⚠️ ${old.map(esc).join(" · ")}.</div><div class="muted bk-mini">This upload is from before names were saved for these rows, so only the count is known. Uploads from now on list every such row — row number, name, Instagram, number and why.</div></div>` : "");
+      const bits = [nu.length?`<b style="color:#dc2626">⚠️ ${nu.length} not uploaded</b>`:"", u.new_count?`<b>${u.new_count}</b> new`:"", u.updated_count?`<b>${u.updated_count}</b> updated`:"", (rep.length||u.duplicates)?`<b style="color:#b45309">🔁 ${rep.length||u.duplicates} duplicate${(rep.length||u.duplicates)>1?"s":""}</b>`:"", u.skipped&&!nu.length?`${u.skipped} skipped`:""].filter(Boolean).join(" · ") || "no new creators (only existing rows changed)";
       return bkFold(key, `📅 ${esc(fmtDateTime(u.at))} <span class="muted">· by ${esc(u.who||"—")}</span> <span class="bk-hist-n">${bits}</span>${k===0?' <span class="tag">latest</span>':""}`,
         `${nuHtml}${u.exact?"":`<div class="muted bk-mini">Older upload: the creators it added are shown (rows it only updated weren't logged then).</div>`}
          ${items.length?`<div class="bk-hist-acts"><button type="button" class="btn sm cc-wabtn" data-bkhwa="${k}">🟢 WhatsApp to these ${window.__bkHistKeys[k].length} creators</button><span class="muted">ticks them in the creator list below and opens the WhatsApp panel — goes only when you press Send</span></div><div class="bk-hist-list">${items.map(card).join("")}</div>`:`<div class="muted">No creators to show for this upload.</div>`}`, "bk-hist-up"); }).join("")}`;
@@ -6341,6 +6346,8 @@ function wireBulk(){
     bkMergeRepeats(all, pv);
     const why = _bk.rows.map((r,i)=> bkRowBlock(r, pv[i]) || (pv[i] && pv[i].already && !all[i]._merged ? "Already in this campaign — nothing new in the row" : null));
     const rows = all.filter((d,i)=> !why[i] && !(pv[i] && (pv[i].duplicate || pv[i].already && !d._merged)));
+    // 🔁 repeats of the same person: not a second creator — logged with the row they were merged into
+    _bk.rows.forEach((r,i)=>{ if(!why[i] && pv[i] && pv[i].duplicate) why[i] = pv[i]._dupOf!=null ? `Repeat of row ${pv[i]._dupOf+(_bk.off||2)} — same person, merged into that row` : "Repeat — same person as another row"; });
     const notUp = _bk.rows.map((r,i)=>{ if(!why[i]) return null; const x = bkRowData(r);
       return { row: i+(_bk.off||2), name: x.name, handle: x.handle, phone: x.phone, email: x.email, status: r.status||"registered", reason: why[i] }; }).filter(Boolean);
     if(!rows.length) return;
