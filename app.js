@@ -10133,35 +10133,86 @@ async function adminOptouts(){
 }
 
 // Super Admin → Creator activity: who is on the platform, from where, for how long, doing what.
-async function adminActivity(body){
-  body.innerHTML = `<div class="card"><div class="muted">Loading activity…</div></div>`;
+// human words for the activity log
+const ACT_LBL = { login:"🔐 Signed in", sign_out:"🚪 Signed out", session_start:"🟢 Opened the app", page_view:"📄 Opened a page", time:"⏱️ Time on a page",
+  consent:"🍪 Chose cookies", campaign_apply:"📝 Applied to a campaign", instagram_connect_start:"⏳ Started connecting Instagram", instagram_connect:"📸 Connected Instagram",
+  instagram_connected:"📸 Connected Instagram", instagram_publish:"📤 Published on Instagram", publish:"📤 Published on Instagram", profile_completed:"✅ Completed profile",
+  official_email_verified:"✉️ Verified email", campaign_create:"📣 Created a campaign", campaign_edit:"✏️ Edited a campaign", application_approve:"👍 Approved an application",
+  application_decline:"👎 Declined an application", contract_sign:"✍️ Signed a contract", click:"👆 Clicked", error:"⚠️ Saw an error" };
+const actLbl = e=> ACT_LBL[e] || ("• " + String(e||"—").replace(/_/g," "));
+const actMins = m=>{ m = Number(m)||0; if(m < 1) return m ? "<1 min" : "0 min"; if(m < 60) return Math.round(m) + " min"; const h = Math.floor(m/60); return h + "h " + Math.round(m%60) + "m"; };
+let _actF = "all", _actQ = "", _actSort = "seen";
+async function adminActivity(body, silent){
+  if(!silent) body.innerHTML = skel("table",6);
   const { data, error } = await sb.rpc("admin_activity_summary", { p_days: 30 });
   if(error){ body.innerHTML = `<div class="card"><div class="muted">Couldn't load: ${esc(error.message)}</div></div>`; return; }
-  const rows = data || [];
+  const all = data || [];
   const ago = t=>{ if(!t) return "—"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
-  body.innerHTML = `<div class="card"><h3>Creator activity · last 30 days</h3>
-    <p class="muted" style="font-size:12px;margin-bottom:10px">Security events (sign-ins, Instagram connect, publish, apply) are always logged. Pages &amp; time spent appear only for people who accepted analytics cookies. Locations are approximate (from IP).</p>
-    ${rows.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Person</th><th>Role</th><th>Last seen</th><th>Sessions</th><th>Time</th><th>Page views</th><th>Last IP</th><th>Location</th><th>Consent</th><th>Last action</th><th></th></tr></thead><tbody>
-      ${rows.map(r=>`<tr><td><b>${esc(r.name||r.email||"—")}</b>${r.ig_username?`<div class="muted" style="font-size:12px">@${esc(r.ig_username)}</div>`:""}</td>
-        <td>${esc(r.role||"—")}</td><td>${ago(r.last_seen)}</td><td>${r.sessions||0}</td><td>${r.minutes||0} min</td><td>${r.page_views||0}</td>
-        <td><code>${esc(r.last_ip||"—")}</code></td><td>${esc([r.last_city,r.last_region,r.last_country].filter(Boolean).join(", ")||"—")}</td>
-        <td>${r.consent==="all"?'<span class="tag good">all</span>':r.consent==="essential"?'<span class="tag warn">essential</span>':'—'}</td>
-        <td>${esc(r.last_event||"—")}</td><td><button class="mini-btn" data-acttl="${esc(r.member_id)}">Timeline</button></td></tr>`).join("")}
-    </tbody></table></div>` : `<div class="muted" style="padding:8px">No activity yet.</div>`}</div><div id="actTimeline"></div>`;
+  const age = r=> r.last_seen ? (Date.now()-new Date(r.last_seen).getTime())/60000 : 1e9;
+  const F = [["now","🟢","Active now","last 15 minutes",r=>age(r)<=15],["today","📅","Today","seen in 24 hours",r=>age(r)<=1440],["week","🗓️","This week","seen in 7 days",r=>age(r)<=10080],
+    ["all","👥","Everyone","last 30 days",r=>true],["cookies","📊","Shared analytics","pages & time tracked",r=>r.consent==="all"],["ess","🍪","Essential only","sign-ins only",r=>r.consent==="essential"],
+    ["none","❔","No cookie choice","never answered",r=>!r.consent]];
+  if(!F.find(x=>x[0]===_actF)) _actF = "all";
+  const f = F.find(x=>x[0]===_actF), q = _actQ.trim().toLowerCase();
+  const S = { seen:(a,b)=> age(a)-age(b), time:(a,b)=> (b.minutes||0)-(a.minutes||0), sessions:(a,b)=> (b.sessions||0)-(a.sessions||0), pages:(a,b)=> (b.page_views||0)-(a.page_views||0) };
+  const rows = all.filter(f[4]).filter(r=> !q || [r.name,r.email,r.ig_username,r.role,r.last_city,r.last_region,r.last_ip].filter(Boolean).join(" ").toLowerCase().includes(q)).sort(S[_actSort]||S.seen);
+  const tot = rows.reduce((a,r)=>({ s:a.s+(r.sessions||0), m:a.m+(Number(r.minutes)||0), p:a.p+(r.page_views||0) }), {s:0,m:0,p:0});
+  const focused = document.activeElement && document.activeElement.id==="actQ";
+  body.innerHTML = `<div class="ap-tiles au-tiles">${F.map(([k,ic,l,sub,fn])=>`<button type="button" class="ap-tile${_actF===k?" on":""}" data-actf="${k}"><span class="ap-tile-ic">${ic}</span><b>${fmtNum(all.filter(fn).length)}</b><span class="ap-tile-l">${l}</span><span class="ap-tile-s">${_actF===k?"● showing now":sub}</span></button>`).join("")}</div>
+    <div class="card"><div class="au-bar"><h3 style="margin:0">${f[1]} ${esc(f[2])} <span class="muted" style="font-size:13px;font-weight:500">· ${fmtNum(rows.length)} people · ${fmtNum(tot.s)} sessions · ${actMins(tot.m)} · ${fmtNum(tot.p)} pages</span>${_actF!=="all"||q?` <button type="button" class="mini-btn ghost" id="actReset">✕ Reset</button>`:""}</h3>
+      <span class="au-tools"><input id="actQ" type="search" placeholder="🔍 Name, @handle, city, IP…" value="${esc(_actQ)}">
+        <select id="actSort">${[["seen","Recently active"],["time","Most time spent"],["sessions","Most sessions"],["pages","Most pages"]].map(([k,l])=>`<option value="${k}"${_actSort===k?" selected":""}>${l}</option>`).join("")}</select></span></div>
+      <div class="act-note">🔒 Sign-ins, Instagram connect, publish and apply are always logged. Pages &amp; time show only for people who allowed analytics cookies. Location is approximate (from IP).</div>
+      <div class="au-list">${rows.map(r=>{ const live = age(r)<=15, nm = r.name || r.email || "—", loc = [r.last_city,r.last_region,r.last_country].filter(Boolean).join(", ");
+        return `<div class="act-row">
+          <div class="au-who"><span class="avatar act-av${live?" live":""}">${esc(String(nm).slice(0,2).toUpperCase())}</span><div style="min-width:0">
+            <div class="au-name">${esc(nm)} ${r.role?`<span class="au-role ${esc(r.role)}">${esc(r.role)}</span>`:""}</div>
+            <div class="au-sub">${r.ig_username?`<a href="https://instagram.com/${encodeURIComponent(r.ig_username)}" target="_blank" rel="noopener">@${esc(r.ig_username)}</a> · `:""}${live?'<b style="color:var(--good)">● online now</b>':`seen ${ago(r.last_seen)}`}</div></div></div>
+          <div class="act-stats"><div><b>${fmtNum(r.sessions||0)}</b><span>sessions</span></div><div><b>${r.consent==="all"||Number(r.minutes)>0?actMins(r.minutes):"—"}</b><span>time</span></div><div><b>${r.consent==="all"||r.page_views>0?fmtNum(r.page_views||0):"—"}</b><span>pages</span></div></div>
+          <div class="au-act"><div><span class="au-k">Last action</span>${esc(actLbl(r.last_event))}</div><div><span class="au-k">Location</span>${loc?esc(loc):'<span class="muted">—</span>'}</div>
+            <div><span class="au-k">IP · cookies</span><code>${esc(r.last_ip||"—")}</code> ${r.consent==="all"?'<span class="tag good">all</span>':r.consent==="essential"?'<span class="tag warn">essential</span>':'<span class="muted">not chosen</span>'}</div></div>
+          <div class="au-btns"><button class="mini-btn" data-acttl="${esc(r.member_id)}">🕒 Timeline</button></div></div>`; }).join("") || `<div class="muted" style="padding:14px">Nobody in this view.</div>`}</div></div>`;
+  const again = ()=> adminActivity(body, true);
+  body.querySelectorAll("[data-actf]").forEach(b=> b.onclick = ()=>{ _actF = b.dataset.actf; again(); });
+  const rs = document.getElementById("actReset"); if(rs) rs.onclick = ()=>{ _actF = "all"; _actQ = ""; again(); };
+  document.getElementById("actSort").onchange = e=>{ _actSort = e.target.value; again(); };
+  const qi = document.getElementById("actQ"); let qt;
+  if(focused){ qi.focus(); qi.setSelectionRange(qi.value.length, qi.value.length); }
+  qi.oninput = ()=>{ clearTimeout(qt); qt = setTimeout(()=>{ _actQ = qi.value; again(); }, 250); };
   body.querySelectorAll("[data-acttl]").forEach(b=> b.onclick = ()=> adminActivityTimeline(b.dataset.acttl, rows.find(r=>r.member_id===b.dataset.acttl)));
 }
+// one person's timeline — opens in a window on top (no jumping down the page), grouped by day, in plain words
 async function adminActivityTimeline(member, row, target){
-  const box = target || document.getElementById("actTimeline"); if(!box) return;
-  box.innerHTML = `<div class="card"><div class="muted">Loading timeline…</div></div>`;
+  let box = target;
+  if(!box){
+    document.getElementById("actTlModal")?.remove();
+    const m = el("div","modal-overlay open"); m.id = "actTlModal"; m.style.zIndex = "10050";
+    const nm = (row && (row.name||row.email)) || "Activity";
+    m.innerHTML = `<div class="modal modal-lg act-tl-modal"><div class="modal-head"><strong>🕒 ${esc(nm)}${row&&row.ig_username?` <span class="muted" style="font-weight:500">@${esc(row.ig_username)}</span>`:""}</strong><button class="btn sm ghost" type="button" data-x>✕</button></div><div class="act-tl-body"></div></div>`;
+    document.body.appendChild(m);
+    const close = ()=>{ m.remove(); document.removeEventListener("keydown", esc_); };
+    const esc_ = e=>{ if(e.key==="Escape") close(); };
+    m.querySelector("[data-x]").onclick = close; m.onclick = e=>{ if(e.target===m) close(); }; document.addEventListener("keydown", esc_);
+    box = m.querySelector(".act-tl-body");
+  }
+  box.innerHTML = `<div class="muted" style="padding:16px">Loading timeline…</div>`;
   const { data, error } = await sb.rpc("admin_activity_timeline", { p_member: member, p_limit: 300 });
-  if(error){ box.innerHTML = `<div class="card"><div class="muted">${esc(error.message)}</div></div>`; return; }
-  const fmt = t=> new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",second:"2-digit"});
-  box.innerHTML = `<div class="card"><h3>Timeline — ${esc((row&&(row.name||row.email))||"")}</h3><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>When</th><th>Type</th><th>Event</th><th>Page</th><th>Details</th><th>IP</th><th>Location</th><th>Device</th></tr></thead><tbody>
-    ${(data||[]).map(e=>`<tr><td>${fmt(e.created_at)}</td><td>${esc(e.kind)}</td><td><b>${esc(e.event)}</b>${e.duration_ms?` <span class="muted">${Math.round(e.duration_ms/1000)}s</span>`:""}</td><td>${esc(e.page||"")}</td>
-      <td style="max-width:260px;font-size:12px">${esc(JSON.stringify(e.detail||{})==="{}"?"":JSON.stringify(e.detail))}</td><td><code>${esc(e.ip||"")}</code></td>
-      <td>${esc([e.city,e.region,e.country].filter(Boolean).join(", "))}</td><td style="max-width:200px;font-size:11px" class="muted">${esc((e.user_agent||"").slice(0,90))}</td></tr>`).join("")}
-  </tbody></table></div></div>`;
-  if(!target) box.scrollIntoView({behavior:"smooth"});
+  if(error){ box.innerHTML = `<div class="muted" style="padding:16px">${esc(error.message)}</div>`; return; }
+  const L = data||[];
+  const tm = t=> new Date(t).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+  const dayOf = t=>{ const x = new Date(t), n = new Date(); if(x.toDateString()===n.toDateString()) return "Today"; const y = new Date(n); y.setDate(n.getDate()-1);
+    return x.toDateString()===y.toDateString() ? "Yesterday" : x.toLocaleDateString("en-IN",{weekday:"short",day:"2-digit",month:"short"}); };
+  const dev = ua=>{ ua = String(ua||""); return /iPhone|iPad/.test(ua) ? "📱 iPhone" : /Android/.test(ua) ? "📱 Android" : /Macintosh/.test(ua) ? "💻 Mac" : /Windows/.test(ua) ? "💻 Windows" : ua ? "💻 Computer" : ""; };
+  const det = d=>{ if(!d || typeof d!=="object") return ""; const o = Object.entries(d).filter(([k,v])=> v!=null && v!=="" && typeof v!=="object" && !/_id$|^id$/.test(k)).slice(0,4);
+    return o.map(([k,v])=>`${esc(k.replace(/_/g," "))}: <b>${esc(String(v).slice(0,60))}</b>`).join(" · "); };
+  const days = {}; L.forEach(e=>{ const k = dayOf(e.created_at); (days[k] = days[k] || []).push(e); });
+  const evs = L.length;
+  box.innerHTML = !evs ? `<div class="muted" style="padding:16px">No activity in the log yet.</div>` : `
+    <div class="act-tl-sum">${fmtNum(evs)} events · ${Object.keys(days).length} days${row&&row.last_ip?` · last IP <code>${esc(row.last_ip)}</code>`:""}</div>
+    ${Object.entries(days).map(([d, list])=>`<div class="act-tl-day">${esc(d)} <span>${list.length}</span></div>
+      ${list.map(e=>{ const where = [e.city,e.region,e.country].filter(Boolean).join(", "), dv = dev(e.user_agent), dt = det(e.detail);
+        return `<div class="act-tl-ev"><span class="act-tl-t">${tm(e.created_at)}</span><div class="act-tl-m"><b>${esc(actLbl(e.event))}</b>${e.duration_ms?` <span class="muted">· ${Math.round(e.duration_ms/1000)}s</span>`:""}${e.page?` <span class="act-pg">${esc(e.page)}</span>`:""}
+          ${dt?`<div class="act-tl-d">${dt}</div>`:""}<div class="act-tl-d muted">${[where?`📍 ${esc(where)}`:"", e.ip?`<code>${esc(e.ip)}</code>`:"", dv].filter(Boolean).join(" · ")}</div></div></div>`; }).join("")}`).join("")}`;
 }
 
 // the tools that live under ⚙️ Advanced (no tab row any more — the sidebar opens each page)
