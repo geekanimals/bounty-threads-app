@@ -2434,12 +2434,10 @@ async function loadApprovals(silent){
   pollNavCounts();
   const ago = t=>{ if(!t) return ""; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
   const roleName = r=>({owner:"Agency Owner",brand:"Brand",manager:"Manager",corporate:"Corporate"}[r]||r);
-  body.innerHTML = `<div class="rp-kpis">
-      ${d.is_admin?`<div><b>${signups.length}</b>Account signups</div>`:""}
-      <div><b>${camps.length}</b>Campaigns to approve</div>
-      <div><b>${apps.length+mk.length}</b>Creators to decide</div>
-      <div><b>${procF.length}</b>Barter steps on you</div>
-      <div><b>${total}</b>Total waiting</div></div>
+  const AT = [["proc","🔁","Barter steps on you",procF.length,"ship · review · chase"],["apps","🎨","Creators to decide",apps.length+mk.length,"approve or decline"],
+    ["camps","📣","Campaigns to approve",camps.length,"from agencies / brands"]].concat(d.is_admin?[["signups","🏢","Account signups",signups.length,"agencies & brands"]]:[]);
+  body.innerHTML = `<div class="ap-tiles dl-tiles">${AT.map(([k,ic,l,v,sub])=>`<button type="button" class="ap-tile${v?"":" zero"}" data-apvgo="${k}"${v?"":" disabled"}><span class="ap-tile-ic">${ic}</span><b>${fmtNum(v)}</b><span class="ap-tile-l">${l}</span><span class="ap-tile-s">${v?sub+" ↓":"nothing waiting ✓"}</span></button>`).join("")}
+      <div class="ap-tile on" style="cursor:default"><span class="ap-tile-ic">⚡</span><b>${fmtNum(total)}</b><span class="ap-tile-l">Total waiting</span><span class="ap-tile-s">${_apvCamp?esc(_apvCamp):"all campaigns"}</span></div></div>
     ${allC.length ? `<div class="apv-filter"><label>Campaign <select id="apvCamp"><option value="">All campaigns (${(d.applicants||[]).length+(d.marketplace||[]).length+proc.length})</option>${allC.map(n=>`<option value="${esc(n)}"${_apvCamp===n?" selected":""}>${esc(n)} (${cnt(n)})</option>`).join("")}</select></label>
       ${_apvCamp?`<button class="mini-btn ghost" id="apvCampX">✕ Clear</button>`:""}</div>` : ""}
     ${total? "" : `<div class="card"><div class="muted" style="padding:8px">${_apvCamp ? "Nothing waiting on this campaign ✅" : "All clear — nothing waiting on you right now ✅"}</div></div>`}
@@ -2467,6 +2465,9 @@ async function loadApprovals(silent){
     <div class="muted" style="font-size:12px;margin-top:12px">Live — refreshes every 20s. Everyone you approve or decline is told in the app, on WhatsApp and by email.</div>`;
   const again = ()=>{ _apvSig = ""; loadApprovals(true); };
   const cs = body.querySelector("#apvCamp"); if(cs) cs.onchange = ()=>{ _apvCamp = cs.value; again(); };
+  { const HD = { proc:"Barter process", apps:"Creators waiting", camps:"Campaigns awaiting", signups:"Agency & brand signups" };
+    body.querySelectorAll("[data-apvgo]").forEach(b=> b.onclick = ()=>{ const h = [...body.querySelectorAll(".card h3")].find(x=> x.textContent.includes(HD[b.dataset.apvgo]));
+      if(h){ const c = h.closest(".card"); c.scrollIntoView({ behavior:"smooth", block:"start" }); c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash"); } }); }
   const cx = body.querySelector("#apvCampX"); if(cx) cx.onclick = ()=>{ _apvCamp = ""; again(); };
   // signups (Super Admin)
   body.querySelectorAll("[data-apvsign]").forEach(b=> b.onclick = async ()=>{
@@ -4212,7 +4213,7 @@ function paintBrands(){
         <span data-l="Campaigns"><b>${esc(b.campaigns||0)}</b></span><span data-l="Active">${b.active?`<span class="tag good">${esc(b.active)} live</span>`:'<span class="muted">0</span>'}</span>
         <span data-l="Creators"><b>${esc(b.creators||0)}</b>${b.uploaded?` <span class="muted" title="Uploaded for this brand">+${esc(b.uploaded)}</span>`:""}</span><span data-l="Posted">${esc(b.posted||0)}</span>
         <span data-l="Login">${b.logins?`<span class="tag good">🔑 ${esc(b.logins)}</span>`:'<span class="muted">—</span>'}</span>
-        <span class="bc-acts">${window.__isAdmin?`<button class="mini-btn ghost" data-bcup="${esc(b.brand_id)}" title="Upload creators for this brand">📥 Upload creators</button>`:""}${window.__isAdmin?`<button class="mini-btn ghost" data-bclogin="${esc(b.brand_id)}" title="Make a login for the brand">🔑 Login</button><button class="mini-btn ghost" data-bcview="${esc(b.brand_id)}" data-bcviewname="${esc(b.name||"")}" title="See exactly what the brand login sees">👁 View as brand</button>`:""}${window.__isAdmin?`<button class="mini-btn ghost" data-bcedit="${esc(b.brand_id)}" title="Edit the brand's details">✏️ Edit</button><button class="mini-btn ghost bc-del" data-bcdel="${esc(b.brand_id)}" title="Delete the brand — its logins lose access">🗑 Delete</button>`:""}<button class="mini-btn" data-bcopen2="${esc(b.brand_id)}">Open →</button></span></div>`).join("")}</div>`
+        <span class="bc-acts"><button class="mini-btn" data-bcopen2="${esc(b.brand_id)}">Open →</button>${window.__isAdmin?`<details class="bc-more" onclick="event.stopPropagation()"><summary class="mini-btn ghost" title="More actions">⋯ More</summary><div class="bc-more-m">`:""}${window.__isAdmin?`<button class="mini-btn ghost" data-bcup="${esc(b.brand_id)}" title="Upload creators for this brand">📥 Upload creators</button>`:""}${window.__isAdmin?`<button class="mini-btn ghost" data-bclogin="${esc(b.brand_id)}" title="Make a login for the brand">🔑 Login</button><button class="mini-btn ghost" data-bcview="${esc(b.brand_id)}" data-bcviewname="${esc(b.name||"")}" title="See exactly what the brand login sees">👁 View as brand</button>`:""}${window.__isAdmin?`<button class="mini-btn ghost" data-bcedit="${esc(b.brand_id)}" title="Edit the brand's details">✏️ Edit</button><button class="mini-btn ghost bc-del" data-bcdel="${esc(b.brand_id)}" title="Delete the brand — its logins lose access">🗑 Delete</button>`:""}${window.__isAdmin?`</div></details>`:""}</span></div>`).join("")}</div>`
     : `<div class="card"><div class="muted" style="padding:10px">${q?"No brand matches.":"No brands yet — ➕ Add brand, or create a campaign (its brand is added here)."}</div></div>`;
   body.querySelectorAll("[data-bcopen]").forEach(r=> r.onclick = e=>{ if(e.target.closest("button,a")) return; openBrandCrm(r.dataset.bcopen); });
   body.querySelectorAll("[data-bcopen2]").forEach(b=> b.onclick = ()=> openBrandCrm(b.dataset.bcopen2));
@@ -4645,35 +4646,46 @@ async function loadFinance(){
 function renderLogistics(){
   let html = pageHead("Logistics","Barter shipping — from request to delivery.");
   html += `<div class="ws-stats" id="logStats" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))"></div>`;
-  html += `<div class="card"><h3>Courier tracking</h3>
-      <p class="muted" style="font-size:13px;margin:0 0 10px">Every product going out on a barter campaign — courier, tracking number, sent and received.</p>
+  html += `<div class="card"><div id="logShipHead"><h3>Courier tracking</h3></div>
+      <p class="muted" style="font-size:12.5px;margin:0 0 10px">Every product going out on a barter campaign — courier, tracking number, sent and received.</p>
       <div id="logShip">${skel("table")}</div></div>`;
   html += `<div class="card"><h3>Barter batches</h3><div class="list" id="logRows"><div class="muted" style="padding:8px">Loading…</div></div></div>`;
   return html;
 }
+let _logF = "all", _logQ = "";
 async function loadShipments(){
   const box = document.getElementById("logShip"), stats = document.getElementById("logStats");
   if(!box || !window.sb) return;
   const { data, error } = await sb.schema("api").rpc("shipments_board").then(r=>r, e=>({error:e}));
   if(error){ box.innerHTML = `<div class="muted">${esc(error.message||error)}</div>`; return; }
-  const L = data||[];
+  let L = data||[];
   const n = s => L.filter(x=>x.status===s).length;
-  if(stats) stats.innerHTML = `<div class="ws-stat"><b>${L.length}</b><span>Shipments</span></div>
-      <div class="ws-stat"><b>${n("pending")}</b><span>To send</span></div>
-      <div class="ws-stat"><b>${n("shipped")}</b><span>In transit</span></div>
-      <div class="ws-stat"><b>${n("delivered")}</b><span>Received</span></div>
-      <div class="ws-stat"><b>${L.filter(x=>!x.has_address).length}</b><span>No address yet</span></div>`;
+  const LF = [["all","📦","All shipments",x=>true,"every barter product"],["pending","⏳","To send",x=>x.status==="pending","product not sent yet"],["shipped","🚚","In transit",x=>x.status==="shipped","on the way"],
+    ["delivered","✅","Received",x=>x.status==="delivered","creator has it"],["noaddr","🏠","No address yet",x=>!x.has_address,"ask the creator"]];
+  if(!LF.find(x=>x[0]===_logF)) _logF = "all";
+  const lf = LF.find(x=>x[0]===_logF), lq = _logQ.trim().toLowerCase();
+  const all = L; L = all.filter(lf[3]).filter(x=>{ const c = x.creator||{}; return !lq || [c.name,c.username,x.campaign,x.brand,x.product,x.courier,x.tracking_ref].filter(Boolean).join(" ").toLowerCase().includes(lq); });
+  if(stats){ stats.className = "ap-tiles dl-tiles"; stats.removeAttribute("style");
+    stats.innerHTML = LF.map(([k,ic,l,fn,sub])=>`<button type="button" class="ap-tile${_logF===k?" on":""}" data-logf="${k}"><span class="ap-tile-ic">${ic}</span><b>${fmtNum(all.filter(fn).length)}</b><span class="ap-tile-l">${l}</span><span class="ap-tile-s">${_logF===k?"● showing now":sub}</span></button>`).join("");
+    stats.querySelectorAll("[data-logf]").forEach(b=> b.onclick = ()=>{ _logF = b.dataset.logf; loadShipments(); }); }
+  const head = document.getElementById("logShipHead");
+  if(head){ const foc = document.activeElement && document.activeElement.id==="logQ";
+    head.innerHTML = `<div class="au-bar"><h3 style="margin:0">${lf[1]} ${esc(lf[2])} <span class="muted" style="font-size:13px;font-weight:500">· ${fmtNum(L.length)}</span>${_logF!=="all"||lq?` <button type="button" class="mini-btn ghost" id="logReset">✕ Reset</button>`:""}</h3>
+      <span class="au-tools"><input id="logQ" type="search" placeholder="🔍 Creator, campaign, product, courier…" value="${esc(_logQ)}"></span></div>`;
+    const qi = document.getElementById("logQ"); let qt; if(foc){ qi.focus(); qi.setSelectionRange(qi.value.length, qi.value.length); }
+    qi.oninput = ()=>{ clearTimeout(qt); qt = setTimeout(()=>{ _logQ = qi.value; loadShipments(); }, 250); };
+    const rs = document.getElementById("logReset"); if(rs) rs.onclick = ()=>{ _logF = "all"; _logQ = ""; loadShipments(); }; }
   const tag = { pending:['⏳ To send','warn'], shipped:['🚚 In transit','brand'], delivered:['✅ Received','good'], failed:['⚠️ Failed','warn'] };
   box.innerHTML = L.length ? `<table class="tbl"><thead><tr><th>Creator</th><th>Campaign</th><th>Product</th><th>Courier / tracking</th><th>Sent</th><th>Received</th><th>Status</th></tr></thead><tbody>${
     L.map(s=>{ const c = s.creator||{}, t = tag[s.status]||[s.status,'warn'];
       return `<tr><td><b>${esc(c.name||c.username||"Creator")}</b>${c.username?`<div class="muted" style="font-size:12px">@${esc(c.username)}</div>`:""}${s.has_address?"":'<div class="muted" style="font-size:11.5px">⚠️ no address on file</div>'}</td>
-        <td>${esc(s.campaign||"—")}<div class="muted" style="font-size:12px">${esc(s.brand||s.org_name||"")}</div></td>
+        <td class="log-camp" title="${esc(s.campaign||"")}">${esc(s.campaign||"—")}<div class="muted" style="font-size:12px">${esc(s.brand||s.org_name||"")}</div></td>
         <td>${esc(s.product||"—")}</td>
         <td>${esc(s.courier||"—")}${s.tracking_ref?`<div class="muted" style="font-size:12px">${esc(s.tracking_ref)}</div>`:""}</td>
         <td>${s.shipped_at?esc(fmtDate(s.shipped_at)):"—"}</td>
         <td>${s.delivered_at?esc(fmtDate(s.delivered_at)):"—"}</td>
         <td><span class="tag ${t[1]}">${t[0]}</span></td></tr>`; }).join("")}</tbody></table>`
-    : `<div class="muted">No products shipped yet. Open a barter campaign → <b>Barter process</b> to send the first one — courier and tracking land here.</div>`;
+    : all.length ? `<div class="muted" style="padding:10px">Nothing in this view.</div>` : `<div class="muted">No products shipped yet. Open a barter campaign → <b>Barter process</b> to send the first one — courier and tracking land here.</div>`;
 }
 async function loadLogistics(){
   loadShipments();
@@ -10248,7 +10260,16 @@ const ADMIN_TITLES = { overview:"Command centre", applications:"All applications
   upload:"Creator upload", activity:"Activity", links:"Settings", check:"Settings", advanced:"Settings", settings:"Settings", orgs:"Settings", data:"Settings", audit:"Settings", admins:"Settings",
   approvals:"Approvals", campaigns:"Settings" };
 function renderAdmin(){
-  let html = pageHead("Super Admin" + (ADMIN_TITLES[_adminTab] ? " · " + ADMIN_TITLES[_adminTab] : ""), "Full cross-workspace control — every record, every change, with timestamps.");
+  const ADMIN_SUBS = { overview:"What needs you now, campaigns in motion and who's active — live across every workspace.",
+    applications:"Every creator who applied to a campaign — tap a number to see those creators, approve or decline.",
+    creators:"Every creator on Geek OS — Instagram, profile, campaigns and contact in one place.",
+    users:"Everyone with a Geek OS login — role, contact, sign-ins and profile.",
+    delivery:"Is every WhatsApp and email update reaching people? Health, reasons and opt-outs.",
+    bot:"The WhatsApp helper bot — what it answers, when it stays quiet, and every reply it sent.",
+    upload:"Add creators who aren't on Geek OS yet and invite them to the live campaigns.",
+    activity:"Who is on the platform, from where, for how long and doing what.",
+    approvals:"Agency and brand accounts waiting for approval." };
+  let html = pageHead("Super Admin" + (ADMIN_TITLES[_adminTab] ? " · " + ADMIN_TITLES[_adminTab] : ""), ADMIN_SUBS[_adminTab] || "Platform settings, team, links and system tools.");
   if(ADMIN_ADVANCED.some(t=> t[0]===_adminTab)) html += `<div class="admin-tabs">${ADMIN_ADVANCED.map(t=>`<button class="${_adminTab===t[0]?'act':''}" data-atab="${t[0]}">${esc(t[1])}</button>`).join("")}</div>`;
   html += `<div id="adminBody">${skel("table")}</div>`;
   return html;
@@ -12195,3 +12216,5 @@ document.addEventListener("click", e=>{ const b = e.target.closest && e.target.c
   };
   window.addEventListener("geek:fresh", repaint);
 })();
+// "⋯ More" menus: one open at a time, close on outside click
+document.addEventListener("click", e=>{ document.querySelectorAll("details.bc-more[open]").forEach(d=>{ if(!d.contains(e.target)) d.removeAttribute("open"); }); }, true);
