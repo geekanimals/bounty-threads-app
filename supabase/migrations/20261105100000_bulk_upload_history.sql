@@ -52,7 +52,7 @@ begin
       left join public.members m on m.id = a.member_id
       left join lateral (
         select coalesce(jsonb_agg(jsonb_build_object(
-                 'action', it.action, 'name', i.full_name, 'handle', i.handle, 'phone', i.phone_e164, 'email', i.email, 'city', i.city,
+                 'action', it.action, 'invite_id', i.invite_id, 'participation_id', i.participation_id, 'name', i.full_name, 'handle', i.handle, 'phone', i.phone_e164, 'email', i.email, 'city', i.city,
                  'followers', i.followers, 'sheet_status', it.sheet_status, 'status_now', i.status,
                  'registered', i.claimed_at is not null, 'in_campaign', i.participation_id is not null, 'invites_sent', i.invites_sent)
                order by it.action, coalesce(i.handle, i.full_name)), '[]'::jsonb) items

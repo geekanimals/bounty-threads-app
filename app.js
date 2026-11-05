@@ -6154,19 +6154,23 @@ function bkHistHtml(){
   const ups = (_bkHist.data && _bkHist.data.uploads) || [];
   if(!ups.length) return `<div class="muted">No bulk upload on this campaign yet.</div>`;
   const tot = ups.reduce((a,u)=> a + (u.new_count||0), 0);
-  const stLbl = k=> (bkStatuses().find(x=> x[0]===k)||[])[1] || String(k||"—").replace(/_/g," ");
-  const row = (c,n)=> `<tr><td>${n+1}</td><td><b>${esc(c.name||"—")}</b></td><td>${c.handle?`<a href="https://instagram.com/${esc(c.handle)}" target="_blank" rel="noopener">@${esc(c.handle)}</a>`:'<span class="muted">—</span>'}</td>
-      <td>${esc(c.phone||"—")}</td><td>${esc(c.email||"—")}</td><td>${esc(c.city||"—")}</td><td>${(()=>{ const pp = c.handle && typeof pubOf==="function" ? pubOf(c.handle) : null, f = c.followers ?? (pp && pp.followers); return f!=null ? esc(fmtNum(f)) : "—"; })()}</td>
-      <td>${esc(stLbl(c.sheet_status))}</td><td>${esc(stLbl(c.status_now))}</td>
-      <td>${c.in_campaign?'<span class="tag good">In the campaign</span>':c.registered?'<span class="tag warn">On Geek · connect Instagram</span>':'<span class="tag">Not registered</span>'}</td>
-      <td>${c.action==="new"?'<span class="tag good">New</span>':'<span class="tag">Updated</span>'}</td></tr>`;
+  // every creator of an upload shows as the SAME card as the creator list below — photo, followers, step, what's next;
+  // tap it to open everything (steps with times, contract, address, courier, video, posts) and act right there
+  const d0 = _bpData||{}, byP = {}, byI = {};
+  (d0.creators||[]).forEach(x=> byP[x.participation_id] = x);
+  ((_bpPeople && _bpPeople.invites)||[]).forEach(i=> byI[i.invite_id] = i);
+  const card = c=>{
+    const x = c.participation_id && byP[c.participation_id], i = byI[c.invite_id];
+    const html = x ? bpTrackerHtml([x]) : i ? ccInviteRowHtml(i, bkStRank(i.status||"registered") >= bkStRank("approved"))
+      : `<div class="card bp-card"><div class="bp-head"><span class="avatar">${esc(String(c.handle||c.name||"?").slice(0,2).toUpperCase())}</span><div><b>${esc(c.handle?"@"+c.handle:c.name||"—")}</b><div class="r-sub">${esc([c.name, c.phone, c.email, c.city].filter(Boolean).join(" · "))}</div><div class="muted" style="font-size:12px">Not on this campaign's list any more</div></div></div></div>`;
+    return `<div class="bk-hist-card"><span class="bk-hist-tag ${c.action==="new"?"new":"upd"}">${c.action==="new"?"🆕 New in this upload":"✏️ Updated by this upload"}${c.sheet_status?` · sheet said “${esc((bkStatuses().find(z=> z[0]===c.sheet_status)||[])[1]||c.sheet_status)}”`:""}</span>${html}</div>`;
+  };
   return `<div class="bk-hist-sum"><b>${ups.length}</b> upload${ups.length>1?"s":""} · <b>${tot}</b> creator${tot!==1?"s":""} came in this way</div>
     ${ups.map((u,k)=>{ const items = u.items||[], key = "h:"+u.at;
       const bits = [u.new_count?`<b>${u.new_count}</b> new`:"", u.updated_count?`<b>${u.updated_count}</b> updated`:"", u.duplicates?`${u.duplicates} duplicate${u.duplicates>1?"s":""}`:"", u.skipped?`${u.skipped} skipped`:""].filter(Boolean).join(" · ") || "no new creators (only existing rows changed)";
       return bkFold(key, `📅 ${esc(fmtDateTime(u.at))} <span class="muted">· by ${esc(u.who||"—")}</span> <span class="bk-hist-n">${bits}</span>${k===0?' <span class="tag">latest</span>':""}`,
         `${u.exact?"":`<div class="muted bk-mini">Older upload: the creators it added are shown (rows it only updated weren't logged then).</div>`}
-         ${items.length?`<div class="bk-tablewrap" style="max-height:420px"><table class="bk-table bk-htable"><thead><tr><th>#</th><th>Name</th><th>Instagram</th><th>WhatsApp</th><th>Email</th><th>City</th><th>Followers</th><th>Status in the sheet</th><th>Step now</th><th>On Geek OS</th><th></th></tr></thead>
-           <tbody>${items.map(row).join("")}</tbody></table></div>`:`<div class="muted">No creators to show for this upload.</div>`}`, "bk-hist-up"); }).join("")}`;
+         ${items.length?`<div class="bk-hist-list">${items.map(card).join("")}</div>`:`<div class="muted">No creators to show for this upload.</div>`}`, "bk-hist-up"); }).join("")}`;
 }
 async function bkHistLoad(force){
   const camp = _bpCamp && _bpCamp.id; if(!camp) return;
@@ -6174,7 +6178,12 @@ async function bkHistLoad(force){
   _bkHist = { camp, loading:true };
   const { data, error } = await sb.schema("api").rpc("campaign_upload_history", { p_campaign: camp }).then(r=>r, e=>({error:e}));
   _bkHist = { camp, data: error ? null : data, error: error ? (error.message||String(error)) : null };
-  const box = document.getElementById("bkHist"); if(box){ box.innerHTML = bkHistHtml(); bkWireFolds(box); }
+  const box = document.getElementById("bkHist"); if(box){ box.innerHTML = bkHistHtml(); bkWireFolds(box); bkHistWire(); }
+}
+// the cards in the history behave exactly like the creator list (same buttons, same open / close)
+function bkHistWire(){
+  const body = document.getElementById("bpBody"); if(!body || !document.querySelector("#bkHist .bk-hist-card")) return;
+  try{ wireBarterProcess(); wireCcInvites(body); wireCcSelect(body); }catch(e){ console.warn("history cards", e); }
 }
 function bkWireFolds(root){
   (root||document).querySelectorAll("[data-bkfold]").forEach(d=> d.ontoggle = ()=>{
@@ -6262,7 +6271,7 @@ function wireBulk(){
       .then(([r, ms])=>{ _bk.wa = r && !r.error ? Object.assign({}, r.data||{}, { ms: (ms && !ms.error && ms.data) || null }) : null; paintBulk(); }, ()=>{ _bk.wa = null; }); }
   const sw = $b("bkSetWa"); if(sw) sw.onclick = e=>{ e.preventDefault(); if(window.__bpClose) window.__bpClose(); _adminTab = "delivery"; currentPage = "admin"; renderShell(); };
   bkWireFolds(document);
-  if(_bkFold.has("hist")) bkHistLoad();
+  if(_bkFold.has("hist")){ bkHistLoad(); bkHistWire(); }
   const xl = $b("bkXlsx"); if(xl) xl.onclick = async ()=>{ xl.disabled = true; try{ await bkDownloadXlsx(); }catch(e){ err.textContent = e.message||String(e); } xl.disabled = false; };
   const ct = $b("bkCopyTpl"); if(ct) ct.onclick = async ()=>{ try{ await navigator.clipboard.writeText(ct.dataset.tsv); ct.textContent = "✓ Copied — paste in cell A1"; }catch(e){ err.textContent = "Couldn't copy — use the Excel or CSV template instead."; } };
   const pk = $b("bkPick"); if(pk) pk.onclick = ()=>{ const c = _bpCamp; if(window.__bpClose) window.__bpClose(); openInvitePanel(c.id, c.name); };
