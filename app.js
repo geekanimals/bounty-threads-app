@@ -6213,7 +6213,7 @@ function ucCardHtml(c){
   const pct = c.pct!=null ? Math.max(0, Math.min(100, +c.pct||0)) : null;
   const ring = pct!=null ? `style="--uc-p:${pct}"` : "";
   const seg = Array.from({length: c.total||12}, (_,n)=> `<i class="${n < (c.filled||0) ? (n===(c.filled-1) && c.nx && c.nx.turn!=="done" ? "now" : "on") : ""}"></i>`).join("");
-  const cnt = (ic, l, n)=> `<span class="uc-cnt" title="${esc(l)} sent on this campaign">${ic} ${esc(l)} <b>${st ? (n||0) : "…"}</b></span>`;
+  const cnt = (ic, l, n)=> `<span class="uc-cnt" title="${esc(l)} sent on this campaign">${ic} ${esc(l)} <b>${st || (_ucStats && _ucStats.data) ? (n||0) : "…"}</b></span>`;
   const last = st && st.last ? ` title="Last WhatsApp ${esc(fmtDateTime(st.last.at))} · ${esc(st.last.status||"")}"` : "";
   return `<div class="card bp-card uc-card${c.open?" open":""}" data-uckey="${esc(c.key)}">
     <div class="bp-head uc-head" ${c.openAttr}>
@@ -6287,7 +6287,34 @@ function ucFromPart(x, via, h){ h = h||{};
 }
 // 🗂 upload history of this campaign: every bulk upload (newest first) → when, by whom, new / updated, and its creators
 let _bkHist = null;   // { camp, data, loading }
-const _bkHistAll = new Set();   // uploads showing every creator (not just the first 10)
+const _bkHistAll = new Set();   // uploads / groups showing every creator (not just the first few)
+let _bkHistView = "step";        // "step" = everyone grouped by where they are · "upload" = upload by upload
+const _bkGClosed = new Set();    // groups the team folded away
+// where a creator is → their group (everyone in the same place sits together)
+const UC_GROUPS = [
+  ["nog","Not on Geek yet","invite sent · not registered","#8b5cf6"],["noig","Registered — connect Instagram","on Geek OS · Instagram not connected","#6366f1"],
+  ["pre","Screening & brand","screen · brand's list · brand's answer","#0ea5e9"],["contract","Contract & address","sign the contract · confirm the address","#14b8a6"],
+  ["ship","Shipping","add courier · in transit","#f59e0b"],["video","Making the video","","#ef4444"],["review","Review the video","your turn","#f97316"],
+  ["topost","Approved — to post","waiting for the post","#a855f7"],["posting","Posting","posts / stories left","#3b82f6"],["done","Done","every post up","#22c55e"],
+  ["out","Out of the campaign","dropped · rejected · declined","#94a3b8"]];
+function ucGroupOf(x, i){
+  if(x){ const s = x.stage, ship = x.shipment||{};
+    if(["dropped","rejected","ineligible","brand_declined"].includes(s)) return "out";
+    if(x.blocked_at) return "video";
+    if(["invited","shortlisted","applied","eligible","sent_to_brand","brand_confirmed","accepted"].includes(s)) return "pre";
+    if(["contract_sent","contract_signed"].includes(s)) return "contract";
+    if(s==="address_confirmed" || (s==="product_sent" && ship.status!=="delivered")) return "ship";
+    if(s==="product_sent" || s==="content_created" || s==="changes_requested") return "video";
+    if(s==="content_submitted") return "review";
+    if(s==="content_approved") return "topost";
+    if(s==="published") return "posting";
+    if(s==="completed") return "done";
+    return "pre"; }
+  if(i){ const st = i.status==="invited" ? "registered" : (i.status||"registered");
+    if(st==="posted" && bkStRank(st) >= bkStRank("approved")) return "done";
+    return i.registered ? "noig" : "nog"; }
+  return null;
+}
 function bkHistHtml(){
   const camp = _bpCamp && _bpCamp.id;
   if(!_bkHist || _bkHist.camp !== camp) return `<div class="muted">Open this to see every upload.</div>`;
@@ -6312,7 +6339,32 @@ function bkHistHtml(){
   window.__bkHistKeys = ups.map(u=> [...new Set((u.items||[]).map(keyOf).filter(Boolean))]);
   ucStatsLoad(()=>{ const box = document.getElementById("bkHist"); if(box && _bkHist && !_bkHist.loading){ box.innerHTML = bkHistHtml(); bkWireFolds(box); bkHistWire(); } });
   const nSel = [..._ccSel].length;
-  return `<div class="bk-hist-sum"><b>${ups.length}</b> upload${ups.length>1?"s":""} · <b>${tot}</b> creator${tot!==1?"s":""} came in this way
+  const viewBar = `<div class="bk-hist-view"><span class="muted">Group by</span>${[["step","📍 Where they are"],["upload","📅 Upload"]].map(([v,l])=>`<button type="button" class="${_bkHistView===v?"on":""}" data-bkhview="${v}">${l}</button>`).join("")}</div>`;
+  if(_bkHistView==="step"){
+    // everyone from every upload once (their latest upload), grouped by where they are now
+    const seen = new Map();
+    ups.forEach(u=> (u.items||[]).forEach(c=>{ const k = keyOf(c); if(k && !seen.has(k)) seen.set(k, { c, u, x: c.participation_id && byP[c.participation_id], i: byI[c.invite_id] }); }));
+    const today = new Date().toISOString().slice(0,10), G = {};
+    seen.forEach((e,k)=>{ const g = ucGroupOf(e.x, e.i); if(!g) return; (G[g] = G[g] || []).push(Object.assign(e, { k })); });
+    window.__bkGKeys = {}; UC_GROUPS.forEach(([g])=> window.__bkGKeys[g] = (G[g]||[]).map(e=> e.k));
+    const sub = (g, list)=> g==="video" ? (()=>{ const n = list.filter(e=> e.x && e.x.due_on && e.x.due_on < today).length; return n ? `${n} overdue` : "video due"; })() : (UC_GROUPS.find(z=> z[0]===g)||[])[2];
+    const rem = list=> list.filter(e=> e.x && ucStepMsg(e.x, bpNext(e.x))).length;
+    const shown = UC_GROUPS.filter(([g])=> (G[g]||[]).length);
+    return `${viewBar}
+      <div class="bk-hist-sum"><b>${seen.size}</b> creator${seen.size!==1?"s":""} from ${ups.length} upload${ups.length>1?"s":""} — everyone in the same place sits together · tick a whole group (or several) → one WhatsApp to all of them
+        <span class="bk-hist-selbar"><span class="muted"><b id="bkHSelN">${nSel}</b> selected</span><button type="button" class="btn sm cc-wabtn" id="bkHWaSel"${nSel?"":" disabled"}>🟢 WhatsApp to selected</button><button type="button" class="btn sm ghost" id="bkHSelClr"${nSel?"":" disabled"}>Clear</button></span></div>
+      <div class="uc-tiles">${shown.map(([g,l,,col])=>`<button type="button" class="uc-tile" style="--uc-c:${col}" data-bkgjump="${g}"><b>${G[g].length}</b><span>${esc(l)}</span><em>${esc(sub(g, G[g])||"")}</em></button>`).join("")}</div>
+      ${shown.map(([g,l,,col])=>{ const list = G[g], ks = window.__bkGKeys[g], all = ks.every(x=> _ccSel.has(x)), lim = _bkHistAll.has("g:"+g) ? list.length : 5, nr = rem(list);
+        return `<details class="uc-grp" style="--uc-c:${col}" data-bkgfold="${g}" id="bkG-${g}"${_bkGClosed.has(g)?"":" open"}><summary><b>${esc(l)}</b> <span class="uc-grp-n">${list.length}</span> <span class="muted">${esc(sub(g, list)||"")}</span></summary>
+          <div class="bk-hist-acts"><label class="bk-hist-all"><input type="checkbox" data-bkgsel="${g}"${all?" checked":""}> Select all ${list.length}</label><span style="flex:1"></span>
+            ${g==="nog" ? `<button type="button" class="btn sm" data-bkgresend="${g}">↻ Resend invite to ${list.length}</button>` : ""}
+            ${nr ? `<button type="button" class="btn sm" data-bkgremind="${g}">🔔 Send each one's step reminder (${nr})</button>` : ""}
+            <button type="button" class="btn sm cc-wabtn" data-bkgwa="${g}">🟢 WhatsApp all ${list.length}</button></div>
+          <div class="bk-hist-list">${list.slice(0, lim).map(e=> card(e.c, e.u)).join("")}</div>
+          ${list.length > lim ? `<div class="bk-hist-more">+ ${list.length - lim} more in this group · <a href="#" data-bkhmore="g:${g}">Show all</a></div>` : ""}</details>`; }).join("")}
+      <div class="muted bk-mini">🟢 WhatsApp / ↻ Resend tick them in the creator list below and open its panel — nothing goes until you press Send there. 🔔 asks first, then sends each creator the message for their own step.</div>`;
+  }
+  return `${viewBar}<div class="bk-hist-sum"><b>${ups.length}</b> upload${ups.length>1?"s":""} · <b>${tot}</b> creator${tot!==1?"s":""} came in this way
       <span class="bk-hist-selbar"><span class="muted"><b id="bkHSelN">${nSel}</b> selected</span><button type="button" class="btn sm cc-wabtn" id="bkHWaSel"${nSel?"":" disabled"}>🟢 WhatsApp to selected</button><button type="button" class="btn sm ghost" id="bkHSelClr"${nSel?"":" disabled"}>Clear</button></span></div>
     ${ups.map((u,k)=>{ const items = u.items||[], key = "h:"+u.at;
       const isRep = x=> /^(Repeat|Already in)/.test(x.reason||"");
@@ -6355,6 +6407,7 @@ function bkHistWire(){
   const selSync = ()=>{ const n = _ccSel.size, nb = document.getElementById("bkHSelN"), wb = document.getElementById("bkHWaSel"), cb = document.getElementById("bkHSelClr");
     if(nb) nb.textContent = n; if(wb) wb.disabled = !n; if(cb) cb.disabled = !n;
     document.querySelectorAll("#bkHist [data-bkhsel]").forEach(c=>{ const ks = (window.__bkHistKeys||[])[+c.dataset.bkhsel]||[]; c.checked = ks.length && ks.every(x=> _ccSel.has(x)); });
+    document.querySelectorAll("#bkHist [data-bkgsel]").forEach(c=>{ const ks = (window.__bkGKeys||{})[c.dataset.bkgsel]||[]; c.checked = ks.length && ks.every(x=> _ccSel.has(x)); });
     document.querySelectorAll("[data-ccsel]").forEach(c=> c.checked = _ccSel.has(c.dataset.ccsel)); };
   document.querySelectorAll("#bkHist [data-bkhwa]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); openWa((window.__bkHistKeys||[])[+b.dataset.bkhwa] || []); });
   document.querySelectorAll("#bkHist [data-bkhsel]").forEach(c=>{ c.onclick = e=> e.stopPropagation(); c.onchange = ()=>{
@@ -6373,6 +6426,30 @@ function bkHistWire(){
     _ucStats = null; ucStatsLoad(()=>{ const box = document.getElementById("bkHist"); if(box){ box.innerHTML = bkHistHtml(); bkWireFolds(box); bkHistWire(); } }); });
   const ws = document.getElementById("bkHWaSel"); if(ws) ws.onclick = e=>{ e.stopPropagation(); openWa([..._ccSel]); };
   const wc = document.getElementById("bkHSelClr"); if(wc) wc.onclick = e=>{ e.stopPropagation(); _ccSel.clear(); selSync(); };
+  const repaint = ()=>{ const box = document.getElementById("bkHist"); if(box){ box.innerHTML = bkHistHtml(); bkWireFolds(box); bkHistWire(); } };
+  document.querySelectorAll("#bkHist [data-bkhview]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); _bkHistView = b.dataset.bkhview; repaint(); });
+  document.querySelectorAll("#bkHist [data-bkgfold]").forEach(d=> d.ontoggle = ()=>{ d.open ? _bkGClosed.delete(d.dataset.bkgfold) : _bkGClosed.add(d.dataset.bkgfold); });
+  document.querySelectorAll("#bkHist [data-bkgjump]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); const d = document.getElementById("bkG-"+b.dataset.bkgjump); if(d){ d.open = true; d.scrollIntoView({ behavior:"smooth", block:"start" }); } });
+  const gk = g=> (window.__bkGKeys||{})[g] || [];
+  document.querySelectorAll("#bkHist [data-bkgsel]").forEach(c=>{ c.onclick = e=> e.stopPropagation(); c.onchange = ()=>{ gk(c.dataset.bkgsel).forEach(x=> c.checked ? _ccSel.add(x) : _ccSel.delete(x)); selSync();
+    document.querySelectorAll("#bkHist [data-bkgsel]").forEach(o=>{ const ks = gk(o.dataset.bkgsel); o.checked = ks.length && ks.every(x=> _ccSel.has(x)); }); }; });
+  document.querySelectorAll("#bkHist [data-bkgwa]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); openWa(gk(b.dataset.bkgwa)); });
+  // ↻ resend invites: tick them in the creator list → its "Resend invite to N" button (asks first, then sends)
+  document.querySelectorAll("#bkHist [data-bkgresend]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); const ks = gk(b.dataset.bkgresend); if(!ks.length) return;
+    _ccFilter = "all"; _ccQ = ""; _ccSel = new Set(ks); paintBarterProcess();
+    setTimeout(()=>{ const r = document.getElementById("ccSendSel"); if(r){ r.scrollIntoView({ behavior:"smooth", block:"center" }); r.classList.add("uc-flash"); setTimeout(()=> r.classList.remove("uc-flash"), 2500); } }, 300); });
+  // 🔔 everyone's own step message (address / video / overdue / post…) — one confirm, then one by one
+  document.querySelectorAll("#bkHist [data-bkgremind]").forEach(b=> b.onclick = async e=>{ e.stopPropagation();
+    const byP2 = {}; ((_bpData||{}).creators||[]).forEach(x=> byP2[x.participation_id] = x);
+    const jobs = gk(b.dataset.bkgremind).filter(k=> k.startsWith("p:")).map(k=> byP2[k.slice(2)]).filter(Boolean).map(x=> [x, ucStepMsg(x, bpNext(x))]).filter(j=> j[1]);
+    if(!jobs.length) return;
+    if(!confirm(`Send ${jobs.length} creator${jobs.length>1?"s":""} the message for their own step now? (WhatsApp + app + email)\n\n` + jobs.slice(0,12).map(([x,m])=> `• ${((x.creator||{}).username?"@"+x.creator.username:"creator")} — ${m[1].replace(/^\S+\s*/,"")}`).join("\n") + (jobs.length>12?`\n… and ${jobs.length-12} more`:""))) return;
+    b.disabled = true; let ok = 0; const bad = [];
+    for(let n=0;n<jobs.length;n++){ const [x,m] = jobs[n]; b.textContent = `Sending ${n+1}/${jobs.length}…`;
+      const { error } = await sb.schema("api").rpc("team_send_step", { p_participation: x.participation_id, p_key: m[0] }).then(r=>r, e2=>({error:e2}));
+      if(error) bad.push(`${(x.creator||{}).username||"creator"}: ${error.message||error}`); else ok++; }
+    gateToast(`✓ ${ok} sent${bad.length?` · ${bad.length} not sent — ${bad[0]}`:""}`);
+    _ucStats = null; ucStatsLoad(repaint); });
   document.querySelectorAll("#bkHist [data-bkhmore]").forEach(a=> a.onclick = e=>{ e.preventDefault(); e.stopPropagation(); _bkHistAll.add(a.dataset.bkhmore);
     const box = document.getElementById("bkHist"); if(box){ box.innerHTML = bkHistHtml(); bkWireFolds(box); bkHistWire(); } });
 }

@@ -2776,3 +2776,17 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .bk-err-list{margin:4px 0 8px 18px;padding:0;max-height:220px;overflow:auto}.bk-err-list li{margin:2px 0}
 .bk-table tr.bk-block td{background:#fef2f2;opacity:1}
 .bk-nu{margin:6px 0 12px}
+
+/* 📍 upload history grouped by where creators are */
+.bk-hist-view{display:inline-flex;align-items:center;gap:4px;padding:4px;border:1px solid var(--line);border-radius:10px;margin:2px 0 10px;background:var(--panel)}
+.bk-hist-view>span{font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:0 8px}
+.bk-hist-view button{border:0;background:none;padding:6px 12px;border-radius:7px;font:inherit;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
+.bk-hist-view button.on{background:var(--chip);color:var(--brand)}
+.uc-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:10px 0 14px}
+.uc-tile{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:10px 12px;border:1px solid var(--line);border-top:3px solid var(--uc-c);border-radius:12px;background:var(--panel);cursor:pointer;font:inherit}
+.uc-tile:hover{box-shadow:var(--shadow)}
+.uc-tile b{font-size:22px;line-height:1.1}.uc-tile span{font-size:13px;font-weight:600}.uc-tile em{font-style:normal;font-size:11.5px;color:var(--muted)}
+.uc-grp{border:1px solid var(--line);border-left:4px solid var(--uc-c);border-radius:12px;padding:8px 12px;margin:0 0 12px;background:var(--panel-2)}
+.uc-grp>summary{cursor:pointer;font-size:15px;padding:4px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.uc-grp-n{font-weight:700;font-size:13px;background:var(--chip);border-radius:10px;padding:1px 9px}
+.uc-flash{box-shadow:0 0 0 4px rgba(91,91,240,.35)!important;transition:box-shadow .3s}
