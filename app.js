@@ -6218,9 +6218,9 @@ function ucCardHtml(c){
   return `<div class="card bp-card uc-card${c.open?" open":""}" data-uckey="${esc(c.key)}">
     <div class="bp-head uc-head" ${c.openAttr}>
       <input type="checkbox" class="cc-sel uc-sel" data-ccsel="${esc(c.key)}"${_ccSel.has(c.key)?" checked":""} title="Select" aria-label="Select">
-      <span class="uc-av${pct!=null?" ring":""}" ${ring}>${c.pic?`<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${ini}'}))">`:`<span>${ini}</span>`}${pct!=null?`<em>${pct}%</em>`:""}</span>
+      <span class="uc-av${pct!=null?" ring":""}" ${ring} ${c.profAttr||""} title="Open the full profile">${c.pic?`<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${ini}'}))">`:`<span>${ini}</span>`}${pct!=null?`<em>${pct}%</em>`:""}</span>
       <div class="uc-main">
-        <div class="uc-l1"><b class="uc-name">${esc(c.name || (c.handle?"@"+c.handle:"Creator"))}</b>${c.handle?igLink(c.handle):""}${c.via?`<span class="uc-via">${esc(c.via)}</span>`:""}${c.tags||""}</div>
+        <div class="uc-l1"><b class="uc-name" ${c.profAttr||""} title="Open the full profile">${esc(c.name || (c.handle?"@"+c.handle:"Creator"))}</b>${c.profAttr?`<button type="button" class="bp-prof-btn" ${c.profAttr}>👤 Profile</button>`:""}${c.handle?igLink(c.handle):""}${c.via?`<span class="uc-via">${esc(c.via)}</span>`:""}${c.tags||""}</div>
         <div class="uc-l2">${c.phone?`<a class="uc-wa" href="https://wa.me/${esc(String(c.phone).replace(/\D/g,""))}" target="_blank" rel="noopener" title="Open their WhatsApp">🟢 WhatsApp <b>${esc(c.phone)}</b></a>`:`<span class="uc-none">🟢 WhatsApp —</span>`}${email && !ucIsFakeEmail(email)?`<a class="uc-mail" href="mailto:${esc(email)}" title="Email them">✉️ <b>${esc(email)}</b></a>`:`<span class="uc-none">✉️ no email</span>`}${c.followers!=null?`<span>👥 <b>${fmtNum(c.followers)}</b> followers</span>`:""}${city?`<span>📍 ${esc(city)}</span>`:""}</div>
         <div class="uc-l3"><span class="uc-bar">${seg}</span><span class="uc-step">${c.stepTxt||""}</span></div>
         <div class="uc-l4">${bpTurnChip(c.nx)} <b class="uc-stuck">${esc(c.nx.title)}</b>${c.days?` <span class="muted">· ${esc(c.days)}</span>`:""}
@@ -6248,6 +6248,7 @@ function ucFromInvite(i, inCamp, via, h){ h = h||{};
     stepTxt: i.registered ? `Step 1/${bpJourney().length} · Registered · <span class="muted">sheet: ${esc(bkStLabel(st))}</span>` : `Sheet: <b>${esc(bkStLabel(st))}</b> <span class="muted">· joins there once registered</span>`,
     nx, days: ucDays(i.registered ? (i.claimed_at || i.last_invited_at) : (i.first_invited_at || i.created_at || i.last_invited_at)),
     acts: act, chat: `<button type="button" class="bp-chatbtn uc-chat" data-ccinvchat="${esc(i.invite_id)}" title="Messages &amp; WhatsApp">💬</button>`,
+    profAttr: (i.handle||h.handle) ? `data-ucprof="${esc(String(i.handle||h.handle).replace(/^@/,""))}"` : "",
     openAttr: `data-ccinvopen="${esc(i.invite_id)}"`, open, detail: open ? ucDetailOf(ccInviteRowHtml(i, inCamp)) : "" });
 }
 // the step's own message, sent again by hand (same as 💬 → "Send a step template") — when the creator is the one who has to act
@@ -6281,6 +6282,7 @@ function ucFromPart(x, via, h){ h = h||{};
     acts: (()=>{ const pr = nx.acts.filter(a=>a[2]).slice(0,1); if(pr.length) return pr.map(a=> bpActBtn(a, P, true)).join("");
       const sm = ucStepMsg(x, nx); return sm ? `<button type="button" class="btn sm bp-rowact" data-ucstep="${esc(P)}" data-ucmsg="${esc(sm[0])}" data-ucwho="${esc(cr.username?"@"+cr.username:(cr.name||"this creator"))}">${esc(sm[1])}</button>` : nx.acts.filter(a=> a[0]!=="bpchat").slice(0,1).map(a=> bpActBtn(a, P, true)).join(""); })(),
     chat: `<button type="button" class="bp-chatbtn uc-chat" data-bpchat="${esc(P)}" title="WhatsApp chat">💬</button>`,
+    profAttr: `data-bpprof="${esc(P)}"`,
     openAttr: `data-bpopen="${esc(P)}"`, open, detail: open ? ucDetailOf(bpTrackerHtml([x])) : "" });
 }
 // 🗂 upload history of this campaign: every bulk upload (newest first) → when, by whom, new / updated, and its creators
@@ -6358,6 +6360,8 @@ function bkHistWire(){
   document.querySelectorAll("#bkHist [data-bkhsel]").forEach(c=>{ c.onclick = e=> e.stopPropagation(); c.onchange = ()=>{
     const ks = (window.__bkHistKeys||[])[+c.dataset.bkhsel]||[]; ks.forEach(x=> c.checked ? _ccSel.add(x) : _ccSel.delete(x)); selSync(); }; });
   document.querySelectorAll("#bkHist [data-ccsel]").forEach(c=>{ const prev = c.onchange; c.onchange = ()=>{ if(prev) prev(); else { c.checked ? _ccSel.add(c.dataset.ccsel) : _ccSel.delete(c.dataset.ccsel); } selSync(); }; });
+  // 👤 photo / name / Profile → their full profile (same as tapping the picture in the creator list)
+  document.querySelectorAll("#bkHist [data-ucprof]").forEach(b=> b.onclick = e=>{ e.preventDefault(); e.stopPropagation(); openCreatorAnywhere(b.dataset.ucprof, null); });
   document.querySelectorAll("#bkHist [data-ucstep]").forEach(b=> b.onclick = async e=>{ e.stopPropagation();
     const label = b.textContent.replace(/^\S+\s*/,"");
     if(!confirm(`Send “${label}” to ${b.dataset.ucwho} now? (WhatsApp + app + email)`)) return;
