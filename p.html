@@ -137,6 +137,11 @@ window.addEventListener("message", e=>{
   const f = e.data, a = Object.assign({}, window.__kitA);
   if(Array.isArray(f.posts) && f.posts.length) a.recent_media = f.posts;
   if(f.profile_picture_url) a.profile_picture_url = f.profile_picture_url;
+  if(Array.isArray(f.mentions) && Array.isArray(a.mentions)){
+    const by = {}; f.mentions.forEach(x=>{ if(x && x.permalink) by[x.permalink.replace(/\/+$/,"")] = x; });
+    a.mentions = a.mentions.map(m=>{ const n = m.permalink && by[String(m.permalink).replace(/\/+$/,"")]; return n ? Object.assign({}, m, { media_url: n.media_url || m.media_url, thumbnail_url: n.thumbnail_url || m.thumbnail_url, media_type: n.media_type || m.media_type }) : m; });
+  }
+  window.__kitA = a;
   document.getElementById("kit").innerHTML = renderKit(a);
 });
 (async function(){
@@ -154,7 +159,9 @@ window.addEventListener("message", e=>{
     root.innerHTML = renderKit(a);
     window.__kitA = a;
   }catch(e){ root.innerHTML = `<div class="pub-empty">Couldn't load this media kit.</div>`; }
-  try{ if(parent !== window) parent.postMessage({ type:"geek-kit-ready", u }, location.origin); }catch(_){}
+  // the app asks Instagram for fresh pictures — our own posts, and the posts that mention us (by the accounts that posted them)
+  try{ if(parent !== window){ const mm = (window.__kitA && Array.isArray(window.__kitA.mentions)) ? window.__kitA.mentions.slice(0,6).map(x=>({ username:x.username, permalink:x.permalink })) : [];
+    parent.postMessage({ type:"geek-kit-ready", u, mentions: mm }, location.origin); } }catch(_){}
   // inside the app: tell the frame how tall the kit is, so it shows in full without its own scrollbar
   if(parent !== window){ const tell = ()=>{ try{ parent.postMessage({ type:"geek-kit-height", h: document.documentElement.scrollHeight }, location.origin); }catch(_){} };
     tell(); setTimeout(tell, 600); setTimeout(tell, 2000); try{ new ResizeObserver(tell).observe(document.body); }catch(_){} }
