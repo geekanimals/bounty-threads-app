@@ -6216,7 +6216,6 @@ function ucCardHtml(c){
   const ring = pct!=null ? `style="--uc-p:${pct}"` : "";
   const seg = Array.from({length: c.total||12}, (_,n)=> `<i class="${n < (c.filled||0) ? (n===(c.filled-1) && c.nx && c.nx.turn!=="done" ? "now" : "on") : ""}"></i>`).join("");
   const cnt = (ic, l, n)=> `<span class="uc-cnt" title="${esc(l)} sent on this campaign">${ic} ${esc(l)} <b>${st || (_ucStats && _ucStats.data) ? (n||0) : "…"}</b></span>`;
-  const last = st && st.last ? ` title="Last WhatsApp ${esc(fmtDateTime(st.last.at))} · ${esc(st.last.status||"")}"` : "";
   return `<div class="card bp-card uc-card${c.open?" open":""}${c.inv?" cc-inv":""}" data-uckey="${esc(c.key)}"${c.key.startsWith("p:")?` data-bpcard="${esc(c.key.slice(2))}"`:""}>
     <div class="bp-head uc-head" ${c.openAttr}>
       ${c.noSel ? "" : `<input type="checkbox" class="cc-sel uc-sel" data-ccsel="${esc(c.key)}"${_ccSel.has(c.key)?" checked":""} title="Select" aria-label="Select">`}
@@ -6226,12 +6225,21 @@ function ucCardHtml(c){
         <div class="uc-l2">${c.phone?`<a class="uc-wa" href="https://wa.me/${esc(String(c.phone).replace(/\D/g,""))}" target="_blank" rel="noopener" title="Open their WhatsApp">🟢 WhatsApp <b>${esc(c.phone)}</b></a>`:`<span class="uc-none">🟢 WhatsApp —</span>`}${email && !ucIsFakeEmail(email)?`<a class="uc-mail" href="mailto:${esc(email)}" title="Email them">✉️ <b>${esc(email)}</b></a>`:`<span class="uc-none">✉️ no email</span>`}${c.followers!=null?`<span>👥 <b>${fmtNum(c.followers)}</b> followers</span>`:""}${city?`<span>📍 ${esc(city)}</span>`:""}</div>
         <div class="uc-l3"><span class="uc-bar">${seg}</span><span class="uc-step">${c.stepTxt||""}</span></div>
         <div class="uc-l4">${bpTurnChip(c.nx)} <b class="uc-stuck">${esc(c.nx.title)}</b>${c.days?` <span class="muted">· ${esc(c.days)}</span>`:""}
-          <span class="uc-cnts"${last}>${cnt("🟢","WhatsApp", st&&st.wa)}${cnt("✉️","Email", st&&st.em)}${cnt("🔔","Reminders", st&&st.rem)}</span></div>
+          <span class="uc-cnts">${cnt("🟢","WhatsApp", st&&st.wa)}${cnt("✉️","Email", st&&st.em)}${cnt("🔔","Reminders", st&&st.rem)}</span></div>
+        ${ucLastHtml(st)}
       </div>
       <span class="bp-rowacts uc-acts">${c.acts||""}${c.chat||""}<span class="bp-caret uc-caret" title="Open everything">${c.open?"▲":"▼"}</span></span>
     </div>
     ${c.open ? c.detail : ""}
   </div>`;
+}
+// 🕒 when the last message went, on which channel, did it arrive, automatic or sent by the team
+function ucLastHtml(st){
+  if(!_ucStats || !_ucStats.data) return "";
+  const l = st && st.last;
+  if(!l || !l.at) return `<div class="uc-last muted">🕒 No message sent on this campaign yet</div>`;
+  const S = { read:"read ✓✓", delivered:"delivered ✓✓", sent:"sent ✓", failed:"failed ✗", queued:"waiting" }[l.status] || l.status || "";
+  return `<div class="uc-last${l.status==="failed"?" bad":""}">🕒 Last message <b>${esc(fmtDateTime(l.at))}</b> · ${l.channel==="email"?"✉️ Email":"🟢 WhatsApp"}${S?` · ${esc(S)}`:""} · ${l.by==="team"?"sent by the team":"automatic"} <span class="muted">(${esc(ucDays(l.at)==="today"?"today":ucDays(l.at)+" ago")})</span></div>`;
 }
 function ucFromInvite(i, inCamp, via, h){ h = h||{};
   const st = i.status==="invited" ? "registered" : (i.status||"registered"), miss = i.needs||[];
@@ -6247,8 +6255,7 @@ function ucFromInvite(i, inCamp, via, h){ h = h||{};
     followers: (pp && pp.followers) ?? i.followers, pct: i.profile_pct!=null ? i.profile_pct : null, via,
     inv: true,
     tags: (inCamp ? (i.registered ? ON_GEEK_NO_IG : NOT_ON_GEEK) : i.registered ? `<span class="tag warn">On Geek OS · ${miss.length?esc(miss.map(x=>/whatsapp/i.test(x)?"connect WhatsApp":"connect Instagram").join(" + ")):"joining"}</span>` : `<span class="tag">Not on Geek OS yet</span>`)
-      + (i.ig_connected?'<span class="tag good">📸 Instagram</span>':"") + ((i.post_links||[]).length?`<span class="tag good">🔗 ${(i.post_links||[]).length} post link${(i.post_links||[]).length>1?"s":""}</span>`:"")
-      + (i.last_wa ? `<span class="tag${i.last_wa.status==="failed"?" bad":""}" title="Last WhatsApp">${["sent","delivered","read"].includes(i.last_wa.status)?"WhatsApp ✓":i.last_wa.status==="failed"?"WhatsApp ✗":"WhatsApp …"}</span>` : ""),
+      + (i.ig_connected?'<span class="tag good">📸 Instagram</span>':"") + ((i.post_links||[]).length?`<span class="tag good">🔗 ${(i.post_links||[]).length} post link${(i.post_links||[]).length>1?"s":""}</span>`:""),
     filled: i.registered ? 1 : 0, total: bpJourney().length,
     stepTxt: i.registered ? `Step 1/${bpJourney().length} · Registered · <span class="muted">sheet: ${esc(bkStLabel(st))}</span>` : `Sheet: <b>${esc(bkStLabel(st))}</b> <span class="muted">· joins there once registered</span>`,
     nx, days: ucDays(i.registered ? (i.claimed_at || i.last_invited_at) : (i.first_invited_at || i.created_at || i.last_invited_at)),
@@ -7557,8 +7564,7 @@ function wireCcInvites(body){
     const { error } = await (window.__isAdmin ? sb.schema("api").rpc("admin_remove_from_campaign", { p_participation:null, p_invite:b.dataset.ccinvdel })
                                               : sb.schema("api").rpc("bulk_delete_invite", { p_invite:b.dataset.ccinvdel })).then(r=>r, e=>({error:e}));
     if(error){ gateToast(error.message||String(error)); return; } gateToast(`${who} deleted ✓`); if(_ccInvOpen===b.dataset.ccinvdel) _ccInvOpen = null; loadBarterProcess(true); });
-  body.querySelectorAll("[data-ccinvchat]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); _ccInvOpen = b.dataset.ccinvchat; paintBarterProcess();
-    setTimeout(()=>{ const c = document.querySelector(`[data-invchat="${b.dataset.ccinvchat}"]`); if(c) c.scrollIntoView({ behavior:"smooth", block:"center" }); }, 60); });
+  body.querySelectorAll("[data-ccinvchat]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); openInviteChat(b.dataset.ccinvchat); });
   body.querySelectorAll("[data-ccinvpost]").forEach(b=> b.onclick = ()=>{ const i = find(b.dataset.ccinvpost); if(i) openPostAdd({ invite:i }); });
   body.querySelectorAll("[data-ccinvstats]").forEach(b=> b.onclick = ()=>{ const i = find(b.dataset.ccinvstats); if(i) openPublicAnalytics(i.handle, i.post_links||[], i.name); });
   body.querySelectorAll("[data-invchat]").forEach(box=> loadInviteChat(box, box.dataset.invchat));
@@ -8730,6 +8736,19 @@ function inviteChatHtml(id, d){
       <div class="wa-compose"><textarea data-invtext="${esc(id)}" rows="1" placeholder="${d.phone?(d.session_open?"Type a message":"Type a message — goes as a WhatsApp update (they haven't replied in 24 h)"):"No WhatsApp number on their row"}"${d.phone&&!d.opted_out?"":" disabled"}></textarea>
         <button class="wa-send" data-invsend="${esc(id)}" type="button" aria-label="Send"${d.phone&&!d.opted_out?"":" disabled"}>➤</button></div>
       <div class="wa-note">${d.session_open ? "✅ They replied in the last 24 h — your message goes straight to their WhatsApp." : "They haven't replied in 24 h — your message still goes, inside the approved “campaign update” WhatsApp template."}</div></div>`;
+}
+// 💬 an uploaded / invited creator's messages in a window — the same thing 💬 opens for a creator in the campaign
+function openInviteChat(id){
+  const i = (((_bpPeople||{}).invites)||[]).find(x=> x.invite_id===id) || {};
+  const who = i.handle ? "@"+i.handle : (i.name || i.phone || "Creator");
+  document.getElementById("invChatModal")?.remove();
+  const m = el("div","modal-overlay open"); m.id = "invChatModal";
+  m.innerHTML = `<div class="modal inv-chat-modal"><div class="modal-head"><strong>💬 ${esc(who)}${i.name&&i.handle?` <span class="muted" style="font-weight:500">${esc(i.name)}</span>`:""}</strong><button class="icon-btn" data-x aria-label="Close">✕</button></div>
+    <div class="inv-chat-sub muted">${[i.phone?"🟢 "+esc(i.phone):"", i.email&&!ucIsFakeEmail(i.email)?"✉️ "+esc(i.email):"", i.registered?"On Geek OS":"Not on Geek OS yet"].filter(Boolean).join(" · ")}</div>
+    <div class="cc-invchat" data-invchat="${esc(id)}">${skel("list",3)}</div></div>`;
+  document.body.appendChild(m);
+  m.querySelector("[data-x]").onclick = ()=> m.remove(); m.onclick = e=>{ if(e.target===m) m.remove(); };
+  loadInviteChat(m.querySelector("[data-invchat]"), id);
 }
 async function loadInviteChat(box, id){
   const paint = d=>{ if(!box.isConnected) return; box.innerHTML = inviteChatHtml(id, d);

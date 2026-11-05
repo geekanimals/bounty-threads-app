@@ -17,8 +17,15 @@ begin
       'rem', (select count(*) from intel.ci_outbox o where o.campaign_id = v_c and o.status = 'sent'
                 and o.template_key ~* 'remind|due|overdue|nudge|restore'
                 and (o.to_address in (t.phone, t.email) or (t.mid is not null and o.recipient_member_id = t.mid))),
-      'last', (select jsonb_build_object('at', m.created_at, 'status', m.status) from public.wa_messages m join public.wa_conversations c on c.id = m.conversation_id
-                where c.contact_phone_e164 = t.phone and m.direction = 'outbound' order by m.created_at desc limit 1)))
+      'last', (select jsonb_build_object('at', z.ts, 'status', z.status, 'channel', z.channel, 'by', z.src) from (
+                 select coalesce(o.sent_at, o.created_at) as ts, o.status::text as status, o.channel::text as channel, 'auto'::text as src from intel.ci_outbox o
+                  where o.campaign_id = v_c and o.channel in ('whatsapp','email') and o.status in ('sent','delivered','read','failed')
+                    and (o.to_address in (t.phone, t.email) or (t.mid is not null and o.recipient_member_id = t.mid))
+                 union all
+                 select m.created_at, m.status::text, 'whatsapp'::text, case when m.sender_user_id is not null then 'team' else 'auto' end as src
+                   from public.wa_messages m join public.wa_conversations c on c.id = m.conversation_id
+                  where c.contact_phone_e164 = t.phone and m.direction = 'outbound' and m.created_at >= t.since
+                 order by 1 desc limit 1) z)))
     from (
       select 'i:' || i.invite_id key, i.phone_e164 phone, i.email, i.city, coalesce(i.claimed_by, i.reserved_by) mid, i.created_at since
         from intel.ci_campaign_invite i where i.campaign_id = v_c and i.participation_id is null
