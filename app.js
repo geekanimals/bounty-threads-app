@@ -6047,7 +6047,7 @@ function bulkHtml(){
       <h3 style="margin:0 0 4px">📥 Upload creators in bulk <span class="tag">${BK_KIND_LABEL[bkKind()]} campaign</span></h3>
       <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Give every creator a <b>Status</b> — the exact step they are on (see the guide). They get <b>one message for that step</b>: <b>Approved</b> → the invite; a later step → only that step's message. Creators on Geek OS with a complete profile go on that step now; new ones register, connect Instagram and complete their profile (pre-filled from your sheet) and then land on their step. From there the normal flow carries on — every message goes once; press Resend to send one again.</div>
       ${bkWaLine()}
-      ${bkGuideHtml(!rows.length)}
+      ${bkGuideHtml()}
       <div class="bk-src">
         <label class="btn sm ghost bk-file">📄 Choose file<input type="file" id="bkFile" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.ods,.docx,.doc" hidden></label>
         <input id="bkLink" placeholder="or paste a Google Sheet link" value="">
@@ -6120,28 +6120,66 @@ function bkGuideSteps(){
     `<li>Upload the file — or paste a Google Sheet link (Share → <b>Anyone with the link</b> → Viewer). Column names don't have to match exactly; we match them and you can fix them in the dropdowns.</li>`];
   return `<ol class="bk-steps">${li.filter(Boolean).join("")}</ol>`;
 }
-function bkGuideHtml(open){
+// 📂 every part of the bulk-upload guide is its own toggle — closed by default; what you opened stays open while you work
+const _bkFold = new Set();
+const bkFold = (key, title, inner, cls)=> `<details class="bk-sub${cls?" "+cls:""}" data-bkfold="${key}"${_bkFold.has(key)?" open":""}><summary>${title}</summary><div class="bk-sub-in">${inner}</div></details>`;
+function bkGuideHtml(){
   const SAMPLE = bkSample(), tsv = SAMPLE.map(r=>r.join("\t")).join("\n");
-  return `<details class="bk-guide"${open?" open":""}><summary>📘 How to set up your sheet — ${BK_KIND_LABEL[bkKind()]} campaign template</summary>
-    ${bkGuideSteps()}
-    <div class="bk-mini"><b>Statuses — write exactly this in the sheet:</b></div>
-    <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable bk-sttable"><thead><tr><th>#</th><th>Write in Status</th><th>What happens</th><th>The row also needs</th><th>Message to the creator</th></tr></thead><tbody>
+  return `<details class="bk-guide" data-bkfold="guide"${_bkFold.has("guide")?" open":""}><summary>📘 How to set up your sheet — ${BK_KIND_LABEL[bkKind()]} campaign template</summary>
+    ${bkFold("steps", "📝 Step by step — how to fill the sheet", bkGuideSteps())}
+    ${bkFold("statuses", "🏷 Statuses — write exactly this in the Status column", `<div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable bk-sttable"><thead><tr><th>#</th><th>Write in Status</th><th>What happens</th><th>The row also needs</th><th>Message to the creator</th></tr></thead><tbody>
       ${bkStatuses().map(([k,l,h,m,nd],n)=>`<tr><td><span class="bk-stn">${n+1}</span></td><td><code>${bkEsc(l)}</code></td><td>${bkEsc(h)}</td><td>${nd?`<b>${bkEsc(nd)}</b>`:'<span class="muted">—</span>'}</td><td>${m==="no message"?'<span class="muted">— no message</span>':`✉️ ${bkEsc(m)}`}</td></tr>`).join("")}
-    </tbody></table></div>
-    <div class="bk-mini">Columns:</div>
-    <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable"><thead><tr><th>Column</th><th>What to put</th><th>Example</th><th>Needed?</th></tr></thead><tbody>
+    </tbody></table></div>`)}
+    ${bkFold("columns", "🧾 Columns — what to put in each one", `<div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-gtable"><thead><tr><th>Column</th><th>What to put</th><th>Example</th><th>Needed?</th></tr></thead><tbody>
       ${bkGuideRows().map(g=>`<tr><td><b>${bkEsc(g[0])}</b></td><td>${bkEsc(g[1])}</td><td><code>${bkEsc(g[2])}</code></td><td>${g[3]==="optional"?'<span class="muted">optional</span>':`<span class="tag">${bkEsc(g[3])}</span>`}</td></tr>`).join("")}
-    </tbody></table></div>
-    <div class="bk-mini">Your sheet should look like this:</div>
-    <div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-sample"><thead><tr>${SAMPLE[0].map(h=>`<th>${bkEsc(h)}</th>`).join("")}</tr></thead>
-      <tbody>${SAMPLE.slice(1).map(r=>`<tr>${r.map(c=>`<td>${bkEsc(c)||'<span class="muted">—</span>'}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
-    <div class="bk-dl">
+    </tbody></table></div>`)}
+    ${bkFold("example", "👀 Example — how your sheet should look", `<div class="bk-tablewrap" style="max-height:none"><table class="bk-table bk-sample"><thead><tr>${SAMPLE[0].map(h=>`<th>${bkEsc(h)}</th>`).join("")}</tr></thead>
+      <tbody>${SAMPLE.slice(1).map(r=>`<tr>${r.map(c=>`<td>${bkEsc(c)||'<span class="muted">—</span>'}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`)}
+    ${bkFold("download", "⬇ Download the template", `<div class="bk-dl">
       <button class="btn sm" id="bkXlsx">⬇ Excel template (.xlsx)</button>
       <a class="btn sm ghost" href="data:text/csv;charset=utf-8,${encodeURIComponent(SAMPLE.map(r=>r.map(c=>/[",]/.test(c)?`"${c.replace(/"/g,'""')}"`:c).join(",")).join("\n"))}" download="geek-creators-template-${bkKind().replace("_","-")}.csv">⬇ CSV template</a>
       <button class="btn sm ghost" id="bkCopyTpl" data-tsv="${bkEsc(tsv)}">📋 Copy for Google Sheets</button>
     </div>
-    <div class="muted bk-mini">Google Sheets: copy → open a new sheet → click cell A1 → paste. · Word: make a table with the same columns, or write one creator per line like <code>Asha Rao – @asha.creates – 9876543210 – asha@example.com</code>.</div>
-  </details>`;
+    <div class="muted bk-mini">Google Sheets: copy → open a new sheet → click cell A1 → paste. · Word: make a table with the same columns, or write one creator per line like <code>Asha Rao – @asha.creates – 9876543210 – asha@example.com</code>.</div>`)}
+  </details>
+  <details class="bk-guide bk-hist" data-bkfold="hist"${_bkFold.has("hist")?" open":""}><summary>🗂 Upload history — every upload, when, how many creators and who</summary><div id="bkHist">${bkHistHtml()}</div></details>`;
+}
+// 🗂 upload history of this campaign: every bulk upload (newest first) → when, by whom, new / updated, and its creators
+let _bkHist = null;   // { camp, data, loading }
+function bkHistHtml(){
+  const camp = _bpCamp && _bpCamp.id;
+  if(!_bkHist || _bkHist.camp !== camp) return `<div class="muted">Open this to see every upload.</div>`;
+  if(_bkHist.loading) return skel("list",3);
+  if(_bkHist.error) return `<div class="cc-wa-err">${esc(_bkHist.error)}</div>`;
+  const ups = (_bkHist.data && _bkHist.data.uploads) || [];
+  if(!ups.length) return `<div class="muted">No bulk upload on this campaign yet.</div>`;
+  const tot = ups.reduce((a,u)=> a + (u.new_count||0), 0);
+  const stLbl = k=> (bkStatuses().find(x=> x[0]===k)||[])[1] || String(k||"—").replace(/_/g," ");
+  const row = (c,n)=> `<tr><td>${n+1}</td><td><b>${esc(c.name||"—")}</b></td><td>${c.handle?`<a href="https://instagram.com/${esc(c.handle)}" target="_blank" rel="noopener">@${esc(c.handle)}</a>`:'<span class="muted">—</span>'}</td>
+      <td>${esc(c.phone||"—")}</td><td>${esc(c.email||"—")}</td><td>${esc(c.city||"—")}</td><td>${(()=>{ const pp = c.handle && typeof pubOf==="function" ? pubOf(c.handle) : null, f = c.followers ?? (pp && pp.followers); return f!=null ? esc(fmtNum(f)) : "—"; })()}</td>
+      <td>${esc(stLbl(c.sheet_status))}</td><td>${esc(stLbl(c.status_now))}</td>
+      <td>${c.in_campaign?'<span class="tag good">In the campaign</span>':c.registered?'<span class="tag warn">On Geek · connect Instagram</span>':'<span class="tag">Not registered</span>'}</td>
+      <td>${c.action==="new"?'<span class="tag good">New</span>':'<span class="tag">Updated</span>'}</td></tr>`;
+  return `<div class="bk-hist-sum"><b>${ups.length}</b> upload${ups.length>1?"s":""} · <b>${tot}</b> creator${tot!==1?"s":""} came in this way</div>
+    ${ups.map((u,k)=>{ const items = u.items||[], key = "h:"+u.at;
+      const bits = [u.new_count?`<b>${u.new_count}</b> new`:"", u.updated_count?`<b>${u.updated_count}</b> updated`:"", u.duplicates?`${u.duplicates} duplicate${u.duplicates>1?"s":""}`:"", u.skipped?`${u.skipped} skipped`:""].filter(Boolean).join(" · ") || "no new creators (only existing rows changed)";
+      return bkFold(key, `📅 ${esc(fmtDateTime(u.at))} <span class="muted">· by ${esc(u.who||"—")}</span> <span class="bk-hist-n">${bits}</span>${k===0?' <span class="tag">latest</span>':""}`,
+        `${u.exact?"":`<div class="muted bk-mini">Older upload: the creators it added are shown (rows it only updated weren't logged then).</div>`}
+         ${items.length?`<div class="bk-tablewrap" style="max-height:420px"><table class="bk-table bk-htable"><thead><tr><th>#</th><th>Name</th><th>Instagram</th><th>WhatsApp</th><th>Email</th><th>City</th><th>Followers</th><th>Status in the sheet</th><th>Step now</th><th>On Geek OS</th><th></th></tr></thead>
+           <tbody>${items.map(row).join("")}</tbody></table></div>`:`<div class="muted">No creators to show for this upload.</div>`}`, "bk-hist-up"); }).join("")}`;
+}
+async function bkHistLoad(force){
+  const camp = _bpCamp && _bpCamp.id; if(!camp) return;
+  if(!force && _bkHist && _bkHist.camp===camp && (_bkHist.loading || _bkHist.data)) return;
+  _bkHist = { camp, loading:true };
+  const { data, error } = await sb.schema("api").rpc("campaign_upload_history", { p_campaign: camp }).then(r=>r, e=>({error:e}));
+  _bkHist = { camp, data: error ? null : data, error: error ? (error.message||String(error)) : null };
+  const box = document.getElementById("bkHist"); if(box){ box.innerHTML = bkHistHtml(); bkWireFolds(box); }
+}
+function bkWireFolds(root){
+  (root||document).querySelectorAll("[data-bkfold]").forEach(d=> d.ontoggle = ()=>{
+    const k = d.dataset.bkfold; if(d.open) _bkFold.add(k); else _bkFold.delete(k);
+    if(k==="hist" && d.open) bkHistLoad(); });
 }
 // the creator's real step in the campaign, as a bulk Status (the sheet's value until they join)
 const BK_FROM_STAGE = { applied:"registered", eligible:"screened", shortlisted:"screened", sent_to_brand:"sent_to_brand", invited:"approved", accepted:"approved",
@@ -6223,6 +6261,8 @@ function wireBulk(){
                  sb.schema("api").rpc("messaging_status", { p_campaign: (_bpCamp && _bpCamp.id) || null }).then(r=>r, ()=>({ data:null }))])
       .then(([r, ms])=>{ _bk.wa = r && !r.error ? Object.assign({}, r.data||{}, { ms: (ms && !ms.error && ms.data) || null }) : null; paintBulk(); }, ()=>{ _bk.wa = null; }); }
   const sw = $b("bkSetWa"); if(sw) sw.onclick = e=>{ e.preventDefault(); if(window.__bpClose) window.__bpClose(); _adminTab = "delivery"; currentPage = "admin"; renderShell(); };
+  bkWireFolds(document);
+  if(_bkFold.has("hist")) bkHistLoad();
   const xl = $b("bkXlsx"); if(xl) xl.onclick = async ()=>{ xl.disabled = true; try{ await bkDownloadXlsx(); }catch(e){ err.textContent = e.message||String(e); } xl.disabled = false; };
   const ct = $b("bkCopyTpl"); if(ct) ct.onclick = async ()=>{ try{ await navigator.clipboard.writeText(ct.dataset.tsv); ct.textContent = "✓ Copied — paste in cell A1"; }catch(e){ err.textContent = "Couldn't copy — use the Excel or CSV template instead."; } };
   const pk = $b("bkPick"); if(pk) pk.onclick = ()=>{ const c = _bpCamp; if(window.__bpClose) window.__bpClose(); openInvitePanel(c.id, c.name); };
@@ -6245,7 +6285,7 @@ function wireBulk(){
     const { data, error } = await sb.schema("api").rpc("bulk_import_creators", { p_campaign:_bpCamp.id, p_rows: rows, p_note: _bk.note||null }).then(r=>r, e=>({error:e}));
     _bk.busy = false;
     if(error){ paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = error.message||String(error); return; }
-    const d = data||{};
+    const d = data||{}; _bkHist = null;   // 🗂 upload history shows this upload next time it is opened
     // the sheet's Coupon code column → each creator's own code (🔗 Links & codes), matched by their Instagram handle
     const codes = rows.filter(x=> x.coupon && x.handle).map(x=> ({ handle: String(x.handle).replace(/^@/,""), code: x.coupon }));
     if(codes.length){ const cr = await sb.schema("api").rpc("track_codes_bulk", { p_campaign:_bpCamp.id, p_rows: codes, p_overwrite: true }).then(r=>r, e=>({error:e}));

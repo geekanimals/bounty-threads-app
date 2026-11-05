@@ -2711,3 +2711,15 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .lk-bl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lk-bt{height:8px;border-radius:6px;background:rgba(127,127,160,.15);overflow:hidden}
 .lk-bt i{display:block;height:100%;background:#5b5bf0;border-radius:6px}
+
+/* 📂 bulk upload: every part of the guide is a toggle · 🗂 upload history */
+.bk-guide .bk-sub{border:1px solid var(--line);border-radius:10px;margin:8px 0;padding:0 12px;background:rgba(127,127,160,.04)}
+.bk-guide .bk-sub>summary{cursor:pointer;font-weight:700;padding:10px 0;list-style:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bk-guide .bk-sub>summary::-webkit-details-marker{display:none}
+.bk-guide .bk-sub>summary::before{content:"▸";display:inline-block;transition:transform .15s;color:var(--muted)}
+.bk-guide .bk-sub[open]>summary::before{transform:rotate(90deg)}
+.bk-guide .bk-sub-in{padding:0 0 12px}
+.bk-hist-sum{margin:8px 0 4px;font-size:13px}
+.bk-hist-n{font-weight:500;font-size:12.5px}
+.bk-guide .bk-htable{min-width:1100px}
+.bk-guide .bk-htable td,.bk-guide .bk-htable th{white-space:nowrap}
