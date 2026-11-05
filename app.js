@@ -6209,7 +6209,8 @@ function ucDetailOf(html){ try{ const t = document.createElement("div"); t.inner
 function ucCardHtml(c){
   // c: { key, pic, handle, name, phone, email, city, followers, pct, via, tags, filled, total, stepTxt, nx, days, acts, chat, openAttr, open, detail }
   const st = (_ucStats && _ucStats.camp===(_bpCamp&&_bpCamp.id) && _ucStats.data && _ucStats.data[c.key]) || null;
-  const email = c.email || (st && st.email), city = c.city || (st && st.city); c.phone = c.phone || (st && st.phone);
+  const email = (c.email && !ucIsFakeEmail(c.email) ? c.email : "") || (st && st.email), city = c.city || (st && st.city); c.phone = c.phone || (st && st.phone);
+  if(c.pct==null && st && st.pct!=null) c.pct = st.pct;
   const ini = esc(String(c.handle||c.name||"?").replace(/^@/,"").slice(0,2).toUpperCase());
   const pct = c.pct!=null ? Math.max(0, Math.min(100, +c.pct||0)) : null;
   const ring = pct!=null ? `style="--uc-p:${pct}"` : "";
@@ -7094,8 +7095,19 @@ function ucWire(root, after){
     _ucStats = null; ucStatsLoad(after || ucAfterStats); });
 }
 // every list of creators in a campaign shows the one card (photo + %, number, email, followers, city, step bar, stuck, turn, messages, action)
-function ucPartsHtml(list){ if(!list.length) return bpTrackerHtml(list); ucStatsLoad(ucAfterStats); return list.map(x=> ucFromPart(x, x.from_bulk ? "via upload" : "")).join(""); }
-function ucInvHtml(i, inCamp){ ucStatsLoad(ucAfterStats); return ucFromInvite(i, inCamp, i.source==="bulk" || i.batch_id ? "via upload" + (i.created_at?` · ${fmtDate(i.created_at)}`:"") : ""); }
+// one batched fetch for every card still missing its public photo / followers (waits while another fetch runs)
+let _ucPubQ = new Set(), _ucPubT = null;
+function ucPubFill(handles){
+  handles.filter(Boolean).forEach(h=>{ if(!pubOf(h)) _ucPubQ.add(h); });
+  if(!_ucPubQ.size || _ucPubT) return;
+  _ucPubT = setTimeout(async function go(){
+    if(typeof _pubBusy!=="undefined" && _pubBusy){ _ucPubT = setTimeout(go, 400); return; }
+    const H = [..._ucPubQ]; _ucPubQ.clear(); _ucPubT = null;
+    try{ await pubFill(H, ()=> ucAfterStats()); }catch(e){} }, 0);
+}
+function ucPartsHtml(list){ if(!list.length) return bpTrackerHtml(list); ucStatsLoad(ucAfterStats);
+  ucPubFill(list.filter(x=> (x.creator||{}).followers==null).map(x=> (x.creator||{}).username || x.applied_profile)); return list.map(x=> ucFromPart(x, x.from_bulk ? "via upload" : "")).join(""); }
+function ucInvHtml(i, inCamp){ ucStatsLoad(ucAfterStats); if(i.handle && i.followers==null) ucPubFill([i.handle]); return ucFromInvite(i, inCamp, i.source==="bulk" || i.batch_id ? "via upload" + (i.created_at?` · ${fmtDate(i.created_at)}`:"") : ""); }
 function ucAfterStats(){ if(!document.getElementById("bpBody") || typeof paintBarterProcess!=="function") return;
   // the message counts arrived — redraw without moving the page
   const y = window.scrollY; paintBarterProcess(); if(Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y); }
