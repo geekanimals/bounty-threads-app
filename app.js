@@ -6216,9 +6216,9 @@ function ucCardHtml(c){
   const seg = Array.from({length: c.total||12}, (_,n)=> `<i class="${n < (c.filled||0) ? (n===(c.filled-1) && c.nx && c.nx.turn!=="done" ? "now" : "on") : ""}"></i>`).join("");
   const cnt = (ic, l, n)=> `<span class="uc-cnt" title="${esc(l)} sent on this campaign">${ic} ${esc(l)} <b>${st || (_ucStats && _ucStats.data) ? (n||0) : "…"}</b></span>`;
   const last = st && st.last ? ` title="Last WhatsApp ${esc(fmtDateTime(st.last.at))} · ${esc(st.last.status||"")}"` : "";
-  return `<div class="card bp-card uc-card${c.open?" open":""}" data-uckey="${esc(c.key)}">
+  return `<div class="card bp-card uc-card${c.open?" open":""}${c.inv?" cc-inv":""}" data-uckey="${esc(c.key)}"${c.key.startsWith("p:")?` data-bpcard="${esc(c.key.slice(2))}"`:""}>
     <div class="bp-head uc-head" ${c.openAttr}>
-      <input type="checkbox" class="cc-sel uc-sel" data-ccsel="${esc(c.key)}"${_ccSel.has(c.key)?" checked":""} title="Select" aria-label="Select">
+      ${c.noSel ? "" : `<input type="checkbox" class="cc-sel uc-sel" data-ccsel="${esc(c.key)}"${_ccSel.has(c.key)?" checked":""} title="Select" aria-label="Select">`}
       <span class="uc-av${pct!=null?" ring":""}" ${ring} ${c.profAttr||""} title="Open the full profile">${c.pic?`<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${ini}'}))">`:`<span>${ini}</span>`}${pct!=null?`<em>${pct}%</em>`:""}</span>
       <div class="uc-main">
         <div class="uc-l1"><b class="uc-name" ${c.profAttr||""} title="Open the full profile">${esc(c.name || (c.handle?"@"+c.handle:"Creator"))}</b>${c.profAttr?`<button type="button" class="bp-prof-btn" ${c.profAttr}>👤 Profile</button>`:""}${c.handle?igLink(c.handle):""}${c.via?`<span class="uc-via">${esc(c.via)}</span>`:""}${c.tags||""}</div>
@@ -6244,7 +6244,10 @@ function ucFromInvite(i, inCamp, via, h){ h = h||{};
       : miss.length && i.phone ? `<button type="button" class="btn sm bp-rowact cc-wabtn" data-ccig="i:${esc(i.invite_id)}">📸 Connect Instagram</button>` : "") : "";
   return ucCardHtml({ key:"i:"+i.invite_id, pic: pp && pp.profile_picture_url, handle:i.handle||h.handle, name:i.name||h.name, phone:i.phone||h.phone, email:i.email||h.email, city:i.city||h.city,
     followers: (pp && pp.followers) ?? i.followers, pct: i.profile_pct!=null ? i.profile_pct : null, via,
-    tags: i.registered ? `<span class="tag warn">📸 On Geek · connect Instagram</span>` : "",
+    inv: true,
+    tags: (inCamp ? (i.registered ? ON_GEEK_NO_IG : NOT_ON_GEEK) : i.registered ? `<span class="tag warn">On Geek OS · ${miss.length?esc(miss.map(x=>/whatsapp/i.test(x)?"connect WhatsApp":"connect Instagram").join(" + ")):"joining"}</span>` : `<span class="tag">Not on Geek OS yet</span>`)
+      + (i.ig_connected?'<span class="tag good">📸 Instagram</span>':"") + ((i.post_links||[]).length?`<span class="tag good">🔗 ${(i.post_links||[]).length} post link${(i.post_links||[]).length>1?"s":""}</span>`:"")
+      + (i.last_wa ? `<span class="tag${i.last_wa.status==="failed"?" bad":""}" title="Last WhatsApp">${["sent","delivered","read"].includes(i.last_wa.status)?"WhatsApp ✓":i.last_wa.status==="failed"?"WhatsApp ✗":"WhatsApp …"}</span>` : ""),
     filled: i.registered ? 1 : 0, total: bpJourney().length,
     stepTxt: i.registered ? `Step 1/${bpJourney().length} · Registered · <span class="muted">sheet: ${esc(bkStLabel(st))}</span>` : `Sheet: <b>${esc(bkStLabel(st))}</b> <span class="muted">· joins there once registered</span>`,
     nx, days: ucDays(i.registered ? (i.claimed_at || i.last_invited_at) : (i.first_invited_at || i.created_at || i.last_invited_at)),
@@ -6277,7 +6280,10 @@ function ucFromPart(x, via, h){ h = h||{};
   const lastAt = Object.values(x.steps||{}).filter(Boolean).sort().pop() || x.applied_at;
   return ucCardHtml({ key:"p:"+P, pic: cr.profile_picture_url, handle: cr.username||h.handle, name: cr.name||h.name, phone: x.phone||h.phone, email: x.email||h.email||null, city: x.city||h.city||null,
     followers: cr.followers, pct: cr.profile_pct!=null ? cr.profile_pct : (x.profile_pct!=null ? x.profile_pct : null), via,
-    tags: (pubH ? `<span class="tag warn">📸 On Geek · connect Instagram</span>` : "") + jvBadge(cr.joined_via, true) + (overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':"") + (x.blocked_at?'<span class="tag" style="background:rgba(239,68,68,.15);color:#dc2626">⛔ Blocked</span>':""),
+    noSel: !(_wsMode && _bpCamp && document.getElementById("bpBody")),
+    tags: (pubH ? ON_GEEK_NO_IG : x.applied_profile && x.applied_profile!==cr.username ? `<span class="tag">via @${esc(x.applied_profile)}</span>` : "") + jvBadge(cr.joined_via, true)
+      + (x.blacklisted?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⛔ Blacklisted</span>':"")
+      + (x.stage==="published"&&x.feedback_requested_at?'<span class="tag warn">Waiting for creator feedback</span>':"") + msgPauseChip({ part:P, phone:x.phone }) + (overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':"") + (x.blocked_at?'<span class="tag" style="background:rgba(239,68,68,.15);color:#dc2626">⛔ Blocked</span>':""),
     filled: j+1, total: J.length, stepTxt: `Step ${j+1}/${J.length} · <b>${esc((J[j]||[])[1]||"")}</b>`,
     nx, days: nx.turn==="done" ? "" : ucDays(lastAt),
     acts: (()=>{ const pr = nx.acts.filter(a=>a[2]).slice(0,1); if(pr.length) return pr.map(a=> bpActBtn(a, P, true)).join("");
@@ -6416,19 +6422,11 @@ function bkHistWire(){
     const ks = (window.__bkHistKeys||[])[+c.dataset.bkhsel]||[]; ks.forEach(x=> c.checked ? _ccSel.add(x) : _ccSel.delete(x)); selSync(); }; });
   document.querySelectorAll("#bkHist [data-ccsel]").forEach(c=>{ const prev = c.onchange; c.onchange = ()=>{ if(prev) prev(); else { c.checked ? _ccSel.add(c.dataset.ccsel) : _ccSel.delete(c.dataset.ccsel); } selSync(); }; });
   // 👤 photo / name / Profile → their full profile (same as tapping the picture in the creator list)
-  document.querySelectorAll("#bkHist [data-ucprof]").forEach(b=> b.onclick = e=>{ e.preventDefault(); e.stopPropagation(); openCreatorAnywhere(b.dataset.ucprof, null); });
-  document.querySelectorAll("#bkHist [data-ucstep]").forEach(b=> b.onclick = async e=>{ e.stopPropagation();
-    const label = b.textContent.replace(/^\S+\s*/,"");
-    if(!confirm(`Send “${label}” to ${b.dataset.ucwho} now? (WhatsApp + app + email)`)) return;
-    const t0 = b.textContent; b.disabled = true; b.textContent = "Sending…";
-    const { error } = await sb.schema("api").rpc("team_send_step", { p_participation: b.dataset.ucstep, p_key: b.dataset.ucmsg }).then(r=>r, e2=>({error:e2}));
-    b.disabled = false; b.textContent = t0;
-    if(error){ gateToast(error.message||String(error)); return; }
-    gateToast(`✓ Sent to ${b.dataset.ucwho}`);
-    _ucStats = null; ucStatsLoad(()=>{ const box = document.getElementById("bkHist"); if(box){ box.innerHTML = bkHistHtml(); bkWireFolds(box); bkHistWire(); } }); });
+  ucWire(document.getElementById("bkHist"), ()=>{ const box = document.getElementById("bkHist"); if(box){ box.innerHTML = bkHistHtml(); bkWireFolds(box); bkHistWire(); } });
   const ws = document.getElementById("bkHWaSel"); if(ws) ws.onclick = e=>{ e.stopPropagation(); openWa([..._ccSel]); };
   const wc = document.getElementById("bkHSelClr"); if(wc) wc.onclick = e=>{ e.stopPropagation(); _ccSel.clear(); selSync(); };
   const repaint = ()=>{ const box = document.getElementById("bkHist"); if(box){ box.innerHTML = bkHistHtml(); bkWireFolds(box); bkHistWire(); } };
+
   document.querySelectorAll("#bkHist [data-bkhview]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); _bkHistView = b.dataset.bkhview; repaint(); });
   document.querySelectorAll("#bkHist [data-bkgfold]").forEach(d=> d.ontoggle = ()=>{ d.open ? _bkGClosed.delete(d.dataset.bkgfold) : _bkGClosed.add(d.dataset.bkgfold); });
   document.querySelectorAll("#bkHist [data-bkgjump]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); const d = document.getElementById("bkG-"+b.dataset.bkgjump); if(d){ d.open = true; d.scrollIntoView({ behavior:"smooth", block:"start" }); } });
@@ -7008,7 +7006,7 @@ function paintBarterProcess(){
     ${needsYou?`<div class="bp-needs">⚡ <b>${needsYou}</b> creator${needsYou>1?"s need":" needs"} something from you — open them below.</div>`:""}
     <div class="bp-flow">${bpSteps().filter(s=>s[0]!=="changes_requested").map(s=>`<button type="button" class="bp-fstep${_bpStage===s[0]?" on":""}" data-bpstage="${s[0]}" title="Show who reached this step"><b>${done(s[0])}</b><span>${esc(s[1].replace(/^\d+\.\s*/,""))}</span></button>`).join("")}</div>
     <div class="admin-tabs ac360-tabs">${tabs.map(t=>`<button class="${_bpTab===t[0]?"act":""}" data-bptab="${t[0]}">${t[1]}</button>`).join("")}</div>
-    <div class="ac360-sec">${_bpTab==="tracker"?bpStageBanner(list)+bpTrackerHtml(bpStageList(list)):_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="outreach"?bpOutreachHtml():_bpTab==="payments"&&typeof payHtml==="function"?`<div id="payBox">${payHtml()}</div>`:_bpTab==="messages"&&typeof msgMapHtml==="function"?`<div id="msgBox">${msgMapHtml()}</div>`:bpShortlistHtml(list)}</div>`;
+    <div class="ac360-sec">${_bpTab==="tracker"?bpStageBanner(list)+ucPartsHtml(bpStageList(list)):_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="outreach"?bpOutreachHtml():_bpTab==="payments"&&typeof payHtml==="function"?`<div id="payBox">${payHtml()}</div>`:_bpTab==="messages"&&typeof msgMapHtml==="function"?`<div id="msgBox">${msgMapHtml()}</div>`:bpShortlistHtml(list)}</div>`;
   body.querySelector("#bpX").onclick = ()=> window.__bpClose && window.__bpClose();
   body.querySelectorAll("[data-bpstage]").forEach(b=> b.onclick = ()=>{ _bpStage = _bpStage===b.dataset.bpstage ? null : b.dataset.bpstage; _bpTab = "tracker"; paintBarterProcess();
     const sec = body.querySelector(".ac360-sec"); if(sec) sec.scrollIntoView({ behavior:"smooth", block:"start" }); });
@@ -7072,14 +7070,32 @@ async function ccBlockNoPost(btn){
   loadBarterProcess(true);
 }
 // the campaign's creators (app + sheet) in one list, in the chosen order
+// 👤 Profile + 🔔 Remind / 🔁 Resend on the card — wired wherever the card shows (creator list, upload history)
+function ucWire(root, after){
+  if(!root) return;
+  root.querySelectorAll("[data-ucprof]").forEach(b=> b.onclick = e=>{ e.preventDefault(); e.stopPropagation(); openCreatorAnywhere(b.dataset.ucprof, null); });
+  root.querySelectorAll("[data-ucstep]").forEach(b=> b.onclick = async e=>{ e.stopPropagation();
+    const label = b.textContent.replace(/^\S+\s*/,"");
+    if(!confirm(`Send “${label}” to ${b.dataset.ucwho} now? (WhatsApp + app + email)`)) return;
+    const t0 = b.textContent; b.disabled = true; b.textContent = "Sending…";
+    const { error } = await sb.schema("api").rpc("team_send_step", { p_participation: b.dataset.ucstep, p_key: b.dataset.ucmsg }).then(r=>r, e2=>({error:e2}));
+    b.disabled = false; b.textContent = t0;
+    if(error){ gateToast(error.message||String(error)); return; }
+    gateToast(`✓ Sent to ${b.dataset.ucwho}`);
+    _ucStats = null; ucStatsLoad(after || ucAfterStats); });
+}
+// every list of creators in a campaign shows the one card (photo + %, number, email, followers, city, step bar, stuck, turn, messages, action)
+function ucPartsHtml(list){ if(!list.length) return bpTrackerHtml(list); ucStatsLoad(ucAfterStats); return list.map(x=> ucFromPart(x, x.from_bulk ? "via upload" : "")).join(""); }
+function ucInvHtml(i, inCamp){ ucStatsLoad(ucAfterStats); return ucFromInvite(i, inCamp, i.source==="bulk" || i.batch_id ? "via upload" + (i.created_at?` · ${fmtDate(i.created_at)}`:"") : ""); }
+function ucAfterStats(){ if(document.getElementById("bpBody") && typeof paintBarterProcess==="function") paintBarterProcess(); }
 function ccSortedHtml(P, Ion, fP, fI){
   const items = P.map(x=>({ kind:"p", x, f:fP(x) })).concat(Ion.map(r=>({ kind:"i", i:r.i, f:fI(r.i) })));
   const num = v => v==null ? -1 : +v;
   const cmp = { step:(a,b)=> b.f.step-a.f.step, step_asc:(a,b)=> a.f.step-b.f.step, fol_desc:(a,b)=> num(b.f.fol)-num(a.f.fol),
     fol_asc:(a,b)=> (a.f.fol==null)-(b.f.fol==null) || num(a.f.fol)-num(b.f.fol), name:(a,b)=> a.f.name.localeCompare(b.f.name), views:(a,b)=> b.f.views-a.f.views }[_ccSort];
   if(cmp && _ccSort!=="step") items.sort(cmp);
-  else if(_ccSort==="step"){ const pFirst = items.filter(t=>t.kind==="p"), iRest = items.filter(t=>t.kind==="i"); return (pFirst.length?bpTrackerHtml(pFirst.map(t=>t.x)):"") + iRest.map(t=>ccInviteRowHtml(t.i, true)).join(""); }
-  return items.map(t=> t.kind==="p" ? bpTrackerHtml([t.x]) : ccInviteRowHtml(t.i, true)).join("");
+  else if(_ccSort==="step"){ const pFirst = items.filter(t=>t.kind==="p"), iRest = items.filter(t=>t.kind==="i"); return (pFirst.length?ucPartsHtml(pFirst.map(t=>t.x)):"") + iRest.map(t=>ucInvHtml(t.i, true)).join(""); }
+  return items.map(t=> t.kind==="p" ? ucPartsHtml([t.x]) : ucInvHtml(t.i, true)).join("");
 }
 function ccMatch(key, r){
   const fail = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
@@ -7169,7 +7185,7 @@ function paintCampaignCommandInner(body){
             ${_ccWa.open?ccWaPanelHtml():""}`; })()}
       <div class="cc-hint muted">Tap a creator to open everything — every step with its time, contract, address, courier, video, posts with their numbers — and do any action right there. Changing a step asks only for what it needs (courier, video link, the link of every post).</div>
       ${ccSortedHtml(P, Ion, fP, fI)}
-      ${I.length ? `<div class="cc-invh">${P.length||Ion.length?"Uploaded / invited — not in the campaign yet":""}</div>` + I.map(r=>ccInviteRowHtml(r.i)).join("") : ""}
+      ${I.length ? `<div class="cc-invh">${P.length||Ion.length?"Uploaded / invited — not in the campaign yet":""}</div>` + I.map(r=>ucInvHtml(r.i)).join("") : ""}
       ${!(P.length+Iall.length)?`<div class="muted" style="padding:14px">${rows.length?"Nobody here.":"Nobody on this campaign yet — use 🎯 Find matching creators or 📄 Sheet."}</div>`:""}
     </div>`;
   body.querySelectorAll("[data-cctile]").forEach(b=> b.onclick = ()=>{ _ccFilter = _ccFilter===b.dataset.cctile && b.dataset.cctile!=="all" ? "all" : b.dataset.cctile; paintBarterProcess();
@@ -8369,6 +8385,7 @@ function wireBpActions(root, again){
 }
 function wireBarterProcess(){
   const body = document.getElementById("bpBody"); if(!body) return;
+  ucWire(body);
   const again = ()=> loadBarterProcess(true);
   body.querySelectorAll("[data-bpprof]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); bpCreatorProfile(b.dataset.bpprof); });
   body.querySelectorAll("[data-bpopen]").forEach(h=> h.onclick = e=>{ if(e.target.closest("button,a,select,input,label")) return; _bpOpen = _bpOpen===h.dataset.bpopen ? null : h.dataset.bpopen; paintBarterProcess(); });
