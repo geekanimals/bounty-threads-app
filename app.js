@@ -3921,6 +3921,7 @@ async function adminApplications(body, silent){
     sb.rpc("admin_applications", { p_campaign:null, p_status:null }).then(r=>r, ()=>({data:[]}))
   ]);
   if(pr.error){ if(!silent) body.innerHTML = adminErr(pr.error); return; }
+  if(!body.isConnected) return;   // the person already moved to another page
   const sig = JSON.stringify([pr.data, ar.data]); if(silent && sig===_apSig) return; _apSig = sig;
   const DECL = ["ineligible","brand_declined","dropped","rejected"];
   const grp = st => APPLICANT_PENDING.includes(st) ? "pending" : DECL.includes(st) ? "declined" : "approved";
@@ -4648,7 +4649,7 @@ function renderLogistics(){
   html += `<div class="ws-stats" id="logStats" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))"></div>`;
   html += `<div class="card"><div id="logShipHead"><h3>Courier tracking</h3></div>
       <p class="muted" style="font-size:12.5px;margin:0 0 10px">Every product going out on a barter campaign — courier, tracking number, sent and received.</p>
-      <div id="logShip">${skel("table")}</div></div>`;
+      <div id="logShip" data-noflt>${skel("table")}</div></div>`;
   html += `<div class="card"><h3>Barter batches</h3><div class="list" id="logRows"><div class="muted" style="padding:8px">Loading…</div></div></div>`;
   return html;
 }
@@ -9105,6 +9106,7 @@ async function adminUsers(body, silent){
   if(!silent) body.innerHTML = skel("table",8);
   const { data, error } = await sb.rpc("admin_users");
   if(error){ if(!silent) body.innerHTML = adminErr(error); return; }
+  if(!body.isConnected) return;   // the person already moved to another page
   const sig = JSON.stringify(data); if(silent && sig===_auSig) return; _auSig = sig;
   const all = data||[];
   const ago = t=>{ if(!t) return "—"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
@@ -10075,6 +10077,7 @@ async function adminDelivery(body, silent){
   if(!silent) body.innerHTML = skel("table",6);
   const { data, error } = await sb.rpc("admin_delivery");
   if(error){ if(!silent) body.innerHTML = adminErr(error); return; }
+  if(!body.isConnected) return;   // the person already moved to another page
   const d = data||{}, st = d.stats||{}, n = k=> Number(st[k]||0);
   const ago = t=>{ if(!t) return "never"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
   const jobs = d.jobs||[], runs = d.runs||[], recent = d.recent||[];
@@ -10184,6 +10187,7 @@ async function adminActivity(body, silent){
   if(!silent) body.innerHTML = skel("table",6);
   const { data, error } = await sb.rpc("admin_activity_summary", { p_days: 30 });
   if(error){ body.innerHTML = `<div class="card"><div class="muted">Couldn't load: ${esc(error.message)}</div></div>`; return; }
+  if(!body.isConnected) return;
   const all = data || [];
   const ago = t=>{ if(!t) return "—"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
   const age = r=> r.last_seen ? (Date.now()-new Date(r.last_seen).getTime())/60000 : 1e9;
@@ -12029,7 +12033,7 @@ const tblKey = t=> [...t.querySelectorAll("thead th")].map(h=> h.innerText.repla
     table.__sorted = st; th.dataset.sort = st.dir === "asc" ? "desc" : "asc"; th.dispatchEvent(new MouseEvent("click", { bubbles:true }));
   };
   const addFilter = table=>{
-    if(table.__flt || !table.tBodies[0] || table.tBodies[0].rows.length < 8) return; table.__flt = true;
+    if(table.__flt || !table.tBodies[0] || table.tBodies[0].rows.length < 8 || table.closest("[data-noflt]")) return; table.__flt = true;
     const box = document.createElement("div"); box.className = "tbl-flt";
     box.innerHTML = `<input type="search" placeholder="🔎 Filter these rows — name, @handle, city, number…"><span class="muted"></span>`;
     const holder = table.closest("div[style*='overflow']") || table; holder.parentNode.insertBefore(box, holder);

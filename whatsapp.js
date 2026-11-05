@@ -115,7 +115,12 @@
   var _names={}, _all=[];
   async function loadNames(){
     if(!window.__isAdmin) return;
-    try{ var r=await sbc().rpc("admin_users"); (r.data||[]).forEach(function(u){ if(u.whatsapp) _names[String(u.whatsapp).replace(/\D/g,"")]={ n:(u.name&&u.name!=="Creator")?u.name:"", h:u.ig_username||"" }; }); }catch(e){}
+    try{ var rr=await Promise.all([ sbc().rpc("admin_users").then(function(r){return r;},function(){return {};}),
+                                    sbc().schema("api").rpc("admin_wa_names").then(function(r){return r;},function(){return {};}) ]);
+      var W=(rr[1]&&rr[1].data)||{}; Object.keys(W).forEach(function(k){ _names[k]={ n:W[k].n||"", h:W[k].h||"" }; });   // invites / bulk upload
+      ((rr[0]&&rr[0].data)||[]).forEach(function(u){ if(!u.whatsapp) return; var k=String(u.whatsapp).replace(/\D/g,""), o=_names[k]||{};
+        _names[k]={ n:(u.name&&u.name!=="Creator")?u.name:(o.n||""), h:u.ig_username||o.h||"" }; });   // members win
+    }catch(e){}
   }
   function who(c){ var k=String(c.contact_phone_e164||"").replace(/\D/g,""), x=_names[k]||{}; return { name: x.n || (x.h?"@"+x.h:"") || c.contact_phone_e164, handle: x.h }; }
   function ago(t){ if(!t) return ""; var m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"now":m<60?m+"m":m<1440?Math.round(m/60)+"h":Math.round(m/1440)+"d"; }
