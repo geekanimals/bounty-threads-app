@@ -3930,22 +3930,34 @@ async function adminApplications(body, silent){
       .filter(Boolean).join(" ").toLowerCase().includes(_apQ.toLowerCase());
   const P = pipe.filter(p=> (_apStatus==="all" || grp(p.stage)===_apStatus) && tpass(p.campaign_type) && cpass(p.campaign_name) && qpass(p));
   const Lg = _apType ? [] : legacy.filter(a=> (_apStatus==="all" || lgrp(a.status)===_apStatus) && cpass(a.campaign_name) && qpass(a));
-  body.innerHTML = `<div class="rp-kpis"><div><b>${cnt("pending")}</b>Pending</div><div><b>${cnt("approved")}</b>Approved</div><div><b>${cnt("declined")}</b>Declined</div><div><b>${pipe.length+legacy.length}</b>Total</div></div>
+  // the numbers on top are the filters: tap one and the list below shows exactly those
+  // counts follow the campaign / type / search picked, so the tiles always match the list
+  const cntC = g => pipe.filter(p=>grp(p.stage)===g && tpass(p.campaign_type) && cpass(p.campaign_name) && qpass(p)).length + (_apType ? 0 : legacy.filter(a=>lgrp(a.status)===g && cpass(a.campaign_name) && qpass(a)).length);
+  const tot = cntC("pending") + cntC("approved") + cntC("declined");
+  const ST = [["pending","⏳","Pending","waiting for a yes / no","warn"],["approved","✅","Approved","selected creators","good"],["declined","✖","Declined","not selected","bad"],["all","📋","All applications","everything","info"]];
+  const tcnt = k=> pipe.filter(p=> (k==="paid" ? ["paid","barter_paid"] : ["barter","barter_paid"]).includes(p.campaign_type) && cpass(p.campaign_name) && (_apStatus==="all" || grp(p.stage)===_apStatus)).length;
+  const shown = P.length + Lg.length, stL = (ST.find(x=>x[0]===_apStatus)||ST[3])[2];
+  body.innerHTML = `<div class="ap-tiles">${ST.map(([k,ic,l,sub,tone])=>`<button type="button" class="ap-tile ${tone}${_apStatus===k?" on":""}" data-apst="${k}">
+        <span class="ap-tile-ic">${ic}</span><b>${fmtNum(k==="all"?tot:cntC(k))}</b><span class="ap-tile-l">${l}</span><span class="ap-tile-s">${_apStatus===k?"● showing now":sub}</span></button>`).join("")}</div>
+    <div class="ap-chips"><span class="ap-chips-l">Type</span>${[["","All"],["paid","💰 Paid"],["barter","🎁 Barter"]].map(([k,l])=>`<button type="button" class="ov-chip${_apType===k?" on":""}" data-aptype="${k}">${l}${k?` <span>${tcnt(k)}</span>`:""}</button>`).join("")}
+      <span class="ap-chips-l" style="margin-left:8px">Campaign</span><button type="button" class="ov-chip${!_apCampaign?" on":""}" data-apcamp="">All <span>${campNames.length}</span></button>${campNames.map(n=>`<button type="button" class="ov-chip${n===_apCampaign?" on":""}" data-apcamp="${esc(n)}" title="${esc(n)}">${esc(n.length>34?n.slice(0,32)+"…":n)} <span>${campCount[n]}</span></button>`).join("")}</div>
     <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center">
-      <h3 style="margin:0">Applications <span class="muted" style="font-size:12px;font-weight:400">· every workspace, live</span></h3>
-      <span style="display:flex;gap:6px;flex-wrap:wrap"><input id="apQ" placeholder="🔍 Creator, brand, campaign…" value="${esc(_apQ)}" style="padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;font-size:13px;min-width:190px">
-      <select id="apCampaign"><option value="">📣 All campaigns (${campNames.length})</option>${campNames.map(n=>`<option value="${esc(n)}"${n===_apCampaign?" selected":""}>${esc(n)} (${campCount[n]})</option>`).join("")}</select>
-      <select id="apType"><option value="">Paid + Barter</option><option value="paid"${_apType==="paid"?" selected":""}>💰 Paid</option><option value="barter"${_apType==="barter"?" selected":""}>🎁 Barter</option></select>
-      <select id="apStatus">${[["pending","⏳ Pending"],["approved","✅ Approved"],["declined","✖ Declined"],["all","All"]].map(([k,l])=>`<option value="${k}"${k===_apStatus?" selected":""}>${l}</option>`).join("")}</select></span></div>
+      <h3 style="margin:0">${esc(stL)} <span class="muted" style="font-size:13px;font-weight:500">· ${fmtNum(shown)} shown${_apCampaign?` · ${esc(_apCampaign)}`:""}${_apType?` · ${_apType==="paid"?"💰 Paid":"🎁 Barter"}`:""}</span>${(_apCampaign||_apType||_apQ||_apStatus!=="pending")?` <button type="button" class="mini-btn ghost" id="apReset">✕ Reset</button>`:""}</h3>
+      <span style="display:flex;gap:6px;flex-wrap:wrap"><input id="apQ" placeholder="🔍 Creator, brand, campaign…" value="${esc(_apQ)}" style="padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:inherit;font-size:13px;min-width:240px">
+</span></div>
     <div class="list" style="margin-top:10px">${P.map(p=>applicantRowHtml(p, true)).join("")}
       ${Lg.map(a=>`<div class="row"><span class="avatar">${esc((a.creator_name||"?").slice(0,2).toUpperCase())}</span><div class="r-main"><div class="r-title">${esc(a.creator_name||"Creator")} <span class="muted" style="font-weight:400">→ ${esc(a.campaign_name||"")}${a.agency_org?` · ${esc(a.agency_org)}`:""}</span></div>
         <div class="r-sub">Marketplace application${a.decline_reason_code?` · ${esc(a.decline_reason_code)}`:""}${a.decline_note?` — ${esc(a.decline_note)}`:""}</div></div>
         ${a.status==="Applied"?`<span style="display:flex;gap:6px"><button class="mini-btn" data-apappr="${esc(a.id)}">Approve</button><button class="mini-btn ghost" data-apdecl="${esc(a.id)}">Decline</button></span>`:`<span class="tag ${a.status==="Approved"?"good":""}">${esc(a.status)}</span>`}</div>`).join("")}
       ${(!P.length && !Lg.length)?`<div class="muted" style="padding:8px">Nothing here.</div>`:""}</div></div>`;
   const again = ()=>{ _apSig=""; adminApplications(body, true); };
-  document.getElementById("apStatus").onchange = e=>{ _apStatus = e.target.value; again(); };
-  document.getElementById("apType").onchange = e=>{ _apType = e.target.value; again(); };
-  document.getElementById("apCampaign").onchange = e=>{ _apCampaign = e.target.value; again(); };
+  const _s_apStatus = document.getElementById("apStatus"); if(_s_apStatus) _s_apStatus.onchange = e=>{ _apStatus = e.target.value; again(); };
+  body.querySelectorAll("[data-apst]").forEach(x=> x.onclick = ()=>{ _apStatus = x.dataset.apst; again(); });
+  body.querySelectorAll("[data-aptype]").forEach(x=> x.onclick = ()=>{ _apType = x.dataset.aptype; again(); });
+  body.querySelectorAll("[data-apcamp]").forEach(x=> x.onclick = ()=>{ _apCampaign = x.dataset.apcamp; again(); });
+  const rs = document.getElementById("apReset"); if(rs) rs.onclick = ()=>{ _apStatus = "pending"; _apType = ""; _apCampaign = ""; _apQ = ""; again(); };
+  const _s_apType = document.getElementById("apType"); if(_s_apType) _s_apType.onchange = e=>{ _apType = e.target.value; again(); };
+  const _s_apCampaign = document.getElementById("apCampaign"); if(_s_apCampaign) _s_apCampaign.onchange = e=>{ _apCampaign = e.target.value; again(); };
   const apq = document.getElementById("apQ"); let apqT;
   apq.oninput = ()=>{ clearTimeout(apqT); apqT = setTimeout(()=>{ _apQ = apq.value; again(); }, 250); };
   wireApplicantButtons(body, again);
