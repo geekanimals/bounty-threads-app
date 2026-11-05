@@ -74,10 +74,11 @@
   var _conv=null, _channel=null;
   window.renderWhatsApp = function(){
     return '<div id="waStatus" class="wa-status"></div>'
-      + '<div id="waChat" class="wa-chat">'
-      + '<div class="wa-list"><div class="ci-mh" style="padding:10px"><h3>Messages</h3><button class="btn sm" id="waNew">New</button></div>'
-      + '<div id="waConvs"><div class="muted" style="padding:12px">Loading…</div></div></div>'
-      + '<div class="wa-thread"><div id="waThreadHead" class="wa-thead muted" style="padding:12px">Select a conversation</div>'
+      + '<div id="waChat" class="wa-page">'
+      + '<div class="wa-list"><div class="ci-mh" style="padding:12px 12px 6px"><h3>💬 WhatsApp chats</h3><button class="btn sm" id="waNew">+ New</button></div>'
+      + '<div class="wa-search"><input id="waQ" type="search" placeholder="🔍 Name or number…"></div>'
+      + '<div id="waConvs" class="wa-convs"><div class="muted" style="padding:12px">Loading…</div></div></div>'
+      + '<div class="wa-thread"><div id="waThreadHead" class="wa-thead muted" style="padding:12px">← Pick a chat to read and reply</div>'
       + '<div id="waMessages" class="wa-msgs"></div>'
       + '<div class="wa-compose" id="waCompose" style="display:none"><input id="waInput" placeholder="Type a message…"><button class="btn" id="waSendMsg">Send</button></div>'
       + '</div></div>';
@@ -85,6 +86,7 @@
   // my WhatsApp number: link it (email / Instagram accounts) and pause / resume campaign updates
   async function renderStatus(){
     var el=document.getElementById("waStatus"); if(!el) return;
+    if(window.__isAdmin){ el.innerHTML=''; return; }
     try{
       var u=(await sbc().auth.getUser()).data.user; if(!u) return;
       var r=await sbc().from("wa_contacts").select("phone_e164,verified_at,opt_out_at").eq("user_id",u.id).maybeSingle();
@@ -104,17 +106,28 @@
     renderStatus();
     var nb=document.getElementById("waNew"); if(nb) nb.onclick=newConversation;
     try{
-      var r=await sbc().from("wa_conversations").select("id,subject,contact_phone_e164,last_message_at").order("last_message_at",{ascending:false,nullsFirst:false}).limit(100);
-      if(r.error) throw r.error;
+      var res=await Promise.all([sbc().from("wa_conversations").select("id,subject,contact_phone_e164,last_message_at").order("last_message_at",{ascending:false,nullsFirst:false}).limit(200), loadNames()]);
+      var r=res[0]; if(r.error) throw r.error;
       renderConvs(r.data||[]);
+      var qi=document.getElementById("waQ"); if(qi) qi.oninput=function(){ renderConvs(_all); };
     }catch(e){ document.getElementById("waConvs").innerHTML='<div class="ci-err-inline" style="padding:12px">Couldn\'t load conversations: '+esc(e.message||e)+'</div>'; }
   }
+  var _names={}, _all=[];
+  async function loadNames(){
+    if(!window.__isAdmin) return;
+    try{ var r=await sbc().rpc("admin_users"); (r.data||[]).forEach(function(u){ if(u.whatsapp) _names[String(u.whatsapp).replace(/\D/g,"")]={ n:(u.name&&u.name!=="Creator")?u.name:"", h:u.ig_username||"" }; }); }catch(e){}
+  }
+  function who(c){ var k=String(c.contact_phone_e164||"").replace(/\D/g,""), x=_names[k]||{}; return { name: x.n || (x.h?"@"+x.h:"") || c.contact_phone_e164, handle: x.h }; }
+  function ago(t){ if(!t) return ""; var m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"now":m<60?m+"m":m<1440?Math.round(m/60)+"h":Math.round(m/1440)+"d"; }
   function renderConvs(list){
-    var el=document.getElementById("waConvs");
+    _all=list; var el=document.getElementById("waConvs");
+    var q=((document.getElementById("waQ")||{}).value||"").trim().toLowerCase();
+    var shown=list.filter(function(c){ if(!q) return true; var w=who(c); return [w.name,w.handle,c.contact_phone_e164,c.subject].join(" ").toLowerCase().indexOf(q)>=0; });
     if(!list.length){ el.innerHTML='<div class="muted" style="padding:12px">No conversations yet. Tap “New”.</div>'; return; }
-    el.innerHTML=list.map(function(c){ return '<div class="wa-conv" data-id="'+esc(c.id)+'"><b>'+esc(c.subject||c.contact_phone_e164)+'</b>'
-      +'<div class="muted">'+esc(c.contact_phone_e164)+' · '+fmt(c.last_message_at)+'</div></div>'; }).join("");
-    el.querySelectorAll("[data-id]").forEach(function(d){ d.onclick=function(){ openConv(d.getAttribute("data-id"), d.querySelector("b").textContent); }; });
+    el.innerHTML=shown.map(function(c){ var w=who(c), ini=String(w.name||"?").replace(/^[@+]/,"").slice(0,2).toUpperCase();
+      return '<div class="wa-conv'+(c.id===_conv?" on":"")+'" data-id="'+esc(c.id)+'" data-title="'+esc(w.name)+'"><span class="avatar">'+esc(ini)+'</span><div class="wa-conv-m"><div class="wa-conv-t"><b>'+esc(w.name)+'</b><span class="muted">'+ago(c.last_message_at)+'</span></div>'
+      +'<div class="muted wa-conv-s">'+(w.name!==c.contact_phone_e164?esc(c.contact_phone_e164)+' · ':'')+esc(c.subject||"")+'</div></div></div>'; }).join("") || '<div class="muted" style="padding:12px">No chat matches.</div>';
+    el.querySelectorAll("[data-id]").forEach(function(d){ d.onclick=function(){ el.querySelectorAll(".wa-conv").forEach(function(x){ x.classList.toggle("on", x===d); }); openConv(d.getAttribute("data-id"), d.getAttribute("data-title")); }; });
     // opened from the to-do list: go straight to that number's chat
     if(window.__waOpenPhone){ var ph=window.__waOpenPhone; window.__waOpenPhone=null;
       var hit=list.filter(function(c){ return c.contact_phone_e164===ph; })[0];
@@ -122,9 +135,9 @@
   }
   async function openConv(id, title){
     _conv=id;
-    var chat=document.getElementById("waChat"); if(chat) chat.classList.add("wa-open");   // phones: show the thread full-width
+    var chat=document.getElementById("waChat"); if(chat) chat.classList.add("wa-page-open");   // phones: show the thread full-width
     document.getElementById("waThreadHead").innerHTML='<button type="button" class="wa-back" id="waBack" aria-label="Back to chats">←</button><b>'+esc(title)+'</b>';
-    var bk=document.getElementById("waBack"); if(bk) bk.onclick=function(){ if(chat) chat.classList.remove("wa-open"); };
+    var bk=document.getElementById("waBack"); if(bk) bk.onclick=function(){ if(chat) chat.classList.remove("wa-page-open"); };
     document.getElementById("waCompose").style.display="flex";
     document.getElementById("waSendMsg").onclick=sendMsg;
     document.getElementById("waInput").onkeydown=function(e){ if(e.key==="Enter") sendMsg(); };

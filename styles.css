@@ -520,7 +520,7 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .wa-btn{background:#25D366 !important;color:#063 !important;border:none !important}
 .wa-overlay{position:fixed;inset:0;background:rgba(10,12,26,.6);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px}
 .wa-modal{background:var(--panel,#fff);border:1px solid var(--line,#e9ecf5);border-radius:16px;padding:18px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
-.wa-modal .ci-mh,.wa-chat .ci-mh{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.wa-modal .ci-mh,.wa-page .ci-mh{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .wa-modal h3{margin:0}
 .wa-x{background:transparent;border:none;font-size:22px;line-height:1;color:var(--muted,#6b7192);cursor:pointer}
 .wa-f{display:flex;flex-direction:column;gap:5px;margin:12px 0;font-size:13px}
@@ -528,8 +528,8 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
 .wa-f input,.wa-f textarea,.wa-compose input{background:var(--panel-2,#fbfcfe);border:1px solid var(--line,#e9ecf5);border-radius:10px;padding:10px 12px;color:var(--ink,#0f1222);font:inherit;font-size:14px;width:100%}
 .wa-msg{font-size:13px;color:var(--muted,#6b7192);margin-top:8px;min-height:18px}
 .btn.ghost{background:transparent;border:1px solid var(--line,#e9ecf5);color:var(--ink,#0f1222)}.btn.sm{padding:6px 12px;font-size:13px}
-.wa-chat{display:grid;grid-template-columns:300px 1fr;gap:12px;height:calc(100vh - 160px);min-height:420px}
-@media (max-width:760px){.wa-chat{grid-template-columns:1fr;height:auto}}
+.wa-page{display:grid;grid-template-columns:340px 1fr;gap:12px;height:calc(100vh - 200px);min-height:460px}
+@media (max-width:760px){.wa-page{grid-template-columns:1fr;height:auto}}
 .wa-list,.wa-thread{background:var(--panel,#fff);border:1px solid var(--line,#e9ecf5);border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
 .wa-conv{padding:10px 12px;border-top:1px solid var(--line,#e9ecf5);cursor:pointer}.wa-conv:hover{background:var(--panel-2,#fbfcfe)}
 .wa-thead{border-bottom:1px solid var(--line,#e9ecf5)}
@@ -1432,9 +1432,9 @@ table.ci-cmp ul.ci-cmpul{margin:0;padding-left:16px;line-height:1.5}
   .mk-hero-actions{flex-direction:row;justify-content:center;align-self:center;padding-top:6px;flex-wrap:wrap}
   .mk-post .mk-meta{font-size:10px;padding:5px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* WhatsApp chat: list first, tap a chat → full-width thread with a back button */
-  .wa-chat .wa-thread{display:none}
-  .wa-chat.wa-open .wa-list{display:none}
-  .wa-chat.wa-open .wa-thread{display:flex;min-height:70vh}
+  .wa-page .wa-thread{display:none}
+  .wa-page.wa-page-open .wa-list{display:none}
+  .wa-page.wa-page-open .wa-thread{display:flex;min-height:70vh}
   .wa-back{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;margin-right:8px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);font-size:16px;cursor:pointer;color:var(--ink)}
   .wa-thead{display:flex;align-items:center}
   .cp-item{flex-wrap:wrap;gap:8px}
@@ -2987,3 +2987,16 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .dd-ch .dd-why{font-size:12px}
 @media (max-width:900px){.dd-row{grid-template-columns:1fr}}
 .dd-ch>.tag{align-self:flex-start}
+
+/* Messages page inbox */
+.wa-search{padding:0 12px 8px}.wa-search input{width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);color:inherit;font-size:13px}
+.wa-convs{flex:1;overflow-y:auto}
+.wa-page .wa-conv{display:flex;gap:10px;align-items:center;padding:10px 12px}
+.wa-page .wa-conv .avatar{flex:0 0 36px;width:36px;height:36px;font-size:12px}
+.wa-page .wa-conv.on{background:var(--chip);box-shadow:inset 3px 0 0 var(--brand)}
+.wa-conv-m{flex:1;min-width:0}
+.wa-conv-t{display:flex;justify-content:space-between;gap:8px}.wa-conv-t b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px}.wa-conv-t .muted{font-size:11.5px;flex:0 0 auto}
+.wa-conv-s{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wa-page .wa-thead{padding:12px 14px;font-size:14px}
+.wa-page .wa-msgs{background:#efeae2}
+[data-theme="dark"] .wa-page .wa-msgs{background:#0b141a}

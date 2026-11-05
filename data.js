@@ -66,11 +66,21 @@ const NAV_SECTIONS = {
   ]
 };
 // Super Admin: the platform first (straight into each admin tab), then their own workspace
-const ADMIN_NAV = [["admin:overview","🛡","Command centre"],["admin:applications","📝","All applications"],["admin:creators","🎨","Creators"],
+const ADMIN_NAV = [["admin:overview","🛡","Command centre"],["admin:applications","📝","Applications"],["admin:creators","🎨","Creators"],
   ["admin:users","👥","All users"],["admin:delivery","📨","WhatsApp & email"],["admin:bot","🤖","WhatsApp bot"],["admin:upload","📥","Creator upload"],
   ["admin:activity","📈","Activity"],["admin:settings","⚙️","Settings"]];
 // Super Admin's own workspace: only what isn't already above (no duplicates, no old pages);
 // Mass Barter / Celebrity Stories are filters on the Campaigns page.
+// Super Admin sidebar — thought from the admin's side: what's waiting first, then running campaigns (the priority),
+// then creators, brands, messages, numbers, and the platform tools last. Each key appears once (no duplicates).
+const ADMIN_SECTIONS = [
+  ["Today",     ["admin:overview","approvals"]],
+  ["Campaigns", ["campaigns","admin:applications","logistics"]],
+  ["Creators",  ["admin:creators","discover","admin:upload"]],
+  ["Brands",    ["brands"]],
+  ["Messages",  ["messages","admin:delivery","admin:bot"]],
+  ["Insights",  ["reports","admin:activity"]],
+  ["Platform",  ["admin:users","admin:settings"]]];
 const ADMIN_HIDE_KEYS = ["barter","celebrity","campaignops","creators","irm","brandsetup","finance","listening","settings"];   // settings → ⚙️ Settings above
 Object.keys(NAV_SECTIONS).forEach(r=>{ ROLES[r].nav = NAV_SECTIONS[r].reduce((a,s)=>a.concat(s[1]),[]); });
 

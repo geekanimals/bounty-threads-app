@@ -84,16 +84,24 @@ function renderNav(){
   const nav = $("#nav"); nav.innerHTML="";
   if(currentRole==="creator") return renderNavKeys(nav, creatorNavKeys());
   const sections = (typeof NAV_SECTIONS!=="undefined" && NAV_SECTIONS[currentRole]) || [["", ROLES[currentRole].nav]];
-  if(window.__isAdmin){
-    navHeading(nav, "Super Admin");
-    ADMIN_NAV.forEach(([key, ic, label])=>{
-      const tab = key.split(":")[1];
-      const a = el("a","", `<span class="ic">${ic}</span><span>${esc(label)}</span><b class="nav-badge" data-navcount="${key}"></b>`);
-      a.setAttribute("data-page", key);
-      if(currentPage==="admin" && (_adminTab===tab || (tab==="settings" && typeof ADMIN_ADVANCED!=="undefined" && ADMIN_ADVANCED.some(t=> t[0]===_adminTab)))) a.classList.add("active");
-      a.onclick = ()=>{ _adminTab = tab; currentPage = "admin"; renderShell(); if(window.innerWidth<=760) $("#sidebar").classList.remove("open"); };
-      nav.appendChild(a);
+  if(window.__isAdmin && typeof ADMIN_SECTIONS!=="undefined"){
+    const AN = {}; ADMIN_NAV.forEach(x=> AN[x[0]] = x);
+    ADMIN_SECTIONS.forEach(([title, keys])=>{
+      keys = keys.filter(k=> k.startsWith("admin:") ? AN[k] : navKeyAllowed(k));
+      if(!keys.length) return;
+      navHeading(nav, title);
+      keys.forEach(key=>{
+        if(!key.startsWith("admin:")) return renderNavKeys(nav, [key]);
+        const [, ic, label] = AN[key], tab = key.split(":")[1];
+        const a = el("a","", `<span class="ic">${ic}</span><span>${esc(label)}</span><b class="nav-badge" data-navcount="${key}"></b>`);
+        a.setAttribute("data-page", key);
+        if(currentPage==="admin" && (_adminTab===tab || (tab==="settings" && typeof ADMIN_ADVANCED!=="undefined" && ADMIN_ADVANCED.some(t=> t[0]===_adminTab)))) a.classList.add("active");
+        a.onclick = ()=>{ _adminTab = tab; currentPage = "admin"; renderShell(); if(window.innerWidth<=760) $("#sidebar").classList.remove("open"); };
+        nav.appendChild(a);
+      });
     });
+    paintNavCounts();
+    return;
   }
   sections.forEach(([title, keys])=>{
     keys = keys.filter(navKeyAllowed);
@@ -10320,14 +10328,15 @@ async function runSystemCheck(){
 let _ovTimer = null, _ovSig = "", _ovAct = "all";
 async function adminOverview(body, silent){
   if(!silent) body.innerHTML = skel("dash");
-  const { data, error } = await sb.rpc("admin_dashboard");
+  const [{ data, error }, wl] = await Promise.all([ sb.rpc("admin_dashboard"), sb.schema("api").rpc("workspace_live").then(r=>r, ()=>({data:null})) ]);
+  const W = (wl && wl.data) || {}, wc = W.campaigns||{}, wap = W.applications||{}, wco = W.content||{}, wba = W.barter||{};
   if(error){                                    // older database: fall back to the basic counters
     const o = (await sb.rpc("admin_overview")).data || {};
     const card = (v,l)=>`<div class="ws-stat"><b>${fmtNum(v)}</b><span>${l}</span></div>`;
     body.innerHTML = `<div class="ws-stats" style="grid-template-columns:repeat(4,1fr)">${card(o.orgs,"Workspaces")}${card(o.members,"Members")}${card(o.campaigns,"Campaigns")}${card(o.applications,"Applications")}</div>`;
     return;
   }
-  const sig = JSON.stringify(data); if(silent && sig===_ovSig) return; _ovSig = sig;
+  const sig = JSON.stringify([data, W]); if(silent && sig===_ovSig) return; _ovSig = sig;
   const d = data||{}, t = d.todo||{}, pe = d.people||{}, c = d.campaigns||{};
   const N = v=> Number(v)||0, pc = (a,b)=> N(b) ? Math.round(100*N(a)/N(b)) : 0;
   const todo = [
@@ -10365,15 +10374,17 @@ async function adminOverview(body, silent){
           <span class="ov-todo-ic">${ic}</span><span class="ov-todo-txt"><b>${esc(l)}</b><small>${esc(sub)}</small></span><span class="ov-todo-n">${fmtNum(N(t[k]))}</span><span class="ov-todo-go">Open →</span></button>`).join("")}</div>`
         : `<div class="ov-clear">✅ All clear — nothing waiting on you right now.</div>`}</section>
     <div class="ov-two">
+
+      <section class="ov-card"><div class="ov-h"><h3>📣 Campaigns in motion</h3><span class="muted">${fmtNum(N(c.total))} campaigns · ${fmtNum(N(c.barter))} barter · ${fmtNum(N(c.paid))} paid · ${fmtNum(N(c.barter_paid))} both</span></div>
+        <div class="ov-kpis">${tile(wc.live!=null?wc.live:c.live,"Live now",`of ${fmtNum(N(c.total))} campaigns`,"@campaigns","📣")}
+          ${tile(c.applications,"Applications",`${fmtNum(N(t.applications_pending))} waiting for you`,"applications","📝")}${tile(c.approved,"Creators approved",`${pc(c.approved,c.applications)}% of applications`,"applications","✅")}
+          ${tile(wap.invited,"Invites out","waiting to join","@campaigns","✉️")}${tile(wco.published,"Posts published",wco.due_7d?`${fmtNum(N(wco.due_7d))} due in 7 days`:"live on Instagram","@reports","📤")}
+          ${tile(wba.delivered,"Products delivered","barter shipments","@logistics","📦")}</div></section>
       <section class="ov-card"><div class="ov-h"><h3>👥 People</h3><span class="muted">${fmtNum(N(pe.total))} accounts</span></div>
         <div class="ov-kpis">${tile(pe.creators,"Creators",`${pc(pe.instagram_connected,pe.creators)}% on Instagram`,"creators:all","🎨")}
           ${tile(pe.instagram_connected,"Instagram connected",`of ${fmtNum(N(pe.creators))} creators`,"creators:ig","📸")}
           ${tile(pe.agencies,"Agencies","","users","🏢")}${tile(pe.brands,"Brands","","users","🏷️")}
           ${tile(pe.joined_today,"Joined today","new accounts","users","🆕")}${tile(pe.signed_in_today,"Signed in today","active people","activity","🟢")}</div></section>
-      <section class="ov-card"><div class="ov-h"><h3>📣 Campaigns</h3><span class="muted">${fmtNum(N(c.live))} open now</span></div>
-        <div class="ov-kpis">${tile(c.total,"Campaigns",`${fmtNum(N(c.live))} open now`,"campaigns","📣")}
-          ${tile(c.barter,"Barter","product only","campaigns","🎁")}${tile(c.paid,"Paid","cash only","campaigns","💰")}${tile(c.barter_paid,"Barter + Paid","product + cash","campaigns","🤝")}
-          ${tile(c.applications,"Applications","from creators","applications","📝")}${tile(c.approved,"Approved",`${pc(c.approved,c.applications)}% of applications`,"applications","✅")}</div></section>
     </div>
     <section class="ov-card ov-live"><div class="ov-h"><h3>🕒 Live activity</h3><span class="muted ov-live-note"><span class="ov-dot"></span>updates every 30s</span></div>
       <div class="ov-chips">${chips.map(([k,l])=>{ const n = k==="all" ? rec.length : rec.filter(r=> evOf(r.event)[2]===k).length;
@@ -11307,6 +11318,7 @@ function renderShell(){
   }
   // "View all alerts" (from the 🔔 drawer) opens the full Alerts page with the campaign filter
   if(window.__profileGate && !GATE_OPEN_PAGES.includes(currentPage)) currentPage = "mediakit";
+  if(window.__isAdmin && currentPage==="dashboard"){ currentPage = "admin"; _adminTab = "overview"; }   // one home for the Super Admin: Command centre
   if(window.Tracker) Tracker.page(currentPage);
   if(window.hideBootSplash) hideBootSplash();
   renderNav(); renderMe(); renderContent();
@@ -11831,6 +11843,7 @@ async function bootOS(){
     (window.Auth && Auth.profile && Auth.profile.role === "creator") ? within(creatorProfileGate(), 5000) : null
   ]);
   if(window.__profileGate && !GATE_OPEN_PAGES.includes(currentPage)) currentPage = "mediakit";
+  if(window.__isAdmin && currentPage==="dashboard"){ currentPage = "admin"; _adminTab = "overview"; }   // one home for the Super Admin: Command centre
   // came from a campaign invite → whatever is still pending first (profile), then the campaign itself
   // tapped Apply on the public /explore.html page → Open Campaigns, where that campaign pops open (after the profile, if pending)
   let __exploreApply = null; try{ __exploreApply = localStorage.getItem("geek_apply"); }catch(e){}
