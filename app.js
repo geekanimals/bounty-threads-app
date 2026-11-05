@@ -10199,7 +10199,7 @@ async function runSystemCheck(){
         <td class="muted" style="font-size:12px">${esc((r.detail||"").slice(0,80))}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
-let _ovTimer = null, _ovSig = "";
+let _ovTimer = null, _ovSig = "", _ovAct = "all";
 async function adminOverview(body, silent){
   if(!silent) body.innerHTML = skel("dash");
   const { data, error } = await sb.rpc("admin_dashboard");
@@ -10211,37 +10211,59 @@ async function adminOverview(body, silent){
   }
   const sig = JSON.stringify(data); if(silent && sig===_ovSig) return; _ovSig = sig;
   const d = data||{}, t = d.todo||{}, pe = d.people||{}, c = d.campaigns||{};
+  const N = v=> Number(v)||0, pc = (a,b)=> N(b) ? Math.round(100*N(a)/N(b)) : 0;
   const todo = [
-    ["accounts_pending","🏢","Agency / brand accounts waiting for approval","approvals"],
-    ["applications_pending","📝","Creator applications to approve or decline","applications"],
-    ["campaigns_awaiting","📣","Campaigns waiting for approval","campaigns"],
-    ["contracts_to_send","✍️","Approved creators — send contract","@campaignops"],
-    ["content_to_review","🎬","Content submitted — review","@campaignops"],
-    ["creators_incomplete","👤","Creators who haven't finished their profile","creators:incomplete"]];
-  const open = todo.filter(x=>Number(t[x[0]])>0);
+    ["accounts_pending","🏢","Agency / brand accounts","waiting for approval","approvals","bad"],
+    ["applications_pending","📝","Creator applications","to approve or decline","applications","warn"],
+    ["campaigns_awaiting","📣","Campaigns","waiting for approval","campaigns","bad"],
+    ["contracts_to_send","✍️","Contracts to send","approved, no contract yet","@campaignops","warn"],
+    ["content_to_review","🎬","Content to review","posts / videos submitted","@campaignops","warn"],
+    ["creators_incomplete","👤","Unfinished profiles","profile not complete yet","creators:incomplete","info"]];
+  const open = todo.filter(x=> N(t[x[0]])>0);
   const ago = s=>{ const m=Math.round((Date.now()-new Date(s).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
-  const EV = { login:"signed in", sign_out:"signed out", consent:"chose cookies", campaign_apply:"applied to a campaign", instagram_connect:"connected Instagram",
-               profile_completed:"completed their profile", official_email_verified:"verified official email", campaign_create:"created a campaign",
-               campaign_edit:"edited a campaign", application_approve:"approved an application", application_decline:"declined an application",
-               publish:"published on Instagram", contract_sign:"signed a contract" };
-  const stat = (v,l,tab)=>`<div class="ws-stat"${tab?` data-ovgo="${tab}" style="cursor:pointer"`:""}><b>${fmtNum(v)}</b><span>${l}</span></div>`;
-  body.innerHTML = `
-    <div class="card" style="margin-bottom:14px"><h3 style="margin-top:0">⚡ Needs your attention</h3>
-      ${open.length ? `<div class="list">${open.map(([k,ic,l,tab])=>`<div class="row" data-ovgo="${tab}" style="cursor:pointer"><span class="dot warn"></span>
-          <div class="r-main"><div class="r-title">${ic} ${esc(l)}</div></div><span class="tag warn">${fmtNum(t[k])}</span><button class="mini-btn">Open →</button></div>`).join("")}</div>`
-        : `<div class="muted" style="padding:6px">All clear — nothing waiting on you right now ✅</div>`}</div>
-    <div class="ci-sub">People</div>
-    <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
-      ${stat(pe.total,"Total users","users")}${stat(pe.creators,"Creators","creators")}${stat(pe.agencies,"Agencies","users")}${stat(pe.brands,"Brands","users")}
-      ${stat(pe.instagram_connected,"Instagram connected","creators:ig")}${stat(pe.joined_today,"Joined today","users")}${stat(pe.signed_in_today,"Signed in today","activity")}</div>
-    <div class="ci-sub" style="margin-top:14px">Campaigns</div>
-    <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
-      ${stat(c.total,"Campaigns","campaigns")}${stat(c.live,"Open now","campaigns")}${stat(c.paid,"💰 Paid","campaigns")}${stat(c.barter,"🎁 Barter","campaigns")}
-      ${stat(c.barter_paid,"Barter + Paid","campaigns")}${stat(c.applications,"Applications","applications")}${stat(c.approved,"Creators approved","applications")}</div>
-    <div class="card" style="margin-top:14px"><h3 style="margin-top:0">🕒 Live activity <span class="muted" style="font-size:12px;font-weight:400">· refreshes every 30s</span></h3>
-      <div class="list">${(d.recent||[]).map(r=>`<div class="row"><span class="avatar">${esc(String(r.who||"?").replace(/^\+/,"").slice(0,2).toUpperCase())}</span>
-        <div class="r-main"><div class="r-title">${esc(r.who)} <span class="muted" style="font-weight:400">${esc(EV[r.event]||String(r.event).replace(/_/g," "))}${r.event==="consent"&&r.detail&&r.detail.choice?` (${esc(r.detail.choice)})`:""}${r.detail&&r.detail.campaign?` · ${esc(r.detail.campaign)}`:""}</span></div>
-        <div class="r-sub">${esc(r.role||"")}${r.city?` · ${esc(r.city)}`:""}</div></div><span class="muted" style="font-size:12px">${ago(r.at)}</span></div>`).join("") || `<div class="muted" style="padding:6px">No activity yet.</div>`}</div></div>`;
+  const EV = { login:["🔐","signed in","in"], sign_out:["🚪","signed out","in"], consent:["🍪","chose cookies","in"], campaign_apply:["📝","applied to a campaign","camp"],
+               instagram_connect_start:["⏳","started connecting Instagram","ig"], instagram_connect:["📸","connected Instagram","ig"], instagram_connected:["📸","connected Instagram","ig"],
+               instagram_publish:["📤","published on Instagram","camp"], publish:["📤","published on Instagram","camp"], profile_completed:["✅","completed their profile","prof"],
+               official_email_verified:["✉️","verified official email","prof"], campaign_create:["📣","created a campaign","camp"], campaign_edit:["✏️","edited a campaign","camp"],
+               application_approve:["👍","approved an application","camp"], application_decline:["👎","declined an application","camp"], contract_sign:["✍️","signed a contract","camp"] };
+  const evOf = e=> EV[e] || ["•", String(e||"").replace(/_/g," "), "other"];
+  const tile = (v,l,sub,go,ic)=>`<button type="button" class="ov-kpi"${go?` data-ovgo="${go}"`:""}><span class="ov-kpi-ic">${ic}</span><b>${fmtNum(N(v))}</b><span class="ov-kpi-l">${l}</span>${sub?`<span class="ov-kpi-s">${sub}</span>`:""}</button>`;
+  const rec = d.recent||[];
+  const dayOf = s=>{ const x = new Date(s), n = new Date(); const k = x.toDateString(); if(k===n.toDateString()) return "Today";
+    const y = new Date(n); y.setDate(n.getDate()-1); return k===y.toDateString() ? "Yesterday" : fmtDate(s); };
+  const actHtml = ()=>{ const list = rec.filter(r=> _ovAct==="all" || evOf(r.event)[2]===_ovAct); let last = "";
+    return list.length ? list.map(r=>{ const [ic,txt] = evOf(r.event), dd = dayOf(r.at), head = dd!==last ? `<div class="ov-day">${esc(dd)}</div>` : ""; last = dd;
+      const camp = r.detail && r.detail.campaign, prof = r.detail && r.detail.profile;
+      return head + `<div class="ov-ev"><span class="ov-ev-ic">${ic}</span><div class="ov-ev-main"><div><b>${esc(r.who||"Someone")}</b> <span class="muted">${esc(txt)}${r.event==="consent"&&r.detail&&r.detail.choice?` (${esc(r.detail.choice)})`:""}</span></div>
+        <div class="ov-ev-sub">${r.role?`<span class="ov-role ${esc(r.role)}">${esc(r.role)}</span>`:""}${camp?`<span>📣 ${esc(camp)}</span>`:""}${prof?`<span>@${esc(prof)}</span>`:""}${r.city?`<span>📍 ${esc(r.city)}</span>`:""}</div></div>
+        <span class="ov-ev-t" title="${esc(fmtDateTime ? fmtDateTime(r.at) : r.at)}">${ago(r.at)}</span></div>`; }).join("")
+      : `<div class="muted" style="padding:14px">Nothing here yet.</div>`; };
+  const chips = [["all","All"],["camp","Campaigns"],["ig","Instagram"],["in","Sign-ins"],["prof","Profiles"]];
+  // a quiet refresh only swaps the numbers and the feed — the page never jumps
+  const feed = body.querySelector("#ovFeed"), feedTop = feed ? feed.scrollTop : 0;
+  body.innerHTML = `<div class="ov">
+    <section class="ov-card ov-att"><div class="ov-h"><h3>⚡ Needs your attention</h3>${open.length?`<span class="ov-pill warn">${open.length} to do</span>`:""}</div>
+      ${open.length ? `<div class="ov-att-grid">${open.map(([k,ic,l,sub,go,tone])=>`<button type="button" class="ov-todo ${tone}" data-ovgo="${go}">
+          <span class="ov-todo-ic">${ic}</span><span class="ov-todo-txt"><b>${esc(l)}</b><small>${esc(sub)}</small></span><span class="ov-todo-n">${fmtNum(N(t[k]))}</span><span class="ov-todo-go">Open →</span></button>`).join("")}</div>`
+        : `<div class="ov-clear">✅ All clear — nothing waiting on you right now.</div>`}</section>
+    <div class="ov-two">
+      <section class="ov-card"><div class="ov-h"><h3>👥 People</h3><span class="muted">${fmtNum(N(pe.total))} accounts</span></div>
+        <div class="ov-kpis">${tile(pe.creators,"Creators",`${pc(pe.instagram_connected,pe.creators)}% on Instagram`,"creators:all","🎨")}
+          ${tile(pe.instagram_connected,"Instagram connected",`of ${fmtNum(N(pe.creators))} creators`,"creators:ig","📸")}
+          ${tile(pe.agencies,"Agencies","","users","🏢")}${tile(pe.brands,"Brands","","users","🏷️")}
+          ${tile(pe.joined_today,"Joined today","new accounts","users","🆕")}${tile(pe.signed_in_today,"Signed in today","active people","activity","🟢")}</div></section>
+      <section class="ov-card"><div class="ov-h"><h3>📣 Campaigns</h3><span class="muted">${fmtNum(N(c.live))} open now</span></div>
+        <div class="ov-kpis">${tile(c.total,"Campaigns",`${fmtNum(N(c.live))} open now`,"campaigns","📣")}
+          ${tile(c.barter,"Barter","product only","campaigns","🎁")}${tile(c.paid,"Paid","cash only","campaigns","💰")}${tile(c.barter_paid,"Barter + Paid","product + cash","campaigns","🤝")}
+          ${tile(c.applications,"Applications","from creators","applications","📝")}${tile(c.approved,"Approved",`${pc(c.approved,c.applications)}% of applications`,"applications","✅")}</div></section>
+    </div>
+    <section class="ov-card ov-live"><div class="ov-h"><h3>🕒 Live activity</h3><span class="muted ov-live-note"><span class="ov-dot"></span>updates every 30s</span></div>
+      <div class="ov-chips">${chips.map(([k,l])=>{ const n = k==="all" ? rec.length : rec.filter(r=> evOf(r.event)[2]===k).length;
+        return k!=="all" && !n ? "" : `<button type="button" class="ov-chip${_ovAct===k?" on":""}" data-ovact="${k}">${l} <span>${n}</span></button>`; }).join("")}</div>
+      <div class="ov-feed" id="ovFeed">${actHtml()}</div></section></div>`;
+  const nf = body.querySelector("#ovFeed"); if(nf && silent) nf.scrollTop = feedTop;
+  body.querySelectorAll("[data-ovact]").forEach(b=> b.onclick = ()=>{ _ovAct = b.dataset.ovact;
+    body.querySelectorAll("[data-ovact]").forEach(x=> x.classList.toggle("on", x===b)); const f = body.querySelector("#ovFeed"); if(f){ f.innerHTML = actHtml(); f.scrollTop = 0; } });
   body.querySelectorAll("[data-ovgo]").forEach(el=> el.onclick = ()=>{
     const go = el.dataset.ovgo;
     if(go.startsWith("@")){ currentPage = go.slice(1); renderShell(); return; }
