@@ -6039,7 +6039,7 @@ function bkRowMissing(r, d){
   if(st==="posted" && !/instagram\.com\/(reel|reels|p|tv|stories)\//i.test(d.post_link)) m.push("Post link (Instagram)");
   return m;
 }
-const bkRawStatus = r=> _bk.map.status!=null ? String(r.cells[_bk.map.status]||"").trim() : "";
+const bkRawStatus = r=> _bk.map && _bk.map.status!=null ? String(r.cells[_bk.map.status]||"").trim() : "";
 // why this row is NOT uploaded (null = it goes)
 function bkRowBlock(r, p){
   if(p && p.no_contact) return "No WhatsApp, email or Instagram";
@@ -6052,7 +6052,8 @@ function bkRowBlock(r, p){
 }
 // the sheet itself: not in the format?
 function bkSheetErrors(rows){
-  const e = [], w = [], has = k=> _bk.map[k]!=null;
+  const e = [], w = [], has = k=> !!_bk.map && _bk.map[k]!=null;
+  if(!rows.length) return { e, w };
   if(!has("phone") && !has("email") && !has("handle")) e.push("This sheet isn't in the format — no <b>WhatsApp</b>, <b>Email</b> or <b>Instagram</b> column was found. Match the columns under ✎ Change sheet / columns, or use the template from the guide.");
   if(rows.length && !has("status")) w.push("No <b>Status</b> column — everyone goes in as <b>Registered</b>.");
   if(!has("name") && !has("handle")) w.push("No <b>Name</b> or <b>Instagram</b> column — creators will be hard to recognise.");
