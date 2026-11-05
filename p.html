@@ -155,6 +155,9 @@ window.addEventListener("message", e=>{
     window.__kitA = a;
   }catch(e){ root.innerHTML = `<div class="pub-empty">Couldn't load this media kit.</div>`; }
   try{ if(parent !== window) parent.postMessage({ type:"geek-kit-ready", u }, location.origin); }catch(_){}
+  // inside the app: tell the frame how tall the kit is, so it shows in full without its own scrollbar
+  if(parent !== window){ const tell = ()=>{ try{ parent.postMessage({ type:"geek-kit-height", h: document.documentElement.scrollHeight }, location.origin); }catch(_){} };
+    tell(); setTimeout(tell, 600); setTimeout(tell, 2000); try{ new ResizeObserver(tell).observe(document.body); }catch(_){} }
 })();
 </script>
 </body>

@@ -9406,7 +9406,10 @@ async function adminCreatorProfile(member, row){
         ${r("Bio", esc(ig.biography||""))}${ig.website?r("Website", `<a href="${esc(safeUrl(ig.website))}" target="_blank" rel="noopener">${esc(ig.website)}</a>`):""}
         ${r("Connected", esc(fmtDateTime(ig.connected_at)))}${r("Last synced", agoTxt(ig.synced_at))}</div>
       <div class="ac360-media">${media.map(m=>`<a href="${esc(safeUrl(m.permalink||"#"))}" target="_blank" rel="noopener" class="ac360-post">${m.img?`<img src="${esc(safeUrl(m.img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:""}
-          <span>❤ ${kNum(m.likes||0)} · 💬 ${kNum(m.comments||0)}</span></a>`).join("")||'<div class="muted">No recent posts synced.</div>'}</div>`,
+          <span>❤ ${kNum(m.likes||0)} · 💬 ${kNum(m.comments||0)}</span></a>`).join("")||'<div class="muted">No recent posts synced.</div>'}</div>
+      <div class="ac360-kit"><div class="ac360-kit-h"><b>🪪 Media kit</b> <span class="muted">— everything brands see: audience (gender, age, countries, cities), top posts, work portfolio, content showcase</span>
+        <a class="mini-btn ghost" href="/p.html?u=${encodeURIComponent(ig.username)}" data-kitopen="${esc(ig.username)}">⤢ Bigger</a></div>
+        <iframe class="kit-frame kit-inline" data-kitframe="${esc(ig.username)}" src="/p.html?u=${encodeURIComponent(ig.username)}&embed=1" title="Media kit" loading="lazy"></iframe></div>`,
     campaigns: `<div class="card">${camps.length||mk.length ? `<div class="list ac-ccards">${camps.map(c=>{
           // the same creator card as inside the campaign: step bar, where they are, and the actions — right here
           const fail = ["dropped","rejected","ineligible","brand_declined"].includes(c.stage), idx = bpStageIndex(c.stage), tot = BARTER_STEPS.length;
@@ -9443,6 +9446,7 @@ async function adminCreatorProfile(member, row){
     bodyEl.querySelectorAll("[data-accamp]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); close(); openCampaignForCreator(b.dataset.accampname, b.dataset.accamp); });
     bodyEl.querySelectorAll("[data-achub]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); openCreatorHub(b.dataset.achub, b.dataset.achubtab || "overview"); });
     if(_ac360Tab==="activity") creatorActivityPanel(member, bodyEl.querySelector("#ac360Act"));
+    bodyEl.querySelectorAll("[data-kitframe]").forEach(f=> kitFrameWire(f, f.dataset.kitframe, true));
     if(_ac360Tab==="intel" && window.ciIntel) window.ciIntel.openCard(D.identity_id, "ac360Intel");
     const strip = bodyEl.querySelector("#ac360Strip"); if(strip) acActivityStrip(member, strip);
   };
@@ -11857,14 +11861,21 @@ function openKitModal(handle){
   const close = ()=>{ m.remove(); window.removeEventListener("message", onMsg); };
   m.querySelector("[data-x]").onclick = close; m.onclick = e=>{ if(e.target===m) close(); };
   m.querySelector("[data-kitcopy]").onclick = async ()=>{ try{ await navigator.clipboard.writeText((window.appOrigin ? window.appOrigin() : location.origin) + "/p.html?u=" + encodeURIComponent(handle)); gateToast("Media kit link copied ✓"); }catch(e){ gateToast("Couldn't copy the link."); } };
-  const fr = m.querySelector("iframe");
+  const onMsg = kitFrameWire(m.querySelector("iframe"), handle);
+}
+// a media-kit frame (window or inside a profile): fresh Instagram posts once it's ready; inline frames grow to their content
+function kitFrameWire(fr, handle, grow){
   const onMsg = async e=>{
-    if(e.origin !== location.origin || !e.data || e.data.type !== "geek-kit-ready" || e.source !== fr.contentWindow) return;
+    if(!fr.isConnected){ window.removeEventListener("message", onMsg); return; }
+    if(e.origin !== location.origin || !e.data || e.source !== fr.contentWindow) return;
+    if(e.data.type === "geek-kit-height" && grow){ fr.style.height = Math.max(400, Math.min(6000, +e.data.h || 0)) + "px"; return; }
+    if(e.data.type !== "geek-kit-ready") return;
     const r = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username: handle, media_limit: 12 } }).then(x=>x, ()=>({}));
-    const d = r && r.data; if(!d || !d.ok) return;
+    const d = r && r.data; if(!d || !d.ok || !fr.isConnected) return;
     fr.contentWindow.postMessage({ type:"geek-kit-fresh", posts: d.posts||[], profile_picture_url: d.profile && d.profile.profile_picture_url }, location.origin);
   };
   window.addEventListener("message", onMsg);
+  return onMsg;
 }
 document.addEventListener("click", e=>{
   const k = e.target.closest && e.target.closest("[data-kitopen]"); if(!k) return;
