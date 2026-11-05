@@ -9353,7 +9353,7 @@ async function adminCreatorProfile(member, row){
   const camps = D.campaigns||[], mk = D.marketplace||[];
   const stageTag = s=>{ const [l,c] = APPLICANT_STAGE[s] || [String(s||"").replace(/_/g," "), "brand"]; return `<span class="tag ${c}">${esc(l)}</span>`; };
   const tabs = [["profile","👤 Profile"],["instagram","📸 Instagram"],["campaigns",`📣 Campaigns (${camps.length+mk.length})`]]
-    .concat(D.identity_id && window.__ciIntelEnabled ? [["intel","🧠 Intelligence"]] : [], [["activity","📈 Activity"]]);
+    .concat(D.identity_id && window.__ciIntelEnabled ? [["intel","🧠 Intelligence"]] : [], [["activity","📈 Activity"]], [["kit","🪪 Media kit"]]);
   if(_ac360Tab==="intel" && !(D.identity_id && window.__ciIntelEnabled)) _ac360Tab = "profile";
   const pic = ig.pic ? `<img class="ac360-pic" src="${esc(safeUrl(ig.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : `<span class="avatar ac360-pic">${esc(String(name).slice(0,2).toUpperCase())}</span>`;
   const sections = {
@@ -9406,8 +9406,8 @@ async function adminCreatorProfile(member, row){
         ${r("Bio", esc(ig.biography||""))}${ig.website?r("Website", `<a href="${esc(safeUrl(ig.website))}" target="_blank" rel="noopener">${esc(ig.website)}</a>`):""}
         ${r("Connected", esc(fmtDateTime(ig.connected_at)))}${r("Last synced", agoTxt(ig.synced_at))}</div>
       <div class="ac360-media">${media.map(m=>`<a href="${esc(safeUrl(m.permalink||"#"))}" target="_blank" rel="noopener" class="ac360-post">${m.img?`<img src="${esc(safeUrl(m.img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:""}
-          <span>❤ ${kNum(m.likes||0)} · 💬 ${kNum(m.comments||0)}</span></a>`).join("")||'<div class="muted">No recent posts synced.</div>'}</div>
-      <div class="ac360-kit"><div class="ac360-kit-h"><b>🪪 Media kit</b> <span class="muted">— everything brands see: audience (gender, age, countries, cities), top posts, work portfolio, content showcase</span>
+          <span>❤ ${kNum(m.likes||0)} · 💬 ${kNum(m.comments||0)}</span></a>`).join("")||'<div class="muted">No recent posts synced.</div>'}</div>`,
+    kit: !ig.username ? `<div class="card"><div class="muted">No media kit yet — it builds itself once the creator connects Instagram.</div></div>` : `<div class="ac360-kit"><div class="ac360-kit-h"><b>🪪 Media kit</b> <span class="muted">— everything brands see: audience (gender, age, countries, cities), top posts, work portfolio, content showcase</span>
         <a class="mini-btn ghost" href="/p.html?u=${encodeURIComponent(ig.username)}" data-kitopen="${esc(ig.username)}">⤢ Bigger</a></div>
         <iframe class="kit-frame kit-inline" data-kitframe="${esc(ig.username)}" src="/p.html?u=${encodeURIComponent(ig.username)}&embed=1" title="Media kit" loading="lazy"></iframe></div>`,
     campaigns: `<div class="card">${camps.length||mk.length ? `<div class="list ac-ccards">${camps.map(c=>{
