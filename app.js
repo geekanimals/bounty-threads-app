@@ -6685,7 +6685,7 @@ function shPanelHtml(){
     <div class="sh-row"><span class="sh-lbl">⬇ Download</span>
       <select id="shStep"><option value="">All creators${cnt("")!=null?` (${cnt("")})`:""}</option>${steps.map(([k,lab])=>{ const n = cnt(k); return n===0 ? "" : `<option value="${k}">${esc(lab)}${n!=null?` (${n})`:""}</option>`; }).join("")}</select>
       <button type="button" class="btn sm" data-shdl="xlsx">⬇ Excel</button><button type="button" class="btn sm ghost" data-shdl="csv">⬇ CSV</button>
-      <span class="sh-or muted">or</span><button type="button" class="btn sm ghost" id="shDlSel"${nSel?"":" disabled"}>⬇ Only the ticked (${nSel})</button></div>
+      <span class="sh-or muted">or</span><button type="button" class="btn sm ghost" id="shDlSel" title="Tick creators in the list below (or in Upload history), then press this">⬇ Only the ticked (<span id="shSelN">${nSel}</span>)</button></div>
     <div class="sh-row"><span class="sh-lbl">🔗 Google Sheet</span>
       <input id="shUrl" placeholder="Paste your Google Sheet link (https://docs.google.com/spreadsheets/…)" value="${esc((l&&l.sheet_url)||"")}">
       <button type="button" class="btn sm" id="shLinkGo">${l?"Save":"Link it"}</button>
@@ -6700,13 +6700,19 @@ function shPanelHtml(){
       </details>` : ""}
   </div>`;
 }
+// the ticked count on "⬇ Only the ticked" follows every ☑ anywhere on the page (creator list, upload history, select all)
+function shSelSync(){ const n = document.getElementById("shSelN"); if(n) n.textContent = _ccSel.size; }
+document.addEventListener("change", e=>{ if(e.target && e.target.closest && e.target.closest("[data-ccsel],#ccSelAll,[data-bkhsel],[data-bkgsel]")) setTimeout(shSelSync, 0); }, true);
+document.addEventListener("click", e=>{ if(e.target && e.target.closest && e.target.closest("#ccSelClear,#bkHSelClr,#ccPickNoIg")) setTimeout(shSelSync, 50); }, true);
 function wireSheetPanel(root){
   root = root || document; const q = id=> root.querySelector("#"+id) || document.getElementById(id);
   const repaint = ()=>{ const box = document.getElementById("shBox"); if(box){ box.innerHTML = shPanelHtml(); wireSheetPanel(box); } };
   if(!_sh || _sh.camp !== (_bpCamp&&_bpCamp.id)) shLoad().then(repaint, e=>{ const box = document.getElementById("shBox"); if(box) box.insertAdjacentHTML("beforeend", `<div class="cc-wa-err">${esc(e.message||e)}</div>`); });
   (root.querySelectorAll ? root : document).querySelectorAll("[data-shdl]").forEach(b=> b.onclick = async ()=>{ const st = q("shStep"), o = st && st.value;
     b.disabled = true; try{ await shDownload(b.dataset.shdl, { step: o||"", label: o ? (o==="out"?"out":bkStLabel(o)) : "" }); }catch(e){ gateToast(e.message||String(e)); } b.disabled = false; });
-  const ds = q("shDlSel"); if(ds) ds.onclick = async ()=>{ if(!_ccSel.size) return; ds.disabled = true; try{ await shDownload("xlsx", { keys: new Set(_ccSel), label:"ticked" }); }catch(e){ gateToast(e.message||String(e)); } ds.disabled = false; };
+  const ds = q("shDlSel"); if(ds) ds.onclick = async ()=>{
+    if(!_ccSel.size){ gateToast("Tick the creators you want in the list below first (☑ on each card, or Select all) — then press this again.");
+      const l = document.querySelector(".cc-selbar") || document.querySelector("[data-ccsel]"); if(l) l.scrollIntoView({ behavior:"smooth", block:"center" }); return; } ds.disabled = true; try{ await shDownload("xlsx", { keys: new Set(_ccSel), label:"ticked" }); }catch(e){ gateToast(e.message||String(e)); } ds.disabled = false; };
   const go = q("shLinkGo"); if(go) go.onclick = async ()=>{ const u = (q("shUrl").value||"").trim();
     if(u && !/^https:\/\/docs\.google\.com\/spreadsheets\//i.test(u)){ gateToast("Paste the Google Sheet link (https://docs.google.com/spreadsheets/…)"); return; }
     go.disabled = true; const r = await sb.schema("api").rpc("campaign_sheet_link", { p_campaign: _bpCamp.id, p_sheet_url: u||null, p_new_token: false }).then(x=>x, e=>({error:e})); go.disabled = false;
