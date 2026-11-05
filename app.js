@@ -6191,8 +6191,84 @@ function bkGuideHtml(){
   </details>
   <details class="bk-guide bk-hist" data-bkfold="hist"${_bkFold.has("hist")?" open":""}><summary>🗂 Upload history — every upload, when, how many creators and who</summary><div id="bkHist">${bkHistHtml()}</div></details>`;
 }
+// 🪪 ONE creator card for everyone (invite or in the campaign): photo + profile %, name, @handle, number, email, followers,
+// city, step bar, what they're stuck on, whose turn, how many messages went — and the action on the right.
+// The buttons carry the same data-* as the creator list, so they work exactly the same; ▼ opens the same full details.
+let _ucStats = null;   // { camp, data, loading }
+function ucStatsLoad(after){
+  const camp = _bpCamp && _bpCamp.id; if(!camp) return;
+  if(_ucStats && _ucStats.camp===camp && (_ucStats.loading || _ucStats.data)) return;
+  _ucStats = { camp, loading:true };
+  sb.schema("api").rpc("campaign_msg_stats", { p_campaign: camp }).then(r=>r, e=>({error:e})).then(r=>{
+    _ucStats = { camp, data: (r && !r.error && r.data) || {} }; if(after) after(); });
+}
+const ucIsFakeEmail = e => /@creators\.bountythreads\.app$|^wa_/i.test(String(e||""));
+function ucDays(at){ if(!at) return ""; const d = Math.floor((Date.now() - new Date(at).getTime())/86400000); return d<=0 ? "today" : d===1 ? "1 day" : d+" days"; }
+function ucDetailOf(html){ try{ const t = document.createElement("div"); t.innerHTML = html; const d = t.querySelector(".bp-detail"); return d ? d.outerHTML : ""; }catch(e){ return ""; } }
+function ucCardHtml(c){
+  // c: { key, pic, handle, name, phone, email, city, followers, pct, via, tags, filled, total, stepTxt, nx, days, acts, chat, openAttr, open, detail }
+  const st = (_ucStats && _ucStats.camp===(_bpCamp&&_bpCamp.id) && _ucStats.data && _ucStats.data[c.key]) || null;
+  const email = c.email || (st && st.email), city = c.city || (st && st.city);
+  const ini = esc(String(c.handle||c.name||"?").replace(/^@/,"").slice(0,2).toUpperCase());
+  const pct = c.pct!=null ? Math.max(0, Math.min(100, +c.pct||0)) : null;
+  const ring = pct!=null ? `style="--uc-p:${pct}"` : "";
+  const seg = Array.from({length: c.total||12}, (_,n)=> `<i class="${n < (c.filled||0) ? (n===(c.filled-1) && c.nx && c.nx.turn!=="done" ? "now" : "on") : ""}"></i>`).join("");
+  const cnt = (ic, l, n)=> `<span class="uc-cnt" title="${esc(l)} sent on this campaign">${ic} ${esc(l)} <b>${st ? (n||0) : "…"}</b></span>`;
+  const last = st && st.last ? ` title="Last WhatsApp ${esc(fmtDateTime(st.last.at))} · ${esc(st.last.status||"")}"` : "";
+  return `<div class="card bp-card uc-card${c.open?" open":""}" data-uckey="${esc(c.key)}">
+    <div class="bp-head uc-head" ${c.openAttr}>
+      <input type="checkbox" class="cc-sel uc-sel" data-ccsel="${esc(c.key)}"${_ccSel.has(c.key)?" checked":""} title="Select" aria-label="Select">
+      <span class="uc-av${pct!=null?" ring":""}" ${ring}>${c.pic?`<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${ini}'}))">`:`<span>${ini}</span>`}${pct!=null?`<em>${pct}%</em>`:""}</span>
+      <div class="uc-main">
+        <div class="uc-l1"><b class="uc-name">${esc(c.name || (c.handle?"@"+c.handle:"Creator"))}</b>${c.handle?igLink(c.handle):""}${c.via?`<span class="uc-via">${esc(c.via)}</span>`:""}${c.tags||""}</div>
+        <div class="uc-l2">${c.phone?`<span>📞 ${esc(c.phone)}</span>`:""}${email && !ucIsFakeEmail(email)?`<span>✉️ ${esc(email)}</span>`:""}${c.followers!=null?`<span>👥 <b>${fmtNum(c.followers)}</b> followers</span>`:""}${city?`<span>📍 ${esc(city)}</span>`:""}</div>
+        <div class="uc-l3"><span class="uc-bar">${seg}</span><span class="uc-step">${c.stepTxt||""}</span></div>
+        <div class="uc-l4">${bpTurnChip(c.nx)} <b class="uc-stuck">${esc(c.nx.title)}</b>${c.days?` <span class="muted">· ${esc(c.days)}</span>`:""}
+          <span class="uc-cnts"${last}>${cnt("🟢","WhatsApp", st&&st.wa)}${cnt("✉️","Email", st&&st.em)}${cnt("🔔","Reminders", st&&st.rem)}</span></div>
+      </div>
+      <span class="bp-rowacts uc-acts">${c.acts||""}${c.chat||""}<span class="bp-caret uc-caret" title="Open everything">${c.open?"▲":"▼"}</span></span>
+    </div>
+    ${c.open ? c.detail : ""}
+  </div>`;
+}
+function ucFromInvite(i, inCamp, via){
+  const st = i.status==="invited" ? "registered" : (i.status||"registered"), miss = i.needs||[];
+  const pp = i.handle ? pubOf(i.handle) : null;
+  const nx = inCamp && st==="posted" ? { turn:"done", title:"Done ✓" }
+           : !i.registered ? { turn:"creator", title:"Not registered" }
+           : miss.length ? { turn:"creator", title: miss.map(x=>/whatsapp/i.test(x)?"Connect WhatsApp":"Instagram not connected").join(" + ") }
+           : { turn:"creator", title:"Joining the campaign…" };
+  const open = _ccInvOpen === i.invite_id;
+  const act = !(inCamp && st==="posted") ? (!i.registered ? `<button type="button" class="btn sm bp-rowact" data-hubre="${esc(i.invite_id)}" data-ccre="1">↻ Resend invite</button>`
+      : miss.length && i.phone ? `<button type="button" class="btn sm bp-rowact cc-wabtn" data-ccig="i:${esc(i.invite_id)}">📸 Connect Instagram</button>` : "") : "";
+  return ucCardHtml({ key:"i:"+i.invite_id, pic: pp && pp.profile_picture_url, handle:i.handle, name:i.name, phone:i.phone, email:i.email, city:i.city,
+    followers: (pp && pp.followers) ?? i.followers, pct: i.profile_pct!=null ? i.profile_pct : null, via,
+    tags: i.registered ? `<span class="tag warn">📸 On Geek · connect Instagram</span>` : "",
+    filled: i.registered ? 1 : 0, total: bpJourney().length,
+    stepTxt: i.registered ? `Step 1/${bpJourney().length} · Registered · <span class="muted">sheet: ${esc(bkStLabel(st))}</span>` : `Sheet: <b>${esc(bkStLabel(st))}</b> <span class="muted">· joins there once registered</span>`,
+    nx, days: ucDays(i.registered ? (i.claimed_at || i.last_invited_at) : (i.first_invited_at || i.created_at || i.last_invited_at)),
+    acts: act, chat: `<button type="button" class="bp-chatbtn uc-chat" data-ccinvchat="${esc(i.invite_id)}" title="Messages &amp; WhatsApp">💬</button>`,
+    openAttr: `data-ccinvopen="${esc(i.invite_id)}"`, open, detail: open ? ucDetailOf(ccInviteRowHtml(i, inCamp)) : "" });
+}
+function ucFromPart(x, via){
+  const cr0 = x.creator||{}, pubH = cr0.followers==null && (cr0.username || x.applied_profile) ? pubHandle(cr0.username || x.applied_profile) : "", pp = pubH ? pubOf(pubH) : null;
+  const cr = Object.assign({}, cr0, { username: cr0.username || pubH, profile_picture_url: cr0.profile_picture_url || (pp && pp.profile_picture_url) || null, followers: cr0.followers ?? (pp && pp.followers) });
+  const P = x.participation_id, nx = bpNext(x), J = bpJourney(), j = bpJIndex(x), open = _bpOpen === P;
+  const today = new Date().toISOString().slice(0,10);
+  const overdue = x.due_on && x.due_on < today && ["content_created","changes_requested"].includes(x.stage);
+  const lastAt = Object.values(x.steps||{}).filter(Boolean).sort().pop() || x.applied_at;
+  return ucCardHtml({ key:"p:"+P, pic: cr.profile_picture_url, handle: cr.username, name: cr.name, phone: x.phone, email: null, city: null,
+    followers: cr.followers, pct: cr.profile_pct!=null ? cr.profile_pct : (x.profile_pct!=null ? x.profile_pct : null), via,
+    tags: (pubH ? `<span class="tag warn">📸 On Geek · connect Instagram</span>` : "") + jvBadge(cr.joined_via, true) + (overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':"") + (x.blocked_at?'<span class="tag" style="background:rgba(239,68,68,.15);color:#dc2626">⛔ Blocked</span>':""),
+    filled: j+1, total: J.length, stepTxt: `Step ${j+1}/${J.length} · <b>${esc((J[j]||[])[1]||"")}</b>`,
+    nx, days: nx.turn==="done" ? "" : ucDays(lastAt),
+    acts: nx.acts.filter(a=>a[2]).slice(0,1).map(a=> bpActBtn(a, P, true)).join(""),
+    chat: `<button type="button" class="bp-chatbtn uc-chat" data-bpchat="${esc(P)}" title="WhatsApp chat">💬</button>`,
+    openAttr: `data-bpopen="${esc(P)}"`, open, detail: open ? ucDetailOf(bpTrackerHtml([x])) : "" });
+}
 // 🗂 upload history of this campaign: every bulk upload (newest first) → when, by whom, new / updated, and its creators
 let _bkHist = null;   // { camp, data, loading }
+const _bkHistAll = new Set();   // uploads showing every creator (not just the first 10)
 function bkHistHtml(){
   const camp = _bpCamp && _bpCamp.id;
   if(!_bkHist || _bkHist.camp !== camp) return `<div class="muted">Open this to see every upload.</div>`;
@@ -6206,15 +6282,19 @@ function bkHistHtml(){
   const d0 = _bpData||{}, byP = {}, byI = {};
   (d0.creators||[]).forEach(x=> byP[x.participation_id] = x);
   ((_bpPeople && _bpPeople.invites)||[]).forEach(i=> byI[i.invite_id] = i);
-  const card = c=>{
+  const card = (c, u)=>{
     const x = c.participation_id && byP[c.participation_id], i = byI[c.invite_id];
-    const html = x ? bpTrackerHtml([x]) : i ? ccInviteRowHtml(i, bkStRank(i.status||"registered") >= bkStRank("approved"))
+    const via = `via upload · ${fmtDate(u.at)}`;
+    const html = x ? ucFromPart(x, via) : i ? ucFromInvite(i, bkStRank(i.status||"registered") >= bkStRank("approved"), via)
       : `<div class="card bp-card"><div class="bp-head"><span class="avatar">${esc(String(c.handle||c.name||"?").slice(0,2).toUpperCase())}</span><div><b>${esc(c.handle?"@"+c.handle:c.name||"—")}</b><div class="r-sub">${esc([c.name, c.phone, c.email, c.city].filter(Boolean).join(" · "))}</div><div class="muted" style="font-size:12px">Not on this campaign's list any more</div></div></div></div>`;
-    return `<div class="bk-hist-card"><span class="bk-hist-tag ${c.action==="new"?"new":"upd"}">${c.action==="new"?"🆕 New in this upload":"✏️ Updated by this upload"}${c.sheet_status?` · sheet said “${esc((bkStatuses().find(z=> z[0]===c.sheet_status)||[])[1]||c.sheet_status)}”`:""}</span>${html}</div>`;
+    return `<div class="bk-hist-card">${html}<span class="bk-hist-tag ${c.action==="new"?"new":"upd"}">${c.action==="new"?"🆕 New in this upload":"✏️ Updated by this upload"}${c.sheet_status?` · sheet said “${esc((bkStatuses().find(z=> z[0]===c.sheet_status)||[])[1]||c.sheet_status)}”`:""}</span></div>`;
   };
   const keyOf = c=> c.participation_id && byP[c.participation_id] ? "p:"+c.participation_id : byI[c.invite_id] ? "i:"+c.invite_id : null;
   window.__bkHistKeys = ups.map(u=> [...new Set((u.items||[]).map(keyOf).filter(Boolean))]);
-  return `<div class="bk-hist-sum"><b>${ups.length}</b> upload${ups.length>1?"s":""} · <b>${tot}</b> creator${tot!==1?"s":""} came in this way</div>
+  ucStatsLoad(()=>{ const box = document.getElementById("bkHist"); if(box && _bkHist && !_bkHist.loading){ box.innerHTML = bkHistHtml(); bkWireFolds(box); bkHistWire(); } });
+  const nSel = [..._ccSel].length;
+  return `<div class="bk-hist-sum"><b>${ups.length}</b> upload${ups.length>1?"s":""} · <b>${tot}</b> creator${tot!==1?"s":""} came in this way
+      <span class="bk-hist-selbar"><span class="muted"><b id="bkHSelN">${nSel}</b> selected</span><button type="button" class="btn sm cc-wabtn" id="bkHWaSel"${nSel?"":" disabled"}>🟢 WhatsApp to selected</button><button type="button" class="btn sm ghost" id="bkHSelClr"${nSel?"":" disabled"}>Clear</button></span></div>
     ${ups.map((u,k)=>{ const items = u.items||[], key = "h:"+u.at;
       const isRep = x=> /^(Repeat|Already in)/.test(x.reason||"");
       const nuAll = u.not_uploaded || [], nu = nuAll.filter(x=> !isRep(x)), rep = nuAll.filter(isRep);
@@ -6229,7 +6309,13 @@ function bkHistHtml(){
       const bits = [nu.length?`<b style="color:#dc2626">⚠️ ${nu.length} not uploaded</b>`:"", u.new_count?`<b>${u.new_count}</b> new`:"", u.updated_count?`<b>${u.updated_count}</b> updated`:"", (rep.length||u.duplicates)?`<b style="color:#b45309">🔁 ${rep.length||u.duplicates} duplicate${(rep.length||u.duplicates)>1?"s":""}</b>`:"", u.skipped&&!nu.length?`${u.skipped} skipped`:""].filter(Boolean).join(" · ") || "no new creators (only existing rows changed)";
       return bkFold(key, `📅 ${esc(fmtDateTime(u.at))} <span class="muted">· by ${esc(u.who||"—")}</span> <span class="bk-hist-n">${bits}</span>${k===0?' <span class="tag">latest</span>':""}`,
         `${nuHtml}${u.exact?"":`<div class="muted bk-mini">Older upload: the creators it added are shown (rows it only updated weren't logged then).</div>`}
-         ${items.length?`<div class="bk-hist-acts"><button type="button" class="btn sm cc-wabtn" data-bkhwa="${k}">🟢 WhatsApp to these ${window.__bkHistKeys[k].length} creators</button><span class="muted">ticks them in the creator list below and opens the WhatsApp panel — goes only when you press Send</span></div><div class="bk-hist-list">${items.map(card).join("")}</div>`:`<div class="muted">No creators to show for this upload.</div>`}`, "bk-hist-up"); }).join("")}`;
+         ${items.length?(()=>{ const ks = window.__bkHistKeys[k], all = ks.length && ks.every(x=> _ccSel.has(x)), lim = _bkHistAll.has(key) ? items.length : 10;
+            return `<div class="bk-hist-acts"><label class="bk-hist-all"><input type="checkbox" data-bkhsel="${k}"${all?" checked":""}> Select all ${ks.length}</label>
+              <span class="muted">${items.filter(c=> c.action==="new").length} new · ${items.filter(c=> c.action!=="new").length} updated</span>
+              <span style="flex:1"></span><button type="button" class="btn sm cc-wabtn" data-bkhwa="${k}">🟢 WhatsApp all ${ks.length}</button></div>
+              <div class="bk-hist-list">${items.slice(0, lim).map(c=> card(c, u)).join("")}</div>
+              ${items.length > lim ? `<div class="bk-hist-more">+ ${items.length - lim} more in this upload · <a href="#" data-bkhmore="${esc(key)}">Show all</a></div>` : ""}`; })():`<div class="muted">No creators to show for this upload.</div>`}`, "bk-hist-up"); }).join("")}
+      <div class="muted bk-mini">Tick creators (or a whole upload) → 🟢 WhatsApp opens the panel in the creator list below with them ticked — nothing goes until you press Send there.</div>`;
 }
 async function bkHistLoad(force){
   const camp = _bpCamp && _bpCamp.id; if(!camp) return;
@@ -6243,11 +6329,22 @@ async function bkHistLoad(force){
 function bkHistWire(){
   const body = document.getElementById("bpBody"); if(!body || !document.querySelector("#bkHist .bk-hist-card")) return;
   try{ wireBarterProcess(); wireCcInvites(body); wireCcSelect(body); }catch(e){ console.warn("history cards", e); }
-  document.querySelectorAll("#bkHist [data-bkhwa]").forEach(b=> b.onclick = e=>{ e.stopPropagation();
-    const keys = (window.__bkHistKeys||[])[+b.dataset.bkhwa] || []; if(!keys.length) return;
+  const openWa = keys=>{ if(!keys.length) return;
     _ccFilter = "all"; _ccQ = ""; _ccSel = new Set(keys); _ccWa.open = true; _ccWa.mode = "step"; _ccWa.winSig = null;
     paintBarterProcess();
-    setTimeout(()=>{ const w = document.getElementById("ccWa"); if(w) w.scrollIntoView({ behavior:"smooth", block:"center" }); }, 300); });
+    setTimeout(()=>{ const w = document.getElementById("ccWa"); if(w) w.scrollIntoView({ behavior:"smooth", block:"center" }); }, 300); };
+  const selSync = ()=>{ const n = _ccSel.size, nb = document.getElementById("bkHSelN"), wb = document.getElementById("bkHWaSel"), cb = document.getElementById("bkHSelClr");
+    if(nb) nb.textContent = n; if(wb) wb.disabled = !n; if(cb) cb.disabled = !n;
+    document.querySelectorAll("#bkHist [data-bkhsel]").forEach(c=>{ const ks = (window.__bkHistKeys||[])[+c.dataset.bkhsel]||[]; c.checked = ks.length && ks.every(x=> _ccSel.has(x)); });
+    document.querySelectorAll("[data-ccsel]").forEach(c=> c.checked = _ccSel.has(c.dataset.ccsel)); };
+  document.querySelectorAll("#bkHist [data-bkhwa]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); openWa((window.__bkHistKeys||[])[+b.dataset.bkhwa] || []); });
+  document.querySelectorAll("#bkHist [data-bkhsel]").forEach(c=>{ c.onclick = e=> e.stopPropagation(); c.onchange = ()=>{
+    const ks = (window.__bkHistKeys||[])[+c.dataset.bkhsel]||[]; ks.forEach(x=> c.checked ? _ccSel.add(x) : _ccSel.delete(x)); selSync(); }; });
+  document.querySelectorAll("#bkHist [data-ccsel]").forEach(c=>{ const prev = c.onchange; c.onchange = ()=>{ if(prev) prev(); else { c.checked ? _ccSel.add(c.dataset.ccsel) : _ccSel.delete(c.dataset.ccsel); } selSync(); }; });
+  const ws = document.getElementById("bkHWaSel"); if(ws) ws.onclick = e=>{ e.stopPropagation(); openWa([..._ccSel]); };
+  const wc = document.getElementById("bkHSelClr"); if(wc) wc.onclick = e=>{ e.stopPropagation(); _ccSel.clear(); selSync(); };
+  document.querySelectorAll("#bkHist [data-bkhmore]").forEach(a=> a.onclick = e=>{ e.preventDefault(); e.stopPropagation(); _bkHistAll.add(a.dataset.bkhmore);
+    const box = document.getElementById("bkHist"); if(box){ box.innerHTML = bkHistHtml(); bkWireFolds(box); bkHistWire(); } });
 }
 function bkWireFolds(root){
   (root||document).querySelectorAll("[data-bkfold]").forEach(d=> d.ontoggle = ()=>{

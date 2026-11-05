@@ -2729,7 +2729,40 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .bk-hist-tag{align-self:flex-start;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:rgba(127,127,160,.12);color:var(--muted)}
 .bk-hist-tag.new{background:rgba(34,197,94,.14);color:#15803d}
 [data-theme="dark"] .bk-hist-tag.new{color:#86efac}
-#bkHist .cc-sel{display:none}   /* ticking lives in the creator list; the history has its own "WhatsApp to these" */
+/* 🪪 one creator card (upload history) */
+.uc-card{padding:12px 14px;border-left:3px solid var(--line)}
+.uc-card:hover{border-left-color:#8b5cf6}
+.uc-head{display:flex;align-items:center;gap:14px;cursor:pointer}
+.uc-sel{width:18px;height:18px;flex:none;accent-color:#6d5efc}
+.uc-av{position:relative;flex:none;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;font-weight:700;font-size:15px}
+.uc-av>img,.uc-av>span{width:46px;height:46px;border-radius:50%;object-fit:cover;display:grid;place-items:center}
+.uc-av.ring{background:conic-gradient(#22c55e calc(var(--uc-p,0)*1%), #e5e7eb 0)}
+.uc-av.ring>span{background:linear-gradient(135deg,#8b5cf6,#ec4899)}
+.uc-av>em{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);font-style:normal;font-size:10.5px;font-weight:700;color:var(--ink);background:var(--panel);padding:0 5px;border-radius:8px;border:1px solid var(--line)}
+.uc-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.uc-l1{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.uc-name{font-size:15px}
+.uc-via{font-size:11.5px;font-weight:600;color:#6d5efc;background:rgba(109,94,252,.1);padding:2px 8px;border-radius:10px}
+.uc-l2{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted)}
+.uc-l2 b{color:var(--ink)}
+.uc-l3{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:13px}
+.uc-bar{display:inline-flex;gap:3px}
+.uc-bar i{width:18px;height:5px;border-radius:3px;background:#e5e7eb}
+.uc-bar i.on{background:#6d5efc}.uc-bar i.now{background:#f59e0b}
+.uc-l4{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:13px}
+.uc-cnts{display:inline-flex;flex-wrap:wrap;gap:6px;margin-left:6px}
+.uc-cnt{font-size:12px;padding:2px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted)}
+.uc-cnt b{color:var(--ink)}
+.uc-acts{display:flex;align-items:center;gap:8px;flex:none}
+.uc-chat{background:#22c55e!important;color:#fff!important;border-radius:9px}
+.uc-caret{border:1px solid var(--line);border-radius:9px;padding:4px 9px;font-size:11px}
+.bk-hist-sum{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.bk-hist-selbar{margin-left:auto;display:inline-flex;align-items:center;gap:8px}
+.bk-hist-acts{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin:4px 0 8px}
+.bk-hist-all{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:13px}
+.bk-hist-more{font-size:13px;color:var(--muted);padding:2px 4px}
+.bk-hist-card>.bk-hist-tag{align-self:flex-start;margin-left:14px}
+@media (max-width:720px){.uc-head{flex-wrap:wrap}.uc-acts{width:100%;justify-content:flex-end}.uc-av{width:44px;height:44px}.uc-av>img,.uc-av>span{width:38px;height:38px}}
 .bk-hist-acts{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 8px;font-size:12px}
 
 /* ⛔ bulk upload: rows that won't go + the sheet's errors, and the "not uploaded" list in Upload history */
