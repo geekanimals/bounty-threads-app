@@ -5750,13 +5750,13 @@ const BK_STATUSES = [
   ["approved","Approved","brand said yes → the contract goes out","Invite (geek_campaign_access)",""],
   ["contract_sent","Contract sent","creator signs it in the app","Sign your contract",""],
   ["contract_signed","Contract signed","next: the creator confirms the address","Confirm your address",""],
-  ["address_confirmed","Address confirmed","they can read the video brief in the app to practise · next: you add the courier","no message","Address (+ State, PIN code) — or they add it in the app"],
-  ["courier_sent","Courier sent","creator can track it · next: they tap Received","Product shipped","Courier + Tracking"],
-  ["courier_delivered","Courier delivered","the video deadline (campaign's days) starts today","Video brief","Courier + Tracking"],
-  ["video_brief_sent","Video brief sent","same as Courier delivered (optional)","Video brief","Courier + Tracking"],
-  ["video_submitted","Video submitted","waiting for the brand's review","no message","Video link"],
-  ["client_approved","Client approved","next: the creator posts it","Video approved — post it","Video link"],
-  ["posted","Posted / Done","campaign complete · numbers fetched from their Instagram","Campaign complete","Post link — the link of every post"]];
+  ["address_confirmed","Address confirmed","they can read the video brief in the app to practise · next: you add the courier","no message","Address + State + PIN code (required)"],
+  ["courier_sent","Courier sent","creator can track it · next: they tap Received","Product shipped","Courier + Tracking (required)"],
+  ["courier_delivered","Courier delivered","the video deadline (campaign's days) starts today","Video brief","Courier + Tracking (required)"],
+  ["video_brief_sent","Video brief sent","same as Courier delivered (optional)","Video brief","Courier + Tracking (required)"],
+  ["video_submitted","Video submitted","waiting for the brand's review","no message","Video link (required)"],
+  ["client_approved","Client approved","next: the creator posts it","Video approved — post it","Video link (required)"],
+  ["posted","Posted / Done","campaign complete · numbers fetched from their Instagram","Campaign complete","Post link — the link of every post (required)"]];
 const bkStLabel = k => (BK_STATUSES.find(x=>x[0]===k)||BK_STATUSES[0])[1];
 const bkStMsg = k => (BK_STATUSES.find(x=>x[0]===k)||BK_STATUSES[0])[3];
 const bkStRank = k => Math.max(0, BK_STATUSES.findIndex(x=>x[0]===k)) + 1;
@@ -5790,11 +5790,11 @@ const BK_GUIDE = [
   ["City","City","Mumbai","optional"],
   ["Status","The exact step name (see Statuses above). Blank = Registered","Video brief sent","optional"],
   ["Address","Delivery address — for Address confirmed / Courier sent / Courier delivered","12 Park St","for those 3"],
-  ["State","State of the address","West Bengal","optional"],
-  ["PIN code","6-digit PIN (we also find it inside the address)","700016","optional"],
-  ["Courier","Courier company — for Courier sent / Courier delivered","DTDC","optional"],
-  ["Tracking","Tracking ID or tracking link","D12345678","optional"],
-  ["Video link","Link to their video (Drive etc.) — for Video submitted / Client approved","https://drive.google.com/…","optional"],
+  ["State","State of the address — for Address confirmed / Courier sent / Courier delivered","West Bengal","for those 3"],
+  ["PIN code","6-digit PIN (we also find it inside the address) — for those 3 steps","700016","for those 3"],
+  ["Courier","Courier company — for Courier sent / Courier delivered / Video brief sent","DTDC","for those 3"],
+  ["Tracking","Tracking ID or tracking link — for those 3 steps","D12345678","for those 3"],
+  ["Video link","Link to their video (Drive etc.) — for Video submitted / Client approved","https://drive.google.com/…","for those 2"],
   ["Post link","Instagram link of every post (space or comma between them) — a row with post links is Posted; Posted without a link waits on Client approved","https://www.instagram.com/reel/…","for Posted"]];
 /* ---- every campaign type has its own bulk upload: statuses, columns, guide and template ----
    Barter → address + courier columns · Barter + Paid → address + courier + payment columns · Paid → payment columns, no address / courier */
@@ -5936,7 +5936,7 @@ function bkSetRows(rows, src){
   if(!bkLooksLikeHeader(head)){ head = head.map((_,i)=>`Column ${i+1}`); body = rows; }
   const width = Math.max(...rows.map(r=>r.length));
   head = Array.from({length:width}, (_,i)=> head[i] || `Column ${i+1}`);
-  _bk.head = head; _bk.map = bkAutoMap(head);
+  _bk.head = head; _bk.map = bkAutoMap(head); _bk.off = body===rows ? 1 : 2;   // sheet row number of row 0
   // no named columns → guess from the values
   if(_bk.map.phone==null || _bk.map.email==null || _bk.map.handle==null){
     for(let i=0;i<width;i++){
@@ -6029,6 +6029,35 @@ function bkStatusChip(p, r){
   const msgTag = msg==="no message" ? `<div class="muted bk-ig">✉️ no message for this step</div>` : `<div class="muted bk-ig">✉️ sends: <b>${bkEsc(msg)}</b>${via?` on ${via}`:""}</div>`;
   return main + (warn?`<span class="tag warn">${bkEsc(warn)}</span>`:"") + msgTag + ig;
 }
+// ⛔ every step's own details are required — a row without them is not uploaded (shown in red + listed, logged in Upload history)
+function bkRowMissing(r, d){
+  const st = r.status || "registered", paid = bkKind()==="paid", m = [], pin = v=> /(^|\D)\d{6}(?!\d)/.test(String(v||"").replace(/(\d)\s+(?=\d)/g,"$1"));
+  if(!paid && ["address_confirmed","courier_sent","courier_delivered"].includes(st)){
+    if(!d.address) m.push("Address"); if(!d.state) m.push("State"); if(!pin(d.pincode) && !pin(d.address)) m.push("PIN code"); }
+  if(!paid && ["courier_sent","courier_delivered","video_brief_sent"].includes(st)){ if(!d.courier) m.push("Courier"); if(!d.tracking) m.push("Tracking"); }
+  if(["video_submitted","client_approved"].includes(st) && !/^https?:\/\/\S+\.\S+/i.test(d.video_link)) m.push("Video link");
+  if(st==="posted" && !/instagram\.com\/(reel|reels|p|tv|stories)\//i.test(d.post_link)) m.push("Post link (Instagram)");
+  return m;
+}
+const bkRawStatus = r=> _bk.map.status!=null ? String(r.cells[_bk.map.status]||"").trim() : "";
+// why this row is NOT uploaded (null = it goes)
+function bkRowBlock(r, p){
+  if(p && p.no_contact) return "No WhatsApp, email or Instagram";
+  if(p && p.conflict) return `Same ${p.conflict.by} as row ${p.conflict.rows.map(n=>n+1).join(", ")} but a different Instagram`;
+  const raw = bkRawStatus(r);
+  if(raw && !bkStatus(raw) && !r._picked) return `Status “${raw.slice(0,30)}” isn't a step we know — pick the step`;
+  const m = bkRowMissing(r, bkRowData(r));
+  if(m.length) return `Missing ${m.join(", ")} — needed for “${bkStLabel(r.status||"registered")}”`;
+  return null;
+}
+// the sheet itself: not in the format?
+function bkSheetErrors(rows){
+  const e = [], w = [], has = k=> _bk.map[k]!=null;
+  if(!has("phone") && !has("email") && !has("handle")) e.push("This sheet isn't in the format — no <b>WhatsApp</b>, <b>Email</b> or <b>Instagram</b> column was found. Match the columns under ✎ Change sheet / columns, or use the template from the guide.");
+  if(rows.length && !has("status")) w.push("No <b>Status</b> column — everyone goes in as <b>Registered</b>.");
+  if(!has("name") && !has("handle")) w.push("No <b>Name</b> or <b>Instagram</b> column — creators will be hard to recognise.");
+  return { e, w };
+}
 function bkStatusSelect(attr, val, extra){
   const r = bkStRank(val), cls = !val ? "" : r<=3 ? "st-pre" : r<=6 ? "st-contract" : r<=9 ? "st-ship" : r<=12 ? "st-video" : "st-done";
   const L = bkStatuses(), v2 = L.some(x=> x[0]===val) ? val : bkDispStatus(val);
@@ -6036,19 +6065,32 @@ function bkStatusSelect(attr, val, extra){
 }
 function bulkHtml(){
   const rows = _bk.rows||[], pv = Array.isArray(_bk.preview) ? _bk.preview : null;
-  const skipRow = p => p && (p.no_contact || p.conflict || p.duplicate || p.already);
-  const valid = pv ? pv.filter(p=>!skipRow(p)).length : rows.length;
+  const blk = rows.map((r,i)=> bkRowBlock(r, pv && pv[i]));
+  const skipRow = (p,i) => !!blk[i] || (p && (p.duplicate || p.already));
+  const valid = rows.filter((r,i)=> !skipRow(pv && pv[i], i)).length;
+  const nBlk = blk.filter(Boolean).length, sh = bkSheetErrors(rows);
+  const bad = pv ? rows.map((r,i)=> pv[i] && !blk[i] && (pv[i].phone_bad || pv[i].email_bad) ? i : -1).filter(i=> i>=0) : [];
+  const who = (r,i)=>{ const d = bkRowData(r); return `<b>Row ${i+(_bk.off||2)}</b> · ${bkEsc(d.name || (d.handle?"@"+String(d.handle).replace(/^@/,""):"") || d.phone || d.email || "—")}`; };
+  const errBox = rows.length && (sh.e.length || nBlk || bad.length || sh.w.length) ? `<div class="bk-errs">
+      ${sh.e.map(x=>`<div class="bk-err-line bad">⛔ ${x}</div>`).join("")}
+      ${nBlk ? `<div class="bk-err-line bad">⛔ <b>${nBlk} row${nBlk>1?"s":""} won't be uploaded</b> — fix ${nBlk>1?"them":"it"} in the sheet and load it again (or change the step in the row):</div>
+        <ul class="bk-err-list">${rows.map((r,i)=> blk[i] ? `<li>${who(r,i)} — ${bkEsc(blk[i])}</li>` : "").join("")}</ul>` : ""}
+      ${bad.length ? `<div class="bk-err-line warn">⚠️ Check ${bad.length} row${bad.length>1?"s":""} (they still go):</div><ul class="bk-err-list">${bad.map(i=>`<li>${who(rows[i],i)} — ${[pv[i].phone_bad?"WhatsApp number looks wrong":"", pv[i].email_bad?"email looks wrong":""].filter(Boolean).join(" · ")}</li>`).join("")}</ul>` : ""}
+      ${sh.w.map(x=>`<div class="bk-err-line warn">⚠️ ${x}</div>`).join("")}
+    </div>` : "";
   const nDup = pv ? pv.filter(p=> p && !p.no_contact && !p.conflict && (p.duplicate || p.already)).length : 0;
   const nClash = pv ? pv.filter(p=> p && p.conflict).length : 0;
   rows.forEach(r=>{ const d = bkRowData(r); r._addrMissing = bkKind()!=="paid" && bkNeedsAddr(r.status) && !d.address; });
-  const live = rows.filter((r,i)=> !(pv && skipRow(pv[i])));
+  const live = rows.filter((r,i)=> !skipRow(pv && pv[i], i));
   const byStatus = bkStatuses().map(([k,l])=>[l, live.filter(r=>(r.status||"registered")===k).length]).filter(x=>x[1]);
   const noAddr = live.filter(r=>r._addrMissing).length;
   return `<div class="card bk-card">
       <h3 style="margin:0 0 4px">📥 Upload creators in bulk <span class="tag">${BK_KIND_LABEL[bkKind()]} campaign</span></h3>
-      <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Give every creator a <b>Status</b> — the exact step they are on (see the guide). They get <b>one message for that step</b>: <b>Approved</b> → the invite; a later step → only that step's message. Creators on Geek OS with a complete profile go on that step now; new ones register, connect Instagram and complete their profile (pre-filled from your sheet) and then land on their step. From there the normal flow carries on — every message goes once; press Resend to send one again.</div>
+      ${rows.length ? `<div class="bk-loaded">✅ <b>${rows.length}</b> row${rows.length>1?"s":""} loaded from <b>${bkEsc(_bk.src)}</b> — check the preview below</div>` : ""}
       ${bkWaLine()}
-      ${bkGuideHtml()}
+      ${rows.length ? `<details class="bk-guide bk-chg" data-bkfold="chg"${_bkFold.has("chg")||sh.e.length?" open":""}><summary>✎ Change sheet / columns · guide</summary>` : ""}
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Give every creator a <b>Status</b> — the exact step they are on (see the guide). They get <b>one message for that step</b>: <b>Approved</b> → the invite; a later step → only that step's message. Creators on Geek OS with a complete profile go on that step now; new ones register, connect Instagram and complete their profile (pre-filled from your sheet) and then land on their step. From there the normal flow carries on — every message goes once; press Resend to send one again.</div>
+      ${rows.length ? "" : bkGuideHtml()}
       <div class="bk-src">
         <label class="btn sm ghost bk-file">📄 Choose file<input type="file" id="bkFile" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.ods,.docx,.doc" hidden></label>
         <input id="bkLink" placeholder="or paste a Google Sheet link" value="">
@@ -6058,29 +6100,32 @@ function bulkHtml(){
       <details class="bk-paste"><summary>…or paste rows (copy cells from Sheets / Excel / Word)</summary>
         <textarea id="bkPaste" rows="4" placeholder="${esc(bkSample()[0].join(", "))}"></textarea>
         <button class="btn sm ghost" id="bkPasteGo">Use pasted rows</button></details>
-      <div class="auth-err" id="bkErr"></div>
       ${rows.length ? `
-      <div class="bk-meta"><b>${rows.length}</b> row${rows.length>1?"s":""} from ${bkEsc(_bk.src)} · match the columns:</div>
+      <div class="bk-meta">Match the columns:</div>
       ${typeof payIsPaidCamp==="function" && payIsPaidCamp() ? `<div class="bk-paynote">💰 Paid campaign: add <b>Fee</b>, <b>Advance %</b>, <b>Pay days</b>, <b>Terms</b> and <b>UPI</b> / <b>Account no</b> + <b>IFSC</b> + <b>Account holder</b> columns to set each creator's payment as they are uploaded${window.__isAdmin?"":" (fees can only be uploaded by a Super Admin)"}. Their contract carries their own fee — nobody else sees it.</div>` : ""}
       <div class="bk-map">${bkFields().map(([k,l])=>`<label><span>${l}</span><select data-bkmap="${k}"><option value="">—</option>${_bk.head.map((h,i)=>`<option value="${i}"${_bk.map[k]===i?" selected":""}>${bkEsc(h)}</option>`).join("")}</select></label>`).join("")}</div>
+      </details>` : ""}
+      <div class="auth-err" id="bkErr"></div>
+      ${rows.length ? `
+      ${errBox}
       <div class="bk-setall"><span>Set everyone to</span>${bkStatusSelect('id="bkAllSt"', "", "")}<span class="muted">— or change each row below</span></div>
       <div class="bk-tablewrap"><table class="bk-table"><thead><tr>
         <th>Status</th><th>Name</th><th>Instagram</th><th>WhatsApp</th><th>Email</th><th>City</th>${bkKind()!=="paid"?"<th>Address · courier</th>":""}${bkKind()!=="barter"?"<th>💰 Fee · pay to</th>":""}<th>What happens</th></tr></thead><tbody>
         ${rows.map((r,i)=>{ const d = bkRowData(r), p = pv && pv[i];
-          const raw = _bk.map.status!=null ? String(r.cells[_bk.map.status]||"").trim() : "";
-          const unread = raw && !bkStatus(raw);
+          const raw = bkRawStatus(r);
+          const unread = raw && !bkStatus(raw) && !r._picked;
           const ship = [d.address, [d.state, d.pincode].filter(Boolean).join(" "), [d.courier, d.tracking].filter(Boolean).join(" · ")].filter(Boolean).join(" · ");
-          return `<tr class="${p&&(p.no_contact||p.conflict)?"bk-bad":p&&(p.duplicate||p.already)?"bk-dup":""}"><td>${bkStatusSelect(`data-bkst="${i}"`, r.status||"registered", p&&p.no_contact?" disabled":"")}${unread?`<div class="muted bk-raw" title="Couldn't read this status — pick it">“${bkEsc(raw.slice(0,24))}”?</div>`:""}</td>
+          return `<tr class="${blk[i]?"bk-bad bk-block":p&&(p.duplicate||p.already)?"bk-dup":""}"><td>${bkStatusSelect(`data-bkst="${i}"`, r.status||"registered", p&&p.no_contact?" disabled":"")}${unread?`<div class="muted bk-raw" title="Couldn't read this status — pick it">“${bkEsc(raw.slice(0,24))}”?</div>`:""}</td>
             <td>${bkEsc(d.name)||'<span class="muted">—</span>'}</td><td>${p&&p.handle?"@"+bkEsc(p.handle):bkEsc(d.handle)}</td>
             <td>${p&&p.phone?bkEsc(p.phone):bkEsc(d.phone)}</td><td>${bkEsc(p&&p.email||d.email)}</td><td>${bkEsc(d.city)}</td>
             ${bkKind()!=="paid"?`<td class="bk-ship">${ship?bkEsc(ship):'<span class="muted">—</span>'}</td>`:""}
             ${bkKind()!=="barter"?`<td class="bk-ship">${[d.fee?"₹"+bkEsc(d.fee):"", d.advance_pct?bkEsc(d.advance_pct)+"% adv":"", d.pay_days?bkEsc(d.pay_days)+" days":"", d.upi?"UPI "+bkEsc(d.upi):d.account_no?"a/c ••"+bkEsc(String(d.account_no).replace(/\D/g,"").slice(-4)):""].filter(Boolean).join(" · ")||'<span class="muted">— set later</span>'}</td>`:""}
-            <td>${pv?bkStatusChip(p, r):'<span class="muted">checking…</span>'}</td></tr>`; }).join("")}
+            <td>${blk[i] && !(p && (p.no_contact||p.conflict)) ? `<span class="tag bad">⛔ Not uploaded — ${bkEsc(blk[i])}</span>` : pv?bkStatusChip(p, r):'<span class="muted">checking…</span>'}</td></tr>`; }).join("")}
       </tbody></table></div>
       ${_bk.preview && _bk.preview.error ? `<div class="auth-err">${bkEsc(_bk.preview.error)}</div>` : ""}
       <label class="bk-note"><span>Message to the creators (optional — goes with the invite)</span><input id="bkNote" maxlength="200" value="${bkEsc(_bk.note)}" placeholder="e.g. Diwali drop — we loved your recent reels!"></label>
-      <div class="bk-go"><button class="btn" id="bkUpload"${_bk.busy||!valid?" disabled":""}>${_bk.busy?"Uploading…":`Upload &amp; invite ${valid} creator${valid===1?"":"s"}`}</button>
-        <span class="muted">${byStatus.map(([l,n])=>`${n} ${bkEsc(l.toLowerCase())}`).join(" · ")}${noAddr?` · <b style="color:#b45309">${noAddr} without an address</b> (they add it in their profile)`:""}${nDup?` · <b>${nDup} repeat${nDup>1?"s":""}</b> (merged into the first row / already up to date)`:""}${nClash?` · <b style="color:#dc2626">${nClash} share a WhatsApp / email with a different Instagram — fix the sheet, they're left out</b>`:""}</span>
+      <div class="bk-go"><button class="btn" id="bkUpload"${_bk.busy||!valid||!pv||sh.e.length?" disabled":""}>${_bk.busy?"Uploading…":!pv?"Checking the rows…":!valid?"Nothing to upload — fix the rows above":`Upload &amp; invite ${valid} creator${valid===1?"":"s"}`}</button>
+        <span class="muted">${nBlk?`<b style="color:#dc2626">${nBlk} not uploaded (fix above)</b> · `:""}${byStatus.map(([l,n])=>`${n} ${bkEsc(l.toLowerCase())}`).join(" · ")}${noAddr?` · <b style="color:#b45309">${noAddr} without an address</b> (they add it in their profile)`:""}${nDup?` · <b>${nDup} repeat${nDup>1?"s":""}</b> (merged into the first row / already up to date)`:""}${nClash?` · <b style="color:#dc2626">${nClash} share a WhatsApp / email with a different Instagram — fix the sheet, they're left out</b>`:""}</span>
         <button class="btn sm ghost" id="bkClear">Clear</button></div>
       <div id="bkResult"></div>` : ""}
     </div>
@@ -6170,9 +6215,14 @@ function bkHistHtml(){
   window.__bkHistKeys = ups.map(u=> [...new Set((u.items||[]).map(keyOf).filter(Boolean))]);
   return `<div class="bk-hist-sum"><b>${ups.length}</b> upload${ups.length>1?"s":""} · <b>${tot}</b> creator${tot!==1?"s":""} came in this way</div>
     ${ups.map((u,k)=>{ const items = u.items||[], key = "h:"+u.at;
-      const bits = [u.new_count?`<b>${u.new_count}</b> new`:"", u.updated_count?`<b>${u.updated_count}</b> updated`:"", u.duplicates?`${u.duplicates} duplicate${u.duplicates>1?"s":""}`:"", u.skipped?`${u.skipped} skipped`:""].filter(Boolean).join(" · ") || "no new creators (only existing rows changed)";
+      const nu = u.not_uploaded || [];
+      const nuHtml = nu.length ? `<div class="bk-nu"><div class="bk-err-line bad">⚠️ <b>Not uploaded (${nu.length})</b> — these rows of the sheet didn't go, and why:</div>
+        <div class="bk-tablewrap" style="max-height:none"><table class="bk-table"><thead><tr><th>Row</th><th>Name</th><th>Instagram</th><th>WhatsApp · email</th><th>Step in sheet</th><th>Why</th></tr></thead><tbody>
+        ${nu.map(x=>`<tr><td>${esc(x.row||"—")}</td><td>${esc(x.name||"—")}</td><td>${x.handle?"@"+esc(String(x.handle).replace(/^@/,"").replace(/^(https?:\/\/)?(www\.)?instagram\.com\//,"").replace(/[\/?#].*$/,"")):"—"}</td><td>${esc([x.phone, x.email].filter(Boolean).join(" · ")||"—")}</td><td>${esc(x.status?bkStLabel(x.status):"—")}</td><td><span class="tag bad">${esc(x.reason||"—")}</span></td></tr>`).join("")}
+        </tbody></table></div></div>` : (u.skipped ? `<div class="muted bk-mini">⚠️ ${u.skipped} row${u.skipped>1?"s":""} had no WhatsApp / email / Instagram and were skipped (older upload — names weren't logged then).</div>` : "");
+      const bits = [nu.length?`<b style="color:#dc2626">⚠️ ${nu.length} not uploaded</b>`:"", u.new_count?`<b>${u.new_count}</b> new`:"", u.updated_count?`<b>${u.updated_count}</b> updated`:"", u.duplicates?`${u.duplicates} duplicate${u.duplicates>1?"s":""}`:"", u.skipped&&!nu.length?`${u.skipped} skipped`:""].filter(Boolean).join(" · ") || "no new creators (only existing rows changed)";
       return bkFold(key, `📅 ${esc(fmtDateTime(u.at))} <span class="muted">· by ${esc(u.who||"—")}</span> <span class="bk-hist-n">${bits}</span>${k===0?' <span class="tag">latest</span>':""}`,
-        `${u.exact?"":`<div class="muted bk-mini">Older upload: the creators it added are shown (rows it only updated weren't logged then).</div>`}
+        `${nuHtml}${u.exact?"":`<div class="muted bk-mini">Older upload: the creators it added are shown (rows it only updated weren't logged then).</div>`}
          ${items.length?`<div class="bk-hist-acts"><button type="button" class="btn sm cc-wabtn" data-bkhwa="${k}">🟢 WhatsApp to these ${window.__bkHistKeys[k].length} creators</button><span class="muted">ticks them in the creator list below and opens the WhatsApp panel — goes only when you press Send</span></div><div class="bk-hist-list">${items.map(card).join("")}</div>`:`<div class="muted">No creators to show for this upload.</div>`}`, "bk-hist-up"); }).join("")}`;
 }
 async function bkHistLoad(force){
@@ -6262,16 +6312,16 @@ function wireBulkList(){
 }
 function wireBulk(){
   const $b = id => document.getElementById(id), err = $b("bkErr");
-  const take = async (fn, src)=>{ err.textContent = ""; try{ bkSetRows(await fn(), src); paintBulk(); bkCheck(); }catch(e){ err.textContent = e.message||String(e); } };
+  const take = async (fn, src)=>{ err.textContent = ""; _bkFold.delete("chg"); try{ bkSetRows(await fn(), src); paintBulk(); bkCheck(); }catch(e){ const e2 = document.getElementById("bkErr") || err; e2.textContent = "⛔ Couldn't read this sheet: " + (e.message||String(e)); } };
   const f = $b("bkFile"); if(f) f.onchange = ()=>{ const file = f.files && f.files[0]; if(file) take(()=>bkReadFile(file), file.name); };
   const lg = $b("bkLinkGo"); if(lg) lg.onclick = ()=>{ const u = $b("bkLink").value.trim(); if(u){ lg.textContent = "Loading…"; take(()=>bkReadSheetLink(u), "Google Sheet").finally(()=>{ if(lg.isConnected) lg.textContent = "Load sheet"; }); } };
   const pg = $b("bkPasteGo"); if(pg) pg.onclick = ()=>{ const t = $b("bkPaste").value; take(async()=>{ const r = bkSplitCsv(t); return r.length && r[0].length>1 ? r : bkFromLines(t.split("\n")); }, "pasted rows"); };
   document.querySelectorAll("[data-bkmap]").forEach(s=> s.onchange = ()=>{ const k = s.dataset.bkmap; if(s.value==="") delete _bk.map[k]; else _bk.map[k] = +s.value;
     if(k==="status") _bk.rows.forEach(r=> r.status = _bk.map.status!=null ? bkDispStatus(bkStatus(r.cells[_bk.map.status])||"registered") : "registered");
     _bk.preview = null; paintBulk(); bkCheck(); });
-  document.querySelectorAll("[data-bkst]").forEach(c=> c.onchange = ()=>{ _bk.rows[+c.dataset.bkst].status = c.value; paintBulk(); });
+  document.querySelectorAll("[data-bkst]").forEach(c=> c.onchange = ()=>{ const r = _bk.rows[+c.dataset.bkst]; r.status = c.value; r._picked = true; paintBulk(); });
   const all = $b("bkAllSt"); if(all){ all.insertAdjacentHTML("afterbegin", '<option value="" selected>— choose —</option>'); all.value = "";
-    all.onchange = ()=>{ if(!all.value) return; _bk.rows.forEach(r=> r.status = all.value); paintBulk(); }; }
+    all.onchange = ()=>{ if(!all.value) return; _bk.rows.forEach(r=>{ r.status = all.value; r._picked = true; }); paintBulk(); }; }
   const note = $b("bkNote"); if(note) note.oninput = ()=>{ _bk.note = note.value; };
   if(_bk.wa===undefined){ _bk.wa = "loading";
     Promise.all([sb.schema("api").rpc("wa_invite_ready"),
@@ -6288,7 +6338,10 @@ function wireBulk(){
     const pv = Array.isArray(_bk.preview) ? _bk.preview : [];
     const all = _bk.rows.map(bkRowData);
     bkMergeRepeats(all, pv);
-    const rows = all.filter((d,i)=> !(pv[i] && (pv[i].no_contact || pv[i].conflict || pv[i].duplicate || pv[i].already && !d._merged)));
+    const why = _bk.rows.map((r,i)=> bkRowBlock(r, pv[i]) || (pv[i] && pv[i].already && !all[i]._merged ? "Already in this campaign — nothing new in the row" : null));
+    const rows = all.filter((d,i)=> !why[i] && !(pv[i] && (pv[i].duplicate || pv[i].already && !d._merged)));
+    const notUp = _bk.rows.map((r,i)=>{ if(!why[i]) return null; const x = bkRowData(r);
+      return { row: i+(_bk.off||2), name: x.name, handle: x.handle, phone: x.phone, email: x.email, status: r.status||"registered", reason: why[i] }; }).filter(Boolean);
     if(!rows.length) return;
     _bk.busy = true; paintBulk();
     // paid campaign: each row's fee / bank / UPI first — applied as each creator lands (a waiting contract goes out with it)
@@ -6303,6 +6356,9 @@ function wireBulk(){
     _bk.busy = false;
     if(error){ paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = error.message||String(error); return; }
     const d = data||{}; _bkHist = null;   // 🗂 upload history shows this upload next time it is opened
+    if(notUp.length && d.batch_id){ const lg = await sb.schema("api").rpc("bulk_log_skipped", { p_campaign:_bpCamp.id, p_batch:d.batch_id, p_rows:notUp }).then(r=>r, e=>({error:e}));
+      if(lg.error) console.warn("not-uploaded log", lg.error); }
+    if(notUp.length) setTimeout(()=> gateToast(`⛔ ${notUp.length} row${notUp.length>1?"s":""} not uploaded — who and why is in 🗂 Upload history`), 1400);
     // the sheet's Coupon code column → each creator's own code (🔗 Links & codes), matched by their Instagram handle
     const codes = rows.filter(x=> x.coupon && x.handle).map(x=> ({ handle: String(x.handle).replace(/^@/,""), code: x.coupon }));
     if(codes.length){ const cr = await sb.schema("api").rpc("track_codes_bulk", { p_campaign:_bpCamp.id, p_rows: codes, p_overwrite: true }).then(r=>r, e=>({error:e}));
