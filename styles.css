@@ -2826,3 +2826,13 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .acr-ct{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:3px;font-size:12px;line-height:1.35;min-width:0}
 .acr-ct a,.acr-ct span{color:var(--muted,#6b7280);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .acr-ct a:hover{color:var(--accent,#5b5bd6);text-decoration:underline}
+
+.ig-hint{max-width:440px}
+.ig-hint-warn{background:#fff7e6;border:1px solid #ffd591;color:#7a4b00;border-radius:10px;padding:10px 12px;margin:4px 0 10px;font-size:13.5px;line-height:1.45}
+.ig-hint-list{margin:6px 0 12px;padding-left:4px;list-style:none;display:grid;gap:8px;font-size:13.5px;line-height:1.45}
+.ig-hint-acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+[data-theme="dark"] .ig-hint-warn{background:#3a2a0a;border-color:#7a5a1a;color:#ffd591}
+.ig-hint>:not(.modal-head){margin-left:16px;margin-right:16px}
+.ig-hint-warn{margin-top:12px}
+.ig-hint-acts{padding-bottom:16px}
+.ig-hint a.btn{text-decoration:none}

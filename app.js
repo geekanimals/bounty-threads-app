@@ -1427,6 +1427,7 @@ async function loadCampaigns(){
 let _wsCampaign = null;
 
 async function openCampaignWorkspace(id){
+  window.__geekCacheOK = false;  // the campaign workspace always loads live
   const content = document.querySelector("#content, .content");
   if(!content || !window.sb) return;
   content.innerHTML = `<div class="muted" style="padding:24px">Loading campaign…</div>`;
@@ -10565,7 +10566,47 @@ async function connectInstagram(fresh){
   // Instagram's app-link rules (instagram.com/.well-known/apple-app-site-association) exclude "/oauth/authorize/*"
   // (note the trailing slash) and any address ending in "#weblink" — so this opens the web login + Allow screen,
   // then comes straight back here and the Media Kit loads.
-  location.href = "https://www.instagram.com/oauth/authorize/?" + p.toString() + "#weblink";
+  igOpenAuth("https://www.instagram.com/oauth/authorize/?" + p.toString() + "#weblink");
+}
+// Instagram's web login can only see an Instagram login made in THIS browser — never the Instagram app's
+// (Meta keeps the two apart). So: already logged in to instagram.com here → just "Allow" / pick the account;
+// not yet → Instagram asks for the password ONCE, then remembers it in this browser.
+// Inside another app's built-in browser (Facebook, Messenger, Gmail-style web views…) there is never an
+// Instagram login, so offer to open the real browser (Chrome / Safari) instead. The ticket in "state"
+// still links the account to this login even if it finishes in the other browser.
+function igBrowserInfo(){
+  const u = navigator.userAgent || "", ios = /iPhone|iPad|iPod/i.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1), android = /Android/i.test(u);
+  const inIg = /Instagram/i.test(u);   // Instagram's own browser already has the Instagram login
+  const inApp = !inIg && (/FBAN|FBAV|FB_IAB|FBIOS|Messenger|Line\/|Snapchat|Twitter|LinkedInApp|MicroMessenger|GSA\/|Gmail/i.test(u) || (android && /; wv\)/.test(u)));
+  return { ios, android, mobile: ios || android, inIg, inApp };
+}
+function igOpenAuth(url){
+  const b = igBrowserInfo();
+  let seen = false; try{ seen = localStorage.getItem("geek_ig_hint") === "1"; }catch(e){}
+  if(!b.mobile || b.inIg || (seen && !b.inApp)){ location.href = url; return; }
+  const ext = b.android
+    ? "intent://" + url.replace(/^https:\/\//,"").replace(/#.*$/,"") + "#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=" + encodeURIComponent(url) + ";end"
+    : "x-safari-" + url;
+  document.getElementById("igHint")?.remove();
+  const m = el("div","modal-overlay open"); m.id = "igHint"; m.style.zIndex = "10060";
+  m.innerHTML = `<div class="modal ig-hint"><div class="modal-head"><strong>📸 Connect Instagram</strong><button class="btn sm ghost" type="button" data-x>✕</button></div>
+    ${b.inApp ? `<div class="ig-hint-warn">You're inside another app's browser — Instagram can't see your login here, so it will ask for your password.
+        <b>Open in ${b.android?"Chrome":"Safari"}</b> for the quickest connect.</div>` : ""}
+    <ul class="ig-hint-list">
+      <li>✅ <b>Logged in to Instagram in this browser?</b> You'll only tap <b>Allow</b> (or pick your account).</li>
+      <li>🔑 <b>Asked for your password?</b> That's Instagram's rule — its web login can't use the Instagram app's login. Log in <b>once</b>; this browser remembers it and next time it's just <b>Allow</b>.</li>
+      <li>👤 Make sure it's the account you want to connect.</li></ul>
+    <div class="ig-hint-acts">${b.inApp ? `<a class="btn" href="${esc(ext)}" data-ext>Open in ${b.android?"Chrome":"Safari"}</a><button class="btn ghost" type="button" data-go>Continue here</button>`
+                                         : `<button class="btn" type="button" data-go>Continue to Instagram →</button>`}</div></div>`;
+  document.body.appendChild(m);
+  const done = ()=>{ try{ localStorage.setItem("geek_ig_hint","1"); }catch(e){} };
+  m.querySelector("[data-x]").onclick = ()=> m.remove();
+  m.onclick = e=>{ if(e.target===m) m.remove(); };
+  m.querySelector("[data-go]").onclick = ()=>{ done(); location.href = url; };
+  const x = m.querySelector("[data-ext]");
+  if(x) x.onclick = ()=>{ done(); setTimeout(()=>{ if(document.visibilityState==="visible"){ // the switch didn't happen (older phone) — copy the link instead
+      try{ navigator.clipboard.writeText(url); }catch(e){}
+      const w = m.querySelector(".ig-hint-warn"); if(w) w.innerHTML = `Couldn't open ${b.android?"Chrome":"Safari"} from here. The Instagram link is copied — open ${b.android?"Chrome":"Safari"} and paste it, or tap <b>Continue here</b>.`; } }, 1600); };
 }
 
 /* ---------- Several Instagram accounts — every one connected through Instagram login; one is ACTIVE at a time
@@ -11020,6 +11061,7 @@ function wireInviteForm(){
 }
 
 function renderContent(){
+  window.__geekCacheOK = true;   // top-level pages can show their last copy instantly (auth.js) and repaint when live data lands
   // a brand login gets its own portal: only its campaigns, approvals, reports and settings
   if(window.BrandPortal && BrandPortal.handles(currentPage)){
     $("#content").innerHTML = BrandPortal.render(currentPage); BrandPortal.mount(currentPage);
@@ -11982,3 +12024,21 @@ document.addEventListener("click", async e=>{
 // Brand CRM → 👁 View as brand (Super Admin preview of the brand portal)
 document.addEventListener("click", e=>{ const b = e.target.closest && e.target.closest("[data-bcview]"); if(!b || !window.BrandPortal) return;
   e.preventDefault(); e.stopPropagation(); BrandPortal.preview(b.dataset.bcview, b.dataset.bcviewname); }, true);
+
+// Live data arrived for a page that was painted from this device's copy → repaint it quietly, keeping the scroll.
+// Never while someone is typing or a pop-up / profile is open (tries again when they're done).
+(function(){
+  let wait = null;
+  const busy = ()=>{ const a = document.activeElement;
+    return document.visibilityState!=="visible" || (a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) ||
+      !!document.querySelector(".modal-overlay.open,.cc-ov,#ccOv,#ac360,#kitModal"); };
+  const repaint = ()=>{ clearInterval(wait); wait = null;
+    if(window.__geekCacheOK === false || typeof renderContent!=="function") return;
+    if(busy()){ const page = currentPage; wait = setInterval(()=>{ if(currentPage!==page || window.__geekCacheOK===false){ clearInterval(wait); wait=null; return; } if(!busy()) repaint(); }, 1500); return; }
+    const se = document.scrollingElement || document.documentElement, ct = document.getElementById("content"), y = se.scrollTop, cy = ct ? ct.scrollTop : 0;
+    try{ renderContent(); }catch(e){ return; }
+    const back = ()=>{ se.scrollTop = y; if(ct) ct.scrollTop = cy; };
+    back(); requestAnimationFrame(back); setTimeout(back, 120); setTimeout(back, 400);
+  };
+  window.addEventListener("geek:fresh", repaint);
+})();
