@@ -23,6 +23,11 @@
     .pub-foot a{color:#6c5ce7;text-decoration:none;font-weight:600}
     .pub-loading,.pub-empty{text-align:center;padding:60px 20px;color:var(--muted,#5a6079)}
     .pub-mark{background:url(/assets/geek-icon-192.png) center/contain no-repeat;color:transparent;font-size:0;box-shadow:none;border-radius:0}
+    .mk-noimg{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;font-weight:600;color:#6b7192;background:linear-gradient(135deg,#eef0fb,#f6f2ff)}
+    /* inside the app (Creator profile → Media Kit): no outer page chrome */
+    body.embed .pub-wrap{padding:10px 10px 20px;max-width:none}
+    body.embed .pub-top,body.embed .pub-foot{display:none}
+    body.embed{background:transparent}
   </style>
 </head>
 <body>
@@ -96,7 +101,7 @@ function renderKit(a){
   const bio = E.bio || a.biography || "";
   const headline = E.headline || "";
   const sorted = [...media].sort((x,y)=>((Number(y.like_count)||0)+(Number(y.comments_count)||0))-((Number(x.like_count)||0)+(Number(x.comments_count)||0)));
-  const postCard = m=>{ const img=m.media_type==="VIDEO"?(m.thumbnail_url||m.media_url):m.media_url; const badge=m.media_type==="VIDEO"?"▶":(m.media_type==="CAROUSEL_ALBUM"?"❏":""); return `<a href="${esc(safeUrl(m.permalink))}" target="_blank" rel="noopener" class="mk-post"><img src="${esc(safeUrl(img))}" alt="" loading="lazy">${badge?`<span class="mk-type">${badge}</span>`:""}<span class="mk-meta">❤ ${fmtNum(m.like_count)} · 💬 ${fmtNum(m.comments_count)}</span></a>`; };
+  const postCard = m=>{ const img=m.media_type==="VIDEO"?(m.thumbnail_url||m.media_url):m.media_url; const badge=m.media_type==="VIDEO"?"▶":(m.media_type==="CAROUSEL_ALBUM"?"❏":""); return `<a href="${esc(safeUrl(m.permalink))}" target="_blank" rel="noopener" class="mk-post">${img?`<img src="${esc(safeUrl(img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'mk-noimg',textContent:'📷 View on Instagram'}))">`:`<span class="mk-noimg">📷 View on Instagram</span>`}${badge?`<span class="mk-type">${badge}</span>`:""}${m.like_count!=null||m.comments_count!=null?`<span class="mk-meta">❤ ${fmtNum(m.like_count)} · 💬 ${fmtNum(m.comments_count)}</span>`:""}</a>`; };
   const posts = media.slice(0,9).map(postCard).join("");
   const tops = sorted.slice(0,3).map(postCard).join("");
   const tile=(v,l,acc)=>`<div class="mk-tile ${acc||''}"><div class="mk-tile-v">${v}</div><div class="mk-tile-l">${l}</div></div>`;
@@ -111,7 +116,7 @@ function renderKit(a){
 
   return `<div class="mk-kit">
     <div class="mk-cover"><div class="mk-cover-grad"></div><div class="mk-hero">
-      ${a.profile_picture_url?`<img class="mk-avatar" src="${esc(safeUrl(a.profile_picture_url))}" alt="">`:`<div class="mk-avatar mk-ph">${initials}</div>`}
+      ${a.profile_picture_url?`<img class="mk-avatar" src="${esc(safeUrl(a.profile_picture_url))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'mk-avatar mk-ph',textContent:'${initials}'}))">`:`<div class="mk-avatar mk-ph">${initials}</div>`}
       <div class="mk-hero-id"><div class="mk-name">${esc(a.name)||esc(a.username)} ${a.account_type?`<span class="mk-badge">${esc(igTypeLabel(a.account_type))}</span>`:""}</div>${igCategories(a).length?`<div class="mk-cats">${igCategories(a).map(c=>`<span>${esc(c)}</span>`).join("")}</div>`:""}
       <div class="mk-handle"><a href="https://instagram.com/${esc(a.username)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">@${esc(a.username)}</a></div>
       ${headline?`<div class="mk-headline">${esc(headline)}</div>`:''}${bio?`<div class="mk-bio">${esc(bio)}</div>`:""}
@@ -125,6 +130,15 @@ function renderKit(a){
   </div>`;
 }
 
+if(new URLSearchParams(location.search).get("embed")==="1") document.body.classList.add("embed");
+// the app (logged in) hands over fresh posts — Instagram picture links expire, so the saved ones break after a while
+window.addEventListener("message", e=>{
+  if(e.origin !== location.origin || !e.data || e.data.type !== "geek-kit-fresh" || !window.__kitA) return;
+  const f = e.data, a = Object.assign({}, window.__kitA);
+  if(Array.isArray(f.posts) && f.posts.length) a.recent_media = f.posts;
+  if(f.profile_picture_url) a.profile_picture_url = f.profile_picture_url;
+  document.getElementById("kit").innerHTML = renderKit(a);
+});
 (async function(){
   const m = /^\/kit\/([^/?#]+)/i.exec(location.pathname);
   const u = (m ? decodeURIComponent(m[1]) : new URLSearchParams(location.search).get("u") || "").replace(/^@/,"").trim();
@@ -138,7 +152,9 @@ function renderKit(a){
     document.title = `${a.name || a.username} — Media Kit`;
     const md=document.querySelector('meta[name=description]'); if(md) md.setAttribute('content', `${a.name||a.username} (@${a.username}) — ${fmtNum(a.followers_count)} followers. Media kit.`);
     root.innerHTML = renderKit(a);
+    window.__kitA = a;
   }catch(e){ root.innerHTML = `<div class="pub-empty">Couldn't load this media kit.</div>`; }
+  try{ if(parent !== window) parent.postMessage({ type:"geek-kit-ready", u }, location.origin); }catch(_){}
 })();
 </script>
 </body>

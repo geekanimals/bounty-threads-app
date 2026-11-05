@@ -3444,7 +3444,7 @@ function openDiscoveryCreator(c){
       <div class="bpp-top">${pic}<div style="min-width:0;flex:1"><div class="bpp-name">${esc(c.name||c.handle||"Creator")}</div>
           ${c.handle?`<a href="https://instagram.com/${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">@${esc(c.handle)} ↗</a>`:""}
           <div class="bpp-cats">${(c.categories||[]).slice(0,4).map(x=>`<span>${esc(cap1(x))}</span>`).join("")}${c.city?`<span>📍 ${esc(c.city)}</span>`:""}</div></div>
-        <div class="bpp-topacts"><button class="btn sm" id="dxCrInv">${window.__brandPick?"⭐ Shortlist":"🎯 Invite"}</button>${c.handle?`<a class="btn sm ghost" href="/p.html?u=${encodeURIComponent(c.handle)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}</div></div>
+        <div class="bpp-topacts"><button class="btn sm" id="dxCrInv">${window.__brandPick?"⭐ Shortlist":"🎯 Invite"}</button>${c.handle?`<a class="btn sm ghost" href="/p.html?u=${encodeURIComponent(c.handle)}" data-kitopen="${esc(String(c.handle).replace(/^@/,""))}">🪪 Media Kit</a>`:""}</div></div>
       <div class="bpp-stats bpp-stats4"><div><b>${c.followers!=null?fmtNum(c.followers):"—"}</b><span>Followers</span></div><div><b>${c.engagement!=null?(Math.round(c.engagement*10)/10)+"%":"—"}</b><span>Engagement</span></div>
         <div><b>${c.avg_likes!=null?kfmtN(c.avg_likes):"—"}</b><span>Avg likes</span></div><div><b>${c.profile_pct!=null?c.profile_pct+"%":"—"}</b><span>Profile</span></div></div>
       <div class="bpp-card"><div class="bpp-sec">🧬 Profile</div>
@@ -7674,7 +7674,7 @@ async function bpCreatorProfile(pid){
           ${handle?`<a href="https://instagram.com/${encodeURIComponent(handle)}" target="_blank" rel="noopener">@${esc(handle)} ↗</a>`:""}
           <div class="bpp-cats">${(cr.categories||[]).slice(0,4).map(c=>`<span>${esc(c)}</span>`).join("")}${cr.city?`<span>📍 ${esc(cr.city)}</span>`:""}</div>
           <div id="bppJoined"></div></div>
-        <div class="bpp-topacts"><button class="btn sm bpp-wa" data-bpphub="${esc(pid)}">💬 WhatsApp</button>${handle?`<button class="btn sm ghost" id="bppStats">📊 Analytics</button>`:""}${handle?`<a class="btn sm ghost" href="/p.html?u=${encodeURIComponent(handle)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}</div></div>
+        <div class="bpp-topacts"><button class="btn sm bpp-wa" data-bpphub="${esc(pid)}">💬 WhatsApp</button>${handle?`<button class="btn sm ghost" id="bppStats">📊 Analytics</button>`:""}${handle?`<a class="btn sm ghost" href="/p.html?u=${encodeURIComponent(handle)}" data-kitopen="${esc(String(handle).replace(/^@/,""))}">🪪 Media Kit</a>`:""}</div></div>
       <div class="bpp-stats bpp-stats4" id="bppStatsRow"><div><b>${cr.followers!=null?fmtNum(cr.followers):"—"}</b><span>Followers</span></div><div><b>${cr.engagement!=null?cr.engagement+"%":"—"}</b><span>Engagement</span></div>
         <div><b>${cr.avg_reach?fmtNum(Math.round(cr.avg_reach)):"—"}</b><span>Avg reach</span></div><div><b>${cr.profile_pct!=null?cr.profile_pct+"%":"—"}</b><span>Profile</span></div></div>
       <div class="muted" id="bppLive" style="font-size:12px;margin:-4px 0 8px"></div>
@@ -7856,7 +7856,7 @@ function paintCreatorHub(){
       ${hubSetStepHtml(d)}
       <div id="hubPro"></div>
       ${window.__isAdmin?`<div class="bpp-sec">📈 Activity &amp; cookies</div><div id="hubAct"></div>`:""}
-      <div class="hub-foot"><button class="btn ghost sm" data-hubbp>🔁 Open in Barter process</button>${h?`<a class="btn ghost sm" href="/p.html?u=${encodeURIComponent(h)}" target="_blank" rel="noopener">Media Kit ↗</a>`:""}${msgPauseBtn({ part:d.participation_id })}${window.__isAdmin?`<button class="btn ghost sm bp-del" data-bpremove="${esc(d.participation_id)}">🗑 Delete from campaign</button>`:""}</div>`;
+      <div class="hub-foot"><button class="btn ghost sm" data-hubbp>🔁 Open in Barter process</button>${h?`<a class="btn ghost sm" href="/p.html?u=${encodeURIComponent(h)}" data-kitopen="${esc(String(h).replace(/^@/,""))}">🪪 Media Kit</a>`:""}${msgPauseBtn({ part:d.participation_id })}${window.__isAdmin?`<button class="btn ghost sm bp-del" data-bpremove="${esc(d.participation_id)}">🗑 Delete from campaign</button>`:""}</div>`;
   } else if(_hubC.tab==="timeline"){
     const T = d.timeline||[], A = d.alerts||[];
     const nice = x=> String(x||"").replace(/_/g," ");
@@ -11778,6 +11778,35 @@ document.addEventListener("click", e=>{
   openCreatorAnywhere(m ? m[1] : "", mid || null);
 }, true);
 
+
+/* 🪪 Media Kit opens right here (in a window over the page), not in a new tab — with fresh Instagram posts:
+   saved picture links expire, so the app (logged in) fetches the latest posts and hands them to the kit */
+function openKitModal(handle){
+  handle = String(handle||"").replace(/^@/,"").trim(); if(!handle) return;
+  document.getElementById("kitModal")?.remove();
+  const url = `/p.html?u=${encodeURIComponent(handle)}&embed=1`;
+  const m = el("div","modal-overlay open"); m.id = "kitModal"; m.style.zIndex = "10050";
+  m.innerHTML = `<div class="modal kit-modal"><div class="modal-head"><strong>🪪 Media Kit · @${esc(handle)}</strong>
+      <span class="kit-acts"><button class="btn sm ghost" type="button" data-kitcopy>🔗 Copy link</button><a class="btn sm ghost" href="/p.html?u=${encodeURIComponent(handle)}" target="_blank" rel="noopener">Open in a new tab ↗</a><button class="icon-btn" data-x aria-label="Close">✕</button></span></div>
+    <iframe class="kit-frame" src="${esc(url)}" title="Media kit"></iframe></div>`;
+  document.body.appendChild(m);
+  const close = ()=>{ m.remove(); window.removeEventListener("message", onMsg); };
+  m.querySelector("[data-x]").onclick = close; m.onclick = e=>{ if(e.target===m) close(); };
+  m.querySelector("[data-kitcopy]").onclick = async ()=>{ try{ await navigator.clipboard.writeText((window.appOrigin ? window.appOrigin() : location.origin) + "/p.html?u=" + encodeURIComponent(handle)); gateToast("Media kit link copied ✓"); }catch(e){ gateToast("Couldn't copy the link."); } };
+  const fr = m.querySelector("iframe");
+  const onMsg = async e=>{
+    if(e.origin !== location.origin || !e.data || e.data.type !== "geek-kit-ready" || e.source !== fr.contentWindow) return;
+    const r = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username: handle, media_limit: 12 } }).then(x=>x, ()=>({}));
+    const d = r && r.data; if(!d || !d.ok) return;
+    fr.contentWindow.postMessage({ type:"geek-kit-fresh", posts: d.posts||[], profile_picture_url: d.profile && d.profile.profile_picture_url }, location.origin);
+  };
+  window.addEventListener("message", onMsg);
+}
+document.addEventListener("click", e=>{
+  const k = e.target.closest && e.target.closest("[data-kitopen]"); if(!k) return;
+  if(e.metaKey || e.ctrlKey || e.shiftKey) return;   // ⌘/Ctrl-click still opens a new tab
+  e.preventDefault(); e.stopPropagation(); openKitModal(k.dataset.kitopen);
+}, true);
 
 /* ================= Instagram pictures expire (signed CDN links) → fetch a fresh one, else show initials ================= */
 (function(){
