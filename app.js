@@ -11875,12 +11875,19 @@ function kitFrameWire(fr, handle, grow){
     fr.contentWindow.postMessage({ type:"geek-kit-fresh", posts: d.posts||[], profile_picture_url: d.profile && d.profile.profile_picture_url }, location.origin);
     // 📣 Mentions are other accounts' posts: their pictures expire too — ask Instagram for the posting account's latest
     // posts and take the fresh picture of the same post (works for public Business / Creator accounts)
-    const ms = Array.isArray(e.data.mentions) ? e.data.mentions.filter(x=> x && x.username && x.permalink) : [];
+    let ms = Array.isArray(e.data.mentions) ? e.data.mentions.filter(x=> x && x.permalink) : [];
+    if(!ms.length) return;
+    // 1) our saved copy (made once, never expires — also shown on the public kit link from then on)
+    const pt = await sb.functions.invoke("post-thumb", { body:{ permalinks: ms.map(x=> x.permalink) } }).then(x=>x, ()=>({}));
+    const th = (pt && pt.data && pt.data.thumbs) || {}, saved = ms.filter(x=> th[x.permalink]).map(x=> ({ permalink: x.permalink, media_url: th[x.permalink], thumbnail_url: th[x.permalink], media_type: "IMAGE" }));
+    if(saved.length && fr.isConnected) fr.contentWindow.postMessage({ type:"geek-kit-fresh", mentions: saved }, location.origin);
+    // 2) the rest: the posting account's latest posts, matched by link
+    ms = ms.filter(x=> !th[x.permalink] && x.username);
     if(!ms.length) return;
     const norm = u=> String(u||"").replace(/[?#].*$/,"").replace(/\/+$/,"").replace(/^https?:\/\/(www\.)?/,"").toLowerCase();
-    const users = [...new Set(ms.map(x=> String(x.username).replace(/^@/,"").toLowerCase()))].slice(0, 4), found = [];
+    const users = [...new Set(ms.map(x=> String(x.username).replace(/^@/,"").toLowerCase()))].slice(0, 6), found = [];
     for(const u of users){
-      const r2 = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username: u, media_limit: 50 } }).then(x=>x, ()=>({}));
+      const r2 = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username: u, media_limit: 30 } }).then(x=>x, ()=>({}));
       const posts = (r2 && r2.data && r2.data.ok && r2.data.posts) || [];
       ms.filter(x=> String(x.username).replace(/^@/,"").toLowerCase()===u).forEach(x=>{ const p2 = posts.find(y=> norm(y.permalink)===norm(x.permalink));
         if(p2) found.push({ permalink: x.permalink, media_url: p2.media_url, thumbnail_url: p2.thumbnail_url, media_type: p2.media_type }); });
