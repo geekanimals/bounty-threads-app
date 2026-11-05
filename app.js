@@ -6378,7 +6378,7 @@ function bkHistHtml(){
             <button type="button" class="btn sm cc-wabtn" data-bkgwa="${g}">🟢 WhatsApp all ${list.length}</button></div>
           <div class="bk-hist-list">${list.slice(0, lim).map(e=> card(e.c, e.u)).join("")}</div>
           ${list.length > lim ? `<div class="bk-hist-more">+ ${list.length - lim} more in this group · <a href="#" data-bkhmore="g:${g}">Show all</a></div>` : ""}</details>`; }).join("")}
-      <div class="muted bk-mini">🟢 WhatsApp / ↻ Resend tick them in the creator list below and open its panel — nothing goes until you press Send there. 🔔 asks first, then sends each creator the message for their own step.</div>`;
+      <div class="muted bk-mini">↻ Resend, 📸 Connect Instagram and 🔔 reminders ask once and send right here. 🟢 WhatsApp opens the message window here — pick what to send, then Send.</div>`;
   }
   return `${viewBar}<div class="bk-hist-sum"><b>${ups.length}</b> upload${ups.length>1?"s":""} · <b>${tot}</b> creator${tot!==1?"s":""} came in this way
       <span class="bk-hist-selbar"><span class="muted"><b id="bkHSelN">${nSel}</b> selected</span><button type="button" class="btn sm cc-wabtn" id="bkHWaSel"${nSel?"":" disabled"}>🟢 WhatsApp to selected</button><button type="button" class="btn sm ghost" id="bkHSelClr"${nSel?"":" disabled"}>Clear</button></span></div>
@@ -6402,7 +6402,7 @@ function bkHistHtml(){
               <span style="flex:1"></span><button type="button" class="btn sm cc-wabtn" data-bkhwa="${k}">🟢 WhatsApp all ${ks.length}</button></div>
               <div class="bk-hist-list">${items.slice(0, lim).map(c=> card(c, u)).join("")}</div>
               ${items.length > lim ? `<div class="bk-hist-more">+ ${items.length - lim} more in this upload · <a href="#" data-bkhmore="${esc(key)}">Show all</a></div>` : ""}`; })():`<div class="muted">No creators to show for this upload.</div>`}`, "bk-hist-up"); }).join("")}
-      <div class="muted bk-mini">Tick creators (or a whole upload) → 🟢 WhatsApp opens the panel in the creator list below with them ticked — nothing goes until you press Send there.</div>`;
+      <div class="muted bk-mini">Tick creators (or a whole upload) → 🟢 WhatsApp opens the message window here — nothing goes until you press Send.</div>`;
 }
 async function bkHistLoad(force){
   const camp = _bpCamp && _bpCamp.id; if(!camp) return;
@@ -6416,10 +6416,7 @@ async function bkHistLoad(force){
 function bkHistWire(){
   const body = document.getElementById("bpBody"); if(!body || !document.querySelector("#bkHist .bk-hist-card")) return;
   try{ wireBarterProcess(); wireCcInvites(body); wireCcSelect(body); }catch(e){ console.warn("history cards", e); }
-  const openWa = keys=>{ if(!keys.length) return;
-    _ccFilter = "all"; _ccQ = ""; _ccSel = new Set(keys); _ccWa.open = true; _ccWa.mode = "step"; _ccWa.winSig = null;
-    paintBarterProcess();
-    setTimeout(()=>{ const w = document.getElementById("ccWa"); if(w) w.scrollIntoView({ behavior:"smooth", block:"center" }); }, 300); };
+  const openWa = keys=> ccWaWindow(keys);
   const selSync = ()=>{ const n = _ccSel.size, nb = document.getElementById("bkHSelN"), wb = document.getElementById("bkHWaSel"), cb = document.getElementById("bkHSelClr");
     if(nb) nb.textContent = n; if(wb) wb.disabled = !n; if(cb) cb.disabled = !n;
     document.querySelectorAll("#bkHist [data-bkhsel]").forEach(c=>{ const ks = (window.__bkHistKeys||[])[+c.dataset.bkhsel]||[]; c.checked = ks.length && ks.every(x=> _ccSel.has(x)); });
@@ -6445,9 +6442,8 @@ function bkHistWire(){
     try{ await shDownload("xlsx", { keys: new Set(gk(b.dataset.bkgdl)), label: (UC_GROUPS.find(z=> z[0]===b.dataset.bkgdl)||[])[1]||"group" }); }catch(e2){ gateToast(e2.message||String(e2)); } b.disabled = false; });
   document.querySelectorAll("#bkHist [data-bkgwa]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); openWa(gk(b.dataset.bkgwa)); });
   // ↻ resend invites: tick them in the creator list → its "Resend invite to N" button (asks first, then sends)
-  document.querySelectorAll("#bkHist [data-bkgresend]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); const ks = gk(b.dataset.bkgresend); if(!ks.length) return;
-    _ccFilter = "all"; _ccQ = ""; _ccSel = new Set(ks); paintBarterProcess();
-    setTimeout(()=>{ const r = document.getElementById("ccSendSel"); if(r){ r.scrollIntoView({ behavior:"smooth", block:"center" }); r.classList.add("uc-flash"); setTimeout(()=> r.classList.remove("uc-flash"), 2500); } }, 300); });
+  document.querySelectorAll("#bkHist [data-bkgresend]").forEach(b=> b.onclick = e=>{ e.stopPropagation();
+    ccResendInvites(gk(b.dataset.bkgresend).filter(k=> k.startsWith("i:")).map(k=> k.slice(2)), b); });
   // 🔔 everyone's own step message (address / video / overdue / post…) — one confirm, then one by one
   document.querySelectorAll("#bkHist [data-bkgremind]").forEach(b=> b.onclick = async e=>{ e.stopPropagation();
     const byP2 = {}; ((_bpData||{}).creators||[]).forEach(x=> byP2[x.participation_id] = x);
@@ -7363,8 +7359,7 @@ function wireCcSelect(body){
     body.querySelectorAll("[data-ccsel]").forEach(c=> c.checked = _ccSel.has(c.dataset.ccsel)); sync(); };
   const cl = body.querySelector("#ccSelClear"); if(cl) cl.onclick = ()=>{ _ccSel.clear(); paintBarterProcess(); };
   const dl = body.querySelector("#ccDlSel"); if(dl) dl.onclick = async ()=>{ if(!_ccSel.size) return; dl.disabled = true; try{ await shDownload("xlsx", { keys: new Set(_ccSel), label:"selected" }); }catch(e){ gateToast(e.message||String(e)); } dl.disabled = false; };
-  body.querySelectorAll("[data-ccig]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); _ccSel = new Set([b.dataset.ccig]); _ccWa.open = true; _ccWa.mode = "step"; paintBarterProcess();
-    const w = document.getElementById("ccWa"); if(w) w.scrollIntoView({ behavior:"smooth", block:"center" }); });
+  body.querySelectorAll("[data-ccig]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); ccQuickTemplate([b.dataset.ccig], "geek_selected_connect_instagram", b); });
   const pk = body.querySelector("#ccPickNoIg"); if(pk) pk.onclick = ()=>{ _ccFilter = "noig"; _ccSel.clear(); paintBarterProcess();
     (window.__ccEligible||[]).forEach(id=> _ccSel.add(id)); _ccWa.open = true; _ccWa.mode = "step"; paintBarterProcess();
     const w = document.getElementById("ccWa"); if(w) w.scrollIntoView({ behavior:"smooth", block:"center" }); };
@@ -7372,22 +7367,63 @@ function wireCcSelect(body){
   wireCcWaPanel(body);
   if(btn) btn.onclick = async ()=>{
     const re = window.__ccResend || new Set(), ids = [..._ccSel].filter(id=> re.has(id)).map(id=> id.slice(2)); if(!ids.length) return;
-    // the messages only go out while WhatsApp / email are ON for this campaign
-    const ms = await sb.schema("api").rpc("campaign_messaging", { p_campaign: _bpCamp && _bpCamp.id }).then(r=>r, e=>({error:e}));
-    const m = (ms && ms.data) || {};
-    if(!ms.error && !(m.wa_on && m.global_wa_on !== false) && !(m.email_on && m.global_email_on !== false)){
-      gateToast("WhatsApp and email are OFF for this campaign — turn one on at the top first, then send."); return; }
-    if(!confirm(`Send the invite again to ${ids.length} creator${ids.length>1?"s":""} on WhatsApp + email?`)) return;
-    btn.disabled = true; let ok = 0, joined = 0, bad = [];
-    for(let k=0;k<ids.length;k++){
-      btn.textContent = `Sending ${k+1} / ${ids.length}…`;
-      const { data, error } = await sb.schema("api").rpc("bulk_resend_invite", { p_invite: ids[k] }).then(r=>r, e=>({error:e}));
-      if(error) bad.push(error.message||String(error)); else { ok++; if(data && data.status==="joined") joined++; }
-    }
-    _ccSel.clear();
-    gateToast(`↻ Invite sent again to ${ok} creator${ok!==1?"s":""} ✓${joined?` · ${joined} were already on Geek OS — added to the campaign`:""}${bad.length?` · ${bad.length} failed: ${bad[0]}`:""}`);
-    loadBarterProcess(true);
+    if(await ccResendInvites(ids, btn)) _ccSel.clear();
   };
+}
+// ↻ Resend invite — ONE action behind every resend button (a card, the ticked ones, an upload-history group):
+// checks the campaign's switches, asks once, sends right here, says how many went
+async function ccResendInvites(ids, btn){
+  ids = [...new Set(ids)].filter(Boolean); if(!ids.length) return false;
+  const ms = await sb.schema("api").rpc("campaign_messaging", { p_campaign: _bpCamp && _bpCamp.id }).then(r=>r, e=>({error:e}));
+  const m = (ms && ms.data) || {};
+  if(!ms.error && !(m.wa_on && m.global_wa_on !== false) && !(m.email_on && m.global_email_on !== false)){
+    gateToast("WhatsApp and email are OFF for this campaign — turn one on at the top first, then send."); return false; }
+  if(!confirm(`Send the invite again to ${ids.length} creator${ids.length>1?"s":""} on WhatsApp + email?`)) return false;
+  const t0 = btn ? btn.textContent : ""; if(btn) btn.disabled = true; let ok = 0, joined = 0; const bad = [];
+  for(let k=0;k<ids.length;k++){
+    if(btn) btn.textContent = `Sending ${k+1} / ${ids.length}…`;
+    const { data, error } = await sb.schema("api").rpc("bulk_resend_invite", { p_invite: ids[k] }).then(r=>r, e=>({error:e}));
+    if(error) bad.push(error.message||String(error)); else { ok++; if(data && data.status==="joined") joined++; }
+  }
+  if(btn){ btn.disabled = false; btn.textContent = t0; }
+  gateToast(`${bad.length?"⚠️":"↻"} Invite sent again to ${ok} creator${ok!==1?"s":""}${ok?" ✓":""}${joined?` · ${joined} were already on Geek OS — added to the campaign`:""}${bad.length?` · ${bad.length} failed: ${bad[0]}`:""}`);
+  _ucStats = null; loadBarterProcess(true);
+  return true;
+}
+// 📸 Connect Instagram (or any one template) — sent RIGHT HERE for the creators it's pressed for, same checks and the
+// same "are you sure?" as the WhatsApp panel; the page doesn't jump anywhere
+async function ccQuickTemplate(keys, tplName, btn){
+  keys = [...new Set(keys)].filter(Boolean); if(!keys.length || _ccWa.busy) return;
+  const keep = { sel: new Set(_ccSel), mode: _ccWa.mode, tpl: _ccWa.tpl, open: _ccWa.open };
+  _ccSel = new Set(keys); _ccWa.mode = "tpl"; _ccWa.tpl = tplName;
+  const t0 = btn ? btn.textContent : "", fake = { disabled:false, textContent:"" };
+  const go = btn ? new Proxy(fake, { set:(o,k,v)=>{ o[k] = v; if(k==="textContent") btn.textContent = v || t0; if(k==="disabled") btn.disabled = v; return true; } }) : fake;
+  try{ await ccWaSend(go); }
+  finally{
+    const failed = [..._ccSel];   // ccWaSend keeps only the failed ones ticked
+    _ccSel = keep.sel; failed.forEach(k=> keys.includes(k) || _ccSel.add(k)); _ccWa.mode = keep.mode; _ccWa.tpl = keep.tpl; _ccWa.open = keep.open;
+    if(btn && btn.isConnected){ btn.disabled = false; btn.textContent = t0; }
+    _ucStats = null; ucStatsLoad(ucAfterStats);
+  }
+}
+// 🟢 WhatsApp to a group / the ticked ones from anywhere (upload history, a group) → the SAME WhatsApp panel, in a window
+// right where you are (not scrolled away to the list below)
+function ccWaWindow(keys){
+  keys = [...new Set(keys)].filter(Boolean); if(!keys.length) return;
+  _ccSel = new Set(keys); _ccWa.open = false; if(!_ccWa.mode) _ccWa.mode = "step";
+  document.getElementById("ccWaWin")?.remove();
+  const m = el("div","modal-overlay open"); m.id = "ccWaWin";
+  const paint = ()=>{ m.innerHTML = `<div class="modal cc-wa-win"><div class="modal-head"><strong>🟢 WhatsApp to ${_ccSel.size} creator${_ccSel.size!==1?"s":""}</strong><button class="icon-btn" data-x aria-label="Close">✕</button></div><div class="cc-wa-winb">${ccWaPanelHtml()}</div></div>`;
+    const b = m.querySelector(".cc-wa-winb");
+    wireCcWaPanel(b);
+    // inside the window: changing the kind of message / template redraws the window, ✕ closes it
+    b.querySelectorAll('input[name="ccWaMode"]').forEach(r=> r.onchange = ()=>{ _ccWa.mode = r.value; _ccWa.winSig = null; _ccWa.win = null; paint(); });
+    const ts = b.querySelector("#ccWaTpl"); if(ts) ts.onchange = ()=>{ _ccWa.tpl = ts.value; paint(); };
+    const wx = b.querySelector("#ccWaX"); if(wx) wx.onclick = ()=> m.remove();
+    const go = b.querySelector("#ccWaGo"); if(go) go.onclick = async ()=>{ await ccWaSend(go); if(!_ccSel.size){ m.remove(); _ucStats = null; ucStatsLoad(ucAfterStats); } else paint(); };
+    m.querySelector("[data-x]").onclick = ()=> m.remove(); };
+  m.onclick = e=>{ if(e.target===m) m.remove(); };
+  document.body.appendChild(m); paint();
 }
 // one WhatsApp to every ticked creator — each one's own step template, one picked template, or the typed message
 async function ccWaSend(go){
@@ -7568,10 +7604,7 @@ function wireCcInvites(body){
   body.querySelectorAll("[data-ccinvpost]").forEach(b=> b.onclick = ()=>{ const i = find(b.dataset.ccinvpost); if(i) openPostAdd({ invite:i }); });
   body.querySelectorAll("[data-ccinvstats]").forEach(b=> b.onclick = ()=>{ const i = find(b.dataset.ccinvstats); if(i) openPublicAnalytics(i.handle, i.post_links||[], i.name); });
   body.querySelectorAll("[data-invchat]").forEach(box=> loadInviteChat(box, box.dataset.invchat));
-  body.querySelectorAll("[data-ccre]").forEach(b=> b.onclick = async ()=>{ b.disabled = true;
-    const { data, error } = await sb.schema("api").rpc("bulk_resend_invite", { p_invite: b.dataset.hubre }).then(r=>r, e=>({error:e}));
-    gateToast(error ? (error.message||String(error)) : data && data.status==="joined" ? "They're on Geek OS — added to the campaign ✓" : "Invite sent again ✓");
-    loadBarterProcess(true); });
+  body.querySelectorAll("[data-ccre]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); ccResendInvites([b.dataset.hubre], b); });
 }
 // the step form inside an open creator card (no pop-up): asks only for what the step needs
 function mountInlineSetStep(pid){
@@ -11665,6 +11698,7 @@ async function pollAlerts(){
   }catch(e){}
 }
 function showAlertToast(n){
+  if(window.__isAdmin) return;   // Super Admin: alerts wait in the 🔔 bell — no pop-ups over the work
   const wrap = toastStack();
   while(wrap.children.length >= 4) wrap.firstElementChild.remove();
   const rem = /remind/i.test(String(n.kind||"") + " " + String(n.template_key||"") + " " + String(n.title||""));
