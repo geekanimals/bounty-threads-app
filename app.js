@@ -6153,11 +6153,46 @@ function bkStatusSelect(attr, val, extra){
   const L = bkStatuses(), v2 = L.some(x=> x[0]===val) ? val : bkDispStatus(val);
   return `<select class="bk-stsel ${cls}" ${attr}${extra||""}>${L.map(([k,l],n)=>`<option value="${k}"${k===v2?" selected":""}>${n+1}. ${l}</option>`).join("")}</select>`;
 }
+// 🔀 the sheet says something different from what's already on Geek OS (e.g. the creator confirmed their own
+// address) → the admin chooses, per row, which one to keep. Nothing different is uploaded until it's chosen.
+const BK_DIFF = [["addr","🏠 Address",["address","city","state","pincode"]],["ship","🚚 Courier & tracking",["courier","tracking"]],["video","🎬 Video link",["video_link"]]];
+const bkNorm = v=> String(v||"").toLowerCase().replace(/https?:\/\/(www\.)?/,"").replace(/[^a-z0-9]+/g,"");
+function bkDiffs(r, d){
+  const v = (r._ex && r._ex.vals) || {}, out = [];
+  BK_DIFF.forEach(([g, label, ks])=>{
+    if(bkKind()==="paid" && g!=="video") return;
+    const siteK = k=> k==="video_link" ? v.video : v[k];
+    const differs = ks.some(k=> String(d[k]||"").trim() && siteK(k) && bkNorm(d[k]) !== bkNorm(siteK(k)) && !(k==="pincode" && bkNorm(siteK(k)) && bkNorm(d.address).includes(bkNorm(siteK(k)))));
+    if(!differs) return;
+    const show = (o, sheet)=> ks.map(k=> sheet ? d[k] : siteK(k)).filter(x=> String(x||"").trim()).join(", ");
+    out.push({ g, label, site: show(v, false), sheet: show(d, true), by: g==="addr" ? v.addr_by : null });
+  });
+  return out;
+}
+function bkApplyPicks(all){
+  (_bk.rows||[]).forEach((r,i)=>{ const pk = r._pick || {}, d = all[i]; if(!d) return;
+    BK_DIFF.forEach(([g,,ks])=>{ if(pk[g]==="site") ks.forEach(k=>{ d[k] = ""; }); }); });
+}
+function bkDiffHtml(rows, skip){
+  const L = []; rows.forEach((r,i)=>{ if(skip(i)) return; const df = bkDiffs(r, bkRowData(r)); if(df.length) L.push([r,i,df]); });
+  if(!L.length) return { html:"", open:0, n:0 };
+  const open = L.reduce((a,[r,,df])=> a + df.filter(x=> !(r._pick||{})[x.g]).length, 0);
+  const html = `<div class="bk-diff"><div class="bk-diff-h"><b>🔀 ${L.length} row${L.length>1?"s have":" has"} details different from Geek OS — choose which one to keep</b>
+      <span class="bk-diff-all"><button type="button" class="mini-btn ghost" data-bkdiffall="site">Keep Geek OS for all</button><button type="button" class="mini-btn ghost" data-bkdiffall="sheet">Use the sheet for all</button></span></div>
+    ${open?`<div class="bk-diff-note">⏳ ${open} choice${open>1?"s":""} left — the upload waits until each one is chosen.</div>`:`<div class="bk-diff-note ok">✓ All chosen.</div>`}
+    ${L.map(([r,i,df])=>{ const d = bkRowData(r); return `<div class="bk-diff-row"><div class="bk-diff-who"><b>Row ${bkLine(i)}</b> · ${bkEsc(d.name || (d.handle?"@"+String(d.handle).replace(/^@/,""):"") || d.phone || "—")}</div>
+      ${df.map(x=>{ const pk = (r._pick||{})[x.g];
+        return `<div class="bk-diff-g"><span class="bk-diff-l">${x.label}</span>
+          <label class="bk-opt${pk==="site"?" on":""}"><input type="radio" name="bkd${i}${x.g}" data-bkpick="${i}|${x.g}|site"${pk==="site"?" checked":""}><span><em>Keep Geek OS</em>${x.by==="creator"?' <i class="tag good">creator confirmed</i>':""}<br>${bkEsc(x.site)}</span></label>
+          <label class="bk-opt${pk==="sheet"?" on":""}"><input type="radio" name="bkd${i}${x.g}" data-bkpick="${i}|${x.g}|sheet"${pk==="sheet"?" checked":""}><span><em>Use the sheet</em><br>${bkEsc(x.sheet)}</span></label></div>`; }).join("")}</div>`; }).join("")}</div>`;
+  return { html, open, n: L.length };
+}
 function bulkHtml(){
   const rows = _bk.rows||[], pv = Array.isArray(_bk.preview) ? _bk.preview : null;
   const blk = rows.map((r,i)=> bkRowBlock(r, pv && pv[i]));
   const skipRow = (p,i) => !!blk[i] || (p && (p.duplicate || p.already));
   const valid = rows.filter((r,i)=> !skipRow(pv && pv[i], i)).length;
+  const dfx = pv ? bkDiffHtml(rows, i=> !!blk[i] || !!(pv[i] && pv[i].duplicate)) : { html:"", open:0, n:0 };
   const nBlk = blk.filter(Boolean).length, sh = bkSheetErrors(rows);
   const bad = pv ? rows.map((r,i)=> pv[i] && !blk[i] && (pv[i].phone_bad || pv[i].email_bad) ? i : -1).filter(i=> i>=0) : [];
   const who = (r,i)=>{ const d = bkRowData(r); return `<b>Row ${(r.line!=null?r.line:i)+(_bk.off||2)}</b> · ${bkEsc(d.name || (d.handle?"@"+String(d.handle).replace(/^@/,""):"") || d.phone || d.email || "—")}`; };
@@ -6199,6 +6234,7 @@ function bulkHtml(){
       <div class="auth-err" id="bkErr"></div>
       ${rows.length ? `
       ${errBox}
+      ${dfx.html}
       <div class="bk-setall"><span>Set everyone to</span>${bkStatusSelect('id="bkAllSt"', "", "")}<span class="muted">— or change each row below</span></div>
       <div class="bk-rule">ℹ️ Each row only needs the columns of <b>its own Status</b> — Address confirmed: Address, City, State, PIN · Courier sent / delivered: Courier, Tracking ID · Video submitted / approved: Video link · Posted: Post link. A later step also needs the earlier steps' details. <b>Blank cells are fine</b> when Geek OS already has that detail for the creator. Empty lines are skipped. One WhatsApp number with several Instagram handles = one creator with several Instagram accounts.</div>
       <div class="bk-tablewrap"><table class="bk-table"><thead><tr>
@@ -6216,7 +6252,7 @@ function bulkHtml(){
       </tbody></table></div>
       ${_bk.preview && _bk.preview.error ? `<div class="auth-err">${bkEsc(_bk.preview.error)}</div>` : ""}
       <label class="bk-note"><span>Message to the creators (optional — goes with the invite)</span><input id="bkNote" maxlength="200" value="${bkEsc(_bk.note)}" placeholder="e.g. Diwali drop — we loved your recent reels!"></label>
-      <div class="bk-go"><button class="btn" id="bkUpload"${_bk.busy||!valid||!pv||sh.e.length?" disabled":""}>${_bk.busy?"Uploading…":!pv?"Checking the rows…":!valid?"Nothing to upload — fix the rows above":`Upload &amp; invite ${valid} creator${valid===1?"":"s"}`}</button>
+      <div class="bk-go"><button class="btn" id="bkUpload"${_bk.busy||(!valid&&!dfx.n)||!pv||sh.e.length||dfx.open?" disabled":""}>${_bk.busy?"Uploading…":!pv?"Checking the rows…":!valid && !dfx.n?"Nothing to upload — fix the rows above":dfx.open?`Choose what to keep (${dfx.open} left) ↑`:!valid?"Save the chosen details":`Upload &amp; invite ${valid} creator${valid===1?"":"s"}`}</button>
         <span class="muted">${nBlk?`<b style="color:#dc2626">${nBlk} not uploaded (fix above)</b> · `:""}${byStatus.map(([l,n])=>`${n} ${bkEsc(l.toLowerCase())}`).join(" · ")}${noAddr?` · <b style="color:#b45309">${noAddr} without an address</b> (they add it in their profile)`:""}${nDup?` · <b>${nDup} repeat${nDup>1?"s":""}</b> (merged into the first row / already up to date)`:""}${nClash?` · <b style="color:#dc2626">${nClash} share a WhatsApp / email with a different Instagram — fix the sheet, they're left out</b>`:""}</span>
         <button class="btn sm ghost" id="bkClear">Clear</button></div>
       <div id="bkResult"></div>` : ""}
@@ -6648,6 +6684,9 @@ function wireBulk(){
     if(k==="status") _bk.rows.forEach(r=> r.status = _bk.map.status!=null ? bkDispStatus(bkStatus(r.cells[_bk.map.status])||"registered") : "registered");
     _bk.preview = null; paintBulk(); bkCheck(); });
   document.querySelectorAll("[data-bkst]").forEach(c=> c.onchange = ()=>{ const r = _bk.rows[+c.dataset.bkst]; r.status = c.value; r._picked = true; paintBulk(); });
+  document.querySelectorAll("[data-bkpick]").forEach(c=> c.onchange = ()=>{ const [i, g, v] = c.dataset.bkpick.split("|"); const r = _bk.rows[+i]; r._pick = Object.assign({}, r._pick, { [g]: v }); paintBulk(); });
+  document.querySelectorAll("[data-bkdiffall]").forEach(b=> b.onclick = ()=>{ const v = b.dataset.bkdiffall;
+    (_bk.rows||[]).forEach(r=>{ const df = bkDiffs(r, bkRowData(r)); if(df.length){ r._pick = Object.assign({}, r._pick); df.forEach(x=>{ r._pick[x.g] = v; }); } }); paintBulk(); });
   const all = $b("bkAllSt"); if(all){ all.insertAdjacentHTML("afterbegin", '<option value="" selected>— choose —</option>'); all.value = "";
     all.onchange = ()=>{ if(!all.value) return; _bk.rows.forEach(r=>{ r.status = all.value; r._picked = true; }); paintBulk(); }; }
   const note = $b("bkNote"); if(note) note.oninput = ()=>{ _bk.note = note.value; };
@@ -6666,6 +6705,10 @@ function wireBulk(){
   const up = $b("bkUpload"); if(up) up.onclick = async ()=>{
     const pv = Array.isArray(_bk.preview) ? _bk.preview : [];
     const all = _bk.rows.map(bkRowData);
+    const useSheet = [];   // "Use the sheet" → written over what Geek OS had, after the upload
+    _bk.rows.forEach((r,i)=>{ const pk = r._pick||{}, d = all[i]; BK_DIFF.forEach(([g,,ks])=>{ if(pk[g]==="sheet" && bkDiffs(r, d).some(x=>x.g===g)){
+      const o = { group:g, phone:d.phone, email:d.email, handle:d.handle }; ks.forEach(k=>{ o[k] = d[k]; }); useSheet.push(o); } }); });
+    bkApplyPicks(all);   // "Keep Geek OS" → that detail isn't sent, the site's one stays
     bkMergeRepeats(all, pv);
     const why = _bk.rows.map((r,i)=> bkRowBlock(r, pv[i]) || (pv[i] && pv[i].already && !all[i]._merged ? "Already in this campaign — nothing new in the row" : null));
     const rows = all.filter((d,i)=> !why[i] && !(pv[i] && (pv[i].duplicate || pv[i].already && !d._merged)));
@@ -6673,8 +6716,13 @@ function wireBulk(){
     _bk.rows.forEach((r,i)=>{ if(!why[i] && pv[i] && pv[i].duplicate) why[i] = pv[i].multi ? `Same ${pv[i].multi.by} as row ${bkLine(pv[i].multi.row)} — @${pv[i].multi.handle} added to that creator as another Instagram` : pv[i]._dupOf!=null ? `Repeat of row ${bkLine(pv[i]._dupOf)} — same person, merged into that row` : "Repeat — same person as another row"; });
     const notUp = _bk.rows.map((r,i)=>{ if(!why[i]) return null; const x = bkRowData(r);
       return { row: bkLine(i), name: x.name, handle: x.handle, phone: x.phone, email: x.email, status: r.status||"registered", reason: why[i] }; }).filter(Boolean);
-    if(!rows.length) return;
+    if(!rows.length && !useSheet.length) return;
     _bk.busy = true; paintBulk();
+    if(!rows.length){   // nothing new to add — only the sheet values the admin chose
+      const ap = await sb.schema("api").rpc("bulk_apply_choice", { p_campaign:_bpCamp.id, p_rows: useSheet }).then(r=>r, e=>({error:e}));
+      _bk.busy = false; paintBulk(); const e2 = document.getElementById("bkErr");
+      if(ap.error){ if(e2) e2.textContent = ap.error.message||String(ap.error); return; }
+      gateToast(`✓ Updated ${ap.data && ap.data.applied || 0} detail${(ap.data && ap.data.applied)===1?"":"s"} from the sheet`); bkCheck(); return; }
     // paid campaign: each row's fee / bank / UPI first — applied as each creator lands (a waiting contract goes out with it)
     const payRows = all.map((d,i)=> ({ ...d, i: String(i+2) })).filter(d=> d.fee || d.upi || d.account_no);
     if(payRows.length && typeof payIsPaidCamp==="function" && payIsPaidCamp()){
@@ -6687,6 +6735,8 @@ function wireBulk(){
     _bk.busy = false;
     if(error){ paintBulk(); const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = error.message||String(error); return; }
     const d = data||{}; _bkHist = null;   // 🗂 upload history shows this upload next time it is opened
+    if(useSheet.length){ const ap = await sb.schema("api").rpc("bulk_apply_choice", { p_campaign:_bpCamp.id, p_rows: useSheet }).then(r=>r, e=>({error:e}));
+      if(ap.error){ const e2 = document.getElementById("bkErr"); if(e2) e2.textContent = "Uploaded — but the sheet values you chose couldn't be saved: " + (ap.error.message||ap.error); } }
     if(notUp.length && d.batch_id){ const lg = await sb.schema("api").rpc("bulk_log_skipped", { p_campaign:_bpCamp.id, p_batch:d.batch_id, p_rows:notUp }).then(r=>r, e=>({error:e}));
       if(lg.error) console.warn("not-uploaded log", lg.error); }
     if(notUp.length) setTimeout(()=> gateToast(`⛔ ${notUp.length} row${notUp.length>1?"s":""} not uploaded — who and why is in 🗂 Upload history`), 1400);

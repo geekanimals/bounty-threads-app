@@ -24,7 +24,7 @@ begin
        where p.campaign_id = p_campaign and (p.participation_id = v_inv.participation_id or (v_idn is not null and p.identity_id = v_idn)) limit 1;
       if v_idn is not null then
         select jsonb_build_object('line1', a.line1, 'city', a.city, 'state', a.state, 'pin', a.postal_code) into v_addr
-          from private.creator_address a where a.identity_id = v_idn order by a.is_default desc, a.confirmed_at desc nulls last limit 1;
+          from private.creator_address a where a.identity_id = v_idn and a.deleted_at is null order by a.is_default desc, a.confirmed_at desc nulls last limit 1;
       end if;
     end if;
     v_sc := null; v_str := null;
@@ -40,7 +40,17 @@ begin
       'courier', coalesce(nullif(btrim(v_inv.courier),''), nullif(btrim(v_sc),'')) is not null,
       'tracking', coalesce(nullif(btrim(v_inv.tracking_ref),''), nullif(btrim(v_inv.tracking_url),''), nullif(btrim(v_str),'')) is not null,
       'video', v_inv.video_url is not null,
-      'posts', cardinality(coalesce(v_inv.post_links, '{}')) > 0));
+      'posts', cardinality(coalesce(v_inv.post_links, '{}')) > 0,
+      -- the values themselves, so the app can ask "keep Geek OS or use the sheet?" when they differ
+      'vals', jsonb_strip_nulls(jsonb_build_object(
+        'address', coalesce(nullif(btrim(v_addr->>'line1'),''), nullif(btrim(v_inv.ship_address->>'line1'),'')),
+        'city',    coalesce(nullif(btrim(v_addr->>'city'),''), nullif(btrim(v_inv.ship_address->>'city'),'')),
+        'state',   coalesce(nullif(btrim(v_addr->>'state'),''), nullif(btrim(v_inv.ship_address->>'state'),'')),
+        'pincode', coalesce(nullif(btrim(v_addr->>'pin'),''), nullif(btrim(v_inv.ship_address->>'postal_code'),'')),
+        'addr_by', case when nullif(btrim(v_addr->>'line1'),'') is not null then 'creator' when nullif(btrim(v_inv.ship_address->>'line1'),'') is not null then 'sheet' end,
+        'courier', coalesce(nullif(btrim(v_sc),''), nullif(btrim(v_inv.courier),'')),
+        'tracking', coalesce(nullif(btrim(v_str),''), nullif(btrim(v_inv.tracking_ref),''), nullif(btrim(v_inv.tracking_url),'')),
+        'video', v_inv.video_url))));
   end loop;
   return out;
 end $$;
