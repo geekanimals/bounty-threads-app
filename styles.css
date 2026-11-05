@@ -3016,3 +3016,15 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .bc-more summary{list-style:none;cursor:pointer}.bc-more summary::-webkit-details-marker{display:none}
 .bc-more-m{position:absolute;right:0;top:calc(100% + 6px);z-index:30;display:flex;flex-direction:column;gap:4px;min-width:190px;padding:8px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
 .bc-more-m .mini-btn{justify-content:flex-start;text-align:left;width:100%}
+
+/* WhatsApp / email ON-OFF badge */
+.oo{display:inline-flex;align-items:center;margin-left:4px;vertical-align:middle}
+.oo:empty{display:none}
+.oo b{font-size:10.5px;font-weight:800;letter-spacing:.03em;padding:1px 7px;border-radius:999px;line-height:1.6;white-space:nowrap}
+.oo-on{background:#e7f8ef;color:#067647;border:1px solid #abefc6}
+.oo-off{background:#fee4e2;color:#b42318;border:1px solid #fecdca}
+[data-theme="dark"] .oo-on{background:#0f3324;color:#75e0a7;border-color:#1f5c3f}
+[data-theme="dark"] .oo-off{background:#3a1414;color:#fda29b;border-color:#6b2420}
+.acr-ci{display:inline-flex;align-items:center;gap:2px;min-width:0;max-width:100%}
+.acr-ci a{overflow:hidden;text-overflow:ellipsis}
+.uc-l2 .oo{margin-left:-2px;margin-right:6px}

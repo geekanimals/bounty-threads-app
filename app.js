@@ -6246,6 +6246,32 @@ function ucStatsLoad(after){
 const ucIsFakeEmail = e => /@creators\.bountythreads\.app$|^wa_/i.test(String(e||""));
 function ucDays(at){ if(!at) return ""; const d = Math.floor((Date.now() - new Date(at).getTime())/86400000); return d<=0 ? "today" : d===1 ? "1 day" : d+" days"; }
 function ucDetailOf(html){ try{ const t = document.createElement("div"); t.innerHTML = html; const d = t.querySelector(".bp-detail"); return d ? d.outerHTML : ""; }catch(e){ return ""; } }
+/* ---------- WhatsApp / email ON-OFF badge on every creator card (staff only) ----------
+   OFF = they replied STOP / used the stop link (WhatsApp) or unsubscribed / turned update emails off (email). */
+let __oo = null, __ooAt = 0, __ooBusy = null;
+const ooKey = (kind, v)=> kind==="wa" ? String(v||"").replace(/\D/g,"").slice(-10) : String(v||"").trim().toLowerCase();
+function ooTag(kind, v){ const k = ooKey(kind, v); if(!k || currentRole==="creator") return "";
+  return `<span class="oo" data-oo="${kind}:${esc(k)}">${ooInner(kind, k)}</span>`; }
+function ooInner(kind, k){
+  if(!__oo) return "";
+  const off = kind==="wa" ? __oo.wa.has(k) : __oo.em.has(k);
+  return off ? `<b class="oo-off" title="${kind==="wa"?"Replied STOP — no WhatsApp updates go to this number":"Unsubscribed — no update emails go to this address"}">🚫 OFF</b>`
+             : `<b class="oo-on" title="${kind==="wa"?"Gets WhatsApp updates":"Gets update emails"}">ON</b>`; }
+function ooPaint(root){ if(!__oo) return; (root||document).querySelectorAll("[data-oo]").forEach(e=>{ const [kind, k] = e.dataset.oo.split(":"); const h = ooInner(kind, k); if(e.innerHTML!==h) e.innerHTML = h; }); }
+async function ooLoad(force){
+  if(currentRole==="creator") return;
+  if(!force && __oo && Date.now()-__ooAt < 300000) return;
+  if(__ooBusy) return __ooBusy;
+  __ooBusy = sb.schema("api").rpc("optout_lists").then(({ data })=>{
+    if(data && Array.isArray(data.wa)){ __oo = { wa:new Set(data.wa.map(x=> ooKey("wa", x))), em:new Set((data.em||[]).map(x=> ooKey("em", x))) }; __ooAt = Date.now(); ooPaint(); }
+  }, ()=>{}).finally(()=>{ __ooBusy = null; });
+  return __ooBusy;
+}
+window.ooLoad = ooLoad;
+// any card drawn later gets its badge filled in
+(function(){ let t = null; new MutationObserver(()=>{ if(t || !__oo) return; t = requestAnimationFrame(()=>{ t = null; document.querySelectorAll("[data-oo]:empty").forEach(e=>{ const [kind, k] = e.dataset.oo.split(":"); e.innerHTML = ooInner(kind, k); }); }); })
+  .observe(document.documentElement, { childList:true, subtree:true }); })();
+
 function ucCardHtml(c){
   // c: { key, pic, handle, name, phone, email, city, followers, pct, via, tags, filled, total, stepTxt, nx, days, acts, chat, openAttr, open, detail }
   const st = (_ucStats && _ucStats.camp===(_bpCamp&&_bpCamp.id) && _ucStats.data && _ucStats.data[c.key]) || null;
@@ -6262,7 +6288,7 @@ function ucCardHtml(c){
       <span class="uc-av${pct!=null?" ring":""}" ${ring} ${c.profAttr||""} title="Open the full profile">${c.pic?`<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${ini}'}))">`:`<span>${ini}</span>`}${pct!=null?`<em>${pct}%</em>`:""}</span>
       <div class="uc-main">
         <div class="uc-l1"><b class="uc-name" ${c.profAttr||""} title="Open the full profile">${esc(c.name || (c.handle?"@"+c.handle:"Creator"))}</b>${c.profAttr?`<button type="button" class="bp-prof-btn" ${c.profAttr}>👤 Profile</button>`:""}${c.handle?igLink(c.handle):""}${c.via?`<span class="uc-via">${esc(c.via)}</span>`:""}${c.tags||""}</div>
-        <div class="uc-l2">${c.phone?`<a class="uc-wa" href="https://wa.me/${esc(String(c.phone).replace(/\D/g,""))}" target="_blank" rel="noopener" title="Open their WhatsApp">🟢 WhatsApp <b>${esc(c.phone)}</b></a>`:`<span class="uc-none">🟢 WhatsApp —</span>`}${email && !ucIsFakeEmail(email)?`<a class="uc-mail" href="mailto:${esc(email)}" title="Email them">✉️ <b>${esc(email)}</b></a>`:`<span class="uc-none">✉️ no email</span>`}${c.followers!=null?`<span>👥 <b>${fmtNum(c.followers)}</b> followers</span>`:""}${city?`<span>📍 ${esc(city)}</span>`:""}</div>
+        <div class="uc-l2">${c.phone?`<a class="uc-wa" href="https://wa.me/${esc(String(c.phone).replace(/\D/g,""))}" target="_blank" rel="noopener" title="Open their WhatsApp">🟢 WhatsApp <b>${esc(c.phone)}</b></a>${ooTag("wa", c.phone)}`:`<span class="uc-none">🟢 WhatsApp —</span>`}${email && !ucIsFakeEmail(email)?`<a class="uc-mail" href="mailto:${esc(email)}" title="Email them">✉️ <b>${esc(email)}</b></a>${ooTag("em", email)}`:`<span class="uc-none">✉️ no email</span>`}${c.followers!=null?`<span>👥 <b>${fmtNum(c.followers)}</b> followers</span>`:""}${city?`<span>📍 ${esc(city)}</span>`:""}</div>
         <div class="uc-l3"><span class="uc-bar">${seg}</span><span class="uc-step">${c.stepTxt||""}</span></div>
         <div class="uc-l4">${bpTurnChip(c.nx)} <b class="uc-stuck">${esc(c.nx.title)}</b>${c.days?` <span class="muted">· ${esc(c.days)}</span>`:""}
           <span class="uc-cnts">${cnt("🟢","WhatsApp", st&&st.wa)}${cnt("✉️","Email", st&&st.em)}${cnt("🔔","Reminders", st&&st.rem)}</span></div>
@@ -7546,7 +7572,7 @@ function ccInviteRowHtml(i, inCamp){
         : miss.length && i.phone ? `<button type="button" class="btn sm bp-rowact cc-wabtn" data-ccig="i:${esc(i.invite_id)}" title="They registered — send the Connect Instagram WhatsApp">📸 Send Connect Instagram</button>` : "") : ""}<button type="button" class="bp-chatbtn" data-ccinvchat="${esc(i.invite_id)}" title="Messages &amp; WhatsApp">💬</button></span>
       <span class="bp-caret">${open?"▲":"▼"}</span></div>
     ${open?`<div class="bp-detail"><div class="cc-invchat" data-invchat="${esc(i.invite_id)}">${skel("list",2)}</div><div class="bp-facts">
-        ${[i.phone?`📱 <a href="https://wa.me/${esc(String(i.phone).replace(/\D/g,""))}" target="_blank" rel="noopener">${esc(i.phone)}</a>`:"", i.email?`✉️ ${esc(i.email)}`:"", i.city?`📍 ${esc(i.city)}`:"", i.followers?`👥 ${fmtNum(i.followers)} followers`:""].filter(Boolean).map(x=>`<div>${x}</div>`).join("")}
+        ${[i.phone?`📱 <a href="https://wa.me/${esc(String(i.phone).replace(/\D/g,""))}" target="_blank" rel="noopener">${esc(i.phone)}</a>${ooTag("wa", i.phone)}`:"", i.email?`✉️ ${esc(i.email)}${ooTag("em", i.email)}`:"", i.city?`📍 ${esc(i.city)}`:"", i.followers?`👥 ${fmtNum(i.followers)} followers`:""].filter(Boolean).map(x=>`<div>${x}</div>`).join("")}
         ${i.courier||i.tracking?`<div>🚚 ${esc(i.courier||"")} ${i.tracking?`· <b>${esc(i.tracking)}</b>`:""}</div>`:""}
         ${i.video_url?`<div>🎬 Video: <a href="${esc(safeUrl(i.video_url))}" target="_blank" rel="noopener">open ↗</a></div>`:""}
         ${links.map(l=>`<div>📲 <a href="${esc(safeUrl(l))}" target="_blank" rel="noopener">${esc(l.replace(/^https?:\/\/(www\.)?/,""))}</a> <span class="muted">— attached to their campaign the moment they join; numbers come from their Instagram</span></div>`).join("")}
@@ -7674,8 +7700,8 @@ async function bppFillFull(pid, x, row){
   const ct = F.contact||{}, wa = F.whatsapp||{}, pe = F.personal||{};
   const tel = ph => ph ? `<a href="tel:${esc(ph)}">${esc(ph)}</a> · <a href="https://wa.me/${esc(String(ph).replace(/\D/g,""))}" target="_blank" rel="noopener">WhatsApp ↗</a>` : "";
   $("bppContact").innerHTML =
-      row("WhatsApp", (wa.phone||ct.whatsapp_e164||x.phone) ? tel(wa.phone||ct.whatsapp_e164||x.phone) + (wa.verified||ct.whatsapp_verified_at ? ' <span class="tag good">verified</span>' : ' <span class="tag warn">not verified</span>') + (wa.opted_out?' <span class="tag">updates paused</span>':"") : "—")
-    + row("Email", [ct.email, F.login_email].filter((v,i,a)=> v && a.indexOf(v)===i).map(e=>`<a href="mailto:${esc(e)}">${esc(e)}</a>`).join(" · ") + (ct.email_verified_at?' <span class="tag good">verified</span>':""))
+      row("WhatsApp", (wa.phone||ct.whatsapp_e164||x.phone) ? tel(wa.phone||ct.whatsapp_e164||x.phone) + ooTag("wa", wa.phone||ct.whatsapp_e164||x.phone) + (wa.verified||ct.whatsapp_verified_at ? ' <span class="tag good">verified</span>' : ' <span class="tag warn">not verified</span>') + (wa.opted_out?' <span class="tag">updates paused</span>':"") : "—")
+    + row("Email", [ct.email, F.login_email].filter((v,i,a)=> v && a.indexOf(v)===i).map(e=>`<a href="mailto:${esc(e)}">${esc(e)}</a>${ooTag("em", e)}`).join(" · ") + (ct.email_verified_at?' <span class="tag good">verified</span>':""))
     + row("Prefers", ct.preferred_contact_method ? esc(nice(ct.preferred_contact_method)) : "")
     + row("Applied with", x.applied_profile ? "@"+esc(x.applied_profile) : "")
     + row("Applied on", x.applied_at ? esc(fmtDate(x.applied_at)) : "");
@@ -9136,7 +9162,7 @@ async function adminUsers(body, silent){
       <div class="au-who"><span class="avatar">${esc(init)}</span><div style="min-width:0">
         <div class="au-name">${nm?esc(nm):'<span class="muted">Name not added</span>'} <span class="au-role ${esc(u.role||"")}">${ric} ${esc(rl)}</span>${u.status==="pending"?' <span class="tag warn">pending</span>':""}</div>
         <div class="au-sub">${u.ig_username?`<a href="https://instagram.com/${encodeURIComponent(u.ig_username)}" target="_blank" rel="noopener">@${esc(u.ig_username)}</a>${u.followers!=null?` · ${fmtNum(u.followers)} followers`:""}`:u.role==="creator"?'<span class="muted">Instagram not connected</span>':""}${u.org_name&&u.role!=="creator"?`${u.ig_username?" · ":""}${esc(u.org_name)}`:""}</div>
-        <div class="acr-ct">${wa?`<a href="https://wa.me/${String(wa).replace(/\D/g,"")}" target="_blank" rel="noopener">📱 ${esc(wa)}</a>`:'<span class="muted">📱 No number</span>'}${em?`<a href="mailto:${esc(em)}">✉️ ${esc(em)}</a>`:'<span class="muted">✉️ No email</span>'}</div></div></div>
+        <div class="acr-ct">${wa?`<span class="acr-ci"><a href="https://wa.me/${String(wa).replace(/\D/g,"")}" target="_blank" rel="noopener">📱 ${esc(wa)}</a>${ooTag("wa", wa)}</span>`:'<span class="muted">📱 No number</span>'}${em?`<span class="acr-ci"><a href="mailto:${esc(em)}">✉️ ${esc(em)}</a>${ooTag("em", em)}</span>`:'<span class="muted">✉️ No email</span>'}</div></div></div>
       <div class="au-act"><div><span class="au-k">Joined</span>${esc(fmtDateTime(u.joined_at))}</div><div><span class="au-k">Last sign-in</span>${u.last_sign_in_at?esc(fmtDateTime(u.last_sign_in_at)):'<span class="muted">never</span>'}</div>
         <div><span class="au-k">Last seen</span>${u.last_seen?ago(u.last_seen):'<span class="muted">never</span>'} · ${u.logins||0} login${u.logins===1?"":"s"}</div></div>
       <div class="au-act"><div><span class="au-k">Location</span>${loc?esc(loc):'<span class="muted">—</span>'}</div>${u.last_ip?`<div><span class="au-k">IP</span><code>${esc(u.last_ip)}</code></div>`:""}
@@ -9179,7 +9205,7 @@ const agoTxt = t=>{ if(!t) return "—"; const m=Math.round((Date.now()-new Date
 // WhatsApp number + email on every creator row/card (tap = open, never opens the profile)
 const acrContact = c=>{ const fake = /@creators\.bountythreads\.app$/i, em = c.email && !fake.test(c.email) ? c.email : "", wa = c.whatsapp || c.phone || "";
   const d = String(wa).replace(/\D/g,"");
-  return `<span class="acr-ct" onclick="event.stopPropagation()">${wa?`<a href="https://wa.me/${d}" target="_blank" rel="noopener" title="WhatsApp ${esc(wa)}">📱 ${esc(wa)}</a>`:'<span class="muted">📱 No number</span>'}${em?`<a href="mailto:${esc(em)}" title="Email ${esc(em)}">✉️ ${esc(em)}</a>`:'<span class="muted">✉️ No email</span>'}</span>`; };
+  return `<span class="acr-ct" onclick="event.stopPropagation()">${wa?`<span class="acr-ci"><a href="https://wa.me/${d}" target="_blank" rel="noopener" title="WhatsApp ${esc(wa)}">📱 ${esc(wa)}</a>${ooTag("wa", wa)}</span>`:'<span class="muted">📱 No number</span>'}${em?`<span class="acr-ci"><a href="mailto:${esc(em)}" title="Email ${esc(em)}">✉️ ${esc(em)}</a>${ooTag("em", em)}</span>`:'<span class="muted">✉️ No email</span>'}</span>`; };
 const kNum = n=> n==null ? "—" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(n);
 async function adminCreators(body, silent){
   if(!silent) body.innerHTML = skel("cards",8);
@@ -9433,8 +9459,8 @@ async function adminCreatorProfile(member, row){
               return `🐾 ${esc(x.name)} (${esc(x.pet_type)})${age}${x.birth_date?` <span class="muted">· b. ${esc(fmtDate(x.birth_date))}</span>`:""}`;
             }).join("<br>"):per.has_pet?`${esc(per.pet_name||"")} (${esc(per.pet_type||"")})`:"")}</div>
         <div class="card"><h4>Contact</h4>
-          ${r("WhatsApp", wa?`<a href="https://wa.me/${esc(wa.replace(/\D/g,""))}" target="_blank" rel="noopener">${esc(wa)}</a>${con.whatsapp_verified_at||mem.whatsapp?' <span class="tag good">verified</span>':""}`:"")}
-          ${r("Backup email", !synthetic&&con.email?`<a href="mailto:${esc(con.email)}">${esc(con.email)}</a>${con.email_verified_at?' <span class="tag good">verified</span>':' <span class="tag warn">not verified</span>'}`:"")}
+          ${r("WhatsApp", wa?`<a href="https://wa.me/${esc(wa.replace(/\D/g,""))}" target="_blank" rel="noopener">${esc(wa)}</a>${ooTag("wa", wa)}${con.whatsapp_verified_at||mem.whatsapp?' <span class="tag good">verified</span>':""}`:"")}
+          ${r("Backup email", !synthetic&&con.email?`<a href="mailto:${esc(con.email)}">${esc(con.email)}</a>${ooTag("em", con.email)}${con.email_verified_at?' <span class="tag good">verified</span>':' <span class="tag warn">not verified</span>'}`:"")}
           ${r("Addresses", (D.addresses||[]).map(a=>`${a.is_default?"⭐ ":""}<b>${esc(a.label||"")}</b> ${esc([a.line1,a.line2,a.landmark,a.city,a.state,a.postal_code,a.country].filter(Boolean).join(", "))}`).join("<br>"))}
           ${r("Travelling to", D.travel&&D.travel.city?esc([D.travel.city,D.travel.state,D.travel.country].filter(Boolean).join(", "))+(D.travel.until_date?` · till ${esc(fmtDate(D.travel.until_date))}`:""):"")}</div>
         <div class="card"><h4>Professional</h4>
@@ -10170,7 +10196,7 @@ async function adminOptouts(){
     const [ch, to] = b.dataset.optclr.split("|");
     if(!confirm(`Turn ${ch==="whatsapp"?"WhatsApp":"email"} updates back on for ${to}? Only do this if they asked for it.`)) return;
     const { error:e } = await sb.rpc("admin_optout_clear", { p_channel: ch, p_to: to });
-    if(e){ gateToast(e.message||String(e)); return; } gateToast("Updates are back on ✓"); adminOptouts(); });
+    if(e){ gateToast(e.message||String(e)); return; } gateToast("Updates are back on ✓"); adminOptouts(); ooLoad(true); });
 }
 
 // Super Admin → Creator activity: who is on the platform, from where, for how long, doing what.
@@ -11347,6 +11373,7 @@ function renderShell(){
   if(window.Tracker) Tracker.page(currentPage);
   if(window.hideBootSplash) hideBootSplash();
   renderNav(); renderMe(); renderContent();
+  if(window.sb && currentRole!=="creator") ooLoad();
   navSave({ camp: null, bpTab: null });   // any page change leaves the campaign workspace
 }
 
