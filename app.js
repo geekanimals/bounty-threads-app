@@ -447,6 +447,12 @@ async function loadKPIs(){
       growthScore: fmtNum(PL.length?Math.max.apply(null,PL.map(p=>Number(p.score)||0)):0),
       deadlines: fmtNum(0)
     };
+    // the real numbers (campaigns, creators on Geek OS) replace the old demo-table counts wherever they exist
+    const wl = await sb.schema("api").rpc("workspace_live").then(r=> r && !r.error ? r.data : null, ()=> null);
+    if(wl){ if(wl.creators && wl.creators.roster!=null) vals.creators = fmtNum(wl.creators.roster);
+            if(wl.campaigns && wl.campaigns.barter_live!=null) vals.liveBarters = fmtNum(wl.campaigns.barter_live);
+            if(wl.applications && wl.applications.completed!=null) vals.completed = fmtNum(wl.applications.completed);
+            if(wl.applications && wl.applications.pending!=null) vals.approvals = fmtNum(wl.applications.pending); }
     cells.forEach(e=>{ const k=e.id.slice(4); e.textContent = vals[k]!=null?vals[k]:'0'; });
   }catch(ex){
     cells.forEach(e=>{ e.textContent='—'; });
