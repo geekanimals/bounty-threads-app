@@ -6250,6 +6250,22 @@ function ucFromInvite(i, inCamp, via, h){ h = h||{};
     acts: act, chat: `<button type="button" class="bp-chatbtn uc-chat" data-ccinvchat="${esc(i.invite_id)}" title="Messages &amp; WhatsApp">💬</button>`,
     openAttr: `data-ccinvopen="${esc(i.invite_id)}"`, open, detail: open ? ucDetailOf(ccInviteRowHtml(i, inCamp)) : "" });
 }
+// the step's own message, sent again by hand (same as 💬 → "Send a step template") — when the creator is the one who has to act
+function ucStepMsg(x, nx){
+  if(nx.turn!=="creator" && !x.blocked_at) return null;
+  const today = new Date().toISOString().slice(0,10), ship = x.shipment||{}, overdue = x.due_on && x.due_on < today;
+  if(x.blocked_at) return ["video_blocked","🔁 Resend: blocked notice"];
+  switch(x.stage){
+    case "invited": case "shortlisted": return ["invited","↻ Resend invite"];
+    case "contract_sent": return ["contract_sent","🔁 Resend contract"];
+    case "contract_signed": return bpNoShip() ? null : ["confirm_address","🔔 Remind: confirm address"];
+    case "product_sent": return ship.status==="delivered" ? (overdue ? ["video_warning","🔔 Remind: video overdue"] : ["video_due","🔔 Remind: send the video"]) : ["product_shipped","🔁 Resend: product shipped"];
+    case "content_created": return overdue ? ["video_warning","🔔 Remind: video overdue"] : ["video_due","🔔 Remind: send the video"];
+    case "changes_requested": return ["changes_requested","🔔 Remind: send the new cut"];
+    case "content_approved": case "published": return ["content_approved","🔔 Remind: post it"];
+  }
+  return null;
+}
 function ucFromPart(x, via, h){ h = h||{};
   const cr0 = x.creator||{}, pubH = cr0.followers==null && (cr0.username || x.applied_profile) ? pubHandle(cr0.username || x.applied_profile) : "", pp = pubH ? pubOf(pubH) : null;
   const cr = Object.assign({}, cr0, { username: cr0.username || pubH, profile_picture_url: cr0.profile_picture_url || (pp && pp.profile_picture_url) || null, followers: cr0.followers ?? (pp && pp.followers) });
@@ -6262,7 +6278,8 @@ function ucFromPart(x, via, h){ h = h||{};
     tags: (pubH ? `<span class="tag warn">📸 On Geek · connect Instagram</span>` : "") + jvBadge(cr.joined_via, true) + (overdue?'<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">⏰ Video overdue</span>':"") + (x.blocked_at?'<span class="tag" style="background:rgba(239,68,68,.15);color:#dc2626">⛔ Blocked</span>':""),
     filled: j+1, total: J.length, stepTxt: `Step ${j+1}/${J.length} · <b>${esc((J[j]||[])[1]||"")}</b>`,
     nx, days: nx.turn==="done" ? "" : ucDays(lastAt),
-    acts: nx.acts.filter(a=>a[2]).slice(0,1).map(a=> bpActBtn(a, P, true)).join(""),
+    acts: (()=>{ const pr = nx.acts.filter(a=>a[2]).slice(0,1); if(pr.length) return pr.map(a=> bpActBtn(a, P, true)).join("");
+      const sm = ucStepMsg(x, nx); return sm ? `<button type="button" class="btn sm bp-rowact" data-ucstep="${esc(P)}" data-ucmsg="${esc(sm[0])}" data-ucwho="${esc(cr.username?"@"+cr.username:(cr.name||"this creator"))}">${esc(sm[1])}</button>` : nx.acts.filter(a=> a[0]!=="bpchat").slice(0,1).map(a=> bpActBtn(a, P, true)).join(""); })(),
     chat: `<button type="button" class="bp-chatbtn uc-chat" data-bpchat="${esc(P)}" title="WhatsApp chat">💬</button>`,
     openAttr: `data-bpopen="${esc(P)}"`, open, detail: open ? ucDetailOf(bpTrackerHtml([x])) : "" });
 }
@@ -6341,6 +6358,15 @@ function bkHistWire(){
   document.querySelectorAll("#bkHist [data-bkhsel]").forEach(c=>{ c.onclick = e=> e.stopPropagation(); c.onchange = ()=>{
     const ks = (window.__bkHistKeys||[])[+c.dataset.bkhsel]||[]; ks.forEach(x=> c.checked ? _ccSel.add(x) : _ccSel.delete(x)); selSync(); }; });
   document.querySelectorAll("#bkHist [data-ccsel]").forEach(c=>{ const prev = c.onchange; c.onchange = ()=>{ if(prev) prev(); else { c.checked ? _ccSel.add(c.dataset.ccsel) : _ccSel.delete(c.dataset.ccsel); } selSync(); }; });
+  document.querySelectorAll("#bkHist [data-ucstep]").forEach(b=> b.onclick = async e=>{ e.stopPropagation();
+    const label = b.textContent.replace(/^\S+\s*/,"");
+    if(!confirm(`Send “${label}” to ${b.dataset.ucwho} now? (WhatsApp + app + email)`)) return;
+    const t0 = b.textContent; b.disabled = true; b.textContent = "Sending…";
+    const { error } = await sb.schema("api").rpc("team_send_step", { p_participation: b.dataset.ucstep, p_key: b.dataset.ucmsg }).then(r=>r, e2=>({error:e2}));
+    b.disabled = false; b.textContent = t0;
+    if(error){ gateToast(error.message||String(error)); return; }
+    gateToast(`✓ Sent to ${b.dataset.ucwho}`);
+    _ucStats = null; ucStatsLoad(()=>{ const box = document.getElementById("bkHist"); if(box){ box.innerHTML = bkHistHtml(); bkWireFolds(box); bkHistWire(); } }); });
   const ws = document.getElementById("bkHWaSel"); if(ws) ws.onclick = e=>{ e.stopPropagation(); openWa([..._ccSel]); };
   const wc = document.getElementById("bkHSelClr"); if(wc) wc.onclick = e=>{ e.stopPropagation(); _ccSel.clear(); selSync(); };
   document.querySelectorAll("#bkHist [data-bkhmore]").forEach(a=> a.onclick = e=>{ e.preventDefault(); e.stopPropagation(); _bkHistAll.add(a.dataset.bkhmore);
