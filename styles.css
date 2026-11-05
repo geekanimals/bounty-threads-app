@@ -2902,3 +2902,28 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .ap-chips-l{font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-right:2px}
 [data-theme="dark"] .ap-tile.warn .ap-tile-ic{background:#3a2a0a}[data-theme="dark"] .ap-tile.good .ap-tile-ic{background:#0f3324}[data-theme="dark"] .ap-tile.bad .ap-tile-ic{background:#3a1414}
 @media (max-width:900px){.ap-tiles{grid-template-columns:repeat(2,1fr)}}
+
+/* ---------- All users ---------- */
+.au-tiles{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.au-tiles .ap-tile{padding:10px 12px;column-gap:10px}.au-tiles .ap-tile-ic{width:38px;height:38px;font-size:17px}.au-tiles .ap-tile b{font-size:22px}.au-tiles .ap-tile-l{font-size:13px}
+.au-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:10px}
+.au-tools{display:flex;gap:6px;flex-wrap:wrap}
+.au-tools input{padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:inherit;font-size:13px;min-width:260px}
+.au-list{display:grid;gap:8px}
+.au-row{display:grid;grid-template-columns:minmax(260px,2.2fr) minmax(170px,1.3fr) minmax(170px,1.3fr) minmax(120px,.9fr) 200px;gap:14px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--panel-2)}
+.au-row:hover{border-color:#cfd3f5}
+.au-who{display:flex;gap:12px;align-items:flex-start;min-width:0}
+.au-who .avatar{flex:0 0 40px;width:40px;height:40px}
+.au-name{font-weight:700;font-size:14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.au-role{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--brand)}
+.au-role.owner,.au-role.brand{background:#fff4e5;color:#b54708}.au-role.admin{background:#fee4e2;color:#b42318}
+.au-sub{font-size:12.5px;color:var(--muted);margin-top:1px}.au-sub a{color:inherit}
+.au-act{display:grid;gap:3px;font-size:12.5px;min-width:0}
+.au-act>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.au-k{display:inline-block;min-width:96px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+.au-act code{font-size:11.5px}
+.au-prof{display:grid;gap:5px;font-size:12px}
+.au-btns{display:flex;gap:6px;justify-content:flex-end}
+[data-theme="dark"] .au-role.owner,[data-theme="dark"] .au-role.brand{background:#3a2a0a}
+@media (max-width:1250px){.au-row{grid-template-columns:1fr 1fr;}.au-btns{justify-content:flex-start}}
+@media (max-width:640px){.au-row{grid-template-columns:1fr}.au-tools input{min-width:0;flex:1}}

@@ -9080,7 +9080,7 @@ let _adminTab = "overview";
 let _adminDataTable = "creators";
 
 // Super Admin → All users: who joined, when they signed in, consent, live profile status + full creator profile
-let _auFilter = "all", _auTimer = null, _auSig = "";
+let _auFilter = "all", _auTimer = null, _auSig = "", _auQ = "", _auSort = "new", _auPage = 0;
 async function adminUsers(body, silent){
   if(!silent) body.innerHTML = skel("table",8);
   const { data, error } = await sb.rpc("admin_users");
@@ -9088,33 +9088,55 @@ async function adminUsers(body, silent){
   const sig = JSON.stringify(data); if(silent && sig===_auSig) return; _auSig = sig;
   const all = data||[];
   const ago = t=>{ if(!t) return "—"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
-  const roles = ["all","creator","owner","brand","manager","corporate"];
-  const rows = all.filter(u=> _auFilter==="all" || u.role===_auFilter || (_auFilter==="incomplete" && u.role==="creator" && u.profile_complete===false) || (_auFilter==="pending" && u.status==="pending"));
   const today = new Date(); today.setHours(0,0,0,0);
-  const n = f => all.filter(f).length;
-  body.innerHTML = `<div class="rp-kpis">
-      <div><b>${all.length}</b>Total users</div><div><b>${n(u=>u.role==="creator")}</b>Creators</div>
-      <div><b>${n(u=>u.role==="owner"||u.role==="brand")}</b>Agencies & brands</div>
-      <div><b>${n(u=>u.joined_at && new Date(u.joined_at)>=today)}</b>Joined today</div>
-      <div><b>${n(u=>u.last_sign_in_at && new Date(u.last_sign_in_at)>=today)}</b>Signed in today</div>
-      <div><b>${n(u=>u.role==="creator" && u.profile_complete)}</b>Profiles complete</div>
-      <div><b>${n(u=>u.consent)}</b>Cookie consent given</div></div>
-    <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between">
-      <h3 style="margin:0">All users <span class="muted" style="font-size:12px;font-weight:400">· live, refreshes every 30s</span></h3>
-      <select id="auFilter">${roles.concat(["incomplete","pending"]).map(r=>`<option value="${r}"${r===_auFilter?" selected":""}>${{all:"Everyone",creator:"Creators",owner:"Agency owners",brand:"Brands",manager:"Managers",corporate:"Corporate",incomplete:"Creators — profile incomplete",pending:"Pending approval"}[r]}</option>`).join("")}</select></div>
-    <div style="overflow-x:auto;margin-top:10px"><table class="tbl"><thead><tr><th>Person</th><th>Role</th><th>WhatsApp / email</th><th>Joined</th><th>Last sign-in</th><th>Logins</th><th>Last seen</th><th>Location / IP</th><th>Cookies</th><th>Profile</th><th></th></tr></thead><tbody>
-    ${rows.map(u=>`<tr><td><b>${esc(u.name||"—")}</b>${u.ig_username?`<div class="muted" style="font-size:12px">@${esc(u.ig_username)}${u.followers!=null?` · ${fmtNum(u.followers)}`:""}</div>`:""}${u.org_name&&u.role!=="creator"?`<div class="muted" style="font-size:12px">${esc(u.org_name)}</div>`:""}</td>
-      <td>${esc(u.role||"—")}${u.status==="pending"?' <span class="tag warn">pending</span>':""}</td>
-      <td style="font-size:12px">${esc(u.whatsapp||"")}${u.email?`<div>${esc(u.email)}</div>`:""}</td>
-      <td style="font-size:12px">${esc(fmtDateTime(u.joined_at))}</td><td style="font-size:12px">${esc(fmtDateTime(u.last_sign_in_at))}</td>
-      <td>${u.logins||0}</td><td>${ago(u.last_seen)}</td>
-      <td style="font-size:12px">${esc([u.last_city,u.last_region].filter(Boolean).join(", ")||"—")}${u.last_ip?`<div class="muted"><code>${esc(u.last_ip)}</code></div>`:""}</td>
-      <td>${u.consent==="all"?'<span class="tag good">all</span>':u.consent==="essential"?'<span class="tag warn">essential</span>':'<span class="muted">—</span>'}${u.consent_at?`<div class="muted" style="font-size:11px">${esc(fmtDateTime(u.consent_at))}</div>`:""}</td>
-      <td>${u.role!=="creator"?"—":u.profile_complete?'<span class="tag good">complete</span>':`<span class="tag warn">${u.profile_done??0}/${u.profile_total??"?"}</span>`}</td>
-      <td style="white-space:nowrap">${u.role==="creator"?`<button class="mini-btn" data-auprof="${esc(u.member_id)}">Profile</button> `:""}<button class="mini-btn ghost" data-autl="${esc(u.member_id)}">Activity</button>${Auth.profile && Auth.profile.id===u.member_id ? "" : ` <button class="mini-btn ghost au-del" data-audel="${esc(u.member_id)}" title="Delete this user and all their data">🗑 Delete</button>`}</td></tr>`).join("")}
-    </tbody></table></div>${rows.length?"":`<div class="muted" style="padding:8px">No users in this view.</div>`}</div>
+  const isToday = t=> t && new Date(t) >= today;
+  const ROLE = { creator:["🎨","Creator"], owner:["🏢","Agency"], brand:["🏷️","Brand"], manager:["🧑‍💼","Manager"], corporate:["🏛️","Corporate"], admin:["🛡️","Admin"] };
+  // the tiles on top are the filters
+  const F = [["all","👥","Everyone",u=>true],["creator","🎨","Creators",u=>u.role==="creator"],["biz","🏢","Agencies & brands",u=>u.role==="owner"||u.role==="brand"],
+    ["joined","🆕","Joined today",u=>isToday(u.joined_at)],["signed","🟢","Signed in today",u=>isToday(u.last_sign_in_at)],
+    ["complete","✅","Profiles complete",u=>u.role==="creator" && u.profile_complete],["incomplete","🧩","Profile incomplete",u=>u.role==="creator" && u.profile_complete===false],
+    ["never","💤","Never signed in",u=>!u.last_sign_in_at],["pending","⏳","Pending approval",u=>u.status==="pending"]];
+  if(!F.find(x=>x[0]===_auFilter)) _auFilter = "all";
+  const fpass = F.find(x=>x[0]===_auFilter)[3];
+  const fake = /@creators\.bountythreads\.app$/i;
+  const q = _auQ.trim().toLowerCase();
+  const S = { new:(a,b)=> new Date(b.joined_at||0)-new Date(a.joined_at||0), seen:(a,b)=> new Date(b.last_seen||b.last_sign_in_at||0)-new Date(a.last_seen||a.last_sign_in_at||0),
+              logins:(a,b)=> (b.logins||0)-(a.logins||0), name:(a,b)=> String(a.name||"~").localeCompare(String(b.name||"~")) };
+  const rows = all.filter(fpass).filter(u=> !q || [u.name,u.ig_username,u.whatsapp,u.email,u.org_name,u.last_city,u.last_region,u.role].filter(Boolean).join(" ").toLowerCase().includes(q)).sort(S[_auSort]||S.new);
+  const PER = 40, pages = Math.max(1, Math.ceil(rows.length/PER)); _auPage = Math.min(_auPage, pages-1);
+  const shown = rows.slice(_auPage*PER, (_auPage+1)*PER);
+  const fl = F.find(x=>x[0]===_auFilter);
+  const card = u=>{ const [ric, rl] = ROLE[u.role] || ["👤", u.role||"—"], em = u.email && !fake.test(u.email) ? u.email : "", wa = u.whatsapp || "";
+    const nm = u.name && u.name!=="Creator" ? u.name : "", init = (nm || (u.ig_username||"") || "?").replace(/^@/,"").slice(0,2).toUpperCase();
+    const pct = u.profile_total ? Math.round(100*(u.profile_done||0)/u.profile_total) : 0;
+    const loc = [u.last_city,u.last_region].filter(Boolean).join(", ");
+    return `<div class="au-row">
+      <div class="au-who"><span class="avatar">${esc(init)}</span><div style="min-width:0">
+        <div class="au-name">${nm?esc(nm):'<span class="muted">Name not added</span>'} <span class="au-role ${esc(u.role||"")}">${ric} ${esc(rl)}</span>${u.status==="pending"?' <span class="tag warn">pending</span>':""}</div>
+        <div class="au-sub">${u.ig_username?`<a href="https://instagram.com/${encodeURIComponent(u.ig_username)}" target="_blank" rel="noopener">@${esc(u.ig_username)}</a>${u.followers!=null?` · ${fmtNum(u.followers)} followers`:""}`:u.role==="creator"?'<span class="muted">Instagram not connected</span>':""}${u.org_name&&u.role!=="creator"?`${u.ig_username?" · ":""}${esc(u.org_name)}`:""}</div>
+        <div class="acr-ct">${wa?`<a href="https://wa.me/${String(wa).replace(/\D/g,"")}" target="_blank" rel="noopener">📱 ${esc(wa)}</a>`:'<span class="muted">📱 No number</span>'}${em?`<a href="mailto:${esc(em)}">✉️ ${esc(em)}</a>`:'<span class="muted">✉️ No email</span>'}</div></div></div>
+      <div class="au-act"><div><span class="au-k">Joined</span>${esc(fmtDateTime(u.joined_at))}</div><div><span class="au-k">Last sign-in</span>${u.last_sign_in_at?esc(fmtDateTime(u.last_sign_in_at)):'<span class="muted">never</span>'}</div>
+        <div><span class="au-k">Last seen</span>${u.last_seen?ago(u.last_seen):'<span class="muted">never</span>'} · ${u.logins||0} login${u.logins===1?"":"s"}</div></div>
+      <div class="au-act"><div><span class="au-k">Location</span>${loc?esc(loc):'<span class="muted">—</span>'}</div>${u.last_ip?`<div><span class="au-k">IP</span><code>${esc(u.last_ip)}</code></div>`:""}
+        <div><span class="au-k">Cookies</span>${u.consent==="all"?'<span class="tag good">all</span>':u.consent==="essential"?'<span class="tag warn">essential</span>':'<span class="muted">not chosen</span>'}</div></div>
+      <div class="au-prof">${u.role!=="creator"?'<span class="muted">—</span>':u.profile_complete?'<span class="tag good">✓ Profile complete</span>':`<span class="au-k">Profile ${u.profile_done??0}/${u.profile_total??"?"}</span><span class="acr-bar2"><span style="width:${pct}%"></span></span>`}</div>
+      <div class="au-btns">${u.role==="creator"?`<button class="mini-btn" data-auprof="${esc(u.member_id)}">Profile</button>`:""}<button class="mini-btn ghost" data-autl="${esc(u.member_id)}">Activity</button>${Auth.profile && Auth.profile.id===u.member_id ? "" : `<button class="mini-btn ghost au-del" data-audel="${esc(u.member_id)}" title="Delete this user and all their data">🗑</button>`}</div></div>`; };
+  const pager = pages>1 ? `<div class="acr-pager"><button class="mini-btn ghost" data-aup="-1"${_auPage?"":" disabled"}>← Prev</button><span class="muted">Page ${_auPage+1} of ${pages}</span><button class="mini-btn ghost" data-aup="1"${_auPage<pages-1?"":" disabled"}>Next →</button></div>` : "";
+  const focused = document.activeElement && document.activeElement.id==="auQ";
+  body.innerHTML = `<div class="ap-tiles au-tiles">${F.map(([k,ic,l,f])=>`<button type="button" class="ap-tile${_auFilter===k?" on":""}" data-auf="${k}"><span class="ap-tile-ic">${ic}</span><b>${fmtNum(all.filter(f).length)}</b><span class="ap-tile-l">${l}</span>${_auFilter===k?'<span class="ap-tile-s">● showing now</span>':""}</button>`).join("")}</div>
+    <div class="card"><div class="au-bar"><h3 style="margin:0">${fl[1]} ${esc(fl[2])} <span class="muted" style="font-size:13px;font-weight:500">· ${fmtNum(rows.length)}${q?` matching “${esc(_auQ)}”`:""} · live</span>${_auFilter!=="all"||q?` <button type="button" class="mini-btn ghost" id="auReset">✕ Reset</button>`:""}</h3>
+      <span class="au-tools"><input id="auQ" type="search" placeholder="🔍 Name, @handle, number, email, city…" value="${esc(_auQ)}">
+        <select id="auSort">${[["new","Newest first"],["seen","Recently active"],["logins","Most logins"],["name","Name A → Z"]].map(([k,l])=>`<option value="${k}"${_auSort===k?" selected":""}>${l}</option>`).join("")}</select></span></div>
+    <div class="au-list">${shown.map(card).join("") || `<div class="muted" style="padding:14px">No users in this view.</div>`}</div>${pager}</div>
     <div id="auDetail"></div><div id="actTimeline"></div>`;
-  document.getElementById("auFilter").onchange = e=>{ _auFilter = e.target.value; _auSig=""; adminUsers(body); };
+  const again = ()=>{ _auSig=""; adminUsers(body, true); };
+  body.querySelectorAll("[data-auf]").forEach(b=> b.onclick = ()=>{ _auFilter = b.dataset.auf; _auPage = 0; again(); });
+  body.querySelectorAll("[data-aup]").forEach(b=> b.onclick = ()=>{ _auPage += Number(b.dataset.aup); again(); body.querySelector(".au-bar")?.scrollIntoView({behavior:"smooth",block:"start"}); });
+  const rs = document.getElementById("auReset"); if(rs) rs.onclick = ()=>{ _auFilter = "all"; _auQ = ""; _auPage = 0; again(); };
+  document.getElementById("auSort").onchange = e=>{ _auSort = e.target.value; _auPage = 0; again(); };
+  const qi = document.getElementById("auQ"); let qt;
+  if(focused){ qi.focus(); qi.setSelectionRange(qi.value.length, qi.value.length); }
+  qi.oninput = ()=>{ clearTimeout(qt); qt = setTimeout(()=>{ _auQ = qi.value; _auPage = 0; again(); }, 250); };
   body.querySelectorAll("[data-auprof]").forEach(b=> b.onclick = ()=> adminCreatorProfile(b.dataset.auprof, all.find(u=>u.member_id===b.dataset.auprof)));
   body.querySelectorAll("[data-autl]").forEach(b=> b.onclick = ()=> adminActivityTimeline(b.dataset.autl, all.find(u=>u.member_id===b.dataset.autl)));
   body.querySelectorAll("[data-audel]").forEach(b=> b.onclick = ()=> adminDeleteUser(b.dataset.audel, all.find(u=>u.member_id===b.dataset.audel), ()=>{ _auSig = ""; adminUsers(body, true); }));
@@ -9122,7 +9144,7 @@ async function adminUsers(body, silent){
   _auTimer = setInterval(()=>{
     const b = document.getElementById("adminBody");
     if(currentPage!=="admin" || _adminTab!=="users" || !b){ clearInterval(_auTimer); return; }
-    if(document.visibilityState!=="visible" || document.getElementById("ac360") || document.getElementById("auDetail")?.innerHTML || document.getElementById("actTimeline")?.innerHTML || document.activeElement?.tagName==="SELECT") return;
+    if(document.visibilityState!=="visible" || document.getElementById("ac360") || document.getElementById("auDetail")?.innerHTML || document.getElementById("actTimeline")?.innerHTML || document.activeElement?.tagName==="SELECT" || document.activeElement?.id==="auQ") return;
     adminUsers(b, true);
   }, 30000);
 }
