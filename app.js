@@ -5790,11 +5790,11 @@ const BK_STATUSES = [
   ["approved","Approved","brand said yes → the contract goes out","Invite (geek_campaign_access)",""],
   ["contract_sent","Contract sent","creator signs it in the app","Sign your contract",""],
   ["contract_signed","Contract signed","next: the creator confirms the address","Confirm your address",""],
-  ["address_confirmed","Address confirmed","they can read the video brief in the app to practise · next: you add the courier","no message","Address + State + PIN code (required)"],
+  ["address_confirmed","Address confirmed","they can read the video brief in the app to practise · next: you add the courier","no message","Address + City + State + PIN code (required)"],
   ["courier_sent","Courier sent","creator can track it · next: they tap Received","Product shipped","Courier + Tracking (required)"],
   ["courier_delivered","Courier delivered","the video deadline (campaign's days) starts today","Video brief","Courier + Tracking (required)"],
   ["video_brief_sent","Video brief sent","same as Courier delivered (optional)","Video brief","Courier + Tracking (required)"],
-  ["video_submitted","Video submitted","waiting for the brand's review","no message","Video link (required)"],
+  ["video_submitted","Video submitted","waiting for the brand's review","no message","Video link (required) + the address & courier steps' details"],
   ["client_approved","Client approved","next: the creator posts it","Video approved — post it","Video link (required)"],
   ["posted","Posted / Done","campaign complete · numbers fetched from their Instagram","Campaign complete","Post link — the link of every post (required)"]];
 const bkStLabel = k => (BK_STATUSES.find(x=>x[0]===k)||BK_STATUSES[0])[1];
@@ -5988,7 +5988,9 @@ function bkSetRows(rows, src){
       else if(_bk.map.handle==null && vals.filter(v=>/instagram\.com|^@/.test(v)).length >= Math.max(1, vals.length/3)) _bk.map.handle = i;
     }
   }
-  _bk.rows = body.map(r=> ({ cells: r, status: _bk.map.status!=null ? bkDispStatus(bkStatus(r[_bk.map.status])||"registered") : "registered" }));
+  const blank = r=> !r || !r.some(c=> String(c==null?"":c).trim());
+  _bk.blank = body.filter(blank).length;
+  _bk.rows = body.map((r,n)=> ({ cells: r, line: n })).filter(x=> !blank(x.cells)).map(({cells:r, line})=> ({ cells: r, line, status: _bk.map.status!=null ? bkDispStatus(bkStatus(r[_bk.map.status])||"registered") : "registered" }));
   _bk.src = src; _bk.preview = null;
 }
 // links typed without https:// (www.instagram.com/…, drive.google.com/…) → full links, so they are read correctly
@@ -6010,14 +6012,14 @@ function bkFlagConflicts(data, pv){
   if(!Array.isArray(pv)) return;
   const ph = d => String(d.phone||"").replace(/\D/g,"").slice(-10), em = d => String(d.email||"").trim().toLowerCase(),
         hd = d => String(d.handle||"").trim().toLowerCase().replace(/^@/,"").replace(/^(https?:\/\/)?(www\.|m\.)?instagram\.com\//,"").replace(/[\/?#].*$/,"");
-  data.forEach((a,i)=> data.forEach((b,j)=>{
-    if(j<=i || !pv[i] || !pv[j]) return;
-    const byPh = ph(a).length===10 && ph(a)===ph(b), byEm = em(a) && em(a)===em(b);
-    if(!(byPh || byEm) || !hd(a) || !hd(b) || hd(a)===hd(b)) return;
-    const by = byPh ? "WhatsApp number" : "email";
-    [[i,j],[j,i]].forEach(([x,y])=>{ const p = pv[x]; p.duplicate = false; delete p._dupOf;
-      p.conflict = p.conflict || { by, rows:[] }; if(!p.conflict.rows.includes(y+1)) p.conflict.rows.push(y+1); });
-  }));
+  data.forEach((b,j)=>{
+    const p = pv[j]; if(!p) return;
+    const i = data.findIndex((a,k)=> k<j && pv[k] && !pv[k].multi && ((ph(a).length===10 && ph(a)===ph(b)) || (em(a) && em(a)===em(b))) && hd(a) && hd(b) && hd(a)!==hd(b));
+    if(i<0) return;
+    const by = ph(data[i]).length===10 && ph(data[i])===ph(b) ? "WhatsApp number" : "email";
+    p.duplicate = true; p._dupOf = i; p.multi = { by, handle: hd(b), row: i };
+    const q = pv[i]; q.more = q.more || []; if(!q.more.includes(hd(b))) q.more.push(hd(b));
+  });
 }
 function bkSamePerson(a, b){ return !!a && !!b && ((a.phone && a.phone===b.phone) || (a.email && a.email===b.email) || (a.handle && a.handle===b.handle)); }
 function bkMergeRepeats(all, pv){
@@ -6029,16 +6031,38 @@ function bkMergeRepeats(all, pv){
     const a = all[j], b = all[i];
     if(bkStRank(b.status) > bkStRank(a.status)){ a.status = b.status; a.approved = b.approved; }
     a.post_link = [...new Set([a.post_link, b.post_link].join(" ").split(/\s+/).filter(Boolean))].join(" ");
+    if(p.multi){ a.extra = Object.assign({}, a.extra||{}); a.extra.other_instagram = [...new Set([...(a.extra.other_instagram||[]), p.multi.handle])]; }
     ["video_link","courier","tracking","address","state","pincode","city","email","phone","handle","name"].forEach(k=>{ if(!a[k] && b[k]) a[k] = b[k]; });
     a._merged = true;
   });
 }
 async function bkCheck(){
   if(!_bk.rows) return;
-  const { data, error } = await sb.schema("api").rpc("bulk_preview", { p_campaign:_bpCamp.id, p_rows: _bk.rows.map(bkRowData) }).then(r=>r, e=>({error:e}));
+  const rowsNow = _bk.rows, payload = rowsNow.map(bkRowData);
+  const [{ data, error }, ex] = await Promise.all([
+    sb.schema("api").rpc("bulk_preview", { p_campaign:_bpCamp.id, p_rows: payload }).then(r=>r, e=>({error:e})),
+    sb.schema("api").rpc("bulk_existing", { p_campaign:_bpCamp.id, p_rows: payload }).then(r=>r, ()=>({ data:null })) ]);
+  if(_bk.rows !== rowsNow) return;   // another sheet was loaded meanwhile
+  if(ex && Array.isArray(ex.data)) rowsNow.forEach((r,i)=>{ r._ex = ex.data[i] || null; });
   _bk.preview = error ? { error: error.message||String(error) } : (data||[]);
   if(Array.isArray(_bk.preview)){ const rd = _bk.rows.map(bkRowData); bkFlagConflicts(rd, _bk.preview); bkMergeRepeats(rd, _bk.preview); }
   paintBulk();
+  bkFetchIg(rowsNow);
+}
+// handles we have no Instagram details for yet → look each one up (a few at a time), so the preview shows the
+// real name + followers and a wrong handle is caught before uploading
+async function bkFetchIg(rowsNow){
+  const pv = _bk.preview; if(!Array.isArray(pv)) return;
+  const todo = [...new Set(pv.filter(p=> p && p.handle && !(p.ig && (p.ig.followers || p.ig.name)) && !p.ig_missing).map(p=> p.handle))].slice(0, 40);
+  let k = 0;
+  const worker = async ()=>{ while(k < todo.length){ const h = todo[k++];
+    const r = await sb.functions.invoke("ig-discover", { body:{ action:"lookup", username:h, media_limit:6 } }).then(x=>x, ()=>({}));
+    if(_bk.rows !== rowsNow) return;
+    const pr = r && r.data && r.data.profile;
+    pv.forEach(p=>{ if(p && p.handle===h){ if(pr && (pr.followers!=null || pr.name)) p.ig = { name: pr.name||"", followers: pr.followers, pic: pr.profile_picture_url, fresh:true };
+      else if(r && r.data && r.data.error && !r.data.needs_permission) p.ig_missing = true; } });
+    paintBulk(); } };
+  await Promise.all([worker(), worker(), worker()]);
 }
 async function loadBulkList(){
   const { data, error } = await sb.schema("api").rpc("bulk_invites", { p_campaign:_bpCamp.id }).then(r=>r, e=>({error:e}));
@@ -6049,16 +6073,18 @@ function bkStatusChip(p, r){
   if(!p) return '<span class="muted">…</span>';
   if(p.no_contact) return '<span class="tag warn">⚠ no WhatsApp / email / Instagram</span>';
   if(p.conflict) return `<span class="tag bad">⚠ Same ${bkEsc(p.conflict.by)} as row ${bkEsc(p.conflict.rows.join(", "))} but a different Instagram — fix it in the sheet · not uploaded</span>`;
-  if(p.duplicate) return `<span class="tag">Same person as row ${bkEsc((p._dupOf!=null?p._dupOf:0)+1)} — merged into it (furthest step + all links kept)</span>`;
+  if(p.multi) return `<span class="tag good">📸 Same ${bkEsc(p.multi.by)} as row ${bkEsc(bkLine(p.multi.row))} — @${bkEsc(p.multi.handle)} is added to that creator as another Instagram</span>`;
+  if(p.duplicate) return `<span class="tag">Same Instagram / number as row ${bkEsc(bkLine(p._dupOf!=null?p._dupOf:0))} — one creator: merged into that row (furthest step + all links kept)</span>`;
   if(p.already) return `<span class="tag">Already in${p.live_stage?` · ${bkEsc(String(p.live_stage).replace(/_/g," "))}`:""} — nothing new in this row · skipped</span>`;
-  if(p.lands_on && bkDispStatus(p.lands_on) !== ((r && r.status) || "registered") && bkStRank(p.lands_on) < bkStRank(bkServerStatus((r && r.status) || "registered"))){
+  if(p.lands_on && !(r && r._ex && !bkRowNeeds(r, bkRowData(r)).length && bkSiteRank(r._ex) >= bkStRank(p.lands_on)) && bkDispStatus(p.lands_on) !== ((r && r.status) || "registered") && bkStRank(p.lands_on) < bkStRank(bkServerStatus((r && r.status) || "registered"))){
     const miss = [p.needs_post_link?"Post link":"", p.needs_video?"Video link":"", p.needs_courier?"Courier + Tracking":""].filter(Boolean).join(" + ") || "the details for this step";
     return `<span class="tag warn">Needs ${bkEsc(miss)} — lands on <b>${bkEsc(bkStLabel(bkDispStatus(p.lands_on)))}</b> until you add ${miss.includes("+")?"them":"it"}</span>`;
   }
   const st = (r && r.status) || "registered";
   const bad = (p.phone_bad?" · number looks wrong":"") + (p.email_bad?" · email looks wrong":"");
   const warn = [bad.slice(3), r && r._addrMissing ? "add the address" : ""].filter(Boolean).join(" · ");
-  const ig = p.ig && (p.ig.followers || p.ig.name) ? `<div class="muted bk-ig">📸 ${p.ig.name?bkEsc(p.ig.name)+" · ":""}${p.ig.followers?Number(p.ig.followers).toLocaleString("en-IN")+" followers":""}</div>` : "";
+  const ig = (p.ig && (p.ig.followers || p.ig.name) ? `<div class="muted bk-ig">📸 ${p.ig.name?bkEsc(p.ig.name)+" · ":""}${p.ig.followers?Number(p.ig.followers).toLocaleString("en-IN")+" followers":""}${p.ig.fresh?" · just fetched from Instagram":""}</div>` : p.handle && p.ig_missing ? `<div class="muted bk-ig" style="color:#b45309">📸 @${bkEsc(p.handle)} — Instagram didn't return this profile (wrong handle, or a private / personal account). It still goes; check the handle.</div>` : "")
+    + (p.more && p.more.length ? `<div class="muted bk-ig">➕ also ${p.more.map(h=>"@"+bkEsc(h)).join(", ")} — same number / email, added as more Instagram accounts</div>` : "");
   const land = ` → <b>${bkEsc(bkStLabel(st))}</b>`;
   const main = p.on_platform
     ? (p.stage ? `<span class="tag">already in · ${bkEsc(String(p.stage).replace(/_/g," "))}${land}</span>`
@@ -6069,16 +6095,39 @@ function bkStatusChip(p, r){
   const msgTag = msg==="no message" ? `<div class="muted bk-ig">✉️ no message for this step</div>` : `<div class="muted bk-ig">✉️ sends: <b>${bkEsc(msg)}</b>${via?` on ${via}`:""}</div>`;
   return main + (warn?`<span class="tag warn">${bkEsc(warn)}</span>`:"") + msgTag + ig;
 }
-// ⛔ every step's own details are required — a row without them is not uploaded (shown in red + listed, logged in Upload history)
-function bkRowMissing(r, d){
-  const st = r.status || "registered", paid = bkKind()==="paid", m = [], pin = v=> /(^|\D)\d{6}(?!\d)/.test(String(v||"").replace(/(\d)\s+(?=\d)/g,"$1"));
-  if(!paid && ["address_confirmed","courier_sent","courier_delivered"].includes(st)){
-    if(!d.address) m.push("Address"); if(!d.state) m.push("State"); if(!pin(d.pincode) && !pin(d.address)) m.push("PIN code"); }
-  if(!paid && ["courier_sent","courier_delivered","video_brief_sent"].includes(st)){ if(!d.courier) m.push("Courier"); if(!d.tracking) m.push("Tracking"); }
-  if(["video_submitted","client_approved"].includes(st) && !/^https?:\/\/\S+\.\S+/i.test(d.video_link)) m.push("Video link");
-  if(st==="posted" && !/instagram\.com\/(reel|reels|p|tv|stories)\//i.test(d.post_link)) m.push("Post link (Instagram)");
-  return m;
+// ⛔ what a row needs: its own step's details AND every earlier step's details — from the sheet, or already on the
+// site (blank cells are fine then). Only the columns of the steps up to the row's Status are ever asked for.
+const BK_REQ = [
+  ["address_confirmed","Address confirmed",[["address","Address"],["city","City"],["state","State"],["pincode","PIN code"]], true],
+  ["courier_sent","Courier sent",[["courier","Courier"],["tracking","Tracking ID"]], true],
+  ["video_submitted","Video submitted",[["video_link","Video link"]], false],
+  ["posted","Posted / Done",[["post_link","Post link (Instagram)"]], false]];
+const bkPin = v=> /(^|\D)\d{6}(?!\d)/.test(String(v||"").replace(/(\d)\s+(?=\d)/g,"$1"));
+function bkHasField(k, d){
+  if(k==="pincode") return bkPin(d.pincode) || bkPin(d.address);
+  if(k==="video_link") return /^https?:\/\/\S+\.\S+/i.test(d.video_link||"");
+  if(k==="post_link") return /instagram\.com\/(reel|reels|p|tv|stories)\//i.test(d.post_link||"");
+  return !!String(d[k]||"").trim();
 }
+function bkSiteRank(ex){ if(!ex) return 0; const a = ex.stage && BK_FROM_STAGE[ex.stage], b = ex.invite_status==="courier_received" ? "courier_delivered" : ex.invite_status;
+  return Math.max(a ? bkStRank(a) : 0, b && BK_STATUSES.some(x=>x[0]===b) ? bkStRank(b) : 0); }
+// → [{ step, cols:[label…] }] — empty = nothing missing
+const bkLine = i=> { const r = _bk.rows && _bk.rows[i]; return (r && r.line!=null ? r.line : i) + (_bk.off||2); };
+function bkRowNeeds(r, d){
+  const st = r.status || "registered", rank = bkStRank(bkServerStatus(st)), paid = bkKind()==="paid", ex = r._ex || null, siteRank = bkSiteRank(ex), out = [];
+  BK_REQ.forEach(([from, label, cols, ship])=>{
+    if(ship && paid) return;
+    const fr = bkStRank(from); if(rank < fr) return;          // a step after this row's Status — not needed
+    if(siteRank >= fr) return;                                 // the site already went through this step
+    const miss = cols.filter(([k])=>{
+      if(bkHasField(k, d)) return false;
+      if(ex){ if(k==="video_link") return !ex.video; if(k==="post_link") return !ex.posts; if(ex[k]) return false; }
+      return true; }).map(([k,l])=> _bk.map && _bk.map[k]==null ? `${l} (no “${l}” column)` : l);
+    if(miss.length) out.push({ step: label, cols: miss });
+  });
+  return out;
+}
+function bkRowMissing(r, d){ return bkRowNeeds(r, d).reduce((a,x)=> a.concat(x.cols), []); }
 const bkRawStatus = r=> _bk.map && _bk.map.status!=null ? String(r.cells[_bk.map.status]||"").trim() : "";
 // why this row is NOT uploaded (null = it goes)
 function bkRowBlock(r, p){
@@ -6086,8 +6135,8 @@ function bkRowBlock(r, p){
   if(p && p.conflict) return `Same ${p.conflict.by} as row ${p.conflict.rows.map(n=>n+1).join(", ")} but a different Instagram`;
   const raw = bkRawStatus(r);
   if(raw && !bkStatus(raw) && !r._picked) return `Status “${raw.slice(0,30)}” isn't a step we know — pick the step`;
-  const m = bkRowMissing(r, bkRowData(r));
-  if(m.length) return `Missing ${m.join(", ")} — needed for “${bkStLabel(r.status||"registered")}”`;
+  const nd = bkRowNeeds(r, bkRowData(r)), me = bkStLabel(r.status||"registered");
+  if(nd.length) return `“${me}” needs ` + nd.map(x=> x.step===me ? x.cols.join(", ") : `${x.cols.join(", ")} (from the earlier “${x.step}” step)`).join(" · ");
   return null;
 }
 // the sheet itself: not in the format?
@@ -6111,7 +6160,7 @@ function bulkHtml(){
   const valid = rows.filter((r,i)=> !skipRow(pv && pv[i], i)).length;
   const nBlk = blk.filter(Boolean).length, sh = bkSheetErrors(rows);
   const bad = pv ? rows.map((r,i)=> pv[i] && !blk[i] && (pv[i].phone_bad || pv[i].email_bad) ? i : -1).filter(i=> i>=0) : [];
-  const who = (r,i)=>{ const d = bkRowData(r); return `<b>Row ${i+(_bk.off||2)}</b> · ${bkEsc(d.name || (d.handle?"@"+String(d.handle).replace(/^@/,""):"") || d.phone || d.email || "—")}`; };
+  const who = (r,i)=>{ const d = bkRowData(r); return `<b>Row ${(r.line!=null?r.line:i)+(_bk.off||2)}</b> · ${bkEsc(d.name || (d.handle?"@"+String(d.handle).replace(/^@/,""):"") || d.phone || d.email || "—")}`; };
   const errBox = rows.length && (sh.e.length || nBlk || bad.length || sh.w.length) ? `<div class="bk-errs">
       ${sh.e.map(x=>`<div class="bk-err-line bad">⛔ ${x}</div>`).join("")}
       ${nBlk ? `<div class="bk-err-line bad">⛔ <b>${nBlk} row${nBlk>1?"s":""} won't be uploaded</b> — fix ${nBlk>1?"them":"it"} in the sheet and load it again (or change the step in the row):</div>
@@ -6128,7 +6177,7 @@ function bulkHtml(){
   return `<div class="card bk-card">
       <h3 style="margin:0 0 4px">📥 Upload creators in bulk <span class="tag">${BK_KIND_LABEL[bkKind()]} campaign</span></h3>
       ${rows.length ? "" : `<div id="shBox">${shPanelHtml()}</div>`}
-      ${rows.length ? `<div class="bk-loaded">✅ <b>${rows.length}</b> row${rows.length>1?"s":""} loaded from <b>${bkEsc(_bk.src)}</b> — check the preview below</div>` : ""}
+      ${rows.length ? `<div class="bk-loaded">✅ <b>${rows.length}</b> row${rows.length>1?"s":""} loaded from <b>${bkEsc(_bk.src)}</b>${_bk.blank?` · ${_bk.blank} empty line${_bk.blank>1?"s":""} skipped`:""} — check the preview below</div>` : ""}
       ${bkWaLine()}
       ${rows.length ? `<details class="bk-guide bk-chg" data-bkfold="chg"${_bkFold.has("chg")||sh.e.length?" open":""}><summary>✎ Change sheet / columns · guide</summary>` : ""}
       <div class="muted" style="font-size:13px;margin-bottom:10px">Google Sheet link, Excel / CSV, or a Word file (table or a simple list). Give every creator a <b>Status</b> — the exact step they are on (see the guide). They get <b>one message for that step</b>: <b>Approved</b> → the invite; a later step → only that step's message. Creators on Geek OS with a complete profile go on that step now; new ones register, connect Instagram and complete their profile (pre-filled from your sheet) and then land on their step. From there the normal flow carries on — every message goes once; press Resend to send one again.</div>
@@ -6151,6 +6200,7 @@ function bulkHtml(){
       ${rows.length ? `
       ${errBox}
       <div class="bk-setall"><span>Set everyone to</span>${bkStatusSelect('id="bkAllSt"', "", "")}<span class="muted">— or change each row below</span></div>
+      <div class="bk-rule">ℹ️ Each row only needs the columns of <b>its own Status</b> — Address confirmed: Address, City, State, PIN · Courier sent / delivered: Courier, Tracking ID · Video submitted / approved: Video link · Posted: Post link. A later step also needs the earlier steps' details. <b>Blank cells are fine</b> when Geek OS already has that detail for the creator. Empty lines are skipped. One WhatsApp number with several Instagram handles = one creator with several Instagram accounts.</div>
       <div class="bk-tablewrap"><table class="bk-table"><thead><tr>
         <th>Status</th><th>Name</th><th>Instagram</th><th>WhatsApp</th><th>Email</th><th>City</th>${bkKind()!=="paid"?"<th>Address · courier</th>":""}${bkKind()!=="barter"?"<th>💰 Fee · pay to</th>":""}<th>What happens</th></tr></thead><tbody>
         ${rows.map((r,i)=>{ const d = bkRowData(r), p = pv && pv[i];
@@ -6620,9 +6670,9 @@ function wireBulk(){
     const why = _bk.rows.map((r,i)=> bkRowBlock(r, pv[i]) || (pv[i] && pv[i].already && !all[i]._merged ? "Already in this campaign — nothing new in the row" : null));
     const rows = all.filter((d,i)=> !why[i] && !(pv[i] && (pv[i].duplicate || pv[i].already && !d._merged)));
     // 🔁 repeats of the same person: not a second creator — logged with the row they were merged into
-    _bk.rows.forEach((r,i)=>{ if(!why[i] && pv[i] && pv[i].duplicate) why[i] = pv[i]._dupOf!=null ? `Repeat of row ${pv[i]._dupOf+(_bk.off||2)} — same person, merged into that row` : "Repeat — same person as another row"; });
+    _bk.rows.forEach((r,i)=>{ if(!why[i] && pv[i] && pv[i].duplicate) why[i] = pv[i].multi ? `Same ${pv[i].multi.by} as row ${bkLine(pv[i].multi.row)} — @${pv[i].multi.handle} added to that creator as another Instagram` : pv[i]._dupOf!=null ? `Repeat of row ${bkLine(pv[i]._dupOf)} — same person, merged into that row` : "Repeat — same person as another row"; });
     const notUp = _bk.rows.map((r,i)=>{ if(!why[i]) return null; const x = bkRowData(r);
-      return { row: i+(_bk.off||2), name: x.name, handle: x.handle, phone: x.phone, email: x.email, status: r.status||"registered", reason: why[i] }; }).filter(Boolean);
+      return { row: bkLine(i), name: x.name, handle: x.handle, phone: x.phone, email: x.email, status: r.status||"registered", reason: why[i] }; }).filter(Boolean);
     if(!rows.length) return;
     _bk.busy = true; paintBulk();
     // paid campaign: each row's fee / bank / UPI first — applied as each creator lands (a waiting contract goes out with it)
