@@ -2978,3 +2978,12 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .act-pg{font-size:11.5px;background:var(--chip);border-radius:6px;padding:1px 6px;margin-left:4px}
 @media (max-width:1250px){.act-row{grid-template-columns:1fr 1fr}}
 @media (max-width:640px){.act-row{grid-template-columns:1fr}}
+
+.dd-row{display:grid;grid-template-columns:minmax(200px,1fr) minmax(240px,1.3fr) minmax(240px,1.3fr);gap:14px;align-items:start;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2)}
+.dd-who b{font-size:14px}
+.dd-ch{display:flex;flex-direction:column;gap:4px;font-size:12.5px;min-width:0}
+.dd-l{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.dd-l .muted{text-transform:none;letter-spacing:0;font-weight:500;word-break:break-all}
+.dd-ch .dd-why{font-size:12px}
+@media (max-width:900px){.dd-row{grid-template-columns:1fr}}
+.dd-ch>.tag{align-self:flex-start}

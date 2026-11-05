@@ -9547,6 +9547,7 @@ async function adminWaSettingsCard(){
 // One WhatsApp UTILITY template per campaign (created by wa-template-sync). Updates for a campaign go out on
 // its template once approved; held messages are re-sent automatically then.
 // who got what in the last 7 days, and exactly why not
+let _ddF = "all", _ddQ = "";
 async function adminDeliveryDoctor(){
   const box = document.getElementById("dlvDoctor"); if(!box) return;
   const { data, error } = await sb.rpc("admin_delivery_doctor").then(r=>r, e=>({error:e}));
@@ -9568,11 +9569,28 @@ async function adminDeliveryDoctor(){
     if(o.failed) parts.push(`<span class="tag" style="background:rgba(239,68,68,.12);color:#dc2626">✗ ${o.failed} failed</span>`);
     return (parts.join(" ")||'<span class="muted">—</span>') + (o.error && !o.sent ? `<div class="muted dd-why">${esc(String(o.error).slice(0,160))}</div>` : "");
   };
-  box.innerHTML = `<h3 style="margin-top:0">🩺 Delivery doctor <span class="muted" style="font-size:12px;font-weight:400">— last 7 days, everyone who had an update</span></h3>
-    ${L.length ? `<div style="overflow-x:auto"><table class="tbl dd-tbl"><thead><tr><th>Who</th><th>Updates</th><th>WhatsApp</th><th>Email</th></tr></thead><tbody>
-      ${L.map(c=>`<tr><td><b>${esc(c.who||"—")}</b><div class="muted" style="font-size:12px">${esc(c.role||"")}${c.wa_number?` · ${esc(c.wa_number)}`:""}</div></td>
-        <td>${esc(c.alerts)}</td><td>${why(c, c.wa, "wa")}</td><td>${why(c, c.email, "email")}${c.email&&c.email.to?`<div class="muted" style="font-size:11.5px">${esc(c.email.to)}</div>`:""}</td></tr>`).join("")}
-    </tbody></table></div>` : `<div class="muted">No updates in the last 7 days.</div>`}`;
+  const st = (o, off, has)=> off ? "off" : !has ? "none" : (o&&o.failed) ? "fail" : (o&&o.held) ? "wait" : (o&&(o.sent||o.queued)) ? "ok" : "none";
+  const waS = c=> st(c.wa, c.wa_off, !!c.wa_number), emS = c=>{ const o = c.email||{}; return st(o, c.email_off, (o.sent||0)+(o.held||0)+(o.failed||0)+(o.queued||0) > 0); };
+  const bad = x=> ["fail","none"].includes(x);
+  const F = [["all","👥","Everyone",c=>true,"had an update · 7 days"],["ok","✅","Reaching them",c=>waS(c)==="ok"&&emS(c)==="ok","WhatsApp + email OK"],
+    ["wa","💬","WhatsApp problem",c=>bad(waS(c)),"no number / failed"],["em","✉️","Email problem",c=>bad(emS(c)),"no email / failed"],
+    ["wait","⏸","Waiting",c=>waS(c)==="wait"||emS(c)==="wait","held — auto messages off"],["off","🚫","Stopped",c=>waS(c)==="off"||emS(c)==="off","replied STOP / unsubscribed"]];
+  if(!F.find(x=>x[0]===_ddF)) _ddF = "all";
+  const f = F.find(x=>x[0]===_ddF), q = _ddQ.trim().toLowerCase();
+  const rows = L.filter(f[3]).filter(c=> !q || [c.who,c.role,c.wa_number,c.email&&c.email.to].filter(Boolean).join(" ").toLowerCase().includes(q));
+  const focused = document.activeElement && document.activeElement.id==="ddQ";
+  box.innerHTML = `<div class="ov-h"><h3>🩺 Delivery doctor</h3><span class="muted">everyone who had an update in the last 7 days — and why a message did or didn't reach them</span></div>
+    <div class="ap-tiles dl-tiles">${F.map(([k,ic,l,fn,sub])=>`<button type="button" class="ap-tile${_ddF===k?" on":""}" data-ddf="${k}"><span class="ap-tile-ic">${ic}</span><b>${fmtNum(L.filter(fn).length)}</b><span class="ap-tile-l">${l}</span><span class="ap-tile-s">${_ddF===k?"● showing now":sub}</span></button>`).join("")}</div>
+    <div class="au-bar"><b>${f[1]} ${esc(f[2])} <span class="muted" style="font-weight:500">· ${fmtNum(rows.length)}</span></b><span class="au-tools"><input id="ddQ" type="search" placeholder="🔍 Name, number, email…" value="${esc(_ddQ)}"></span></div>
+    <div class="dl-list">${rows.map(c=>`<div class="dd-row"><div class="dd-who"><b>${esc(c.who||"—")}</b>${c.role?` <span class="au-role ${esc(c.role)}">${esc(c.role)}</span>`:""}
+        <div class="muted" style="font-size:12px">${fmtNum(c.alerts)} update${Number(c.alerts)===1?"":"s"}${c.last_at?` · last ${esc(fmtDateTime(c.last_at))}`:""}</div></div>
+      <div class="dd-ch"><span class="dd-l">💬 WhatsApp${c.wa_number?` <span class="muted">${esc(c.wa_number)}</span>`:""}</span>${why(c, c.wa, "wa")}</div>
+      <div class="dd-ch"><span class="dd-l">✉️ Email${c.email&&c.email.to?` <span class="muted">${esc(c.email.to)}</span>`:""}</span>${why(c, c.email, "email")}</div></div>`).join("")
+      || `<div class="muted" style="padding:12px">${L.length?"Nobody in this view.":"No updates in the last 7 days."}</div>`}</div>`;
+  box.querySelectorAll("[data-ddf]").forEach(b=> b.onclick = ()=>{ _ddF = b.dataset.ddf; adminDeliveryDoctor(); });
+  const qi = box.querySelector("#ddQ"); let qt;
+  if(focused){ qi.focus(); qi.setSelectionRange(qi.value.length, qi.value.length); }
+  qi.oninput = ()=>{ clearTimeout(qt); qt = setTimeout(()=>{ _ddQ = qi.value; adminDeliveryDoctor(); }, 250); };
 }
 async function adminWaTemplates(){
   const box = document.getElementById("dlvTpl"); if(!box) return;
@@ -10064,7 +10082,8 @@ async function adminDelivery(body, silent){
   if(!T.find(x=>x[0]===_dlvF)) _dlvF = "all";
   const tf = T.find(x=>x[0]===_dlvF), list = recent.filter(tf[5]);
   const okAll = checks.every(c=>c[0]);
-  const TABS = [["msgs","📨 Messages & health"],["wa","⚙️ WhatsApp template"],["doctor","🩺 Delivery doctor"],["opt","🚫 Opted out"],["tpl","🧩 Campaign templates"]];
+  const TABS = [["msgs","📨 Messages & health"],["doctor","🩺 Delivery doctor"],["opt","🚫 Opted out"]];
+  if(!TABS.find(t=>t[0]===_dlvTab)) _dlvTab = "msgs";
   const msgCard = r=>{ const st = isWait(r) ? "waiting" : r.status;
     return `<div class="dl-msg ${esc(st)}"><span class="dl-ch">${r.channel==="whatsapp"?"💬":"✉️"}</span>
       <div class="dl-main"><div class="dl-top"><b>${esc(r.who||"—")}</b>${r.role?` <span class="au-role ${esc(r.role)}">${esc(r.role)}</span>`:""} <span class="muted">${esc(r.to||"")}</span></div>
@@ -10082,17 +10101,18 @@ async function adminDelivery(body, silent){
           <button class="mini-btn ghost" id="dlvTest">Send test</button><span class="muted" id="dlvMsg" style="font-size:12px"></span></div></div>
       <div class="card" style="margin-top:14px"><div class="ov-h"><h3>${tf[1]} ${esc(tf[2])} <span class="muted" style="font-size:13px;font-weight:500">· ${list.length} in the latest ${recent.length}</span>${_dlvF!=="all"?` <button type="button" class="mini-btn ghost" data-dlf="all">✕ Show all</button>`:""}</h3>
           <span class="muted">every alert goes in-app + WhatsApp + email</span></div>
-        <div class="dl-list">${list.map(msgCard).join("") || `<div class="muted" style="padding:12px">Nothing here.</div>`}</div></div></div>
-    <div data-dlpane="wa"${_dlvTab==="wa"?"":" hidden"}><div class="card wa-set" id="dlvWaSet"></div></div>
+        <div class="dl-list">${list.map(msgCard).join("") || `<div class="muted" style="padding:12px">Nothing here.</div>`}</div></div>
+      <div class="card wa-set" id="dlvWaSet" style="margin-top:14px"></div></div>
+
     <div data-dlpane="doctor"${_dlvTab==="doctor"?"":" hidden"}><div class="card" id="dlvDoctor"></div></div>
     <div data-dlpane="opt"${_dlvTab==="opt"?"":" hidden"}><div class="card" id="dlvOpt"></div></div>
-    <div data-dlpane="tpl"${_dlvTab==="tpl"?"":" hidden"}><div class="card" id="dlvTpl"></div></div>`;
+`;
   const showTab = k=>{ _dlvTab = k; body.querySelectorAll("[data-dlt]").forEach(b=> b.classList.toggle("on", b.dataset.dlt===k));
     body.querySelectorAll("[data-dlpane]").forEach(p=> p.hidden = p.dataset.dlpane!==k);
     body.querySelectorAll("[data-dlf]").forEach(b=>{ if(b.classList.contains("ap-tile")) b.classList.toggle("on", k==="msgs" && b.dataset.dlf===_dlvF); }); };
   body.querySelectorAll("[data-dlt]").forEach(b=> b.onclick = ()=> showTab(b.dataset.dlt));
   body.querySelectorAll("[data-dlf]").forEach(b=> b.onclick = ()=>{ _dlvF = b.dataset.dlf; _dlvTab = "msgs"; adminDelivery(body, true); });
-  adminWaTemplates(); adminWaSettingsCard(); adminDeliveryDoctor(); adminOptouts();
+  adminWaSettingsCard(); adminDeliveryDoctor(); adminOptouts();
   document.getElementById("dlvRetry").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_retry", { p_channel: null });
     document.getElementById("dlvMsg").textContent = e ? e.message : `${k||0} message(s) re-queued`; setTimeout(()=>adminDelivery(body,true), 3000); };
   document.getElementById("dlvTest").onclick = async ()=>{ const { data:k, error:e } = await sb.rpc("admin_delivery_test", { p_phone: document.getElementById("dlvPhone").value.trim()||null, p_email: document.getElementById("dlvEmail").value.trim()||null });
@@ -10112,18 +10132,16 @@ async function adminOptouts(){
   if(error){ box.innerHTML = `<h3 style="margin-top:0">🚫 Opted out</h3><div class="muted">Couldn't load: ${esc(error.message||String(error))}</div>`; return; }
   const all = data||[], wa = all.filter(x=>x.channel==="whatsapp"), em = all.filter(x=>x.channel==="email");
   const rows = _optF==="whatsapp" ? wa : _optF==="email" ? em : all;
-  box.innerHTML = `<h3 style="margin-top:0">🚫 Opted out <span class="muted" style="font-size:12px;font-weight:400">· replied STOP on WhatsApp or clicked “Stop update emails” — they get no more campaign updates on that channel (login codes still go)</span></h3>
-    <div class="rp-kpis" style="margin-bottom:10px"><div><b>${wa.length}</b>WhatsApp stopped</div><div><b>${em.length}</b>Email unsubscribed</div>
-      <div><b>${all.reduce((a,x)=>a+Number(x.skipped||0),0)}</b>Messages held back</div></div>
-    <div class="admin-tabs" style="margin-bottom:8px">${[["all","All"],["whatsapp","💬 WhatsApp"],["email","✉️ Email"]].map(t=>`<button class="${_optF===t[0]?"act":""}" data-optf="${t[0]}">${t[1]}</button>`).join("")}</div>
-    <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>When</th><th>Channel</th><th>Who</th><th>Number / email</th><th>How</th><th>Held back</th><th></th></tr></thead><tbody>
-    ${rows.map(x=>`<tr><td style="white-space:nowrap;font-size:12px">${esc(fmtDateTime(x.at))}</td><td>${x.channel==="whatsapp"?"💬 WhatsApp":"✉️ Email"}</td>
-      <td style="font-size:12.5px"><b>${esc(x.name||"—")}</b>${x.handle?` <a class="ig-h" href="https://instagram.com/${encodeURIComponent(x.handle)}" target="_blank" rel="noopener">@${esc(x.handle)}</a>`:""}
-        ${x.on_geek?"":` <span class="tag">Not yet on Geek</span>`}${x.campaign?`<div class="muted">${esc(x.campaign)}</div>`:""}</td>
-      <td style="font-size:12px">${esc(x.to||"")}</td><td style="font-size:12px">${esc(x.via||"")}</td><td>${Number(x.skipped||0)}</td>
-      <td><button class="mini-btn ghost" data-optclr="${esc(x.channel)}|${esc(x.to||"")}" title="Only if they asked to get updates again">Turn back on</button></td></tr>`).join("")
-      || `<tr><td colspan="7" class="muted">Nobody has opted out.</td></tr>`}
-    </tbody></table></div>`;
+  const held = all.reduce((a,x)=>a+Number(x.skipped||0),0);
+  const T = [["all","🚫","Everyone who stopped",all.length,"WhatsApp + email"],["whatsapp","💬","WhatsApp stopped",wa.length,"replied STOP / stop link"],["email","✉️","Email stopped",em.length,"unsubscribe link or settings"]];
+  box.innerHTML = `<div class="ov-h"><h3>🚫 Opted out</h3><span class="muted">they get no more campaign updates on that channel · login codes still go · ${fmtNum(held)} message${held===1?"":"s"} held back</span></div>
+    <div class="ap-tiles dl-tiles" style="grid-template-columns:repeat(3,1fr)">${T.map(([k,ic,l,v,sub])=>`<button type="button" class="ap-tile${_optF===k?" on":""}" data-optf="${k}"><span class="ap-tile-ic">${ic}</span><b>${fmtNum(v)}</b><span class="ap-tile-l">${l}</span><span class="ap-tile-s">${_optF===k?"● showing now":sub}</span></button>`).join("")}</div>
+    <div class="dl-list">${rows.map(x=>`<div class="dl-msg ${x.channel==="whatsapp"?"skipped":"failed"}"><span class="dl-ch">${x.channel==="whatsapp"?"💬":"✉️"}</span>
+      <div class="dl-main"><div class="dl-top"><b>${esc(x.name||"—")}</b>${x.handle?` <a class="ig-h" href="https://instagram.com/${encodeURIComponent(x.handle)}" target="_blank" rel="noopener">@${esc(x.handle)}</a>`:""}${x.on_geek?"":` <span class="tag">Not yet on Geek</span>`} <span class="muted">${esc(x.to||"")}</span></div>
+        <div class="dl-title">${esc(x.via||"")}${x.campaign?` · <span class="muted">${esc(x.campaign)}</span>`:""}</div>
+        ${Number(x.skipped)?`<div class="dl-why">${fmtNum(x.skipped)} update${Number(x.skipped)===1?"":"s"} not sent because of this</div>`:""}</div>
+      <div class="dl-side"><span class="muted">${esc(fmtDateTime(x.at))}</span><button class="mini-btn ghost" data-optclr="${esc(x.channel)}|${esc(x.to||"")}" title="Only if they asked to get updates again">Turn back on</button></div></div>`).join("")
+      || `<div class="muted" style="padding:12px">Nobody has opted out${_optF==="all"?"":" on this channel"}.</div>`}</div>`;
   box.querySelectorAll("[data-optf]").forEach(b=> b.onclick = ()=>{ _optF = b.dataset.optf; adminOptouts(); });
   box.querySelectorAll("[data-optclr]").forEach(b=> b.onclick = async ()=>{
     const [ch, to] = b.dataset.optclr.split("|");
