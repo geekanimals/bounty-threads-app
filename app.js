@@ -1438,6 +1438,7 @@ async function openCampaignWorkspace(id){
   const barter = bdata||[];
   const pipe = ((pRes && pRes.data) || []).filter(p=>p.legacy_campaign_id===id);
   renderCampaignWorkspace(c, apps, barter, pipe);
+  navSave({ camp: id });
 }
 
 // campaign page: what each creator posts + who has posted everything (live from the posts on the campaign)
@@ -6165,12 +6166,14 @@ function bkHistHtml(){
       : `<div class="card bp-card"><div class="bp-head"><span class="avatar">${esc(String(c.handle||c.name||"?").slice(0,2).toUpperCase())}</span><div><b>${esc(c.handle?"@"+c.handle:c.name||"—")}</b><div class="r-sub">${esc([c.name, c.phone, c.email, c.city].filter(Boolean).join(" · "))}</div><div class="muted" style="font-size:12px">Not on this campaign's list any more</div></div></div></div>`;
     return `<div class="bk-hist-card"><span class="bk-hist-tag ${c.action==="new"?"new":"upd"}">${c.action==="new"?"🆕 New in this upload":"✏️ Updated by this upload"}${c.sheet_status?` · sheet said “${esc((bkStatuses().find(z=> z[0]===c.sheet_status)||[])[1]||c.sheet_status)}”`:""}</span>${html}</div>`;
   };
+  const keyOf = c=> c.participation_id && byP[c.participation_id] ? "p:"+c.participation_id : byI[c.invite_id] ? "i:"+c.invite_id : null;
+  window.__bkHistKeys = ups.map(u=> [...new Set((u.items||[]).map(keyOf).filter(Boolean))]);
   return `<div class="bk-hist-sum"><b>${ups.length}</b> upload${ups.length>1?"s":""} · <b>${tot}</b> creator${tot!==1?"s":""} came in this way</div>
     ${ups.map((u,k)=>{ const items = u.items||[], key = "h:"+u.at;
       const bits = [u.new_count?`<b>${u.new_count}</b> new`:"", u.updated_count?`<b>${u.updated_count}</b> updated`:"", u.duplicates?`${u.duplicates} duplicate${u.duplicates>1?"s":""}`:"", u.skipped?`${u.skipped} skipped`:""].filter(Boolean).join(" · ") || "no new creators (only existing rows changed)";
       return bkFold(key, `📅 ${esc(fmtDateTime(u.at))} <span class="muted">· by ${esc(u.who||"—")}</span> <span class="bk-hist-n">${bits}</span>${k===0?' <span class="tag">latest</span>':""}`,
         `${u.exact?"":`<div class="muted bk-mini">Older upload: the creators it added are shown (rows it only updated weren't logged then).</div>`}
-         ${items.length?`<div class="bk-hist-list">${items.map(card).join("")}</div>`:`<div class="muted">No creators to show for this upload.</div>`}`, "bk-hist-up"); }).join("")}`;
+         ${items.length?`<div class="bk-hist-acts"><button type="button" class="btn sm cc-wabtn" data-bkhwa="${k}">🟢 WhatsApp to these ${window.__bkHistKeys[k].length} creators</button><span class="muted">ticks them in the creator list below and opens the WhatsApp panel — goes only when you press Send</span></div><div class="bk-hist-list">${items.map(card).join("")}</div>`:`<div class="muted">No creators to show for this upload.</div>`}`, "bk-hist-up"); }).join("")}`;
 }
 async function bkHistLoad(force){
   const camp = _bpCamp && _bpCamp.id; if(!camp) return;
@@ -6184,6 +6187,11 @@ async function bkHistLoad(force){
 function bkHistWire(){
   const body = document.getElementById("bpBody"); if(!body || !document.querySelector("#bkHist .bk-hist-card")) return;
   try{ wireBarterProcess(); wireCcInvites(body); wireCcSelect(body); }catch(e){ console.warn("history cards", e); }
+  document.querySelectorAll("#bkHist [data-bkhwa]").forEach(b=> b.onclick = e=>{ e.stopPropagation();
+    const keys = (window.__bkHistKeys||[])[+b.dataset.bkhwa] || []; if(!keys.length) return;
+    _ccFilter = "all"; _ccQ = ""; _ccSel = new Set(keys); _ccWa.open = true; _ccWa.mode = "step"; _ccWa.winSig = null;
+    paintBarterProcess();
+    setTimeout(()=>{ const w = document.getElementById("ccWa"); if(w) w.scrollIntoView({ behavior:"smooth", block:"center" }); }, 300); });
 }
 function bkWireFolds(root){
   (root||document).querySelectorAll("[data-bkfold]").forEach(d=> d.ontoggle = ()=>{
@@ -6574,6 +6582,7 @@ function bpStageIndex(stage){ stage = BP_ALIAS[stage] || stage; const i = BARTER
 // a creator whose parcel is delivered sits between "courier sent" and "video brief sent"
 function bpEffectiveIndex(x){ const i = bpStageIndex(x.stage); return (x.stage==="product_sent" && x.shipment && x.shipment.status==="delivered") ? bpStageIndex("product_delivered") : i; }
 function paintBarterProcess(){
+  if(_wsMode && _wsCampaign && _wsCampaign.id) navSave({ camp: _wsCampaign.id, bpTab: _bpTab });
   const body = document.getElementById("bpBody"); if(!body) return;
   if(_wsMode) return paintCampaignCommand(body);
   const d = _bpData||{}, c = d.campaign||{}, list = d.creators||[];
@@ -10574,6 +10583,20 @@ function renderContent(){
   loadKPIs();
 }
 
+// ↻ a refresh keeps you where you were — page, Super Admin tab, the open campaign and its section — in THIS browser tab
+// only (sessionStorage): a new tab / a link opened fresh starts at the beginning; another account never inherits it.
+const NAV_KEY = "gk_nav";
+function navUid(){ return (window.Auth && ((Auth.user && Auth.user.id) || (Auth.profile && Auth.profile.id))) || ""; }
+function navSave(extra){
+  try{ const uid = navUid(); if(!uid || window.__navRestoring) return;
+    let cur = {}; try{ cur = JSON.parse(sessionStorage.getItem(NAV_KEY)||"{}") || {}; }catch(e){}
+    const v = Object.assign({}, cur.uid===uid ? cur : {}, { uid, role: currentRole, page: currentPage, admin: _adminTab, at: Date.now() }, extra||{});
+    sessionStorage.setItem(NAV_KEY, JSON.stringify(v)); }catch(e){}
+}
+function navSaved(){
+  try{ const v = JSON.parse(sessionStorage.getItem(NAV_KEY)||"null");
+    return v && v.uid && v.uid===navUid() && v.role===currentRole && v.page ? v : null; }catch(e){ return null; }
+}
 function renderShell(){
   if(currentRole==="creator"){
     const MOVED = { onboarding:"profile", growth:"mycampaigns", marketplace: window.__ciOpsEnabled ? "opencampaigns" : "marketplace" };
@@ -10584,6 +10607,7 @@ function renderShell(){
   if(window.Tracker) Tracker.page(currentPage);
   if(window.hideBootSplash) hideBootSplash();
   renderNav(); renderMe(); renderContent();
+  navSave({ camp: null, bpTab: null });   // any page change leaves the campaign workspace
 }
 
 /* ---------- Command palette ---------- */
@@ -11117,9 +11141,29 @@ async function bootOS(){
     const nm = window.__inviteGo.campaign ? `“${window.__inviteGo.campaign}”` : "Your campaign";
     setTimeout(()=> gateToast(window.__profileGate ? `🎯 ${nm} is waiting — finish your profile and it opens right away.` : `🎯 ${nm} is open in My Campaigns.`), 900);
   }
+  // ↻ came back by refreshing this tab → the same page (links that say where to go — ?go=, invites, Apply — win)
+  let nav = null;
+  if(!window.__osBooted){
+    const q = new URLSearchParams(location.search);
+    const deep = ["go","cinv","apply","state","code","t"].some(k=> q.get(k)) || window.__inviteGo || __exploreApply;
+    nav = deep ? null : navSaved();
+    if(nav && (PAGES[nav.page] || (window.BrandPortal && BrandPortal.handles && BrandPortal.handles(nav.page)))
+       && !(window.__profileGate && !GATE_OPEN_PAGES.includes(nav.page))){
+      if(nav.page==="admin"){ window.__pendingAdminTab = nav.admin || "overview"; }   // painted once we know it is the Super Admin
+      else { currentPage = nav.page; if(nav.admin) _adminTab = nav.admin; window.__adminLanded = true; }
+    } else nav = null;
+  }
+  window.__navRestoring = !!(nav && nav.camp);   // don't overwrite the saved campaign while the first paint happens
   init();
   // Platform admins get an Admin queue in the nav.
-  if(window.sb){ sb.rpc("is_platform_admin").then(({data})=>{ if(data===true){ markSuperAdmin(); } }).catch(()=>{}); }
+  const adminCheck = window.sb ? sb.rpc("is_platform_admin").then(({data})=>{ if(data===true){ markSuperAdmin(); } }).catch(()=>{}) : Promise.resolve();
+  if(nav && nav.camp){
+    Promise.resolve(adminCheck).then(async ()=>{
+      try{ window.__navRestoring = false; await openCampaignWorkspace(nav.camp);
+        if(nav.bpTab && nav.bpTab!=="tracker" && typeof paintBarterProcess==="function"){ _bpTab = nav.bpTab; setTimeout(()=>{ try{ paintBarterProcess(); }catch(e){} }, 400); } }
+      catch(e){ window.__navRestoring = false; }
+    });
+  } else window.__navRestoring = false;
 }
 
 /* ---------- Wire up ---------- */
