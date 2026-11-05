@@ -9119,6 +9119,10 @@ let _acrQ = "", _acrF = "ig", _acrSort = "new", _acrTimer = null, _acrSig = "", 
 let _acrView = (()=>{ try{ return localStorage.getItem("geek_acr_view") === "list" ? "list" : "card"; }catch(e){ return "card"; } })();
 const ACR_PAGE = 24;
 const agoTxt = t=>{ if(!t) return "—"; const m=Math.round((Date.now()-new Date(t).getTime())/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
+// WhatsApp number + email on every creator row/card (tap = open, never opens the profile)
+const acrContact = c=>{ const fake = /@creators\.bountythreads\.app$/i, em = c.email && !fake.test(c.email) ? c.email : "", wa = c.whatsapp || c.phone || "";
+  const d = String(wa).replace(/\D/g,"");
+  return `<span class="acr-ct" onclick="event.stopPropagation()">${wa?`<a href="https://wa.me/${d}" target="_blank" rel="noopener" title="WhatsApp ${esc(wa)}">📱 ${esc(wa)}</a>`:'<span class="muted">📱 No number</span>'}${em?`<a href="mailto:${esc(em)}" title="Email ${esc(em)}">✉️ ${esc(em)}</a>`:'<span class="muted">✉️ No email</span>'}</span>`; };
 const kNum = n=> n==null ? "—" : n>=1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"")+"M" : n>=1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"K" : String(n);
 async function adminCreators(body, silent){
   if(!silent) body.innerHTML = skel("cards",8);
@@ -9256,7 +9260,7 @@ function paintCreators(){
         const pic = c.pic ? `<img src="${esc(safeUrl(c.pic))}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar',textContent:'${esc(String(c.name||"?").slice(0,2).toUpperCase())}'}))">`
                           : `<span class="avatar">${esc(String(c.name||"?").slice(0,2).toUpperCase())}</span>`;
         return `<div class="acr-lr" data-acr="${esc(c.member_id)}" tabindex="0">
-          <span class="acr-lc-who">${pic}<span><b>${esc(c.name)}</b><span class="muted">${c.ig_username?igLink(c.ig_username):"Instagram not connected"}${(c.ig_accounts||[]).length>1?` · ${(c.ig_accounts||[]).length} accounts`:""}</span>${jvBadge(c.joined_via, true)}</span></span>
+          <span class="acr-lc-who">${pic}<span><b>${esc(c.name)}</b><span class="muted">${c.ig_username?igLink(c.ig_username):"Instagram not connected"}${(c.ig_accounts||[]).length>1?` · ${(c.ig_accounts||[]).length} accounts`:""}</span>${jvBadge(c.joined_via, true)}${acrContact(c)}</span></span>
           <span data-l="Followers"><b>${kNum(c.followers)}</b></span>
           <span data-l="Engagement">${c.engagement!=null?c.engagement+"%":"—"}</span>
           <span data-l="Per Reel">${c.reel_rate?"₹"+kNum(Number(c.reel_rate)):"—"}</span>
@@ -9277,7 +9281,7 @@ function paintCreators(){
                         : `<span class="avatar">${esc(String(c.name||"?").slice(0,2).toUpperCase())}</span>`;
       return `<div class="acr-card" data-acr="${esc(c.member_id)}" tabindex="0">
         <div class="acr-top">${pic}<div style="min-width:0"><div class="acr-name">${esc(c.name)}</div>
-          <div class="muted acr-handle">${c.ig_username?igLink(c.ig_username):'<span class="tag warn">Instagram not connected</span>'}</div>${jvBadge(c.joined_via, true)}
+          <div class="muted acr-handle">${c.ig_username?igLink(c.ig_username):'<span class="tag warn">Instagram not connected</span>'}</div>${jvBadge(c.joined_via, true)}${acrContact(c)}
           ${(c.ig_accounts||[]).length ? `<button type="button" class="acr-igs" data-igaccts="${esc(c.member_id)}" data-igname="${esc(c.name||"")}">📸 ${(c.ig_accounts||[]).length} Instagram ${(c.ig_accounts||[]).length>1?"accounts":"account"} →</button>` : ""}</div>
           ${c.complete?'<span class="tag good">Ready</span>':`<span class="tag warn">${c.done??0}/${c.total??"?"}</span>`}</div>
         <div class="acr-stats"><div><b>${kNum(c.followers)}</b><span>Followers</span></div><div><b>${c.engagement!=null?c.engagement+"%":"—"}</b><span>Engagement</span></div>
