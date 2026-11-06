@@ -2686,11 +2686,13 @@ function openReasonModal(title, opt){
     const reasons = await rejectionReasons();
     let m = document.getElementById("reasonModal"); if(m) m.remove();
     m = el("div","modal-overlay"); m.id = "reasonModal";
-    m.innerHTML = `<div class="modal"><div class="modal-head"><strong>${esc(title||"Reason")}</strong><button class="icon-btn" id="rmClose">✕</button></div>
+    m.innerHTML = `<div class="modal rm-modal"><div class="modal-head"><strong>${esc(title||"Reason")}</strong><button class="icon-btn" id="rmClose">✕</button></div>
       <form id="reasonForm" class="modal-form">
-        <label>Reason<select name="code" required><option value="">Pick a reason…</option>${(()=>{ const brief = reasons.filter(r=> /^(low_followers|high_followers|low_engagement|location_mismatch|gender_mismatch|age_mismatch|category_mismatch|language_mismatch|pet_mismatch|marital_mismatch|barter_not_open)$/.test(r.code));
-          const rest = reasons.filter(r=> !brief.includes(r));
-          return `<optgroup label="Doesn't match the brief">${brief.map(r=>`<option value="${esc(r.code)}">${esc(r.label)}</option>`).join("")}</optgroup><optgroup label="Other reasons">${rest.map(r=>`<option value="${esc(r.code)}">${esc(r.label)}</option>`).join("")}</optgroup>`; })()}</select></label>
+        <div class="rm-l">Reason</div><input type="hidden" name="code" value="">
+        <div class="rm-reasons">${(()=>{ const B = /^(low_followers|high_followers|low_engagement|location_mismatch|gender_mismatch|age_mismatch|category_mismatch|language_mismatch|pet_mismatch|marital_mismatch|barter_not_open)$/;
+          const brief = reasons.filter(r=> B.test(r.code)), rest = reasons.filter(r=> !B.test(r.code));
+          const chip = r=> `<button type="button" class="rm-chip" data-rmcode="${esc(r.code)}">${esc(r.label)}</button>`;
+          return (brief.length?`<div class="rm-grp">Doesn't match the brief</div><div class="rm-chips">${brief.map(chip).join("")}</div>`:"") + `<div class="rm-grp">Other reasons</div><div class="rm-chips">${rest.map(chip).join("")}</div>`; })()}</div>
         <label>Message to the creator <span class="muted" style="font-weight:400">— why they weren't selected</span><textarea name="note" rows="3" maxlength="400" required placeholder="e.g. The brand needs creators based in Jaipur for this campaign."></textarea></label>
         <div class="muted" style="font-size:12px;margin-top:-4px">📨 Sent as it is on <b>WhatsApp</b>, by <b>email</b> and in the app: “You were not selected for this campaign. Reason: …”</div>
         <div class="auth-err" id="rmErr"></div>
@@ -2698,9 +2700,11 @@ function openReasonModal(title, opt){
         <button class="btn" type="submit">${opt.count>1?`Decline ${opt.count} creators &amp; send the message`:"Decline &amp; send message"}</button></form></div>`;
     document.body.appendChild(m); m.classList.add("open");
     // picking a reason fills in a ready message (edit it as you like)
-    { const sel = m.querySelector('select[name="code"]'), ta = m.querySelector('textarea[name="note"]'); let auto = "";
-      sel.onchange = ()=>{ const r = reasons.find(x=> x.code===sel.value); if(!r) return;
-        if(!ta.value.trim() || ta.value===auto){ auto = r.code==="other" ? "" : `${r.label}.`; ta.value = auto; } }; }
+    { const hid = m.querySelector('input[name="code"]'), ta = m.querySelector('textarea[name="note"]'); let auto = "";
+      m.querySelectorAll("[data-rmcode]").forEach(b=> b.onclick = ()=>{ const r = reasons.find(x=> x.code===b.dataset.rmcode); if(!r) return;
+        hid.value = r.code; m.querySelectorAll("[data-rmcode]").forEach(x=> x.classList.toggle("on", x===b));
+        const er = document.getElementById("rmErr"); if(er) er.textContent = "";
+        if(!ta.value.trim() || ta.value===auto){ auto = r.code==="other" ? "" : `${r.label}.`; ta.value = auto; } }); }
     const done = v=>{ m.remove(); resolve(v); };
     document.getElementById("rmClose").onclick = ()=> done(null);
     m.onclick = e=>{ if(e.target.id==="reasonModal") done(null); };
