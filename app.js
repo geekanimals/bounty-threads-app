@@ -7221,7 +7221,8 @@ const CC_TILES = [
   ["product_delivered","Courier delivered",""],
   ["content_submitted","Video submitted",""],
   ["content_approved","Client approved",""],
-  ["completed","Done","every post up"]];
+  ["completed","Done","every post up"],
+  ["declined","Not selected","declined / dropped — not counted above"]];
 // a sheet status (upload row) on the same scale as the steps
 const CC_INV_RANK = { brand_confirmed:4, contract_signed:6, address_confirmed:7, product_sent:8, product_delivered:9, content_submitted:11, content_approved:12, completed:13 };
 function ccRows(){
@@ -7293,8 +7294,13 @@ function ccSortedHtml(P, Ion, fP, fI){
   else if(_ccSort==="step"){ const pFirst = items.filter(t=>t.kind==="p"), iRest = items.filter(t=>t.kind==="i"); return (pFirst.length?ucPartsHtml(pFirst.map(t=>t.x)):"") + iRest.map(t=>ucInvHtml(t.i, true)).join(""); }
   return items.map(t=> t.kind==="p" ? ucPartsHtml([t.x]) : ucInvHtml(t.i, true)).join("");
 }
+const CC_FAIL = ["dropped","rejected","ineligible","brand_declined"];
 function ccMatch(key, r){
-  const fail = s => ["dropped","rejected","ineligible","brand_declined"].includes(s);
+  const fail = s => CC_FAIL.includes(s);
+  // declined / dropped creators only show under "Not selected" — never in Total or any step count
+  const out = r.kind==="p" && fail(r.x.stage);
+  if(key==="declined") return out;
+  if(out) return false;
   if(key==="all") return true;
   if(key==="needs") return r.kind==="p" && bpNext(r.x).turn==="you";
   if(r.kind==="i"){ const i = r.i, rk = bkStRank(i.status||"registered");
@@ -7311,6 +7317,14 @@ function ccMatch(key, r){
   if(key==="noig") return !(r.pp.ig_connected || (x.creator||{}).username);
   if(key==="applied") return ["applied","eligible","sent_to_brand","shortlisted"].includes(x.stage);
   return !fail(x.stage) && bpEffectiveIndex(x) >= bpStageIndex(key);
+}
+function ccNow(key, r){
+  if(["all","declined","needs","invited","registered","insta","noig","applied"].includes(key)) return false;
+  if(!ccMatch(key, r)) return false;
+  if(r.kind==="i") return bkStRank(r.i.status||"registered") === CC_INV_RANK[key];
+  const keys = CC_TILES.map(t=> t[0]).filter(k=> CC_INV_RANK[k]);   // the step tiles, in order
+  const nxt = keys[keys.indexOf(key)+1];
+  return !nxt || !ccMatch(nxt, r);
 }
 function paintCampaignCommand(body){
   const _y = window.scrollY, _h = body.offsetHeight; if(_h) body.style.minHeight = _h + "px";
@@ -7333,7 +7347,12 @@ function paintCampaignCommandInner(body){
     nb.onclick = ()=>{ _ccFilter = _ccFilter==="needs" ? "all" : "needs"; _bpTab = "tracker"; paintBarterProcess();
       const l = document.querySelector("#bpBody .cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); }; }
   const TILES = bpNoShip() ? CC_TILES.filter(t=> !BP_SHIP.includes(t[0])) : CC_TILES;
-  const tile = t => `<button type="button" class="cc-tile${_ccFilter===t[0]?" on":""}" data-cctile="${t[0]}" title="${esc(t[2]||t[1])}"><b>${rows.filter(r=>ccMatch(t[0], r)).length}</b><span>${esc(t[1])}</span>${t[2]&&t[0]!=="all"?`<i>${esc(t[2])}</i>`:""}</button>`;
+  const nDecl = rows.filter(r=> ccMatch("declined", r)).length;
+  const tile = t => { const n = rows.filter(r=> ccMatch(t[0], r)).length, here = CC_INV_RANK[t[0]] ? rows.filter(r=> ccNow(t[0], r)).length : null;
+    if(t[0]==="declined" && !n) return "";
+    const sub = t[0]==="all" ? (nDecl ? `active · ${nDecl} not selected aren't counted` : "everyone active on this campaign")
+              : here!=null ? `reached this step · <b>${here}</b> here now` : esc(t[2]||"");
+    return `<button type="button" class="cc-tile${_ccFilter===t[0]?" on":""}${t[0]==="declined"?" cc-tile-out":""}" data-cctile="${t[0]}" title="${esc(t[2]||t[1])}"><b>${n}</b><span>${esc(t[1])}</span>${sub?`<i>${sub}</i>`:""}</button>`; };
   const secTitle = { messages:"💬 Messages & templates — every step: WhatsApp · email · app", payments:"💰 Payments — every creator A–Z (Super Admins only)", bulk:"📄 Bulk sheet — upload, download &amp; Google Sheet", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand", tracking:"🔗 Links & codes — every creator's own link and code: clicks, code copies, orders, sales" }[_bpTab];
   const P0 = shown.filter(r=>r.kind==="p").map(r=>r.x), Iall0 = shown.filter(r=>r.kind==="i");
   const fP = x=> { const c = x.creator||{}; return { fol: c.followers ?? ((pubOf(c.username||x.applied_profile)||{}).followers), geek: c.followers!=null && !!c.username,
