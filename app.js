@@ -2680,18 +2680,22 @@ async function rejectionReasons(){
   return _rejectReasons;
 }
 // Structured reason (feeds matching / ML) + optional note. Resolves {code, note} or null if cancelled.
-function openReasonModal(title){
+function openReasonModal(title, opt){
+  opt = opt || {};
   return new Promise(async resolve=>{
     const reasons = await rejectionReasons();
     let m = document.getElementById("reasonModal"); if(m) m.remove();
     m = el("div","modal-overlay"); m.id = "reasonModal";
     m.innerHTML = `<div class="modal"><div class="modal-head"><strong>${esc(title||"Reason")}</strong><button class="icon-btn" id="rmClose">✕</button></div>
       <form id="reasonForm" class="modal-form">
-        <label>Reason<select name="code" required><option value="">Pick a reason…</option>${reasons.map(r=>`<option value="${esc(r.code)}">${esc(r.label)}</option>`).join("")}</select></label>
+        <label>Reason<select name="code" required><option value="">Pick a reason…</option>${(()=>{ const brief = reasons.filter(r=> /^(low_followers|high_followers|low_engagement|location_mismatch|gender_mismatch|age_mismatch|category_mismatch|language_mismatch|pet_mismatch|marital_mismatch|barter_not_open)$/.test(r.code));
+          const rest = reasons.filter(r=> !brief.includes(r));
+          return `<optgroup label="Doesn't match the brief">${brief.map(r=>`<option value="${esc(r.code)}">${esc(r.label)}</option>`).join("")}</optgroup><optgroup label="Other reasons">${rest.map(r=>`<option value="${esc(r.code)}">${esc(r.label)}</option>`).join("")}</optgroup>`; })()}</select></label>
         <label>Message to the creator <span class="muted" style="font-weight:400">— why they weren't selected</span><textarea name="note" rows="3" maxlength="400" required placeholder="e.g. The brand needs creators based in Jaipur for this campaign."></textarea></label>
         <div class="muted" style="font-size:12px;margin-top:-4px">📨 Sent as it is on <b>WhatsApp</b>, by <b>email</b> and in the app: “You were not selected for this campaign. Reason: …”</div>
         <div class="auth-err" id="rmErr"></div>
-        <button class="btn" type="submit">Decline &amp; send message</button></form></div>`;
+        ${opt.count>1?`<div class="rm-bulk">👥 The same reason and message go to all <b>${opt.count}</b> creators${opt.skipped?` · ${opt.skipped} ticked creator${opt.skipped>1?"s are":" is"} past Applied and won't be declined`:""}.</div>`:""}
+        <button class="btn" type="submit">${opt.count>1?`Decline ${opt.count} creators &amp; send the message`:"Decline &amp; send message"}</button></form></div>`;
     document.body.appendChild(m); m.classList.add("open");
     // picking a reason fills in a ready message (edit it as you like)
     { const sel = m.querySelector('select[name="code"]'), ta = m.querySelector('textarea[name="note"]'); let auto = "";
@@ -7367,6 +7371,7 @@ function paintCampaignCommandInner(body){
           const all = vis.every(id=> _ccSel.has(id)), nRe = [..._ccSel].filter(id=> reIds.has(id)).length;
           return `<div class="cc-selbar"><label><input type="checkbox" id="ccSelAll"${all?" checked":""}> Select all <span class="muted">(${vis.length} shown)</span></label>
             <button type="button" class="btn sm cc-wabtn" id="ccWaSel"${_ccSel.size?"":" disabled"}>🟢 WhatsApp to selected (<span id="ccSelN">${_ccSel.size}</span>)</button>
+            <button type="button" class="btn sm cc-declbtn" id="ccDeclSel"${ccDeclinable().length?"":" disabled"} title="Applied creators who don't fit the brief — one reason + one message for all">✖ Decline selected (<span id="ccDeclN">${ccDeclinable().length}</span>)</button>
             ${reIds.size?`<button type="button" class="btn ghost sm" id="ccSendSel"${nRe?"":" disabled"} title="Only for creators who have not registered yet">↻ Resend invite to not-registered (<span id="ccReN">${nRe}</span>)</button>`:""}
             ${_ccSel.size?`<button type="button" class="btn ghost sm" id="ccDlSel" title="Same columns as the bulk upload — edit and upload it again">⬇ Download selected</button><button type="button" class="mini-btn ghost" id="ccSelClear">Clear</button>`:""}
             ${_ccFilter!=="noig"?`<button type="button" class="mini-btn ghost" id="ccPickNoIg" title="Show only creators who registered but haven't connected Instagram, and tick them all">📸 Pick everyone without Instagram</button>`:""}</div>
@@ -7504,10 +7509,30 @@ function wireCcWaPanel(body){
   const ts = body.querySelector("#ccWaTpl"); if(ts) ts.onchange = ()=>{ _ccWa.tpl = ts.value; paintBarterProcess(); };
   const go = body.querySelector("#ccWaGo"); if(go) go.onclick = ()=> ccWaSend(go);
 }
+// ✖ bulk decline: only ticked creators still on "Applied" (screening) — one reason + one message, then each is declined
+const CC_DECL_STAGES = ["applied","eligible"];
+function ccDeclinable(){ const by = window.__ccRowByKey || {};
+  return [..._ccSel].filter(k=> k.startsWith("p:") && by[k] && by[k].x && CC_DECL_STAGES.includes(by[k].x.stage)).map(k=> by[k].x); }
+async function ccDeclineSelected(btn){
+  const L = ccDeclinable(); if(!L.length){ gateToast("Tick creators who are on Applied first."); return; }
+  const skipped = _ccSel.size - L.length;
+  const pick = await openReasonModal(`Decline ${L.length} creator${L.length>1?"s":""} — why don't they fit the brief?`, { count: L.length, skipped }); if(!pick) return;
+  btn.disabled = true; let ok = 0, bad = [];
+  for(const x of L){
+    btn.textContent = `Declining ${ok+bad.length+1} / ${L.length}…`;
+    const { error } = await sb.schema("api").rpc("screen_participation", { p_participation: x.participation_id, p_eligible:false, p_reason: pick.note || pick.code }).then(r=>r, e=>({error:e}));
+    if(error) bad.push(((x.creator||{}).username ? "@"+x.creator.username : "a creator") + ": " + (error.message||error)); else { ok++; _ccSel.delete("p:"+x.participation_id); }
+  }
+  gateToast(`✓ ${ok} declined — the message went to each of them${bad.length?` · ${bad.length} couldn't be declined`:""}`);
+  if(bad.length) alert("Not declined:\n" + bad.slice(0,20).join("\n"));
+  loadBarterProcess(true);
+}
 // tick creators (or Select all) → one WhatsApp to all of them (template or typed), or "Resend invite to selected"
 function wireCcSelect(body){
   const btn = body.querySelector("#ccSendSel"), wab = body.querySelector("#ccWaSel"), n = body.querySelector("#ccSelN"), nre = body.querySelector("#ccReN");
+  const dec = body.querySelector("#ccDeclSel"); if(dec) dec.onclick = ()=> ccDeclineSelected(dec);
   const sync = ()=>{ const re = window.__ccResend || new Set(), k = [..._ccSel].filter(id=> re.has(id)).length;
+    { const dn = body.querySelector("#ccDeclN"), d = ccDeclinable().length; if(dn) dn.textContent = d; if(dec) dec.disabled = !d; }
     if(n) n.textContent = _ccSel.size; if(nre) nre.textContent = k; if(btn) btn.disabled = !k; if(wab) wab.disabled = !_ccSel.size;
     const go = body.querySelector("#ccWaGo"); if(go){ go.disabled = !_ccSel.size || _ccWa.busy; if(!_ccWa.busy) go.textContent = `➤ Send on WhatsApp to ${_ccSel.size}`; }
     const h = body.querySelector(".cc-wa-h b"); if(h) h.textContent = `🟢 WhatsApp to ${_ccSel.size} selected creator${_ccSel.size!==1?"s":""}`;
