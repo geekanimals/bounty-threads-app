@@ -7351,7 +7351,7 @@ function paintCampaignCommandInner(body){
       const l = document.querySelector("#bpBody .cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); }; }
   const TILES = bpNoShip() ? CC_TILES.filter(t=> !BP_SHIP.includes(t[0])) : CC_TILES;
   const nDecl = rows.filter(r=> ccMatch("declined", r)).length;
-  const tile = t => { const n = rows.filter(r=> ccMatch(t[0], r)).length, here = CC_INV_RANK[t[0]] ? rows.filter(r=> ccNow(t[0], r)).length : null;
+  const tile = t => { const n = rows.filter(r=> ccMatch(t[0], r)).length, here = null;   // no "here now" line — one number per tile
     if(t[0]==="declined" && !n) return "";
     const sub = t[0]==="all" ? (nDecl ? `active · ${nDecl} not selected aren't counted` : "everyone active on this campaign")
               : here!=null ? `reached this step · <em class="cc-now${_ccFilter==="now:"+t[0]?" on":""}" data-ccnow="${t[0]}" role="button" title="Show only who is on this step right now">${here} here now →</em>` : esc(t[2]||"");
