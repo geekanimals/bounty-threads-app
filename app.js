@@ -7220,6 +7220,7 @@ const CC_TILES = [
   ["product_sent","Courier sent",""],
   ["product_delivered","Courier delivered",""],
   ["content_submitted","Video submitted",""],
+  ["video_pending","Video not submitted yet","got the product · no video yet"],
   ["content_approved","Client approved",""],
   ["completed","Done","every post up"],
   ["declined","Not selected","declined / dropped — not counted above"]];
@@ -7302,6 +7303,8 @@ function ccMatch(key, r){
   if(key==="declined") return out;
   if(out) return false;
   if(key==="all") return true;
+  if(key.startsWith("now:")) return ccNow(key.slice(4), r);
+  if(key==="video_pending"){ const from = bpNoShip() ? "contract_signed" : "product_delivered"; return ccMatch(from, r) && !ccMatch("content_submitted", r); }
   if(key==="needs") return r.kind==="p" && bpNext(r.x).turn==="you";
   if(r.kind==="i"){ const i = r.i, rk = bkStRank(i.status||"registered");
     if(key==="invited") return !i.registered;
@@ -7351,7 +7354,7 @@ function paintCampaignCommandInner(body){
   const tile = t => { const n = rows.filter(r=> ccMatch(t[0], r)).length, here = CC_INV_RANK[t[0]] ? rows.filter(r=> ccNow(t[0], r)).length : null;
     if(t[0]==="declined" && !n) return "";
     const sub = t[0]==="all" ? (nDecl ? `active · ${nDecl} not selected aren't counted` : "everyone active on this campaign")
-              : here!=null ? `reached this step · <b>${here}</b> here now` : esc(t[2]||"");
+              : here!=null ? `reached this step · <em class="cc-now${_ccFilter==="now:"+t[0]?" on":""}" data-ccnow="${t[0]}" role="button" title="Show only who is on this step right now">${here} here now →</em>` : esc(t[2]||"");
     return `<button type="button" class="cc-tile${_ccFilter===t[0]?" on":""}${t[0]==="declined"?" cc-tile-out":""}" data-cctile="${t[0]}" title="${esc(t[2]||t[1])}"><b>${n}</b><span>${esc(t[1])}</span>${sub?`<i>${sub}</i>`:""}</button>`; };
   const secTitle = { messages:"💬 Messages & templates — every step: WhatsApp · email · app", payments:"💰 Payments — every creator A–Z (Super Admins only)", bulk:"📄 Bulk sheet — upload, download &amp; Google Sheet", terms:"📜 Contract & video brief", analytics:"📈 Campaign report", traits:"🧩 Creator traits — what this campaign's creators have in common", outreach:"✉️ Outreach message", shortlist:"📋 List for the brand", tracking:"🔗 Links & codes — every creator's own link and code: clicks, code copies, orders, sales" }[_bpTab];
   const P0 = shown.filter(r=>r.kind==="p").map(r=>r.x), Iall0 = shown.filter(r=>r.kind==="i");
@@ -7375,7 +7378,7 @@ function paintCampaignCommandInner(body){
     ${secTitle?`<div class="card cc-sec" id="ccSec"><div class="cc-sec-h"><h3>${secTitle}</h3><button class="ci-pop-x" id="ccSecX" aria-label="Close">✕</button></div>
       <div class="ac360-sec">${_bpTab==="messages"?`<div id="msgBox">${typeof msgMapHtml==="function"?msgMapHtml():""}</div>`:_bpTab==="payments"?`<div id="payBox">${typeof payHtml==="function"?payHtml():""}</div>`:_bpTab==="bulk"?bulkHtml():_bpTab==="terms"?bpTermsHtml():_bpTab==="analytics"?bpAnalyticsHtml():_bpTab==="traits"?`<div id="ctrCamp"></div>`:_bpTab==="tracking"?`<div id="trkCamp"></div>`:_bpTab==="outreach"?bpOutreachHtml():bpShortlistHtml(d.creators||[])}</div></div>`:""}
     <div class="card cc-list">
-      <div class="cc-list-h"><h3>Creators <span class="muted">${P.length+Iall.length}${_ccFilter==="needs"?" · ⚡ need you":_ccFilter!=="all"?` · ${esc((CC_TILES.find(t=>t[0]===_ccFilter)||[])[1]||"")}`:""}</span></h3>
+      <div class="cc-list-h"><h3>Creators <span class="muted">${P.length+Iall.length}${_ccFilter==="needs"?" · ⚡ need you":_ccFilter.startsWith("now:")?` · on “${esc((CC_TILES.find(t=>t[0]===_ccFilter.slice(4))||[])[1]||"")}” right now`:_ccFilter!=="all"?` · ${esc((CC_TILES.find(t=>t[0]===_ccFilter)||[])[1]||"")}`:""}</span></h3>
         ${needsYou?`<button type="button" class="bp-needs cc-needs${_ccFilter==="needs"?" on":""}" id="ccNeedsChip">⚡ <b>${needsYou}</b> need${needsYou>1?"":"s"} you${_ccFilter==="needs"?" · showing them ✕":" — tap to see"}</button>`:""}
         <input id="ccQ" type="search" placeholder="🔎 Name, @handle, phone, city…" value="${esc(_ccQ)}">
         <select id="ccSort" title="Sort">${[["step","Sort: furthest step"],["step_asc","Sort: earliest step"],["fol_desc","Followers: high → low"],["fol_asc","Followers: low → high"],["name","Name A → Z"],["views","Most views"]].map(([v,l])=>`<option value="${v}"${_ccSort===v?" selected":""}>${l}</option>`).join("")}</select>
@@ -7404,6 +7407,8 @@ function paintCampaignCommandInner(body){
       ${I.length ? `<div class="cc-invh">${P.length||Ion.length?"Uploaded / invited — not in the campaign yet":""}</div>` + I.map(r=>ucInvHtml(r.i)).join("") : ""}
       ${!(P.length+Iall.length)?`<div class="muted" style="padding:14px">${rows.length?"Nobody here.":"Nobody on this campaign yet — use 🎯 Find matching creators or 📄 Bulk sheet."}</div>`:""}
     </div>`;
+  body.querySelectorAll("[data-ccnow]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); const k = "now:"+b.dataset.ccnow; _ccFilter = _ccFilter===k ? "all" : k; paintBarterProcess();
+    const l = body.querySelector(".cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); });
   body.querySelectorAll("[data-cctile]").forEach(b=> b.onclick = ()=>{ _ccFilter = _ccFilter===b.dataset.cctile && b.dataset.cctile!=="all" ? "all" : b.dataset.cctile; paintBarterProcess();
     const l = body.querySelector(".cc-list"); if(l) l.scrollIntoView({ behavior:"smooth", block:"start" }); });
   const all = body.querySelector("#ccAll"); if(all) all.onclick = ()=>{ _ccFilter = "all"; paintBarterProcess(); };
