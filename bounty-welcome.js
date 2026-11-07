@@ -7,6 +7,7 @@
 (function(){
   if(typeof window.mountLogin !== "function" || typeof window.loginView !== "function") return;
   const A = "/assets/bounty/";
+  if(((typeof LOGIN_DOOR !== "undefined" ? LOGIN_DOOR : (window.GEEK_DOOR || "creator"))) === "creator") document.documentElement.classList.add("bx-door");
   const door = () => (typeof LOGIN_DOOR !== "undefined" ? LOGIN_DOOR : (window.GEEK_DOOR || "creator"));
   const creatorDoor = () => door() === "creator";
   const inviteSignup = (mode) => typeof INVITE_TOKEN !== "undefined" && INVITE_TOKEN && mode === "signup";
@@ -208,7 +209,7 @@
       <div class="bxg-cover"><span class="bxg-ini">${E(String(c.brand||c.name||"B").trim().charAt(0).toUpperCase())}</span><span class="bxg-type t-${E(k||"x")}">${E(KL[k]||"Campaign")}</span></div>
       <div class="bxg-body"><h4>${E(c.brand||"Brand")} · ${E(c.name||"Campaign")}</h4>
         <div class="bxg-comp">${E(compLine(c))}${c.ends_on?` · till ${E(fdate(c.ends_on))}`:""}</div>
-        <span class="bxg-match">${svg("lock")}Sign in to see your match</span>
+        <span class="bxg-match">${svg("lock")}${G.member ? "Connect Instagram to see your match" : "Sign in to see your match"}</span>
         <button type="button" class="btn" data-brief="${E(c.campaign_id)}">View brief ›</button></div></article>`;
   }
   function wireCards(root){
@@ -234,7 +235,7 @@
   }
 
   async function pageDiscover(c){
-    c.innerHTML = `<div class="page-head"><div><div class="bx-eyebrow">✦ Discover</div><h1>Explore campaigns</h1><p>No sign-in needed to browse. Verify WhatsApp only when you apply.</p></div></div>
+    c.innerHTML = `<div class="page-head"><div><div class="bx-eyebrow">✦ Discover</div><h1>Explore campaigns</h1><p>${G.member ? "Read every brief. Connect Instagram when you're ready to apply." : "No sign-in needed to browse. Verify WhatsApp only when you apply."}</p></div></div>
       <div class="bxg-bar"><label class="bxg-search">${svg("search")}<input id="bxgQ" placeholder="Search campaigns, brands or city" value="${E(G.q)}"></label>
         <div class="bxg-chips">${[["all","All"],["paid","Paid"],["barter","Barter"],["barter_paid","Hybrid"]].map(([k,l])=>`<button type="button" data-f="${k}" class="${G.f===k?"on":""}">${l}</button>`).join("")}</div></div>
       <div class="bxg-grid" id="bxgList"><div class="muted">Loading campaigns…</div></div>
@@ -276,7 +277,7 @@
     c.innerHTML = `<button type="button" class="bxg-back" data-go="discover">${svg("back")}Back to campaigns</button>
       <div class="card bxg-brief-head"><div class="bxg-cover big"><span class="bxg-ini">${E(String(x.brand||x.name||"B").trim().charAt(0).toUpperCase())}</span></div>
         <div class="bxg-bh"><div class="bx-eyebrow">${E(x.brand||"Brand")}</div><h1>${E(x.name||"Campaign")}</h1>
-          <div class="bxg-comp">${E(compLine(x))}</div><span class="bxg-match">${svg("lock")}Sign in to see your match</span></div></div>
+          <div class="bxg-comp">${E(compLine(x))}</div><span class="bxg-match">${svg("lock")}${G.member ? "Connect Instagram to see your match" : "Sign in to see your match"}</span></div></div>
       <div class="bxg-cols">
         <div class="card"><h3>Overview</h3>
           ${row("Product", x.product?E(x.product):"")}${row("Product value", x.product_value?E(money(x.product_value)):"")}
@@ -293,10 +294,10 @@
           ${refs?`<div class="bxg-sec">References</div><div class="bxg-pre">${refs}</div>`:""}${txt("Posting note", b.posting_note)}
           <div class="bxg-sec">Terms</div><ul class="bxg-ul">${terms.map(s=>`<li>${s}</li>`).join("")}</ul>
         </div>
-        <div class="card bxg-apply"><h3>Verify WhatsApp to apply</h3>
-          <p class="muted">So the brand can reach you about this campaign. Applying shares only your media kit — your phone number and address stay private.</p>
-          <button type="button" class="btn gold" data-apply="${E(x.campaign_id)}">Apply — verify WhatsApp ›</button>
-          <div class="bxg-steps"><div><b>1</b>Verify WhatsApp</div><div><b>2</b>Connect Instagram</div><div><b>3</b>This campaign opens for you</div></div>
+        <div class="card bxg-apply"><h3>${G.member ? "Connect Instagram to apply" : "Verify WhatsApp to apply"}</h3>
+          <p class="muted">${G.member ? "Brands pick creators from their real stats. Applying shares only your media kit — your phone number and address stay private." : "So the brand can reach you about this campaign. Applying shares only your media kit — your phone number and address stay private."}</p>
+          <button type="button" class="btn gold" data-apply="${E(x.campaign_id)}">${G.member ? "Apply — connect Instagram ›" : "Apply — verify WhatsApp ›"}</button>
+          <div class="bxg-steps">${G.member ? `<div><b>✓</b>WhatsApp verified</div>` : `<div><b>1</b>Verify WhatsApp</div>`}<div><b>${G.member?1:2}</b>Connect Instagram</div><div><b>${G.member?2:3}</b>This campaign opens for you</div></div>
           <div class="bxw-note">${svg("shield")}<span>We never ask for your WhatsApp or Instagram password.</span></div>
         </div>
       </div>`;

@@ -285,11 +285,10 @@ body.bx .topbar .bx-logo{display:none}
 body.bx .content{background:transparent}
 body.bx .page-head h1{font-family:var(--serif);font-weight:700;font-size:34px;letter-spacing:-.01em;color:var(--ink)}
 body.bx .page-head > div{min-width:0;max-width:100%}
-body.bx .page-head p{overflow-wrap:anywhere;font-family:var(--serif);font-style:italic;color:var(--caption);font-size:15px}
+body.bx .page-head p{overflow-wrap:anywhere;font-family:var(--serif);font-style:italic;color:#6B5A3A;font-size:15px}
 body.bx .bx-eyebrow{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--goldDeep);margin-bottom:6px}
 body.bx[data-bg="forest"] .page-head h1,[data-theme="dark"] body.bx .page-head h1{color:#F4E8CE}
-body.bx[data-bg="forest"] .page-head p,[data-theme="dark"] body.bx .page-head > div{min-width:0;max-width:100%}
-body.bx .page-head p{overflow-wrap:anywhere;color:#D7CBAE}
+body.bx[data-bg="forest"] .page-head p,[data-theme="dark"] body.bx .page-head p{color:#D7CBAE}
 body.bx[data-bg="forest"] .bx-eyebrow{color:#F0CF7A}
 body.bx .card,body.bx .kpi{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
 body.bx .card h3,body.bx .card h2{font-family:var(--serif);font-weight:600;color:var(--ink)}
@@ -572,3 +571,29 @@ body.bx[data-bg="forest"] .bxg-back{color:#F4E8CE}
   .bxw.ig .bx-eyebrow{display:block}
   .bxw-two{grid-template-columns:1fr}
 }
+/* QA fixes */
+body.bx .card h3,body.bx .card h2{color:inherit}
+body.bx .org-box .org-info{min-width:0}
+body.bx .org-box .org-name,body.bx .org-box .who{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.bx .me-links{display:none}                 /* same pages as the sidebar — once only */
+body.bx .sidebar .sign-out{display:none}        /* Sign out lives in the avatar menu */
+body.bx[data-pg="mediakit"] .cd-gate .btn{display:none}   /* the Media kit card below has the Connect button */
+body.bx .me-card{background:#FBF3E1;border:1px solid #D3A94E}
+body.bx .me-out{border-radius:999px}
+/* Instagram connect loader (Figma M05B) */
+.bx-door .ig-prog{background:rgba(11,51,35,.92) url("/assets/bounty/bg_forest.jpg") center/cover}
+.bx-door .ig-prog-box{background:#FBF3E1;border:1px solid #D3A94E;color:#123B2A}
+.bx-door .ig-prog-ic{font-size:0;height:96px;background:url("/assets/bounty/sprout_clipboard.png") center/contain no-repeat}
+.bx-door .ig-prog-pct b{color:#123B2A;font-family:"Fraunces",Georgia,serif}
+.bx-door .ig-prog-bar{background:#E8D7AE}
+.bx-door .ig-prog-bar i{background:linear-gradient(90deg,#174A34,#D3A94E)}
+.bx-door .ig-prog-t{font-family:"Fraunces",Georgia,serif;color:#123B2A}
+.bx-door .ig-prog-sub{color:#857052}
+/* purple left in the pages' own injected styles */
+body.bx .ci-type-barter_paid{background:#F4E8CE;color:#123B2A}
+body.bx .dc-tags span{background:rgba(16,59,42,.08)}
+body.bx .cp-req{border-color:rgba(211,169,78,.6);background:rgba(244,232,206,.5)}
+body.bx .cp-flash{box-shadow:0 0 0 3px rgba(211,169,78,.55)}
+
+/* light text + buttons inside the dark (forest) hero cards */
+body.bx .cp-hero .btn.ghost,body.bx [class*="-hero"] .btn.ghost{color:#F4E8CE;border-color:#D3A94E;background:transparent}

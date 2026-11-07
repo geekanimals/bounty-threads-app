@@ -20,6 +20,7 @@
     user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     megaphone:'<path d="M3 11v3a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1zM17 9a4 4 0 0 1 0 6"/>',
     shield:'<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
+    lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     moon:'<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
     target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>'
@@ -78,7 +79,7 @@
     // phone: search + theme move from the top bar into the ☰ drawer (the Figma header is ☰ · logo · bell · avatar)
     if(nav && !document.getElementById("bxTools")){
       const t = document.createElement("div"); t.id = "bxTools"; t.className = "bx-tools";
-      t.innerHTML = `<button type="button" data-t="search">${svg("search")}<span>Search</span></button><button type="button" data-t="theme">${svg("moon")}<span>Light / dark</span></button>`;
+      t.innerHTML = `<button type="button" data-t="search">${svg("search")}<span>Search</span></button><button type="button" data-t="theme">${svg("moon")}<span>Theme</span></button>`;
       nav.parentNode.insertBefore(t, nav);
       t.querySelector('[data-t="search"]').onclick = ()=>{ document.getElementById("sidebar").classList.remove("open"); const st = document.getElementById("searchTrigger"); if(st) st.click(); };
       t.querySelector('[data-t="theme"]').onclick = ()=>{ if(typeof toggleTheme==="function") toggleTheme(); };
@@ -106,7 +107,8 @@
     nav.querySelectorAll("a[data-page]").forEach(a=>{
       const k = a.dataset.page, ic = a.querySelector(".ic"), lb = a.querySelector("span:last-child");
       if(lb && LABEL[k]) lb.textContent = (k==="profile" && window.__profileReq && window.__profileReq.complete) ? "Profile ✓" : LABEL[k];
-      if(ic && ICON[k] && ic.textContent !== "🔒") ic.innerHTML = svg(ICON[k]);
+      if(ic && ICON[k]) ic.innerHTML = ic.textContent === "🔒" ? svg(ICON[k]) : svg(ICON[k]);
+      if(a.style.opacity && !a.querySelector(".bx-lk")) a.insertAdjacentHTML("beforeend", `<i class="bx-lk">${svg("lock")}</i>`);
       if(dup.has(k)) a.classList.add("bx-dup");
       // Instagram not connected yet: Discover still opens — the public campaign list, Apply asks for Instagram
       if((k==="opencampaigns" || k==="marketplace") && window.__profileGate && window.bxMemberExplore){
@@ -132,7 +134,9 @@
     const b = document.getElementById("bxNext"); if(!b) return;
     const req = window.__profileReq;
     let t = "Find your next campaign", s = "Discover what fits you", k = creatorNavKeys().includes("opencampaigns") ? "opencampaigns" : "dashboard";
-    if(window.__profileGate){ t = "Unlock campaigns"; s = "Connect Instagram & WhatsApp"; k = "mediakit"; }
+    if(window.__profileGate){
+      const n = (window.__joinNeeds||[]).join(" ").toLowerCase();
+      t = "Unlock campaigns"; s = /instagram/.test(n) && /whatsapp/.test(n) ? "Connect Instagram & WhatsApp" : /whatsapp/.test(n) ? "Verify WhatsApp" : "Connect Instagram"; k = "mediakit"; }
     else if(req && !req.complete && creatorNavKeys().includes("profile")){ t = "Finish your profile"; s = Math.round(100*req.done/Math.max(req.total,1)) + "% complete"; k = "profile"; }
     else if(window.__alertsUnread > 0){ t = "Your next move"; s = window.__alertsUnread + " action" + (window.__alertsUnread>1?"s":"") + " due"; k = "dashboard"; }
     b.innerHTML = `<span class="tg">${TARGET}</span><span><b>${t}</b><i>${s}</i></span>`;
@@ -152,13 +156,53 @@
     bar.querySelectorAll("button").forEach(b=> b.onclick = ()=>{ const k = b.dataset.k; if(k==="__sprout") return openAi(); go(k); });
   }
 
+  /* ---------- small fixes on top of the shell ---------- */
+  const placeholder = n => /^wa_\d+@/.test(String(n||""));
+  function tidyNames(){
+    const P = window.Auth && Auth.profile; if(!P || !placeholder(P.name)) return;
+    const me = document.getElementById("me");
+    if(me && !me.querySelector("img") && /^[A-Z]{1,2}$/.test(me.textContent.trim())) me.textContent = "C";
+    const who = document.getElementById("whoLabel"); if(who && placeholder(who.textContent.trim())) who.textContent = "Add your name in Profile";
+    document.querySelectorAll(".me-name").forEach(x=>{ if(placeholder(x.textContent.trim())) x.textContent = "Creator"; });
+    document.querySelectorAll(".me-ini").forEach(x=>{ if(/^W$/.test(x.textContent.trim())) x.textContent = "C"; });
+  }
+  // ⌘K palette: the same names as the sidebar
+  if(typeof window.fillPalette === "function"){
+    const _fill = window.fillPalette;
+    window.fillPalette = function(q){
+      const r = _fill.apply(this, arguments);
+      if(isCreator()) document.querySelectorAll("#paletteResults li[data-key]").forEach(li=>{
+        const k = li.dataset.key, ic = li.querySelector(".p-ic"), hint = li.querySelector(".p-hint");
+        const label = k==="__ai" ? "Ask Sprout" : k==="__theme" ? "Light / dark" : LABEL[k];
+        if(label){ li.textContent = ""; if(ic) li.appendChild(ic); li.appendChild(document.createTextNode(label)); if(hint) li.appendChild(hint); }
+        if(ic && ICON[k]){ ic.innerHTML = svg(ICON[k]); }
+      });
+      return r;
+    };
+  }
+  // no pop-up "complete your profile" card: the Home hero and the sidebar's next-move card already say it (once, no popup)
+  if(typeof window.profilePopupOnce === "function"){
+    const _pp = window.profilePopupOnce;
+    window.profilePopupOnce = function(){ if(isCreator()) return; return _pp.apply(this, arguments); };
+  }
+  // the app's few browser pop-up alerts show as an in-app message on the creator side
+  const _alert = window.alert.bind(window);
+  window.alert = function(msg){
+    if(document.body.classList.contains("bx") || document.documentElement.classList.contains("bx-door")){
+      if(typeof gateToast === "function"){ try{ gateToast(String(msg).split("\n\nMake sure")[0]); return; }catch(e){} }
+    }
+    return _alert(msg);
+  };
+
   /* ---------- page touches (idempotent; re-run whenever the page re-renders) ---------- */
   const TRUST = `<div class="bx-trust">${svg("shield")}Bounty is free for creators · brands are verified by Geek · payment status on every campaign.</div>`;
   function touchPage(){
     if(!isCreator()) return;
+    tidyNames();
     const c = document.getElementById("content"); if(!c) return;
     const h1 = c.querySelector(".page-head h1");
     if(h1 && TITLE[h1.textContent.trim()]) h1.textContent = TITLE[h1.textContent.trim()];
+    const hp = c.querySelector(".page-head p"); if(hp && /Geek OS/.test(hp.textContent)) hp.textContent = hp.textContent.replace(/Geek OS/g, "Bounty");
     // campaign pages open with a header card instead of a page head — give it the new name too
     const h3 = !h1 && c.querySelector(":scope > div > .card:first-child > h3, :scope > .card:first-child > h3");
     if(h3 && h3.childNodes.length === 1 && TITLE[h3.textContent.trim()]) h3.textContent = TITLE[h3.textContent.trim()];
@@ -195,7 +239,7 @@
     if(window.bxMemberExploreOff) bxMemberExploreOff();
     chromeOnce(); flags();
     const r = _renderShell.apply(this, arguments);
-    flags(); paintNext(); paintSprout(); paintBottom(); watch(); touchPage();
+    flags(); paintNext(); paintSprout(); paintBottom(); watch(); touchPage(); tidyNames();
     return r;
   };
   // Sprout = the creator's AI assistant (same chat, same backend — new face)
