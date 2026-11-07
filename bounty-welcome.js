@@ -380,17 +380,22 @@
   function sidekickScreen(next){
     const root = document.getElementById("authRoot"); if(!root) return next();
     document.body.classList.add("bx-pre"); root.classList.add("open");
-    const KIDS = [["Sprout","wave",true],["Flick","think",false],["Nimbus","sleep",false],["Dot","point",false]];
+    const KIDS = [["sprout","Sprout",A+"sprout_wave.png"],["flick","Flick",A+"kid_flick.png"],["nimbus","Nimbus",A+"kid_nimbus.png"],["dot","Dot",A+"kid_dot.png"]];
     root.innerHTML = `<div class="bxw form ig" id="bxw"><header class="bxw-top">${LOGO}</header><div class="bxw-body">
       <section class="bxw-hero"><h1>Meet your sidekick.</h1><p class="bxw-lead">A little friend for the big things you'll create. Pick one now, or choose later. You can switch anytime.</p></section>
-      <section class="bxw-card"><div class="bxk-grid">${KIDS.map(([n,p,on],i)=>`<button type="button" class="bxk${i===0?" on":""}" data-kid="${n}"${on?"":" disabled"}><img src="${A}sprout_${p}.png" alt=""><b>${n}</b>${on?"":"<i>Coming soon</i>"}</button>`).join("")}</div>
-        <div class="bxw-hint" style="text-align:center">Other characters are placeholders — final art for Flick, Nimbus and Dot comes from the character library.</div>
-        <div class="bxg-tip"><img src="${A}sprout_point.png" alt=""><div>Sprout can help with briefs, deadlines and your next move.</div></div>
-        <button type="button" class="bxb gold" id="bxKidGo" style="margin-top:14px">Continue with Sprout ›</button>
+      <section class="bxw-card"><div class="bxk-grid">${KIDS.map(([k,n,src],i)=>`<button type="button" class="bxk${i===0?" on":""}" data-kid="${k}"><img src="${src}" alt=""><b>${n}</b></button>`).join("")}</div>
+        <label class="bxks-tog" style="justify-content:center"><input type="checkbox" id="bxKidAvatar" checked><span>Use as my profile picture</span></label>
+        <div class="bxg-tip"><img id="bxKidTipImg" src="${A}sprout_point.png" alt=""><div><span id="bxKidTipName">Sprout</span> can help with briefs, deadlines and your next move.</div></div>
+        <button type="button" class="bxb gold" id="bxKidGo" style="margin-top:14px">Continue with <span id="bxKidGoName">Sprout</span> ›</button>
         <button type="button" class="bxb link-ink" id="bxKidLater" style="width:100%;margin-top:6px">I'll choose later</button>
         <div class="bxw-note">${svg("shield")}<span>Your sidekick is optional. Rename or change it anytime in Settings.</span></div></section></div></div>`;
+    root.querySelectorAll(".bxk img").forEach(i=> i.dataset.bxKid = 1);
+    let pick = "sprout";
+    root.querySelectorAll(".bxk").forEach(b=> b.onclick = ()=>{ root.querySelectorAll(".bxk").forEach(x=> x.classList.toggle("on", x===b)); pick = b.dataset.kid;
+      const k = KIDS.find(x=> x[0]===pick); document.getElementById("bxKidGoName").textContent = k[1]; document.getElementById("bxKidTipName").textContent = k[1];
+      document.getElementById("bxKidTipImg").src = pick === "sprout" ? A+"sprout_point.png" : k[2]; });
     const done = v => { try{ localStorage.setItem(kidKey(), v); }catch(e){} next(); };
-    document.getElementById("bxKidGo").onclick = ()=> done("Sprout");
+    document.getElementById("bxKidGo").onclick = ()=>{ if(window.bxKid) bxKid.save({ kid:pick, avatar: document.getElementById("bxKidAvatar").checked }); done(pick); };
     document.getElementById("bxKidLater").onclick = ()=> done("later");
   }
   if(typeof window.showInstagramGate === "function"){

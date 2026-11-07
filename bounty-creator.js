@@ -440,6 +440,9 @@
   const _openAi = window.openAi;
   if(typeof _openAi === "function") window.openAi = function(){
     const r = _openAi.apply(this, arguments);
+    if(isCreator() && window.bxKid){ const cl = document.getElementById("aiClose");
+      if(cl && !document.getElementById("bxKidGear")){ cl.insertAdjacentHTML("beforebegin", `<button class="icon-btn" id="bxKidGear" title="Make your sidekick yours" aria-label="Sidekick settings">⚙</button>`);
+        document.getElementById("bxKidGear").onclick = ()=> bxKid.sheet(); } }
     if(isCreator()){ const t = document.getElementById("aiTitle"), s = document.getElementById("aiSub");
       if(t) t.textContent = "Sprout"; if(s) s.textContent = "Your sidekick · ask me anything";
       try{
