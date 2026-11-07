@@ -124,6 +124,7 @@
     return G.list;
   }
   function toSignIn(applyId){
+    if(G.member){ return pageNeedsIg(document.getElementById("content"), applyId); }
     if(applyId){ try{ localStorage.setItem("geek_apply", applyId); }catch(e){} location.href = "/app.html?apply=" + encodeURIComponent(applyId); return; }
     window.__bxWantForm = true; mountLogin("login");
   }
@@ -185,11 +186,11 @@
   }
 
   async function go(page){
-    if(!G.on) return;
+    if(!G.on && !G.member) return;
     G.page = page;
     document.body.dataset.pg = page.split(":")[0];
     document.body.dataset.bg = (page==="home" || page==="discover") ? "forest" : "parch";
-    paintNavActive(); paintBottom();
+    if(G.on){ paintNavActive(); paintBottom(); }
     const c = document.getElementById("content"); if(!c) return;
     window.scrollTo(0,0);
     if(page === "home") return pageHome(c);
@@ -328,11 +329,82 @@
     c.querySelector('[data-x="in"]').onclick = ()=> toSignIn();
   }
 
+  /* ---------- signed in, Instagram not connected yet (Figma M05 / W14, G3) ---------- */
+  const igLaterKey = () => "bx_ig_later_" + ((window.Auth && Auth.profile && Auth.profile.id) || "");
+  const igLater = () => { try{ return localStorage.getItem(igLaterKey()) === "1"; }catch(e){ return false; } };
+  function pageNeedsIg(c, applyId){
+    if(!c) return;
+    if(applyId){ try{ localStorage.setItem("geek_apply", applyId); }catch(e){} }
+    const x = (G.list||[]).find(r=> String(r.campaign_id) === String(applyId));
+    c.innerHTML = `<button type="button" class="bxg-back" data-x="back">${svg("back")}Back to campaigns</button>
+      <div class="card bxg-lock"><img src="${A}sprout_point.png" alt=""><div class="bx-eyebrow">${x?E((x.brand||"")+" · "+(x.name||"")):"Apply"}</div>
+      <h2>Connect Instagram to apply</h2>
+      <p class="muted">Brands choose creators from their real follower range and engagement, so applying needs your Instagram connected. It takes under a minute — then this campaign opens for you.</p>
+      <button type="button" class="btn gold" data-x="ig">Connect Instagram ›</button>
+      <div class="bxw-note">${svg("shield")}<span>Official Meta login · we never see your password and never post for you.</span></div>
+      <button type="button" class="btn ghost" data-x="back">Keep exploring campaigns</button></div>`;
+    c.querySelectorAll('[data-x="back"]').forEach(b=> b.onclick = ()=> go("discover"));
+    c.querySelector('[data-x="ig"]').onclick = ()=>{ if(window.Tracker) Tracker.security("instagram_connect_start"); connectInstagram(); };
+    window.scrollTo(0,0);
+  }
+  // Discover for a signed-in creator who hasn't connected Instagram yet (the app's own Campaigns page is locked until then)
+  window.bxMemberExplore = function(page){ G.member = true; go(page || "discover"); };
+  window.bxMemberExploreOff = function(){ G.member = false; };
+
+  if(typeof window.showInstagramGate === "function"){
+    window.showInstagramGate = function(){
+      if(window.hideBootSplash) hideBootSplash();
+      const root = document.getElementById("authRoot"); if(!root) return;
+      document.body.classList.add("bx-pre");
+      root.classList.add("open");
+      root.innerHTML = `<div class="bxw form ig" id="bxw">
+        <header class="bxw-top">${LOGO}</header>
+        <div class="bxw-body">
+          <section class="bxw-hero">
+            <div class="bx-eyebrow">✦ Step 2 · optional ✦</div>
+            <h1>Make your work shine.</h1>
+            <p class="bxw-lead">Connect Instagram to build your creator media kit automatically.</p>
+            <img class="bxw-sprout" src="${A}sprout_point.png" alt="">
+          </section>
+          <section class="bxw-card">
+            <h3>Connect Instagram</h3>
+            <p class="bxw-sub">Your media kit builds itself from your Business or Creator account.</p>
+            <div class="bxw-two">
+              <div><b>What Bounty can see</b><ul><li>${svg("check")}Your profile and public content</li><li>${svg("check")}Available insights you authorise</li><li>${svg("check")}Connected account details</li></ul></div>
+              <div><b>What Bounty never does</b><ul><li>${svg("lock")}Never asks for your Instagram password</li><li>${svg("lock")}Never posts or messages on your behalf</li><li>${svg("lock")}Never accesses private DMs</li></ul></div>
+            </div>
+            <button type="button" class="bxb gold" id="gateIg">Continue with Instagram ›</button>
+            <div class="bxw-hint" style="text-align:center">Secure sign-in through Meta's official authorisation flow.</div>
+            <button type="button" class="bxb outline-ink" id="bxIgLater" style="margin-top:12px">Not now — explore campaigns first ›</button>
+            <div class="bxw-note">${svg("shield")}<span>Instagram is optional to look around. You can browse campaigns and fill your profile by hand; applying needs Instagram.</span></div>
+            <div class="bxw-hint" style="margin-top:12px">Personal account? In Instagram: Settings → Account type and tools → Switch to professional account (free, 1 minute).</div>
+            <button type="button" class="bxb link" id="gateSignout" style="color:#857052;margin-top:4px">Sign out</button>
+          </section>
+        </div></div>`;
+      document.getElementById("gateIg").onclick = ()=>{ if(window.Tracker) Tracker.security("instagram_connect_start"); connectInstagram(); };
+      document.getElementById("gateSignout").onclick = ()=> window.Auth && Auth.signOut();
+      document.getElementById("bxIgLater").onclick = ()=>{
+        try{ localStorage.setItem(igLaterKey(), "1"); }catch(e){}
+        root.classList.remove("open"); root.innerHTML = ""; document.body.classList.remove("bx-pre");
+        bootOS();
+      };
+    };
+  }
+  // "Not now" was chosen on this device: open the app; the app's own profile gate keeps campaigns locked until Instagram is in
+  if(typeof window.creatorHasInstagram === "function"){
+    const _has = window.creatorHasInstagram;
+    window.creatorHasInstagram = async function(){ const r = await _has.apply(this, arguments); return r || igLater(); };
+  }
+
   // login.js may have painted its own screen before this file loaded — repaint it as the Bounty welcome
   const root = document.getElementById("authRoot");
   const inv = typeof INVITE_TOKEN !== "undefined" && INVITE_TOKEN;
   if(root && root.classList.contains("open") && root.querySelector(".auth-wrap") && creatorDoor() && !inv){
     try{ mountLogin("login"); }catch(e){}
+  }
+  // the app may have shown its own Instagram step before this file loaded — repaint it as the Bounty one
+  if(root && root.classList.contains("open") && document.getElementById("gateIg") && !root.querySelector("#bxw") && typeof window.showInstagramGate === "function"){
+    try{ window.showInstagramGate(); }catch(e){}
   }
   window.bxGuest = { start:startGuest, go };
 })();
