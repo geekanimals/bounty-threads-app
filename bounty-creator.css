@@ -554,3 +554,5 @@ body.bx[data-bg="forest"] .bxg-back{color:#F4E8CE}
   .bxg-cover.big{width:100%;min-height:110px}
   .bxg-grid{grid-template-columns:1fr}
 }
+.bxg-cols > *,.bxg-grid > *{min-width:0}
+.bxg-pre,.bxg-kv b,.bxg-ul{overflow-wrap:anywhere}
