@@ -107,8 +107,9 @@
       const next = { kid:st.kid, name: nm && nm !== KIDS[st.kid].n ? nm : "", vibe:st.vibe, lang:st.lang, scene:st.scene, size:st.size,
         motion: !document.getElementById("bxksStill").checked, avatar: document.getElementById("bxksAvatar").checked };
       if(typeof applyTheme === "function"){ applyTheme(st.theme); try{ localStorage.setItem("geekos_theme", st.theme); }catch(e){} }
-      const nameChanged = name() !== (next.name || KIDS[next.kid].n);
+      const swapped = P.kid !== next.kid || name() !== (next.name || KIDS[next.kid].n);
       await save(next); close();
+      if(swapped){ location.reload(); return; }          // a new sidekick / name: redraw every screen with it
       if(typeof gateToast === "function") gateToast(`✓ Saved — ${name()} is all yours.`);
       try{ if(typeof renderShell === "function" && window.__osBooted) renderShell(); }catch(e){}
     };
