@@ -11,12 +11,25 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=20261106r">
-  <link rel="stylesheet" href="bounty-creator.css?v=20261107g">
+  <link rel="stylesheet" href="bounty-creator.css?v=20261107h">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,600&display=swap" rel="stylesheet">
+  <script>
+  /* Bounty creator door: decide before the first paint, so a refresh never flashes the old Geek OS screens.
+     Same rule as auth.js GEEK_DOOR (plain /app.html = creator; sign-in round trips return to the door that started them). */
+  (function(){try{
+    var sp=new URLSearchParams(location.search),q=(sp.get("door")||"").toLowerCase(),p=location.pathname.toLowerCase().replace(/\/+$/,"");
+    var d={superadmin:"admin",admin:"admin",agency:"owner",owner:"owner",brand:"brand",brands:"brand",creator:"creator"}[q]
+      ||{"/superadmin":"admin","/admin":"admin","/agency":"owner","/agencies":"owner","/brand":"brand","/brands":"brand","/creator":"creator","/creators":"creator"}[p]||null;
+    if(!d&&["code","state","error","error_description","error_reason"].some(function(k){return sp.has(k);}))d=sessionStorage.getItem("geek_tab_door");
+    if((d||"creator")==="creator"){document.documentElement.classList.add("bx-door");if(sp.get("invite"))document.documentElement.classList.add("bx-invite");document.title="Bounty — for creators";}
+  }catch(e){}})();
+  </script>
 <script src="/api/config"></script>
 <script src="linkstat.js?v=20261101a" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+  <script>if(document.documentElement.classList.contains("bx-door"))document.body.classList.add("bx");</script>
   <div id="app">
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
@@ -94,6 +107,7 @@
   <div class="auth-root" id="authRoot"></div>
   <!-- shown until the first screen (login or the app) is painted — never a blank page -->
   <div class="boot-splash" id="bootSplash"><div class="boot-box"><img src="/assets/geek-icon-192.png" alt="" class="boot-logo"><div class="mk-spin"></div><div class="boot-t">Loading Geek OS…</div></div></div>
+  <script>(function(){var b=document.getElementById("bootSplash");if(b&&document.documentElement.classList.contains("bx-door"))b.innerHTML='<div class="boot-box bx-boot"><div class="bx-boot-logo">B<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#D3A94E"/><circle cx="12" cy="12" r="8" fill="#C2362F"/><circle cx="12" cy="12" r="5" fill="#F4E8CE"/><circle cx="12" cy="12" r="2.4" fill="#C2362F"/></svg>UNTY</div><img src="/assets/bounty/sprout_wave.png" alt="" class="bx-boot-sprout"><div class="bx-boot-bar"><i></i></div><div class="boot-t">Getting your world ready…</div></div>';})();</script>
   <script>window.hideBootSplash=function(){var b=document.getElementById("bootSplash");if(b)b.remove();};setTimeout(window.hideBootSplash,15000);</script>
 
   <script src="consent.js?v=20261028k"></script>

@@ -607,3 +607,21 @@ body.bx .role-switch{display:none}
   body.bx .ai-launch img{width:28px;height:28px}
   body.bx .sidebar-foot{padding-top:8px}
 }
+/* Refresh: Bounty loading screen + never flash the old Geek OS screens on the creator door */
+.bx-door .boot-splash{background:#0B3323 url("/assets/bounty/bg_forest.jpg") center/cover}
+.bx-door .bx-boot{background:rgba(11,51,35,.55);border:1px solid rgba(211,169,78,.45);border-radius:20px;padding:26px 34px;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:none}
+.bx-boot-logo{display:flex;align-items:center;font:700 22px "Fraunces",Georgia,serif;letter-spacing:.22em;color:#F4E8CE}
+.bx-boot-logo svg{width:20px;height:20px;margin:0 1px}
+.bx-boot-sprout{width:96px;height:96px;object-fit:contain;animation:bxBob 1.6s ease-in-out infinite}
+.bx-boot-bar{width:160px;height:4px;border-radius:99px;background:rgba(244,232,206,.2);overflow:hidden}
+.bx-boot-bar i{display:block;width:40%;height:100%;border-radius:99px;background:linear-gradient(90deg,#D3A94E,#F0CF7A);animation:bxSlide 1.1s ease-in-out infinite}
+.bx-door .boot-t{font:italic 14px "Fraunces",Georgia,serif;color:#D7CBAE}
+@keyframes bxBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes bxSlide{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
+/* the app's own login / Instagram step render for a split second before the Bounty ones replace them */
+html.bx-door:not(.bx-invite) .auth-root .auth-wrap{visibility:hidden}
+html.bx-door .auth-root.open{background:#0B3323 url("/assets/bounty/bg_forest.jpg") center/cover}
+/* early page while the app loads (before the sidebar is re-drawn) */
+html.bx-door body.bx .nav a .ic{font-size:0}
+html.bx-door body.bx .nav a .ic svg{font-size:initial}
+html.bx-door body.bx .mk-spin{border-color:rgba(211,169,78,.25);border-top-color:#D3A94E}
