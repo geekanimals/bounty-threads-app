@@ -219,10 +219,71 @@
         const hero = body.querySelector(".cd-gate, .cd-prof") || [...body.children].find(x=> x.classList.contains("card") && /ready for campaigns/i.test(x.textContent));
         if(hero) hero.classList.add("bx-hero");
         const subs = body.querySelectorAll(":scope > .ci-sub");
-        if(subs[0] && !body.querySelector(".bx-divider")) subs[0].insertAdjacentHTML("beforebegin", `<div class="bx-divider">✦ Made for your world ✦</div>`);
         if(!body.querySelector(".bx-trust")) body.insertAdjacentHTML("beforeend", TRUST);
+        if(!body.querySelector("#bxHome")) buildHome(body);
       }
     }
+  }
+
+  /* ---------- Home like the Figma (M09 / W02): your next move, active campaigns, made for your world,
+     dream brand board, media kit progress — from the creator's real data; the existing cockpit stays below ---------- */
+  let _home = null, _homeAt = 0;
+  async function homeData(){
+    if(_home && Date.now()-_homeAt < 45000) return _home;
+    const api = (fn,a)=> sb.schema("api").rpc(fn, a||{}).then(r=> r && !r.error ? r.data : null, ()=> null);
+    const [mine, open, prof] = await Promise.all([ api("get_my_campaigns"), window.__ciOpsEnabled ? api("list_open_campaigns") : null, window.__ciProfileEnabled ? api("get_my_profile") : null ]);
+    _home = { mine: Array.isArray(mine)?mine:[], open: Array.isArray(open)?open:[], dreams: (prof && Array.isArray(prof.dream_brands)) ? prof.dream_brands : [] };
+    _homeAt = Date.now(); return _home;
+  }
+  const DONE_ST = ["completed"], OUT_ST = ["ineligible","brand_declined","dropped","rejected"], WAIT_ST = ["applied","eligible","sent_to_brand","shortlisted","content_submitted","published","address_confirmed","accepted","brand_confirmed"];
+  const H = s => String(s==null?"":s).replace(/[&<>"']/g, ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  async function buildHome(body){
+    const box = document.createElement("div"); box.id = "bxHome"; box.className = "bx-home";
+    box.innerHTML = `<div class="bx-home-row"><div class="card bx-home-act"><div class="muted">Finding your next move…</div></div>
+      <div class="card bx-home-sprout"><img src="${A}sprout_celebrate.png" onerror="this.src='${A}sprout_wave.png'" alt=""><i id="bxHomeQuote">“I'm on it — checking your campaigns.”</i></div></div>`;
+    body.insertBefore(box, body.firstChild);
+    // the old "ready / profile %" banner and "Running campaigns" card say the same thing as these — once only
+    body.querySelectorAll(".bx-hero").forEach(x=> x.classList.add("bx-dupe"));
+    let d; try{ d = await homeData(); }catch(e){ d = { mine:[], open:[], dreams:[] }; }
+    if(!box.isConnected) return;
+    const order = (typeof AI_ACTION_ORDER!=="undefined") ? AI_ACTION_ORDER : [];
+    const live = d.mine.filter(x=> !DONE_ST.includes(x.stage) && !OUT_ST.includes(x.stage));
+    const yours = live.filter(x=> !WAIT_ST.includes(x.stage)).sort((a,b)=>((order.indexOf(a.stage)+1)||99)-((order.indexOf(b.stage)+1)||99));
+    const req = window.__profileReq, pct = req ? Math.round(100*req.done/Math.max(req.total,1)) : null;
+    // 1) the one action that matters now
+    let act;
+    if(window.__profileGate) act = { pill:"Action needed", t:"Connect Instagram to unlock campaigns", s:"Your media kit builds itself — then every campaign opens for you.", b:"Connect Instagram", go:"mediakit" };
+    else if(yours[0]) act = { pill:"Action needed", t:`${yours[0].brand?yours[0].brand+" · ":""}${yours[0].campaign||"Campaign"}`, s: STAGE_TXT[yours[0].stage] || String(yours[0].stage||"").replace(/_/g," "), b:"Open task", go:"mycampaigns" };
+    else if(req && !req.complete) act = { pill:"Next step", t:`Your profile is ${pct}% complete`, s:"Brands pick complete profiles first — it takes a couple of minutes.", b:"Finish profile", go:"profile" };
+    else act = { pill:"Next step", t:"Find your next campaign", s:`${d.open.filter(x=>!x.my_stage && !x.applications_closed).length} campaigns open for you right now.`, b:"Explore campaigns", go:"opencampaigns" };
+    box.querySelector(".bx-home-act").innerHTML = `<span class="bxg-pill">${act.pill}</span><div class="bx-ha-row"><span class="bx-ha-ic">${svg("clip")}</span><b>${H(act.t)}</b></div><div class="muted">${H(act.s)}</div>
+      <div class="bxg-btns"><button type="button" class="btn" data-hgo="${act.go}">${act.b} ›</button><button type="button" class="btn ghost" data-hgo="__sprout">Ask Sprout ›</button></div>`;
+    const steps = (window.__profileGate?1:0) + yours.length + (req && !req.complete ? 1 : 0);
+    document.getElementById("bxHomeQuote").textContent = steps ? `“You're ${steps} step${steps>1?"s":""} away from your next win!”` : "“All caught up — let's find your next collab!”";
+    // 2) active campaigns
+    if(live.length){
+      box.insertAdjacentHTML("beforeend", `<div class="card bx-home-active"><h3>Active campaigns <span class="muted">· ${live.length} in progress</span></h3>
+        ${live.slice(0,5).map(x=>`<div class="bx-ha-item" data-hgo="mycampaigns"><span class="bxg-ini sm">${H(String(x.brand||x.campaign||"C").charAt(0).toUpperCase())}</span><div><b>${H(x.brand||"")}</b> <span class="muted">· ${H(x.campaign||"")}</span><div class="muted">${H(STAGE_TXT[x.stage]||String(x.stage||"").replace(/_/g," "))}</div></div><span class="bx-st ${WAIT_ST.includes(x.stage)?"wait":"act"}">${WAIT_ST.includes(x.stage)?"In progress":"Action needed"}</span></div>`).join("")}</div>`);
+      body.querySelectorAll(".card").forEach(cd=>{ const h = cd.querySelector("h3"); if(h && /Running campaigns/.test(h.textContent)) cd.classList.add("bx-dupe"); });
+    }
+    // 3) made for your world: open campaigns you haven't applied to
+    const fresh = d.open.filter(x=> !x.my_stage && !x.applications_closed).slice(0,3);
+    if(fresh.length){
+      box.insertAdjacentHTML("beforeend", `<div class="bx-divider">✦ Made for your world ✦</div><div class="bxg-grid bx-home-camps">${fresh.map(x=>{
+        const k = x.campaign_type || ({cash:"paid",hybrid:"barter_paid",barter:"barter"})[x.comp_type] || "", KL = {paid:"Paid",barter:"Barter",barter_paid:"Hybrid"};
+        const ok = x.eligibility && x.eligibility.eligible === true, no = x.eligibility && x.eligibility.eligible === false;
+        return `<article class="bxg-camp" data-hbrief="${H(x.campaign_id)}"><div class="bxg-cover"><span class="bxg-ini">${H(String(x.brand||x.name||"B").charAt(0).toUpperCase())}</span><span class="bxg-type t-${H(k||"x")}">${KL[k]||"Campaign"}</span></div>
+          <div class="bxg-body"><h4>${H(x.brand||"")} · ${H(x.name||"Campaign")}</h4><div class="bxg-comp">${KL[k]||"Campaign"}${x.product_value?" · ₹"+Number(x.product_value).toLocaleString("en-IN"):""}${x.ends_on?" · till "+H(x.ends_on):""}</div>
+          <span class="bxg-match ${ok?"ok":""}">${ok?"✓ You qualify":no?"Check eligibility":"Potential match"}</span><button type="button" class="btn" data-hbrief="${H(x.campaign_id)}">View brief ›</button></div></article>`; }).join("")}</div>`);
+      [...body.children].filter(x=> x.classList.contains("bx-divider")).forEach(x=> x.remove());
+    }
+    // 4) dream brand board + media kit progress
+    const dreams = d.dreams.slice(0,5);
+    box.insertAdjacentHTML("beforeend", `<div class="bx-home-row two">
+      <div class="card bx-home-dream"><h3>Your Dream Brand Board</h3>${dreams.length?`<div class="bx-dream-chips">${dreams.map(x=>`<span>${H(x.submitted_brand_name||"Brand")} ✓</span>`).join("")}</div><button type="button" class="btn sm" data-hgo="opencampaigns">See opportunities ›</button>`:`<div class="muted">Pick up to 5 brands you'd love to work with — private to you.</div><button type="button" class="btn sm" data-hgo="profile">Add dream brands ›</button>`}</div>
+      <div class="card bx-home-kit"><h3>${pct!=null?`Media kit · ${pct}% complete`:"Your media kit"}</h3>${pct!=null?`<div class="bx-bar"><i style="width:${pct}%"></i></div>`:""}<button type="button" class="btn sm ${pct!=null&&pct<100?"":"ghost"}" data-hgo="${pct!=null&&pct<100?"profile":"mediakit"}">${pct!=null&&pct<100?"Finish profile ›":"View media kit ›"}</button></div></div>`);
+    box.querySelectorAll("[data-hgo]").forEach(b=> b.onclick = ()=>{ const k = b.dataset.hgo; if(k==="__sprout") return openAi(); go(k); });
+    box.querySelectorAll("[data-hbrief]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); try{ localStorage.setItem("geek_apply", b.dataset.hbrief); }catch(x){} go("opencampaigns"); });
   }
   let _mo = null;
   function watch(){
