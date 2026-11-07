@@ -953,3 +953,21 @@ body.bx .bx-del{margin-top:12px;padding:12px;border-radius:12px;border:1px solid
 body.bx .bx-del label{display:block;margin-top:10px;font-weight:600}
 body.bx .bx-del input{display:block;width:100%;margin-top:6px;padding:9px 12px;border-radius:10px;border:1px solid #D9C08A;background:#fff}
 @media(max-width:900px){ body.bx .bx-set-grid{grid-template-columns:1fr} }
+/* M12–M20 campaign step screens */
+body.bx .jr-now.bx-step{position:relative;overflow:hidden;border-radius:18px;padding:14px 16px;background:#FBF6EA;border:1px solid rgba(16,59,42,.18)}
+body.bx .jr-now.bx-step.act{background:linear-gradient(180deg,#FBF6EA,#F3EBD6);border-color:rgba(16,59,42,.38)}
+body.bx .jr-now.bx-step.bad{background:#FDEDEA;border-color:rgba(232,102,74,.5)}
+body.bx .bx-step-top{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+body.bx .bx-step-top img{width:54px;height:54px;object-fit:contain;flex:none}
+body.bx .bx-step-m{flex:1;min-width:0}
+body.bx .bx-step-n{display:block;font-size:12px;font-weight:700;letter-spacing:.02em;color:#103B2A;margin-bottom:6px}
+body.bx .bx-step-bar{height:6px;border-radius:99px;background:rgba(16,59,42,.12);overflow:hidden}
+body.bx .bx-step-bar i{display:block;height:100%;border-radius:99px;background:#103B2A;transition:width .6s}
+body.bx .jr-now.bx-step .jr-now-h{font-family:Fraunces,Georgia,serif;font-size:18px}
+body.bx .jr-now.bx-step .ci-evrow .btn:not(.ghost){background:#103B2A;color:#fff;border-radius:99px}
+body.bx .jr-now.bx-step .ci-evrow .btn.ghost{border-radius:99px}
+body.bx .bx-confetti{position:absolute;inset:0;pointer-events:none}
+body.bx .bx-confetti i{position:absolute;top:-10px;width:7px;height:11px;border-radius:2px;animation:bxConf 2.2s ease-in forwards}
+@keyframes bxConf{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(220px) rotate(540deg);opacity:0}}
+@media (prefers-reduced-motion:reduce){body.bx .bx-confetti{display:none}}
+@media (max-width:640px){body.bx .bx-step-top img{width:44px;height:44px}body.bx .jr-now.bx-step .ci-evrow{flex-wrap:wrap}body.bx .jr-now.bx-step .ci-evrow .btn{flex:1 1 auto}}

@@ -258,6 +258,38 @@
     }
     return r;
   };
+
+  /* ---- M12–M20 campaign steps: each "what now" card becomes a Bounty step screen
+     (sidekick pose, step x of n, celebration on approve / done). Same buttons, same actions. ---- */
+  const STEP_ART = { "Applied":["think","Application sent"], "Selected":["celebrate","You're in!"], "Contract":["clipboard","Agreement"],
+    "Signed":["point","Delivery address"], "Address":["envelope","Package on its way"], "Shipped":["envelope","Package on its way"],
+    "Delivered":["point","Time to create"], "Brief":["point","Create your draft"], "Video sent":["think","Brand is reviewing"],
+    "Approved":["celebrate","Approved — go live"], "Posted":["wave","You're live"], "Done":["celebrate","Campaign complete"] };
+  const hx = t => String(t||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  function touchSteps(){
+    document.querySelectorAll(".mc-card").forEach(card => {
+      const now = card.querySelector(".jr-now"); if(!now || now.dataset.bx) return;
+      const steps = [...card.querySelectorAll(".jr-step")]; if(!steps.length) return;
+      let i = steps.findIndex(x => x.classList.contains("now")); const allDone = i < 0;
+      if(allDone) i = steps.length - 1;
+      const label = (steps[i].querySelector("span")||{}).textContent || "";
+      const art = STEP_ART[allDone ? "Done" : label] || ["point", label];
+      now.dataset.bx = "1"; now.classList.add("bx-step");
+      const top = document.createElement("div"); top.className = "bx-step-top";
+      top.innerHTML = `<img src="${A}sprout_${art[0]}.png" alt=""><div class="bx-step-m"><span class="bx-step-n">Step ${i+1} of ${steps.length} · ${hx(art[1])}</span>
+        <div class="bx-step-bar"><i style="width:${Math.round((allDone?steps.length:i+1)/steps.length*100)}%"></i></div></div>`;
+      now.insertBefore(top, now.firstChild);
+      // 🎉 one-time celebration when the brand selects / approves / the campaign completes (inline, no pop-up)
+      if(art[0] === "celebrate"){
+        const ask = card.querySelector("[data-askai]"); const pid = ask ? ask.getAttribute("data-askai") : (card.querySelector("h4")||{}).textContent;
+        const key = "bx_cele_" + pid + "_" + (allDone ? "done" : label);
+        let seen = false; try{ seen = !!localStorage.getItem(key); localStorage.setItem(key, "1"); }catch(e){}
+        if(!seen){ const c = document.createElement("div"); c.className = "bx-confetti";
+          c.innerHTML = Array.from({length:18}, (_, k) => `<i style="left:${4+k*5.3}%;animation-delay:${(k%6)*0.12}s;background:${["#F5B83D","#103B2A","#E8664A","#7BC47F"][k%4]}"></i>`).join("");
+          now.appendChild(c); setTimeout(() => c.remove(), 2600); }
+      }
+    });
+  }
   let q = false;
   new MutationObserver(()=>{ if(q) return; q = true; requestAnimationFrame(()=>{ q = false;
     const pop = document.getElementById("ciPop"); if(pop && !pop.dataset.bx) touchBrief(pop);
@@ -265,6 +297,7 @@
     if(isCreator() && currentPage === "profile" && !document.getElementById("bxHub")) touchProfile();
     if(isCreator() && currentPage === "reports") touchAnalytics();
     if(isCreator() && currentPage === "messages") touchInbox();
+    if(isCreator()) touchSteps();
   }); }).observe(document.body, { childList:true, subtree:true });
   // nav label + icon for the new page (bounty-creator.js names the rest)
   window.__bxExtraNav = { bxpayments:["Payments","coins"], bxsettings:["Settings","gear"] };
