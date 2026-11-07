@@ -22,6 +22,7 @@
     shield:'<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
     lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     back:'<path d="m15 18-6-6 6-6"/>',
+    coins:'<circle cx="9" cy="9" r="6"/><path d="M15.5 9.5A6 6 0 1 1 9.5 15.5"/>',
     search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     moon:'<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
     target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>'
@@ -32,10 +33,10 @@
 
   // creator nav: Figma names + icons + groups (keys come from the app, so gating/filters are unchanged)
   const LABEL = { dashboard:"Home", opencampaigns:"Discover", marketplace:"Discover", mycampaigns:"My campaigns",
-    mediakit:"Media kit", reports:"Analytics", instagram:"Instagram", messages:"Messages", profile:"Profile", intelligence:"Insights" };
-  const ICON = { dashboard:"home", opencampaigns:"compass", marketplace:"compass", mycampaigns:"clip", mediakit:"layers",
+    mediakit:"Media kit", reports:"Analytics", bxpayments:"Payments", instagram:"Instagram", messages:"Messages", profile:"Profile", intelligence:"Insights" };
+  const ICON = { dashboard:"home", opencampaigns:"compass", marketplace:"compass", mycampaigns:"clip", mediakit:"layers", bxpayments:"coins",
     reports:"chart", instagram:"insta", messages:"chat", profile:"user", intelligence:"chart" };
-  const GROUPS = [["Today",["dashboard"]],["Campaigns",["opencampaigns","marketplace","mycampaigns"]],
+  const GROUPS = [["Today",["dashboard"]],["Campaigns",["opencampaigns","marketplace","mycampaigns","bxpayments"]],
     ["Create & grow",["mediakit","reports","instagram","intelligence"]],["My account",["profile","messages"]]];
   // page titles that follow the new names (only when the title is still the old one)
   const TITLE = { "Dashboard":"Your next move.", "Campaigns":"Discover campaigns", "Open Campaigns":"Discover campaigns",
