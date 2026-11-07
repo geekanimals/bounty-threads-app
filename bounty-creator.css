@@ -702,3 +702,39 @@ body.bx .bx-bar{height:8px;border-radius:99px;background:#E8D7AE;overflow:hidden
 body.bx .bx-bar i{display:block;height:100%;background:linear-gradient(90deg,#174A34,#D3A94E);border-radius:99px}
 body.bx .bx-dupe{display:none!important}
 @media(max-width:760px){ body.bx .bx-home-row,body.bx .bx-home-row.two{grid-template-columns:1fr} body.bx .bx-home-sprout{flex-direction:row;justify-content:flex-start;text-align:left} body.bx .bx-home-sprout img{width:64px;height:64px} }
+/* Instagram connect loader + ready (Figma M05B / M05A) */
+.ig-prog.bxl{background:#0B3323 url("/assets/bounty/bg_forest.jpg") center/cover;overflow-y:auto;align-items:flex-start;padding:24px 16px}
+.bxl-box{width:min(460px,100%);margin:auto;background:#FBF3E1;border:1px solid #D3A94E;border-radius:22px;padding:24px 22px;text-align:center;color:#123B2A;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.bxl-box h2{font:700 26px/1.15 "Fraunces",Georgia,serif;margin:10px 0 6px;color:#123B2A}
+.bxl-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;background:#DDEBD3;color:#2F7D4F;font:700 12px Inter,system-ui,sans-serif}
+.bxl-chip svg{width:14px;height:14px}
+.bxl-sprout{width:120px;height:120px;object-fit:contain;margin:4px auto;display:block;animation:bxBob 1.6s ease-in-out infinite}
+.bxl-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0 12px}
+.bxl-step{padding:8px 6px;border-radius:12px;border:1px solid #E2CC97;background:#FFF8EB;color:#857052;font:600 12px Inter,system-ui,sans-serif;display:flex;flex-direction:column;gap:2px}
+.bxl-step b{font:700 15px "Fraunces",Georgia,serif;color:#B88A2E}
+.bxl-step.on{border-color:#D3A94E;background:#103B2A;color:#F4E8CE}
+.bxl-step.on b{color:#F0CF7A}
+.bxl-step.done{background:#DDEBD3;color:#2F7D4F;border-color:#B9D6A8}
+.bxl-step.done b{color:#2F7D4F}
+.bxl-bar{height:8px;border-radius:99px;background:#E8D7AE;overflow:hidden}
+.bxl-bar i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#174A34,#D3A94E);transition:width .5s ease}
+.bxl-t{font:600 16px "Fraunces",Georgia,serif;margin-top:12px}
+.bxl-sub{font-size:12.5px;color:#857052;margin-top:6px}
+.bxl-box .bxw-note{text-align:left}
+.bxl-kit{background:#103B2A;color:#F4E8CE;border:1px solid #D3A94E;border-radius:16px;padding:16px;margin:14px 0;text-align:left}
+.bxl-kit .bx-eyebrow{color:#F0CF7A;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
+.bxl-id{display:flex;align-items:center;gap:12px;margin:10px 0}
+.bxl-id img{width:54px;height:54px;border-radius:50%;object-fit:cover;border:2px solid #D3A94E}
+.bxl-id b{font:700 18px "Fraunces",Georgia,serif}
+.bxl-id div div{color:#D7CBAE;font-size:13px}
+.bxl-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+.bxl-nums div{background:rgba(244,232,206,.08);border:1px solid rgba(211,169,78,.35);border-radius:12px;padding:8px;text-align:center}
+.bxl-nums b{display:block;font:700 18px "Fraunces",Georgia,serif;color:#F4E8CE}
+.bxl-nums span{font-size:11px;color:#D7CBAE}
+.bxl-src{font-size:11px;color:#C9BC98;margin-bottom:12px}
+.bxl-accts{text-align:left;margin-bottom:6px}
+.bxl-accts .bx-eyebrow{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#B88A2E;margin-bottom:6px}
+.bxl-acct{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border:1px solid #E2CC97;border-radius:12px;background:#FFF8EB;margin-bottom:8px;font-weight:600}
+.bxl-acct i{font-style:normal;font-size:11px;font-weight:700;color:#2F7D4F;background:#DDEBD3;padding:2px 8px;border-radius:999px}
+.bxl-tip{font:italic 12px "Fraunces",Georgia,serif;color:#857052;margin-top:8px;text-align:center}
+.bxl-box .bxb.link{color:#123B2A;margin-top:6px}

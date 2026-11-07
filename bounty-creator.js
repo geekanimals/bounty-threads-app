@@ -299,6 +299,7 @@
   window.renderShell = function(){
     document.body.classList.remove("bx-pre");
     if(window.bxMemberExploreOff) bxMemberExploreOff();
+    if(window.__bxIg && window.__bxIgStage) __bxIgStage(2);
     chromeOnce(); flags();
     const r = _renderShell.apply(this, arguments);
     flags(); paintNext(); paintSprout(); paintBottom(); watch(); touchPage(); tidyNames();

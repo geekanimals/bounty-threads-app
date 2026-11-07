@@ -407,5 +407,78 @@
   if(root && root.classList.contains("open") && document.getElementById("gateIg") && !root.querySelector("#bxw") && typeof window.showInstagramGate === "function"){
     try{ window.showInstagramGate(); }catch(e){}
   }
+  /* ---------- Instagram connect: Sprout media-kit loader (Figma M05B) driven by the real steps, then "media kit ready" (M05A) ----------
+     01 Gathering  = Instagram handed the code back and the server is reading the account
+     02 Growing    = the account is saved and the app is drawing the media kit
+     03 Ready      = the media kit is on screen  → the ready card with the real numbers */
+  const STEPS = [["01","Gathering","Sprout is gathering your creator story…"],["02","Growing","Building your media kit…"],["03","Ready","Your media kit is ready"]];
+  function igPaint(n){
+    const st = window.__bxIg; if(!st) return; if(n < st.stage) return; st.stage = n;
+    const o = document.getElementById("igProg"); if(!o) return;
+    o.querySelectorAll(".bxl-step").forEach((x,i)=>{ x.classList.toggle("done", i < n-1); x.classList.toggle("on", i === n-1); });
+    const bar = o.querySelector(".bxl-bar i"); if(bar) bar.style.width = ({1:"33%",2:"66%",3:"100%"})[n];
+    const t = o.querySelector(".bxl-t"); if(t) t.textContent = STEPS[n-1][2];
+  }
+  function igLoader(){
+    if(window.hideBootSplash) try{ hideBootSplash(); }catch(e){}
+    let o = document.getElementById("igProg");
+    if(!o){ o = document.createElement("div"); o.id = "igProg"; document.body.appendChild(o); }
+    o.className = "ig-prog bxl";
+    o.innerHTML = `<div class="bxl-box"><div class="bxl-chip">${svg("check")}Instagram connected</div>
+      <h2>Let's build your media kit</h2><img class="bxl-sprout" src="${A}sprout_clipboard.png" alt="">
+      <div class="bxl-steps">${STEPS.map(s=>`<div class="bxl-step"><b>${s[0]}</b><span>${s[1]}</span></div>`).join("")}</div>
+      <div class="bxl-bar"><i></i></div><div class="bxl-t"></div>
+      <div class="bxl-sub">This may take a moment. You can leave this screen safely. Progress follows real import steps, not a timer.</div>
+      <div class="bxw-note">${svg("shield")}<span>We only use the Instagram data you approved. Your account stays yours.</span></div></div>`;
+    window.__bxIg = { stage:0 }; igPaint(1);
+  }
+  async function igReady(){
+    const o = document.getElementById("igProg"); if(!o) return;
+    let rows = [];
+    try{ const r = await sb.from("social_accounts").select("username,name,followers_count,media_count,recent_media,profile_picture_url,account_type,updated_at").eq("platform","instagram").eq("member_id", Auth.profile.id).order("updated_at",{ascending:false}); rows = (r && r.data) || []; }catch(e){}
+    const a = rows[0];
+    if(!a){ igClose(); return; }
+    const media = Array.isArray(a.recent_media) ? a.recent_media : [];
+    const eng = (a.followers_count && media.length) ? (100 * media.reduce((s,m)=> s + (Number(m.like_count)||0) + (Number(m.comments_count)||0), 0) / media.length / a.followers_count).toFixed(1) + "%" : "—";
+    const n = v => typeof fmtNum === "function" ? fmtNum(v||0) : String(v||0);
+    o.innerHTML = `<div class="bxl-box ready"><div class="bxl-chip">${svg("check")}Instagram connected</div>
+      <h2>Your world, in one kit.</h2><p class="bxl-sub" style="margin-top:0">Instagram connected. Your media kit is ready.</p>
+      <div class="bxl-kit"><div class="bx-eyebrow">Your media kit — ready to preview</div>
+        <div class="bxl-id">${a.profile_picture_url?`<img src="${E(a.profile_picture_url)}" alt="">`:""}<div><b>${E(a.name||a.username)}</b><div>@${E(a.username)}</div></div></div>
+        <div class="bxl-nums"><div><b>${n(a.followers_count)}</b><span>Followers</span></div><div><b>${eng}</b><span>Engagement</span></div><div><b>${n(a.media_count)}</b><span>Posts</span></div></div>
+        <div class="bxl-src">From Instagram · just now</div>
+        <button type="button" class="bxb gold" data-r="preview">Preview media kit ›</button></div>
+      <div class="bxl-accts"><div class="bx-eyebrow">Your Instagram accounts</div>${rows.map(x=>`<div class="bxl-acct"><span>@${E(x.username)}</span><i>Connected</i></div>`).join("")}
+        <button type="button" class="bxb outline-ink" data-r="another">+ Connect another account</button>
+        <div class="bxl-tip">Tip: Connect every account for a richer kit.</div></div>
+      <button type="button" class="bxb link" data-r="continue">Continue ›</button></div>`;
+    o.querySelector('[data-r="preview"]').onclick = ()=>{ igClose(); if(typeof currentPage!=="undefined" && currentPage!=="mediakit"){ currentPage = "mediakit"; renderShell(); } };
+    o.querySelector('[data-r="another"]').onclick = ()=>{ igClose(); if(typeof igAddAnother==="function") igAddAnother("mediakit"); };
+    o.querySelector('[data-r="continue"]').onclick = ()=>{ igClose(); currentPage = "dashboard"; renderShell(); };
+  }
+  function igClose(){ const o = document.getElementById("igProg"); window.__bxIg = null; if(o){ o.classList.add("out"); setTimeout(()=> o.remove(), 300); } }
+  window.__bxIgStage = igPaint;
+  if(creatorDoor()){
+    window.igProgStart = igLoader;
+    window.igProgFinish = async function(fast){
+      const st = window.__bxIg;
+      if(fast){ if(st && st.stage === 3) return; igClose(); return; }   // errors close it; the ready card stays until the creator taps
+      if(!st || st.finishing) return;
+      st.finishing = true; igPaint(2);
+      const t0 = Date.now();
+      while(Date.now()-t0 < 20000 && !(document.getElementById("mkHeadWrap") || document.getElementById("igBody"))) await new Promise(r=> setTimeout(r, 250));
+      igPaint(3);
+      await new Promise(r=> setTimeout(r, 500));
+      if(window.Auth && Auth.profile && Auth.profile.role === "creator") igReady(); else igClose();
+    };
+    // the app started its own loader before this file loaded (Instagram sent us back) — take it over
+    if(document.getElementById("igProg") && !window.__bxIg) igLoader();
+  }
+  // the app opening its shell after Instagram answered = step 2
+  if(typeof window.bootOS === "function"){
+    const _b2 = window.bootOS;
+    window.bootOS = function(){ if(window.__bxIg) igPaint(2); return _b2.apply(this, arguments); };
+  }
+
   window.bxGuest = { start:startGuest, go };
 })();
