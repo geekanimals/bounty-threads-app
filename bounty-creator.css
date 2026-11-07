@@ -840,3 +840,21 @@ html[data-bx-vibe="focused"] .bxg-tip{display:none!important}
 html.bx-still *,html.bx-still *::before,html.bx-still *::after{animation:none!important;transition:none!important}
 html[data-bx-size="s"] body.bx .main,html[data-bx-size="s"] .bx-onb{zoom:.92}
 html[data-bx-size="l"] body.bx .main,html[data-bx-size="l"] .bx-onb{zoom:1.12}
+
+/* QA round 3 */
+.bxb{gap:5px}
+.bx-onb .bxw-body{align-items:start}
+.bx-onb .bxw-hero{position:sticky;top:90px}
+@media(max-width:860px){ .bx-onb .bxw-hero{position:static} }
+/* Discover (M10) */
+body.bx .bx-disc-h{font:700 24px/1.2 "Fraunces",Georgia,serif!important}
+body.bx .ci-ccard{padding:0;overflow:hidden;gap:8px}
+body.bx .ci-ccard > *:not(.bxg-cover){margin-left:14px;margin-right:14px}
+body.bx .ci-ccard > .ci-ccard-foot{margin-bottom:14px}
+body.bx .bxg-cover.sm{height:90px}
+body.bx .bxg-cover.sm .bxg-ini{width:44px;height:44px;font-size:20px}
+body.bx .bx-elig{display:flex;flex-direction:column;gap:6px}
+body.bx .bx-elig-l{display:flex;flex-direction:column;gap:2px;font-size:12px}
+body.bx .bx-elig-l .ok{color:#2F7D4F}
+body.bx .bx-elig-l .no{color:#C2362F}
+body.bx .bxg-match.no{background:#F6D9D2;color:#C2362F;border-color:#EBC0B6}

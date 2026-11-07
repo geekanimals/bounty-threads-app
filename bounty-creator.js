@@ -207,6 +207,7 @@
     // campaign pages open with a header card instead of a page head — give it the new name too
     const h3 = !h1 && c.querySelector(":scope > div > .card:first-child > h3, :scope > .card:first-child > h3");
     if(h3 && h3.childNodes.length === 1 && TITLE[h3.textContent.trim()]) h3.textContent = TITLE[h3.textContent.trim()];
+    if(currentPage === "opencampaigns") touchDiscover();
     if(currentPage === "dashboard"){
       const head = c.querySelector(".page-head");
       if(head && !head.querySelector(".bx-eyebrow")){
@@ -223,6 +224,31 @@
         if(!body.querySelector("#bxHome")) buildHome(body);
       }
     }
+  }
+
+  /* ---------- Discover (signed in) like the Figma (M10 / W03): title, cover band, why you do / don't qualify ---------- */
+  async function touchDiscover(){
+    const c = document.getElementById("content"); if(!c) return;
+    const head = c.querySelector(".card:first-child h3");
+    if(head && !head.dataset.bx && /Discover campaigns|^Campaigns$/.test(head.textContent.trim())){
+      head.dataset.bx = 1; head.textContent = "Discover your next collaboration."; head.classList.add("bx-disc-h");
+      const p = head.parentElement.querySelector(".muted, p"); if(p) p.textContent = "Opportunities made for your world. Every brief, reward and timeline up front — apply in one tap.";
+    }
+    const cards = [...c.querySelectorAll(".ci-ccard[data-cdetail]")].filter(x=> !x.dataset.bx);
+    if(!cards.length) return;
+    let d; try{ d = await homeData(); }catch(e){ return; }
+    cards.forEach(card=>{
+      if(card.dataset.bx) return; card.dataset.bx = 1;
+      const x = (d.open||[]).find(o=> String(o.campaign_id) === card.dataset.cdetail); if(!x) return;
+      const k = x.campaign_type || ({cash:"paid",hybrid:"barter_paid",barter:"barter"})[x.comp_type] || "", KL = {paid:"Paid",barter:"Barter",barter_paid:"Hybrid"};
+      const el = x.eligibility || {}, cr = Array.isArray(el.criteria) ? el.criteria : [];
+      const tag = el.eligible === true ? `<span class="bxg-match ok">✓ You qualify</span>` : el.eligible === false ? `<span class="bxg-match no">Not eligible yet</span>` : `<span class="bxg-match">Potential match</span>`;
+      card.insertAdjacentHTML("afterbegin", `<div class="bxg-cover sm"><span class="bxg-ini">${H(String(x.brand||x.name||"B").charAt(0).toUpperCase())}</span></div>`);
+      const foot = card.querySelector(".ci-ccard-foot");
+      if(foot) foot.insertAdjacentHTML("beforebegin", `<div class="bx-elig">${tag}${cr.length?`<div class="bx-elig-l">${cr.slice(0,3).map(r=>`<span class="${r.ok?"ok":"no"}">${r.ok?"✓":"✗"} ${H(r.need)}</span>`).join("")}</div>`:""}</div>`);
+    });
+    if(!c.querySelector(".bx-disc-tip")){ const grid = c.querySelector(".ci-ccard")?.parentElement;
+      if(grid) grid.insertAdjacentHTML("afterend", `<div class="bxg-tip bx-disc-tip"><img src="${A}sprout_point.png" alt=""><div>A high match isn't always eligible — check the reasons!</div></div>`); }
   }
 
   /* ---------- Home like the Figma (M09 / W02): your next move, active campaigns, made for your world,
@@ -273,7 +299,7 @@
         const k = x.campaign_type || ({cash:"paid",hybrid:"barter_paid",barter:"barter"})[x.comp_type] || "", KL = {paid:"Paid",barter:"Barter",barter_paid:"Hybrid"};
         const ok = x.eligibility && x.eligibility.eligible === true, no = x.eligibility && x.eligibility.eligible === false;
         return `<article class="bxg-camp" data-hbrief="${H(x.campaign_id)}"><div class="bxg-cover"><span class="bxg-ini">${H(String(x.brand||x.name||"B").charAt(0).toUpperCase())}</span><span class="bxg-type t-${H(k||"x")}">${KL[k]||"Campaign"}</span></div>
-          <div class="bxg-body"><h4>${H(x.brand||"")} · ${H(x.name||"Campaign")}</h4><div class="bxg-comp">${KL[k]||"Campaign"}${x.product_value?" · ₹"+Number(x.product_value).toLocaleString("en-IN"):""}${x.ends_on?" · till "+H(x.ends_on):""}</div>
+          <div class="bxg-body"><h4>${H(x.brand||"")} · ${H(x.name||"Campaign")}</h4><div class="bxg-comp">${KL[k]||"Campaign"}${x.product_value?" · ₹"+Number(x.product_value).toLocaleString("en-IN"):""}${x.ends_on?" · till "+H(new Date(x.ends_on+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short"})):""}</div>
           <span class="bxg-match ${ok?"ok":""}">${ok?"✓ You qualify":no?"Check eligibility":"Potential match"}</span><button type="button" class="btn" data-hbrief="${H(x.campaign_id)}">View brief ›</button></div></article>`; }).join("")}</div>`);
       [...body.children].filter(x=> x.classList.contains("bx-divider")).forEach(x=> x.remove());
     }

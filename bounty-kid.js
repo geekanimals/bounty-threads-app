@@ -9,14 +9,14 @@
   const mid = () => (window.Auth && Auth.profile && Auth.profile.id) || "anon";
   const key = () => "bx_prefs_" + mid();
   let P = Object.assign({}, DEF);
-  function load(){ try{ const j = JSON.parse(localStorage.getItem(key()) || "null"); if(j) P = Object.assign({}, DEF, j); }catch(e){} return P; }
+  function load(){ try{ const j = JSON.parse(localStorage.getItem(mid() === "anon" ? "bx_prefs_last" : key()) || localStorage.getItem("bx_prefs_last") || "null"); if(j) P = Object.assign({}, DEF, j); }catch(e){} return P; }
   async function loadRemote(){
     try{ const { data } = await sb.auth.getUser(); const m = data && data.user && data.user.user_metadata && data.user.user_metadata.bx_prefs;
-      if(m && typeof m === "object"){ P = Object.assign({}, DEF, m); try{ localStorage.setItem(key(), JSON.stringify(P)); }catch(e){} apply(); } }catch(e){}
+      if(m && typeof m === "object"){ P = Object.assign({}, DEF, m); try{ localStorage.setItem(key(), JSON.stringify(P)); localStorage.setItem("bx_prefs_last", JSON.stringify(P)); }catch(e){} apply(); } }catch(e){}
   }
   async function save(next){
     P = Object.assign({}, P, next || {});
-    try{ localStorage.setItem(key(), JSON.stringify(P)); }catch(e){}
+    try{ localStorage.setItem(key(), JSON.stringify(P)); localStorage.setItem("bx_prefs_last", JSON.stringify(P)); }catch(e){}
     apply();
     try{ await sb.auth.updateUser({ data:{ bx_prefs:P } }); }catch(e){}
   }
@@ -55,13 +55,13 @@
   new MutationObserver(muts=>{ if(q) return; q = true; requestAnimationFrame(()=>{ q = false;
     if(P.kid !== "sprout") swapImgs(); if(name() !== "Sprout") swapNames();
     if(P.scene !== "auto" && document.body.classList.contains("bx")){ const want = P.scene === "forest" ? "forest" : "parch"; if(document.body.dataset.bg !== want) document.body.dataset.bg = want; }
-    if(P.avatar){ const me = document.getElementById("me"); if(me && !me.dataset.bxKid) avatar(); }
+    if(P.avatar){ const me = document.getElementById("me"); if(me && (!me.dataset.bxKid || !String(me.style.backgroundImage).includes(kid().img))) avatar(); }
     const mc = document.getElementById("meCard"), out = document.getElementById("meOut");
     if(mc && out && !mc.querySelector(".bx-me-set") && document.body.classList.contains("bx")){
       out.insertAdjacentHTML("beforebegin", `<button type="button" class="bx-me-set"><img src="${kid().img}" alt=""><span><b>Settings & sidekick</b><i>Name, look, scene, text size</i></span></button>`);
       mc.querySelector(".bx-me-set").onclick = ()=>{ const x = document.getElementById("meX"); if(x) x.click(); sheet(); };
     } }); })
-    .observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:["data-bg"] });
+    .observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:["data-bg","style"] });
 
   // Sprout's language: Hindi / Hinglish answers even when the question is typed in English
   const hook = ()=>{ if(window.CampaignHelper && !CampaignHelper.__bx){ const o = CampaignHelper.isHinglish; CampaignHelper.isHinglish = q => (P.lang === "hinglish" || P.lang === "hindi") ? true : P.lang === "english" ? false : o(q); CampaignHelper.__bx = 1; } };
