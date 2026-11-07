@@ -738,3 +738,62 @@ body.bx .bx-dupe{display:none!important}
 .bxl-acct i{font-style:normal;font-size:11px;font-weight:700;color:#2F7D4F;background:#DDEBD3;padding:2px 8px;border-radius:999px}
 .bxl-tip{font:italic 12px "Fraunces",Georgia,serif;color:#857052;margin-top:8px;text-align:center}
 .bxl-box .bxb.link{color:#123B2A;margin-top:6px}
+/* Sign-in card: exact Figma text per screen size (M02/M03 phone · W01/W12 desktop) */
+.bxw .m-only{display:none}
+@media(max-width:860px){ .bxw .d-only{display:none!important} .bxw .m-only{display:revert} .bxw .bxw-card h3{display:none}
+  .bxw.form.otp .bxw-body::before{content:"One little code, then you're in."} .bxw.form .bxw-card .bxw-sub{font-style:normal;font-family:Inter,system-ui,sans-serif;color:#3D4A3A;font-size:13.5px} }
+.bxw-phone label{display:block;font-size:13px;font-weight:600;color:#123B2A}
+.bxw-pre{display:flex;align-items:center;margin-top:6px;border:1px solid #D9C08A;border-radius:12px;background:#FFFDF6;overflow:hidden}
+.bxw-pre:focus-within{border-color:#D3A94E;box-shadow:0 0 0 3px rgba(211,169,78,.25)}
+.bxw-pre span{padding:0 4px 0 14px;font:600 15px Inter,system-ui,sans-serif;color:#123B2A}
+.bxw-pre input{border:0!important;box-shadow:none!important;margin:0!important;background:transparent!important;flex:1;min-width:0}
+.bxw-sentto{font-size:13.5px;color:#3D4A3A;margin:2px 0 10px;text-align:center}
+.bxw-sentto a{color:#123B2A;font-weight:700}
+.bxw-code-l{display:block;text-align:center;font:700 11px Inter,system-ui,sans-serif!important;letter-spacing:.14em;text-transform:uppercase;color:#B88A2E!important;position:relative}
+.bxw .bxw-code{position:absolute!important;inset:22px 0 auto 0;height:52px;opacity:0;width:100%!important;margin:0!important;cursor:text}
+.bxw-boxes{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:8px 0 6px;pointer-events:none}
+.bxw-boxes i{height:52px;border-radius:12px;border:1px solid #D9C08A;background:#FFFDF6;display:grid;place-items:center;font:700 22px "Fraunces",Georgia,serif;font-style:normal;color:#123B2A}
+.bxw-boxes i.on{border-color:#D3A94E;box-shadow:0 0 0 3px rgba(211,169,78,.25)}
+.bxw-form #waCodeRow{position:relative}
+.bxw-form .auth-mini{text-align:center}
+#bxResendT{color:#857052}
+.bxw-mexplore{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:16px;text-align:center}
+.bxw-mexplore img{width:70px;height:70px;object-fit:contain}
+.bxw-mexplore small{font-size:12px;color:#3D4A3A}
+.bxb.link-ink{background:none;border:0;color:#123B2A;padding:4px;font-size:15px;width:auto}
+/* Sidekick (M04) + profile setup (M06–M08) */
+.bxk-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.bxk{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;border-radius:16px;border:1px solid #E2CC97;background:#103B2A;color:#F4E8CE;cursor:pointer;font:600 14px "Fraunces",Georgia,serif}
+.bxk img{width:72px;height:72px;object-fit:contain}
+.bxk.on{border:2px solid #D3A94E;box-shadow:0 0 0 3px rgba(211,169,78,.25)}
+.bxk:disabled{opacity:.6;cursor:default}
+.bxk i{font:500 11px Inter,system-ui,sans-serif;color:#D7CBAE}
+.bx-onb{position:fixed;inset:0;z-index:10050;overflow-y:auto}
+.bx-onb .bxw{min-height:100vh}
+.bxo-dots{display:flex;gap:6px;margin-top:14px}
+.bxo-dots i{width:34px;height:5px;border-radius:99px;background:rgba(244,232,206,.25)}
+.bxo-dots i.on{background:#D3A94E}
+.bxo-sec{margin-bottom:14px;text-align:left}
+.bxo-sec > b{font:600 15px "Fraunces",Georgia,serif;color:#123B2A}
+.bxo-sec .muted{font-size:12px;color:#857052}
+.bxo-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.bxo-chip{padding:8px 14px;border-radius:999px;border:1px solid #D9C08A;background:#FFFDF6;color:#123B2A;font:600 13px Inter,system-ui,sans-serif;cursor:pointer}
+.bxo-chip.on{background:#103B2A;color:#F0CF7A;border-color:#D3A94E}
+.bxo-chips.big .bxo-chip{padding:10px 16px;font-size:14px}
+.bxo-add{padding:8px 14px;border-radius:999px;border:1px dashed #B88A2E;background:transparent;color:#B88A2E;font:600 13px Inter,system-ui,sans-serif;cursor:pointer;white-space:nowrap}
+.bxo-langin{padding:8px 12px;border-radius:999px;border:1px solid #D3A94E;background:#FFFDF6;font:13px Inter,system-ui,sans-serif;min-width:180px}
+.bxo-sec input#bxoCity,.bxo-search input,.bxo-f input{display:block;width:100%;margin-top:8px;padding:11px 14px;border-radius:12px;border:1px solid #D9C08A;background:#FFFDF6;color:#123B2A;font:14px Inter,system-ui,sans-serif}
+.bxo-search{display:flex;gap:8px;align-items:center}
+.bxo-search input{margin-top:0}
+.bxo-count{font-size:12px;font-weight:700;color:#B88A2E;margin:10px 0 0;letter-spacing:.04em}
+.bxo-terms{display:grid;gap:8px;margin-top:8px}
+.bxo-term{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border-radius:14px;border:1px solid #D9C08A;background:#FFFDF6;color:#123B2A;text-align:left;cursor:pointer}
+.bxo-term b{font:700 16px "Fraunces",Georgia,serif}
+.bxo-term span{font-size:12.5px;color:#3D4A3A}
+.bxo-term.on{background:#103B2A;border-color:#D3A94E;color:#F4E8CE}
+.bxo-term.on span{color:#D7CBAE}
+.bxo-term.on b::after{content:" ✓";color:#F0CF7A}
+.bxo-f{display:block;font-size:13px;font-weight:600;color:#123B2A;margin-top:10px}
+.bxo-toggle{display:flex;align-items:center;gap:10px;font-size:13.5px;color:#123B2A;margin:4px 0 6px}
+.bxo-toggle input{width:18px;height:18px;accent-color:#103B2A}
+.bx-onb .auth-err{color:#C2362F;font-size:13px;min-height:4px;margin:8px 0}

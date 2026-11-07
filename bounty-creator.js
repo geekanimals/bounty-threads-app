@@ -303,6 +303,7 @@
     chromeOnce(); flags();
     const r = _renderShell.apply(this, arguments);
     flags(); paintNext(); paintSprout(); paintBottom(); watch(); touchPage(); tidyNames();
+    if(isCreator() && window.bxMaybeOnboard) setTimeout(()=> bxMaybeOnboard(), 600);   // new creator: profile setup step 1–3, once
     return r;
   };
   /* ---------- Ask Sprout sheet (Figma M28): greeting, quick asks, your next task, then the same chat ---------- */

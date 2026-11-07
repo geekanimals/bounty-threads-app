@@ -52,21 +52,25 @@
         </section>
         <section class="bxw-card" id="bxCard">
           <button type="button" class="bxw-back" data-bx="back">${svg("back")}Back</button>
-          <h3 id="bxCardH">Log in or sign up</h3>
-          <p class="bxw-sub" id="bxCardP">We'll send a one-time code on WhatsApp.</p>
+          <h3 id="bxCardH"><span class="d-only">Log in or sign up</span><span class="m-only">WhatsApp number</span></h3>
+          <p class="bxw-sub" id="bxCardP"><span class="d-only">We'll send a one-time code on WhatsApp.</span><span class="m-only">Sign in with WhatsApp to apply for campaigns and track your collaborations.</span></p>
           <div id="cinvBanner"></div>
           <form id="waDoorForm" class="auth-form bxw-form">
-            <label>WhatsApp number<input name="phone" id="waPhoneIn" placeholder="+91 98123 45678" required inputmode="tel" autocomplete="tel"></label>
+            <div class="bxw-phone" id="bxPhoneBox"><label for="waPhoneIn">WhatsApp number</label><div class="bxw-pre"><span>+91</span><input name="phone" id="waPhoneIn" placeholder="Enter your 10-digit number" required inputmode="tel" autocomplete="tel"></div></div>
             <div class="bxw-hint" id="bxPhoneHint">We'll send a one-time code to verify your number.</div>
-            <div id="waCodeRow" style="display:none"><label>Verification code<input name="code" id="waCodeIn" class="bxw-code" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code"></label>
-              <div class="auth-mini"><span id="waSentTo"></span> · <a href="#" id="waChange">Change number</a> · <a href="#" id="waResend">Resend code</a></div></div>
+            <div class="bxw-sentto" id="bxSentTo" style="display:none"><span id="bxMasked"></span> | <a href="#" id="bxChange">Change number</a></div>
+            <div id="waCodeRow" style="display:none"><label class="bxw-code-l">✦ Verification code ✦<input name="code" id="waCodeIn" class="bxw-code" inputmode="numeric" maxlength="6" placeholder="" autocomplete="one-time-code"></label>
+              <div class="bxw-boxes" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+              <div class="auth-mini"><span id="waSentTo" style="display:none"></span><a href="#" id="waChange" style="display:none">Change number</a><span id="bxResendT">Resend code in 00:30</span><a href="#" id="waResend" style="display:none">Resend code</a></div></div>
             <div class="auth-err" id="authErr"></div>
-            <button class="bxb gold auth-submit" id="waGo" type="submit">Send code on WhatsApp ›</button>
+            <button class="bxb gold auth-submit" id="waGo" type="submit"><span class="d-only">Send code on WhatsApp ›</span><span class="m-only">Send code ›</span></button>
           </form>
-          <div class="bxw-or"><span>or</span></div>
-          <button type="button" class="bxb outline-ink" data-bx="explore">Explore campaigns first ›</button>
-          <div class="bxw-note">${svg("shield")}<span>Browsing needs no sign-in. WhatsApp is only needed when you apply.</span></div>
-          <div class="bxw-foot">${svg("lock")}We never ask for your WhatsApp password. Bounty will never ask for your code.</div>
+          <div class="bxw-or d-only"><span>or</span></div>
+          <button type="button" class="bxb outline-ink d-only" data-bx="explore">Explore campaigns first ›</button>
+          <div class="bxw-note d-only" id="bxNoteD">${svg("shield")}<span>Browsing needs no sign-in. WhatsApp is only needed when you apply.</span></div>
+          <div class="bxw-mexplore m-only"><img src="${A}sprout_point.png" alt=""><button type="button" class="bxb link-ink" data-bx="explore">I'll explore first</button>
+            <small id="bxExploreSmall">Browse campaigns without signing in. WhatsApp verification is only required when you apply.</small></div>
+          <div class="bxw-note" id="bxSafe">${svg("shield")}<span>We never ask for your WhatsApp password.</span></div>
         </section>
       </div>
     </div>`;
@@ -95,17 +99,37 @@
       if(k === "back") w.classList.remove("form");
       if(k === "explore") startGuest();
     }));
-    // M03: once the code is sent the card becomes "One little code, then you're in."
+    // M03 / W12: once the code is sent → "One little code, then you're in.", masked number, 6 boxes, resend timer
     const row = document.getElementById("waCodeRow"), h = document.getElementById("bxCardH"), p = document.getElementById("bxCardP"), hint = document.getElementById("bxPhoneHint");
+    const phoneBox = document.getElementById("bxPhoneBox"), sent = document.getElementById("bxSentTo"), masked = document.getElementById("bxMasked");
+    const codeIn = document.getElementById("waCodeIn"), boxes = w.querySelectorAll(".bxw-boxes i");
+    const rsT = document.getElementById("bxResendT"), rsA = document.getElementById("waResend");
+    const H0 = h.innerHTML, P0 = p.innerHTML; let timer = null;
+    const startTimer = ()=>{ clearInterval(timer); let s = 30; rsA.style.display = "none"; rsT.style.display = "";
+      const tick = ()=>{ rsT.textContent = "Resend code in 00:" + String(s).padStart(2,"0"); if(s-- <= 0){ clearInterval(timer); rsT.style.display = "none"; rsA.style.display = ""; } }; tick(); timer = setInterval(tick, 1000); };
     if(row) new MutationObserver(()=>{
       const on = row.style.display !== "none";
-      h.textContent = on ? "One little code, then you're in." : "Log in or sign up";
-      p.textContent = on ? "Enter the 6-digit code sent to your WhatsApp number." : "We'll send a one-time code on WhatsApp.";
+      w.classList.toggle("otp", on);
+      h.innerHTML = on ? "One little code, then you're in." : H0;
+      p.innerHTML = on ? "Enter the 6-digit code sent to your WhatsApp number." : P0;
       if(hint) hint.style.display = on ? "none" : "";
+      if(phoneBox) phoneBox.style.display = on ? "none" : "";
+      sent.style.display = on ? "" : "none";
+      if(on){ const d = String(document.getElementById("waPhoneIn").value||"").replace(/\D/g,"").slice(-10); masked.textContent = "+91 ••••• ••" + d.slice(-3); startTimer();
+        document.getElementById("bxSafe").innerHTML = `${svg("shield")}<span><b>Bounty will never ask for this code.</b><br>Never share your verification code with anyone.</span>`;
+        const sm = document.getElementById("bxExploreSmall"); if(sm) sm.textContent = "Browse freely. WhatsApp verification is only needed when you apply."; }
+      else { clearInterval(timer); document.getElementById("bxSafe").innerHTML = `${svg("shield")}<span>We never ask for your WhatsApp password.</span>`; }
     }).observe(row, { attributes:true, attributeFilter:["style"] });
+    document.getElementById("bxChange").onclick = e=>{ e.preventDefault(); document.getElementById("waChange").click(); };
+    rsA.addEventListener("click", ()=> setTimeout(startTimer, 50));
+    if(codeIn) codeIn.addEventListener("input", ()=>{ const v = codeIn.value.replace(/\D/g,"").slice(0,6); if(v !== codeIn.value) codeIn.value = v; boxes.forEach((b,i)=>{ b.textContent = v[i] || ""; b.classList.toggle("on", i === v.length); }); });
     // keep the Bounty button wording when login.js resets it
     const go = document.getElementById("waGo");
-    if(go) new MutationObserver(()=>{ const t = go.textContent; if(/Send OTP on WhatsApp/.test(t)) go.textContent = "Send code on WhatsApp ›"; else if(/^Verify & sign in/.test(t)) go.textContent = "Verify & continue ›"; })
+    const mob = () => window.matchMedia("(max-width:860px)").matches;
+    if(go) new MutationObserver(()=>{ const t = go.textContent;
+      if(/Send OTP on WhatsApp/.test(t)) go.innerHTML = '<span class="d-only">Send code on WhatsApp ›</span><span class="m-only">Send code ›</span>';
+      else if(/^Verify & sign in/.test(t)) go.textContent = "Verify & continue ›";
+      else if(/^Sending OTP/.test(t)) go.textContent = "Sending code…"; })
       .observe(go, { childList:true, characterData:true, subtree:true });
     return r;
   };
@@ -352,8 +376,25 @@
   window.bxMemberExplore = function(page){ G.member = true; go(page || "discover"); };
   window.bxMemberExploreOff = function(){ G.member = false; };
 
+  const kidKey = () => "bx_sidekick_" + ((window.Auth && Auth.profile && Auth.profile.id) || "");
+  function sidekickScreen(next){
+    const root = document.getElementById("authRoot"); if(!root) return next();
+    document.body.classList.add("bx-pre"); root.classList.add("open");
+    const KIDS = [["Sprout","wave",true],["Flick","think",false],["Nimbus","sleep",false],["Dot","point",false]];
+    root.innerHTML = `<div class="bxw form ig" id="bxw"><header class="bxw-top">${LOGO}</header><div class="bxw-body">
+      <section class="bxw-hero"><h1>Meet your sidekick.</h1><p class="bxw-lead">A little friend for the big things you'll create. Pick one now, or choose later. You can switch anytime.</p></section>
+      <section class="bxw-card"><div class="bxk-grid">${KIDS.map(([n,p,on],i)=>`<button type="button" class="bxk${i===0?" on":""}" data-kid="${n}"${on?"":" disabled"}><img src="${A}sprout_${p}.png" alt=""><b>${n}</b>${on?"":"<i>Coming soon</i>"}</button>`).join("")}</div>
+        <div class="bxw-hint" style="text-align:center">Other characters are placeholders — final art for Flick, Nimbus and Dot comes from the character library.</div>
+        <div class="bxg-tip"><img src="${A}sprout_point.png" alt=""><div>Sprout can help with briefs, deadlines and your next move.</div></div>
+        <button type="button" class="bxb gold" id="bxKidGo" style="margin-top:14px">Continue with Sprout ›</button>
+        <button type="button" class="bxb link-ink" id="bxKidLater" style="width:100%;margin-top:6px">I'll choose later</button>
+        <div class="bxw-note">${svg("shield")}<span>Your sidekick is optional. Rename or change it anytime in Settings.</span></div></section></div></div>`;
+    const done = v => { try{ localStorage.setItem(kidKey(), v); }catch(e){} next(); };
+    document.getElementById("bxKidGo").onclick = ()=> done("Sprout");
+    document.getElementById("bxKidLater").onclick = ()=> done("later");
+  }
   if(typeof window.showInstagramGate === "function"){
-    window.showInstagramGate = function(){
+    const _igGateBounty = function(){
       if(window.hideBootSplash) hideBootSplash();
       const root = document.getElementById("authRoot"); if(!root) return;
       document.body.classList.add("bx-pre");
@@ -362,22 +403,21 @@
         <header class="bxw-top">${LOGO}</header>
         <div class="bxw-body">
           <section class="bxw-hero">
-            <div class="bx-eyebrow">✦ Step 2 · optional ✦</div>
             <h1>Make your work shine.</h1>
             <p class="bxw-lead">Connect Instagram to build your creator media kit automatically.</p>
             <img class="bxw-sprout" src="${A}sprout_point.png" alt="">
           </section>
           <section class="bxw-card">
-            <h3>Connect Instagram</h3>
-            <p class="bxw-sub">Your media kit builds itself from your Business or Creator account.</p>
+            <h3>Preview</h3>
+            <p class="bxw-sub">Available data depends on your account type and Meta permissions.</p>
             <div class="bxw-two">
               <div><b>What Bounty can see</b><ul><li>${svg("check")}Your profile and public content</li><li>${svg("check")}Available insights you authorise</li><li>${svg("check")}Connected account details</li></ul></div>
               <div><b>What Bounty never does</b><ul><li>${svg("lock")}Never asks for your Instagram password</li><li>${svg("lock")}Never posts or messages on your behalf</li><li>${svg("lock")}Never accesses private DMs</li></ul></div>
             </div>
             <button type="button" class="bxb gold" id="gateIg">Continue with Instagram ›</button>
             <div class="bxw-hint" style="text-align:center">Secure sign-in through Meta's official authorisation flow.</div>
-            <button type="button" class="bxb outline-ink" id="bxIgLater" style="margin-top:12px">Not now — explore campaigns first ›</button>
-            <div class="bxw-note">${svg("shield")}<span>Instagram is optional to look around. You can browse campaigns and fill your profile by hand; applying needs Instagram.</span></div>
+            <button type="button" class="bxb outline-ink" id="bxIgLater" style="margin-top:12px">Not now — enter details manually ›</button>
+            <div class="bxw-note">${svg("shield")}<span>Instagram is optional. You can browse campaigns and build a manual profile without connecting.</span></div>
             <div class="bxw-hint" style="margin-top:12px">Personal account? In Instagram: Settings → Account type and tools → Switch to professional account (free, 1 minute).</div>
             <button type="button" class="bxb link" id="gateSignout" style="color:#857052;margin-top:4px">Sign out</button>
           </section>
@@ -389,6 +429,11 @@
         root.classList.remove("open"); root.innerHTML = ""; document.body.classList.remove("bx-pre");
         bootOS();
       };
+    };
+    window.showInstagramGate = function(){
+      let seen = null; try{ seen = localStorage.getItem(kidKey()); }catch(e){}
+      if(!seen) return sidekickScreen(_igGateBounty);
+      return _igGateBounty();
     };
   }
   // "Not now" was chosen on this device: open the app; the app's own profile gate keeps campaigns locked until Instagram is in
@@ -478,6 +523,143 @@
   if(typeof window.bootOS === "function"){
     const _b2 = window.bootOS;
     window.bootOS = function(){ if(window.__bxIg) igPaint(2); return _b2.apply(this, arguments); };
+  }
+
+  /* ---------- New creator profile setup, step 1–3 (Figma M06 · M07 · M08 / W17–W19) — saves to the real profile ---------- */
+  const onbKey = () => "bx_onb_done_" + ((window.Auth && Auth.profile && Auth.profile.id) || "");
+  const papi = (fn, a) => sb.schema("api").rpc(fn, a || {}).then(r=> r, e=> ({ error:e }));
+  let _onbChecked = false;
+  window.bxMaybeOnboard = async function(force){
+    if(!force && _onbChecked) return; _onbChecked = true;
+    if(!(window.Auth && Auth.profile && Auth.profile.role === "creator") || !window.__ciProfileEnabled) return;
+    const ar = document.getElementById("authRoot"); if(ar && ar.classList.contains("open")){ _onbChecked = false; return; }   // sign-in / Instagram step still on screen
+    try{ if(!force && localStorage.getItem(onbKey())) return; }catch(e){}
+    const r = await papi("get_my_profile"); if(r.error || !r.data) return;
+    const d = r.data, pro = d.professional || {};
+    if(!force && ((pro.categories||[]).length || (pro.content_formats||[]).length || (pro.languages||[]).length)) { try{ localStorage.setItem(onbKey(), "1"); }catch(e){} return; }
+    onbStep(1, d);
+  };
+  function onbShell(step, title, sub, body, tip, foot){
+    let o = document.getElementById("bxOnb");
+    if(!o){ o = document.createElement("div"); o.id = "bxOnb"; o.className = "bx-onb"; document.body.appendChild(o); }
+    o.innerHTML = `<div class="bxw form ig"><header class="bxw-top">${LOGO}</header><div class="bxw-body">
+      <section class="bxw-hero"><div class="bx-eyebrow">Your creator profile · Step ${step} of 3</div><h1>${title}</h1><p class="bxw-lead">${sub}</p>
+        <div class="bxo-dots">${[1,2,3].map(i=>`<i class="${i<=step?"on":""}"></i>`).join("")}</div></section>
+      <section class="bxw-card">${body}<div class="bxg-tip"><img src="${A}sprout_point.png" alt=""><div>${tip}</div></div>
+        <div class="auth-err" id="bxoErr"></div>
+        <button type="button" class="bxb gold" id="bxoSave">${step===1?"Save & continue ›":step===2?"Save my dream brands ›":"Save & explore campaigns ›"}</button>
+        <button type="button" class="bxb link-ink" id="bxoSkip" style="width:100%;margin-top:6px">Skip for now</button>
+        <div class="bxw-note">${svg("shield")}<span>${foot}</span></div></section></div></div>`;
+    o.scrollTop = 0;
+    return o;
+  }
+  const chip = (v, on) => `<button type="button" class="bxo-chip${on?" on":""}" data-v="${E(v)}">${E(v)}</button>`;
+  const picked = (o, sel) => [...o.querySelectorAll(sel + " .bxo-chip.on")].map(b=> b.dataset.v);
+  function wireChips(o, max){ o.querySelectorAll(".bxo-chips").forEach(box=> box.addEventListener("click", e=>{ const b = e.target.closest(".bxo-chip"); if(!b) return;
+    if(!b.classList.contains("on") && max && box.dataset.max && box.querySelectorAll(".bxo-chip.on").length >= Number(box.dataset.max)) return; b.classList.toggle("on"); box.dispatchEvent(new Event("chips")); })); }
+  function onbFinish(goExplore){
+    try{ localStorage.setItem(onbKey(), "1"); localStorage.setItem("ci_ob_commercial_" + ((Auth.profile && (Auth.profile.id||Auth.profile.user_id)) || "me"), "1"); }catch(e){}
+    const o = document.getElementById("bxOnb"); if(o) o.remove();
+    if(window.__profileReq && typeof creatorProfileGate === "function"){ creatorProfileGate().then(()=>{}).catch(()=>{}); }
+    if(goExplore){ if(window.__profileGate && window.bxMemberExplore){ bxMemberExplore("discover"); } else { currentPage = "opencampaigns"; renderShell(); } }
+    else { currentPage = "dashboard"; renderShell(); }
+  }
+  function onbStep(n, d){
+    const pro = d.professional || {}, cp = d.commercial_preference || {};
+    if(n === 1){
+      const CATS = ["Beauty","Fashion","Lifestyle","Food","Travel","Fitness","Tech","Gaming","Parenting","Home & Decor","Education","Other"];
+      const FMT = [["reel","Reels"],["story","Stories"],["carousel","Carousels"],["ugc","UGC videos"],["live","Live"],["post","Photos"]];
+      const LANG = ["Hindi","Hinglish","English","Bengali","Tamil","Telugu"];
+      const cats = pro.categories || [], fmts = pro.content_formats || [], langs = pro.languages || [];
+      const extraL = langs.filter(l=> !LANG.includes(l));
+      const o = onbShell(1, "What do you create?", "Tell us about your world. You can update this anytime.",
+        `<div class="bxo-sec"><b>Your categories</b> <span class="muted">Choose all that fit</span><div class="bxo-chips" id="bxoCats">${CATS.map(x=> chip(x, cats.includes(x))).join("")}</div></div>
+         <div class="bxo-sec"><b>What you make</b> <span class="muted">Select your formats</span><div class="bxo-chips" id="bxoFmt">${FMT.map(([k,l])=> `<button type="button" class="bxo-chip${fmts.includes(k)?" on":""}" data-v="${k}">${l}</button>`).join("")}</div></div>
+         <div class="bxo-sec"><b>Your languages</b><div class="bxo-chips" id="bxoLang">${LANG.concat(extraL).map(x=> chip(x, langs.includes(x))).join("")}<button type="button" class="bxo-add" id="bxoAddLang">+ Add language</button></div></div>
+         <div class="bxo-sec"><b>Your city</b> <span class="muted">Helps us find opportunities near you.</span><input id="bxoCity" placeholder="Search city or town" value="${E(pro.city_coarse||"")}"></div>`,
+        "Pick what feels like you — there's no perfect profile.", "Your choices help recommendations. They do not guarantee eligibility.");
+      wireChips(o);
+      document.getElementById("bxoAddLang").onclick = ()=>{
+        const btn = document.getElementById("bxoAddLang"); if(document.getElementById("bxoLangIn")) return;
+        btn.insertAdjacentHTML("beforebegin", `<input id="bxoLangIn" class="bxo-langin" placeholder="Type a language, press Enter">`);
+        const i = document.getElementById("bxoLangIn"); i.focus();
+        const add = ()=>{ const v = i.value.trim(); i.remove(); if(v) btn.insertAdjacentHTML("beforebegin", chip(v, true)); };
+        i.onkeydown = e=>{ if(e.key === "Enter"){ e.preventDefault(); add(); } if(e.key === "Escape") i.remove(); };
+        i.onblur = add;
+      };
+      document.getElementById("bxoSkip").onclick = ()=> onbStep(2, d);
+      document.getElementById("bxoSave").onclick = async ()=>{
+        const btn = document.getElementById("bxoSave"), err = document.getElementById("bxoErr"); err.textContent = ""; btn.disabled = true; btn.textContent = "Saving…";
+        const patch = { categories: picked(o,"#bxoCats"), content_formats: picked(o,"#bxoFmt"), languages: picked(o,"#bxoLang") };
+        const city = document.getElementById("bxoCity").value.trim(); if(city) patch.city_coarse = city;
+        const r = await papi("save_profile_section", { p_section:"professional", p_patch:patch, p_correlation:"ui-onboard" });
+        if(r.error){ err.textContent = "Couldn't save: " + (r.error.message || r.error); btn.disabled = false; btn.textContent = "Save & continue ›"; return; }
+        d.professional = Object.assign({}, pro, patch); onbStep(2, d);
+      };
+    }
+    if(n === 2){
+      const SUG = ["Nike","Sephora","boAt","Nykaa","Adidas","Samsung","Mamaearth","Starbucks"];
+      const have = (d.dream_brands || []).map(x=> x.submitted_brand_name).filter(Boolean);
+      const all = have.concat(SUG.filter(s=> !have.some(h=> h.toLowerCase() === s.toLowerCase())));
+      const o = onbShell(2, "Your dream brand board.", "Who would you love to create with? Pick up to 5. This wishlist is private to you.",
+        `<div class="bxo-sec"><div class="bxo-search"><input id="bxoBrandQ" placeholder="Search brands you love"><button type="button" class="bxo-add" id="bxoSuggest">+ Suggest a brand</button></div>
+           <div class="bxo-count" id="bxoCount"></div><div class="bxo-chips big" id="bxoBrands" data-max="5">${all.map(x=> chip(x, have.includes(x))).join("")}</div></div>
+         <div class="bxw-hint">Only you can see your Dream Brand Board.</div>`,
+        "I'll help you spot opportunities from your favourites!", "Choosing a brand does not guarantee a collaboration. Edit anytime.");
+      wireChips(o, 5);
+      const box = document.getElementById("bxoBrands"), cnt = document.getElementById("bxoCount");
+      const count = ()=>{ cnt.textContent = `${box.querySelectorAll(".bxo-chip.on").length} of 5 selected`; };
+      box.addEventListener("chips", count); count();
+      const q = document.getElementById("bxoBrandQ");
+      q.oninput = ()=>{ const v = q.value.trim().toLowerCase(); box.querySelectorAll(".bxo-chip").forEach(b=> b.style.display = !v || b.dataset.v.toLowerCase().includes(v) || b.classList.contains("on") ? "" : "none"); };
+      document.getElementById("bxoSuggest").onclick = ()=>{ const v = q.value.trim(); if(!v) { q.focus(); return; }
+        if([...box.querySelectorAll(".bxo-chip")].some(b=> b.dataset.v.toLowerCase() === v.toLowerCase())) return;
+        if(box.querySelectorAll(".bxo-chip.on").length >= 5) return; box.insertAdjacentHTML("afterbegin", chip(v, true)); q.value = ""; q.oninput(); count(); };
+      document.getElementById("bxoSkip").onclick = ()=> onbStep(3, d);
+      document.getElementById("bxoSave").onclick = async ()=>{
+        const btn = document.getElementById("bxoSave"), err = document.getElementById("bxoErr"); err.textContent = ""; btn.disabled = true; btn.textContent = "Saving…";
+        const want = picked(o, "#bxoBrands");
+        try{
+          for(const x of (d.dream_brands||[])){ if(x.submitted_brand_name && !want.includes(x.submitted_brand_name)){ const r = await papi("delete_dream_brand", { p_aspiration_id:x.aspiration_id, p_correlation:"ui-onboard" }); if(r.error) throw r.error; } }
+          let rank = 1;
+          for(const b of want){ if(!have.includes(b)){ const r = await papi("upsert_dream_brand", { p_payload:{ submitted_brand_name:b, priority_rank:rank }, p_correlation:"ui-onboard" }); if(r.error) throw r.error; } rank++; }
+          onbStep(3, d);
+        }catch(e){ err.textContent = "Couldn't save: " + (e.message || e); btn.disabled = false; btn.textContent = "Save my dream brands ›"; }
+      };
+    }
+    if(n === 3){
+      const o = onbShell(3, "Your work, your terms.", "Choose the collaborations that feel right for you.",
+        `<div class="bxo-sec"><b>Select all you're open to</b><div class="bxo-terms" id="bxoTerms">
+           <button type="button" class="bxo-term" data-v="paid"><b>Paid</b><span>Receive a creator fee for your work</span></button>
+           <button type="button" class="bxo-term${cp.accepts_barter?" on":""}" data-v="barter"><b>Barter</b><span>Create in exchange for products or experiences</span></button>
+           <button type="button" class="bxo-term" data-v="hybrid"><b>Hybrid</b><span>Combine a fee with products or experiences</span></button></div></div>
+         <div class="bxo-sec"><b>Your expectations</b> <span class="muted">· optional</span>
+           <label class="bxo-f" id="bxoRateL">Typical Reel rate (₹)<input id="bxoRate" inputmode="numeric" placeholder="e.g. 5,000"></label>
+           <label class="bxo-f" id="bxoMinL">Min. barter value (₹)<input id="bxoMin" inputmode="numeric" placeholder="e.g. 1,500" value="${cp.min_product_value!=null?E(cp.min_product_value):""}"></label>
+           <div class="bxw-hint">Rate fields appear only for Paid / Hybrid. These are preferences, not fixed quotes.</div></div>
+         <label class="bxo-toggle"><input type="checkbox" id="bxoTravel"${cp.travel_ready?" checked":""}><span>Open to travel / store visits · optional</span></label>`,
+        "You decide what works for you!", "Campaign fees, product value, deliverables, usage rights, exclusivity and deadlines are shown before you accept.");
+      const terms = document.getElementById("bxoTerms");
+      const sync = ()=>{ const on = [...terms.querySelectorAll(".bxo-term.on")].map(b=> b.dataset.v);
+        document.getElementById("bxoRateL").style.display = on.includes("paid") || on.includes("hybrid") ? "" : "none";
+        document.getElementById("bxoMinL").style.display = on.includes("barter") || on.includes("hybrid") ? "" : "none"; };
+      terms.querySelectorAll(".bxo-term").forEach(b=> b.onclick = ()=>{ b.classList.toggle("on"); sync(); }); sync();
+      document.getElementById("bxoSkip").onclick = ()=> onbFinish(false);
+      document.getElementById("bxoSave").onclick = async ()=>{
+        const btn = document.getElementById("bxoSave"), err = document.getElementById("bxoErr"); err.textContent = "";
+        const on = [...terms.querySelectorAll(".bxo-term.on")].map(b=> b.dataset.v);
+        const num = id => { const v = String(document.getElementById(id).value||"").replace(/[^\d.]/g,""); return v === "" ? null : Number(v); };
+        const rate = (on.includes("paid") || on.includes("hybrid")) ? num("bxoRate") : null, min = (on.includes("barter") || on.includes("hybrid")) ? num("bxoMin") : null;
+        btn.disabled = true; btn.textContent = "Saving…";
+        const patch = { travel_ready: document.getElementById("bxoTravel").checked };
+        if(on.length) patch.accepts_barter = on.includes("barter") || on.includes("hybrid");
+        if(min != null) patch.min_product_value = min;
+        let r = await papi("save_profile_section", { p_section:"commercial_preference", p_patch:patch, p_correlation:"ui-onboard" });
+        if(!r.error && rate && rate > 0) r = await papi("save_rate_card_item", { p_payload:{ deliverable_type:"IG Reel", amount:rate }, p_correlation:"ui-onboard" });
+        if(r.error){ err.textContent = "Couldn't save: " + (r.error.message || r.error); btn.disabled = false; btn.textContent = "Save & explore campaigns ›"; return; }
+        onbFinish(true);
+      };
+    }
   }
 
   window.bxGuest = { start:startGuest, go };
