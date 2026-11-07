@@ -108,6 +108,17 @@
       if(lb && LABEL[k]) lb.textContent = (k==="profile" && window.__profileReq && window.__profileReq.complete) ? "Profile ✓" : LABEL[k];
       if(ic && ICON[k] && ic.textContent !== "🔒") ic.innerHTML = svg(ICON[k]);
       if(dup.has(k)) a.classList.add("bx-dup");
+      // Instagram not connected yet: Discover still opens — the public campaign list, Apply asks for Instagram
+      if((k==="opencampaigns" || k==="marketplace") && window.__profileGate && window.bxMemberExplore){
+        a.style.opacity = ""; a.title = "Browse live campaigns";
+        if(ic) ic.innerHTML = svg(ICON[k]);
+        a.onclick = ()=>{
+          nav.querySelectorAll("a.active").forEach(x=> x.classList.remove("active")); a.classList.add("active");
+          document.body.dataset.pg = "opencampaigns"; document.body.dataset.bg = "forest";
+          if(window.innerWidth<=760) document.getElementById("sidebar").classList.remove("open");
+          bxMemberExplore("discover");
+        };
+      }
     });
     // a heading whose items all live in the phone's bottom bar hides with them
     nav.querySelectorAll(".nav-sec").forEach(h=>{
@@ -180,6 +191,8 @@
   /* ---------- wrap the shell ---------- */
   const _renderShell = window.renderShell;
   window.renderShell = function(){
+    document.body.classList.remove("bx-pre");
+    if(window.bxMemberExploreOff) bxMemberExploreOff();
     chromeOnce(); flags();
     const r = _renderShell.apply(this, arguments);
     flags(); paintNext(); paintSprout(); paintBottom(); watch(); touchPage();

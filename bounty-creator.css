@@ -423,7 +423,7 @@ body.bx .me svg{width:18px;height:18px}
    Welcome + WhatsApp sign-in (creator door, before login)  — Figma M01–M03 / W01
    ===================================================================== */
 body.bx-pre .auth-root{background:#0B3323 url("/assets/bounty/bg_forest.jpg") center/cover;overflow-y:auto}
-.bxw{min-height:100%;display:flex;flex-direction:column;color:#F4E8CE;font-family:Inter,system-ui,sans-serif}
+.bxw{min-height:100vh;background:#0B3323 url("/assets/bounty/bg_forest.jpg") center/cover fixed;display:flex;flex-direction:column;color:#F4E8CE;font-family:Inter,system-ui,sans-serif}
 .bxw .bx-logo{display:inline-flex}
 .bxw-top{height:60px;display:flex;align-items:center;justify-content:center;background:rgba(11,51,35,.92);border-bottom:1px solid rgba(211,169,78,.35);position:sticky;top:0;z-index:2}
 .bxw-body{flex:1;display:grid;grid-template-columns:1.1fr .9fr;gap:48px;align-items:center;max-width:1180px;width:100%;margin:0 auto;padding:48px 40px}
@@ -556,3 +556,19 @@ body.bx[data-bg="forest"] .bxg-back{color:#F4E8CE}
 }
 .bxg-cols > *,.bxg-grid > *{min-width:0}
 .bxg-pre,.bxg-kv b,.bxg-ul{overflow-wrap:anywhere}
+/* Connect Instagram step (Figma M05 / W14) */
+.bxw-two{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:4px 0 16px}
+.bxw-two > div{background:#FFF8EB;border:1px solid #E2CC97;border-radius:12px;padding:10px 12px}
+.bxw-two b{display:block;font:600 13.5px "Fraunces",Georgia,serif;margin-bottom:6px;color:#123B2A}
+.bxw-two ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.bxw-two li{display:flex;gap:6px;align-items:flex-start;font-size:12.5px;color:#3D4A3A;line-height:1.35}
+.bxw-two svg{width:14px;height:14px;flex:none;color:#2F7D4F;margin-top:1px}
+.bxw-two > div:last-child svg{color:#B88A2E}
+@media(max-width:860px){
+  .bxw.ig .bxw-body::before{content:none}
+  .bxw.ig .bxw-hero{display:block;margin-bottom:16px}
+  .bxw.ig .bxw-lead{display:block;margin:8px auto 0}
+  .bxw.ig .bxw-sprout{width:90px;margin-top:10px}
+  .bxw.ig .bx-eyebrow{display:block}
+  .bxw-two{grid-template-columns:1fr}
+}
