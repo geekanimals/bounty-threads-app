@@ -625,3 +625,53 @@ html.bx-door .auth-root.open{background:#0B3323 url("/assets/bounty/bg_forest.jp
 html.bx-door body.bx .nav a .ic{font-size:0}
 html.bx-door body.bx .nav a .ic svg{font-size:initial}
 html.bx-door body.bx .mk-spin{border-color:rgba(211,169,78,.25);border-top-color:#D3A94E}
+/* Ask Sprout sheet (M28) */
+body.bx .bx-sprout-hi{display:flex;align-items:center;gap:12px;margin:4px 0 14px}
+body.bx .bx-sprout-hi img{width:64px;height:64px;object-fit:contain;flex:none}
+body.bx .bx-sprout-hi h3{font:700 20px/1.2 "Fraunces",Georgia,serif;margin:2px 0 0;color:#123B2A}
+body.bx .bx-asks{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+body.bx .bx-asks button{padding:9px 14px;border-radius:999px;border:1px solid #D3A94E;background:#FFF8EB;color:#123B2A;font:600 13px Inter,system-ui,sans-serif;cursor:pointer}
+body.bx .bx-asks button:hover{background:#F4E8CE}
+body.bx .bx-asks.small{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
+body.bx .bx-asks.small button{white-space:nowrap;font-size:12px;padding:6px 11px}
+body.bx .bx-next-task{background:#103B2A;color:#F4E8CE;border:1px solid #D3A94E;border-radius:14px;padding:14px}
+body.bx .bx-next-task .bx-eyebrow{color:#F0CF7A}
+body.bx .bx-next-task b{display:block;font:600 15px "Fraunces",Georgia,serif;margin:2px 0}
+body.bx .bx-next-task .muted{color:#D7CBAE!important}
+body.bx .bx-nt-btns{display:flex;gap:8px;margin-top:10px}
+body.bx .bx-next-task .btn{background:linear-gradient(180deg,#F6DC8E,#D9A846);color:#0B3323;border-color:#B88A2E}
+body.bx .bx-next-task .btn.ghost{background:transparent;color:#F4E8CE;border-color:#D3A94E}
+/* Make it yours (M24) */
+body.bx .mky-top{display:flex;align-items:center;gap:12px}
+body.bx .mky-pct{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6B5A3A;background:#F4E8CE;border:1px solid #E2CC97;border-radius:999px;padding:5px 10px}
+body.bx .mky-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+body.bx .mky-grid > *{min-width:0}
+body.bx .mky-grid label{display:block;font-size:13px;font-weight:600;margin-top:10px}
+body.bx .mky-grid label input,body.bx .mky-grid label textarea{display:block;width:100%;margin-top:6px;padding:10px 12px;font:14px Inter,system-ui,sans-serif}
+body.bx .mky-grid h3 .muted,body.bx .mky-grid label .muted{font-weight:400;font-size:12px}
+body.bx .mky-id{display:flex;align-items:center;gap:10px}
+body.bx .mky-id img{width:46px;height:46px;border-radius:50%;object-fit:cover;border:2px solid #D3A94E}
+body.bx .mky-posts{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px;max-height:330px;overflow:auto;padding:2px}
+body.bx .mky-post{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;border:2px solid transparent;padding:0;background:#F4E8CE;cursor:pointer}
+body.bx .mky-post img{width:100%;height:100%;object-fit:cover;display:block}
+body.bx .mky-post.on{border-color:#D3A94E;box-shadow:0 0 0 2px #103B2A inset}
+body.bx .mky-n{position:absolute;top:5px;left:5px;min-width:20px;height:20px;border-radius:50%;background:#103B2A;color:#F0CF7A;font:700 11px/20px Inter,system-ui,sans-serif;text-align:center;display:none}
+body.bx .mky-post.on .mky-n{display:block}
+body.bx #mkyPinNote{margin-top:8px;font-size:12.5px}
+body.bx .bx-row3,body.bx .bx-row2{display:grid;gap:8px;margin-bottom:8px;align-items:center}
+body.bx .bx-row3{grid-template-columns:1fr 1.3fr 1fr 34px}
+body.bx .bx-row2{grid-template-columns:1.6fr 1fr 34px}
+body.bx .bx-row3 input,body.bx .bx-row2 input{min-width:0;padding:9px 10px;font:13.5px Inter,system-ui,sans-serif}
+body.bx .bx-x{width:34px;height:34px;border-radius:50%;border:1px solid #E2CC97;background:#FFF8EB;color:#857052;cursor:pointer}
+body.bx .mky-foot{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap}
+body.bx .mky-foot .auth-err{color:#C2362F;margin-right:auto}
+body.bx .mk-pinned .mk-sec-head h3{margin:0}
+@media(max-width:760px){
+  body.bx .mky-grid{grid-template-columns:1fr}
+  body.bx .bx-row3{grid-template-columns:1fr 34px}
+  body.bx .bx-row3 input[data-k="note"],body.bx .bx-row3 input[data-k="url"]{grid-column:1}
+  body.bx .mky-top{width:100%;justify-content:space-between}
+}
+body.bx .ai-input{display:flex;gap:8px;align-items:center}
+body.bx .ai-input input{flex:1;min-width:0}
+body.bx .ai-input .btn{flex:none}

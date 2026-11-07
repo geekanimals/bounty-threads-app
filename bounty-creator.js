@@ -21,6 +21,7 @@
     megaphone:'<path d="M3 11v3a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1zM17 9a4 4 0 0 1 0 6"/>',
     shield:'<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
     lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    back:'<path d="m15 18-6-6 6-6"/>',
     search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     moon:'<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
     target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>'
@@ -242,6 +243,136 @@
     flags(); paintNext(); paintSprout(); paintBottom(); watch(); touchPage(); tidyNames();
     return r;
   };
+  /* ---------- Ask Sprout sheet (Figma M28): greeting, quick asks, your next task, then the same chat ---------- */
+  const STAGE_TXT = { changes_requested:"Changes requested — upload a revised draft", content_created:"Shoot & submit your draft", contract_sent:"Review & sign your agreement",
+    contract_signed:"Confirm your delivery address", content_approved:"Draft approved — post it & share the link", product_sent:"Package on the way — confirm when it arrives",
+    invited:"You're invited — accept or decline", content_submitted:"Draft sent — waiting for review", address_confirmed:"Address confirmed — product ships soon",
+    published:"Post live — waiting for verification", brand_confirmed:"Brand confirmed you", accepted:"Confirmed — next step coming", sent_to_brand:"With the brand for review",
+    shortlisted:"Shortlisted", eligible:"Eligible — waiting for the brand", applied:"Applied — waiting for the brand", completed:"Completed" };
+  let _sproutNext = null, _sproutNextAt = 0;
+  async function sproutNext(){
+    if(_sproutNext && Date.now()-_sproutNextAt < 60000) return _sproutNext;
+    try{
+      const { data } = await sb.schema("api").rpc("get_my_campaigns");
+      const order = (typeof AI_ACTION_ORDER!=="undefined") ? AI_ACTION_ORDER : [];
+      const live = (Array.isArray(data)?data:[]).filter(x=> !["completed","rejected","dropped","ineligible","brand_declined"].includes(x.stage));
+      live.sort((a,b)=>((order.indexOf(a.stage)+1)||99)-((order.indexOf(b.stage)+1)||99));
+      _sproutNext = live[0] || false; _sproutNextAt = Date.now();
+    }catch(e){ _sproutNext = false; }
+    return _sproutNext;
+  }
+  const ASKS = [["What needs my attention?","chat"],["Help with my brief","chat"],["Find campaigns for me","go:opencampaigns"],["Improve my media kit","go:mediakit"]];
+  if(typeof window.renderAiChat === "function"){
+    const _rac = window.renderAiChat;
+    window.renderAiChat = function(){
+      const r = _rac.apply(this, arguments);
+      if(!isCreator()) return r;
+      const body = document.getElementById("aiBody"), thread = document.getElementById("aiThread"); if(!body || !thread) return r;
+      const inp = document.getElementById("aiInput"); if(inp) inp.placeholder = "Ask Sprout anything…";
+      const fresh = AI_HISTORY.length <= 1;
+      const first = String((window.Auth && Auth.profile && !/^wa_\d+@/.test(Auth.profile.name||"") && Auth.profile.name) || "there").split(" ")[0];
+      const chips = `<div class="bx-asks">${ASKS.map(([t,k])=>`<button type="button" data-ask="${k}">${t}</button>`).join("")}</div>`;
+      if(fresh){
+        thread.innerHTML = `<div class="bx-sprout-hi"><img src="${A}sprout_wave.png" alt=""><div><div class="bx-eyebrow">Here to help</div><h3>Hey ${first.replace(/[<>&"]/g,"")}! What can we tackle today?</h3></div></div>
+          ${chips}<div class="bx-next-task" id="bxNextTask"><div class="bx-eyebrow">Next up</div><div class="muted">Checking your campaigns…</div></div>`;
+        sproutNext().then(x=>{
+          const box = document.getElementById("bxNextTask"); if(!box) return;
+          if(!x){ box.innerHTML = `<div class="bx-eyebrow">Next up</div><b>Nothing due right now</b><div class="muted">Find a campaign that fits you.</div><div class="bx-nt-btns"><button type="button" class="btn sm" data-ask="go:opencampaigns">Find campaigns</button></div>`; }
+          else { box.innerHTML = `<div class="bx-eyebrow">Next up</div><b>${String((x.brand?x.brand+" · ":"")+(x.campaign||"Campaign")).replace(/[<>&"]/g,"")}</b><div class="muted">${STAGE_TXT[x.stage]||String(x.stage||"").replace(/_/g," ")}</div>
+            <div class="bx-nt-btns"><button type="button" class="btn sm" data-ask="go:mycampaigns">Open task</button><button type="button" class="btn sm ghost" data-ask="chat:What should I do next for ${String(x.campaign||"my campaign").replace(/"/g,"")}?">Ask Sprout</button></div>`; }
+          wireAsks(box);
+        });
+      } else {
+        thread.insertAdjacentHTML("afterbegin", `<div class="bx-asks small">${ASKS.map(([t,k])=>`<button type="button" data-ask="${k}">${t}</button>`).join("")}</div>`);
+      }
+      wireAsks(thread);
+      return r;
+    };
+  }
+  function wireAsks(root){
+    root.querySelectorAll("[data-ask]").forEach(b=> b.onclick = ()=>{
+      const k = b.dataset.ask;
+      if(k.startsWith("go:")){ if(typeof closeAi==="function") closeAi(); go(k.slice(3)); return; }
+      const text = k.startsWith("chat:") ? k.slice(5) : b.textContent.trim();
+      if(typeof sendAiMessage === "function") sendAiMessage(text);
+    });
+  }
+
+  /* ---------- Media kit edit = one "Make it yours." page (Figma M24), not pop-ups ---------- */
+  if(typeof window.openMkEdit === "function"){
+    const _ome = window.openMkEdit;
+    window.openMkEdit = function(section, acct){
+      if(!isCreator() || !acct || typeof mkEdits !== "function") return _ome.apply(this, arguments);
+      return mkMakeItYours(section, acct);
+    };
+  }
+  function mkMakeItYours(section, acct){
+    const c = document.getElementById("content"); if(!c) return;
+    const X = s => String(s==null?"":s).replace(/[&<>"']/g, ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+    const E = mkEdits(acct);
+    const all = typeof mkAllMedia === "function" ? mkAllMedia(acct) : (acct.recent_media||[]);
+    let pins = (Array.isArray(E.pinned) ? E.pinned.map(String) : []).filter(id=> all.some(m=> String(m.id)===id));
+    const port = Array.isArray(E.portfolio) ? E.portfolio.slice() : [];
+    const rates = Array.isArray(E.rate_card) ? E.rate_card.slice() : [];
+    const req = window.__profileReq, pct = req ? Math.round(100*req.done/Math.max(req.total,1)) : null;
+    const img = m => m.media_type==="VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
+    const rowP = (p={}) => `<div class="bx-row3"><input data-k="brand" placeholder="Brand" value="${X(p.brand)}"><input data-k="note" placeholder="What you made (optional)" value="${X(p.note)}"><input data-k="url" placeholder="Link (optional)" value="${X(p.url)}"><button type="button" class="bx-x" title="Remove">✕</button></div>`;
+    const rowR = (r={}) => `<div class="bx-row2"><input data-k="item" placeholder="Service, e.g. Instagram Reel" value="${X(r.item)}"><input data-k="price" placeholder="Price, e.g. ₹5,000" value="${X(r.price)}"><button type="button" class="bx-x" title="Remove">✕</button></div>`;
+    c.innerHTML = `<button type="button" class="bxg-back" id="mkyBack">${svg("back")}Back to media kit</button>
+      <div class="page-head"><div><div class="bx-eyebrow">Media kit</div><h1>Make it yours.</h1><p>Choose what brands see in your media kit.</p></div>
+        <div class="mky-top">${pct!=null?`<span class="mky-pct">Profile ${pct}% complete</span>`:""}<button type="button" class="btn gold" data-mky="save">Save &amp; preview</button></div></div>
+      <div class="mky-grid">
+        <section class="card" id="mky-profile"><h3>Personal intro</h3>
+          <div class="mky-id">${acct.profile_picture_url?`<img src="${X(acct.profile_picture_url)}" alt="">`:""}<div><b>${X(acct.name||acct.username)}</b><div class="muted">@${X(acct.username)}</div></div></div>
+          <label>Headline / tagline<input id="mkyHead" maxlength="90" placeholder="Beauty, lifestyle & honest stories" value="${X(E.headline)}"></label>
+          <label>Bio <span class="muted">(leave as is to keep your Instagram bio — it updates on its own)</span><textarea id="mkyBio" rows="3">${X(E.bio||acct.biography||"")}</textarea></label>
+        </section>
+        <section class="card" id="mky-pins"><h3>Pin your best work <span class="muted">· up to 6, shown first</span></h3>
+          ${all.length ? `<div class="mky-posts" id="mkyPosts">${all.slice(0,30).map(m=>`<button type="button" class="mky-post${pins.includes(String(m.id))?" on":""}" data-id="${X(m.id)}"><img src="${X(img(m))}" alt="" loading="lazy"><span class="mky-n"></span></button>`).join("")}</div>
+            <div class="muted" id="mkyPinNote"></div>` : `<div class="muted">Your posts show up here once Instagram has synced.</div>`}
+        </section>
+        <section class="card" id="mky-portfolio"><h3>Brand history <span class="bxg-match">Creator-provided</span></h3>
+          <div id="mkyPort">${(port.length?port:[{}]).map(rowP).join("")}</div><button type="button" class="btn sm ghost" id="mkyAddP">+ Add a brand</button>
+        </section>
+        <section class="card" id="mky-ratecard"><h3>Rate card <span class="bxg-match">Creator-provided</span></h3>
+          <div id="mkyRate">${(rates.length?rates:[{}]).map(rowR).join("")}</div><button type="button" class="btn sm ghost" id="mkyAddR">+ Add a rate</button>
+          <div class="muted" style="margin-top:8px">These are your starting prices, not fixed quotes.</div>
+        </section>
+      </div>
+      <div class="bxg-tip"><img src="${A}sprout_point.png" alt=""><div>Tip: Lead with your strongest Reel!</div></div>
+      <div class="mky-foot"><div class="auth-err" id="mkyErr"></div><button type="button" class="btn ghost" id="mkyCancel">Cancel</button><button type="button" class="btn gold" data-mky="save">Save &amp; preview</button></div>`;
+    const back = ()=>{ currentPage = "mediakit"; renderShell(); };
+    document.getElementById("mkyBack").onclick = back; document.getElementById("mkyCancel").onclick = back;
+    const paintPins = ()=>{ c.querySelectorAll(".mky-post").forEach(b=>{ const i = pins.indexOf(b.dataset.id); b.classList.toggle("on", i>=0); b.querySelector(".mky-n").textContent = i>=0 ? i+1 : ""; });
+      const n = document.getElementById("mkyPinNote"); if(n) n.textContent = pins.length ? `${pins.length} of 6 pinned — tap again to unpin. The order you tap is the order brands see.` : "Tap posts to pin them."; };
+    c.querySelectorAll(".mky-post").forEach(b=> b.onclick = ()=>{ const id = b.dataset.id, i = pins.indexOf(id);
+      if(i>=0) pins.splice(i,1); else if(pins.length < 6) pins.push(id); else { if(typeof gateToast==="function") gateToast("You can pin up to 6 — unpin one first."); return; } paintPins(); });
+    paintPins();
+    const wireX = root => root.querySelectorAll(".bx-x").forEach(x=> x.onclick = ()=> x.parentElement.remove());
+    wireX(c);
+    document.getElementById("mkyAddP").onclick = ()=>{ document.getElementById("mkyPort").insertAdjacentHTML("beforeend", rowP()); wireX(document.getElementById("mkyPort")); };
+    document.getElementById("mkyAddR").onclick = ()=>{ document.getElementById("mkyRate").insertAdjacentHTML("beforeend", rowR()); wireX(document.getElementById("mkyRate")); };
+    const target = document.getElementById("mky-" + (section==="pins"?"pins":section)); if(target) setTimeout(()=> target.scrollIntoView({ behavior:"smooth", block:"start" }), 60); else window.scrollTo(0,0);
+    c.querySelectorAll('[data-mky="save"]').forEach(btn=> btn.onclick = async ()=>{
+      const err = document.getElementById("mkyErr"); err.textContent = "";
+      const ne = { ...E };
+      ne.headline = document.getElementById("mkyHead").value.trim();
+      const b = document.getElementById("mkyBio").value.trim();
+      if(b && b !== String(acct.biography||"").trim()){ ne.bio = b; ne.for = String(acct.ig_user_id||acct.username||""); ne.for_user = String(acct.username||"").toLowerCase(); }
+      else { delete ne.bio; delete ne.for; delete ne.for_user; }
+      ne.pinned = pins.slice(0,6);
+      ne.portfolio = [...document.querySelectorAll("#mkyPort .bx-row3")].map(r=>({ brand:r.querySelector('[data-k="brand"]').value.trim(), note:r.querySelector('[data-k="note"]').value.trim(), url:r.querySelector('[data-k="url"]').value.trim() })).filter(p=> p.brand);
+      ne.rate_card = [...document.querySelectorAll("#mkyRate .bx-row2")].map(r=>({ item:r.querySelector('[data-k="item"]').value.trim(), price:r.querySelector('[data-k="price"]').value.trim() })).filter(r=> r.item);
+      c.querySelectorAll('[data-mky="save"]').forEach(x=>{ x.disabled = true; x.textContent = "Saving…"; });
+      try{
+        const { error } = await sb.from("social_accounts").update({ edits:ne, updated_at:new Date().toISOString() }).eq("id", acct.id);
+        if(error) throw error;
+        if(typeof gateToast==="function") gateToast("✓ Saved — this is what brands see now.");
+        back();
+      }catch(ex){ err.textContent = ex.message || "Couldn't save."; c.querySelectorAll('[data-mky="save"]').forEach(x=>{ x.disabled = false; x.textContent = "Save & preview"; }); }
+    });
+  }
+
   // Sprout = the creator's AI assistant (same chat, same backend — new face)
   const _openAi = window.openAi;
   if(typeof _openAi === "function") window.openAi = function(){
