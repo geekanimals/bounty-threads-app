@@ -23,6 +23,7 @@
     lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     back:'<path d="m15 18-6-6 6-6"/>',
     coins:'<circle cx="9" cy="9" r="6"/><path d="M15.5 9.5A6 6 0 1 1 9.5 15.5"/>',
+    gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     moon:'<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
     target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>'
@@ -33,11 +34,11 @@
 
   // creator nav: Figma names + icons + groups (keys come from the app, so gating/filters are unchanged)
   const LABEL = { dashboard:"Home", opencampaigns:"Discover", marketplace:"Discover", mycampaigns:"My campaigns",
-    mediakit:"Media kit", reports:"Analytics", bxpayments:"Payments", instagram:"Instagram", messages:"Messages", profile:"Profile", intelligence:"Insights" };
-  const ICON = { dashboard:"home", opencampaigns:"compass", marketplace:"compass", mycampaigns:"clip", mediakit:"layers", bxpayments:"coins",
+    mediakit:"Media kit", reports:"Analytics", bxpayments:"Payments", bxsettings:"Settings", instagram:"Instagram", messages:"Messages", profile:"Profile", intelligence:"Insights" };
+  const ICON = { dashboard:"home", opencampaigns:"compass", marketplace:"compass", mycampaigns:"clip", mediakit:"layers", bxpayments:"coins", bxsettings:"gear",
     reports:"chart", instagram:"insta", messages:"chat", profile:"user", intelligence:"chart" };
   const GROUPS = [["Today",["dashboard"]],["Campaigns",["opencampaigns","marketplace","mycampaigns","bxpayments"]],
-    ["Create & grow",["mediakit","reports","instagram","intelligence"]],["My account",["profile","messages"]]];
+    ["Create & grow",["mediakit","reports","instagram","intelligence"]],["My account",["profile","messages","bxsettings"]]];
   // page titles that follow the new names (only when the title is still the old one)
   const TITLE = { "Dashboard":"Your next move.", "Campaigns":"Discover campaigns", "Open Campaigns":"Discover campaigns",
     "Reports":"Analytics", "Media Kit":"My Media Kit", "Creator Profile":"My profile", "My Campaigns":"My campaigns" };
