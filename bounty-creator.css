@@ -797,3 +797,9 @@ body.bx .bx-dupe{display:none!important}
 .bxo-toggle{display:flex;align-items:center;gap:10px;font-size:13.5px;color:#123B2A;margin:4px 0 6px}
 .bxo-toggle input{width:18px;height:18px;accent-color:#103B2A}
 .bx-onb .auth-err{color:#C2362F;font-size:13px;min-height:4px;margin:8px 0}
+.bxo-grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.bxo-f select{display:block;width:100%;margin-top:8px;padding:11px 12px;border-radius:12px;border:1px solid #D9C08A;background:#FFFDF6;color:#123B2A;font:14px Inter,system-ui,sans-serif}
+.bxo-addr{margin-top:8px;text-align:left}
+.bxo-addr .ga-f span{font-size:12.5px}
+.bxo-addr input,.bxo-addr select,.bxo-addr textarea{border-radius:10px;border:1px solid #D9C08A;background:#FFFDF6}
+@media(max-width:560px){ .bxo-grid2{grid-template-columns:1fr} }

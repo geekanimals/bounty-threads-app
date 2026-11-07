@@ -571,14 +571,25 @@
       const FMT = [["reel","Reels"],["story","Stories"],["carousel","Carousels"],["ugc","UGC videos"],["live","Live"],["post","Photos"]];
       const LANG = ["Hindi","Hinglish","English","Bengali","Tamil","Telugu"];
       const cats = pro.categories || [], fmts = pro.content_formats || [], langs = pro.languages || [];
+      const per = d.personal || {};
       const extraL = langs.filter(l=> !LANG.includes(l));
       const o = onbShell(1, "What do you create?", "Tell us about your world. You can update this anytime.",
-        `<div class="bxo-sec"><b>Your categories</b> <span class="muted">Choose all that fit</span><div class="bxo-chips" id="bxoCats">${CATS.map(x=> chip(x, cats.includes(x))).join("")}</div></div>
+        `<div class="bxo-sec"><b>About you</b> <span class="muted">Private — never shown to brands</span>
+           <div class="bxo-grid2"><label class="bxo-f">First name<input id="bxoFirst" value="${E(per.first_name||"")}" autocomplete="given-name"></label>
+             <label class="bxo-f">Last name<input id="bxoLast" value="${E(per.last_name||"")}" autocomplete="family-name"></label>
+             <label class="bxo-f">Gender<select id="bxoGender">${[["","Select…"],["female","Female"],["male","Male"],["non_binary","Non-binary"],["other","Other"],["prefer_not_to_say","Prefer not to say"]].map(([v,l])=>`<option value="${v}"${per.gender===v?" selected":""}>${l}</option>`).join("")}</select></label>
+             <label class="bxo-f">Birthday<input id="bxoDob" type="date" value="${E(per.date_of_birth||"")}" max="${new Date().toISOString().slice(0,10)}"></label>
+             <label class="bxo-f">Married / unmarried<select id="bxoMar">${[["","Select…"],["single","Unmarried"],["married","Married"],["divorced","Divorced"],["widowed","Widowed"],["prefer_not_to_say","Prefer not to say"]].map(([v,l])=>`<option value="${v}"${per.marital_status===v?" selected":""}>${l}</option>`).join("")}</select></label>
+             <label class="bxo-f" id="bxoAnnL"${per.marital_status==="married"?"":` style="display:none"`}>Anniversary<input id="bxoAnn" type="date" value="${E(per.marriage_anniversary||"")}"></label>
+             <label class="bxo-f">Do you have pets?<select id="bxoPet">${[["","Select…"],["yes","Yes"],["no","No"]].map(([v,l])=>`<option value="${v}"${(per.has_pet===true&&v==="yes")||(per.has_pet===false&&v==="no")?" selected":""}>${l}</option>`).join("")}</select></label></div>
+           <div class="bxw-hint">Pet details, skills and more can be added anytime in Profile.</div></div>
+         <div class="bxo-sec"><b>Your categories</b> <span class="muted">Choose all that fit</span><div class="bxo-chips" id="bxoCats">${CATS.map(x=> chip(x, cats.includes(x))).join("")}</div></div>
          <div class="bxo-sec"><b>What you make</b> <span class="muted">Select your formats</span><div class="bxo-chips" id="bxoFmt">${FMT.map(([k,l])=> `<button type="button" class="bxo-chip${fmts.includes(k)?" on":""}" data-v="${k}">${l}</button>`).join("")}</div></div>
          <div class="bxo-sec"><b>Your languages</b><div class="bxo-chips" id="bxoLang">${LANG.concat(extraL).map(x=> chip(x, langs.includes(x))).join("")}<button type="button" class="bxo-add" id="bxoAddLang">+ Add language</button></div></div>
          <div class="bxo-sec"><b>Your city</b> <span class="muted">Helps us find opportunities near you.</span><input id="bxoCity" placeholder="Search city or town" value="${E(pro.city_coarse||"")}"></div>`,
         "Pick what feels like you — there's no perfect profile.", "Your choices help recommendations. They do not guarantee eligibility.");
       wireChips(o);
+      document.getElementById("bxoMar").onchange = e=>{ document.getElementById("bxoAnnL").style.display = e.target.value === "married" ? "" : "none"; };
       document.getElementById("bxoAddLang").onclick = ()=>{
         const btn = document.getElementById("bxoAddLang"); if(document.getElementById("bxoLangIn")) return;
         btn.insertAdjacentHTML("beforebegin", `<input id="bxoLangIn" class="bxo-langin" placeholder="Type a language, press Enter">`);
@@ -592,7 +603,14 @@
         const btn = document.getElementById("bxoSave"), err = document.getElementById("bxoErr"); err.textContent = ""; btn.disabled = true; btn.textContent = "Saving…";
         const patch = { categories: picked(o,"#bxoCats"), content_formats: picked(o,"#bxoFmt"), languages: picked(o,"#bxoLang") };
         const city = document.getElementById("bxoCity").value.trim(); if(city) patch.city_coarse = city;
-        const r = await papi("save_profile_section", { p_section:"professional", p_patch:patch, p_correlation:"ui-onboard" });
+        const val = id => document.getElementById(id).value.trim() || null;
+        const dob = val("bxoDob"); if(dob && new Date(dob) > new Date()){ err.textContent = "Birthday can't be in the future."; btn.disabled = false; btn.textContent = "Save & continue ›"; return; }
+        const mar = val("bxoMar"), pet = val("bxoPet");
+        const pp = { first_name:val("bxoFirst"), last_name:val("bxoLast"), gender:val("bxoGender"), date_of_birth:dob, marital_status:mar,
+                     marriage_anniversary: mar === "married" ? val("bxoAnn") : null, has_pet: pet === "yes" ? true : pet === "no" ? false : null };
+        let r = await papi("save_profile_section", { p_section:"personal", p_patch:pp, p_correlation:"ui-onboard" });
+        if(!r.error){ const nm = [pp.first_name, pp.last_name].filter(Boolean).join(" "); if(nm) patch.display_name = nm; d.personal = Object.assign({}, per, pp); }
+        if(!r.error) r = await papi("save_profile_section", { p_section:"professional", p_patch:patch, p_correlation:"ui-onboard" });
         if(r.error){ err.textContent = "Couldn't save: " + (r.error.message || r.error); btn.disabled = false; btn.textContent = "Save & continue ›"; return; }
         d.professional = Object.assign({}, pro, patch); onbStep(2, d);
       };
@@ -637,8 +655,13 @@
            <label class="bxo-f" id="bxoRateL">Typical Reel rate (₹)<input id="bxoRate" inputmode="numeric" placeholder="e.g. 5,000"></label>
            <label class="bxo-f" id="bxoMinL">Min. barter value (₹)<input id="bxoMin" inputmode="numeric" placeholder="e.g. 1,500" value="${cp.min_product_value!=null?E(cp.min_product_value):""}"></label>
            <div class="bxw-hint">Rate fields appear only for Paid / Hybrid. These are preferences, not fixed quotes.</div></div>
-         <label class="bxo-toggle"><input type="checkbox" id="bxoTravel"${cp.travel_ready?" checked":""}><span>Open to travel / store visits · optional</span></label>`,
+         <label class="bxo-toggle"><input type="checkbox" id="bxoTravel"${cp.travel_ready?" checked":""}><span>Open to travel / store visits · optional</span></label>
+         <div class="bxo-sec" style="margin-top:14px"><b>Delivery address</b> <span class="muted">· optional — where brands send barter products</span>
+           ${(d.addresses||[]).length ? `<div class="bxw-hint">✓ Address saved — edit it anytime in Profile.</div>` : `<div id="bxoAddr" class="bxo-addr"></div><div class="bxw-hint">Private — used only for campaign shipping you approve. Fill it now or later in Profile.</div>`}</div>`,
         "You decide what works for you!", "Campaign fees, product value, deliverables, usage rights, exclusivity and deadlines are shown before you accept.");
+      let addrCtl = null; const ab = document.getElementById("bxoAddr");
+      if(ab && window.GeekAddress){ const nm = [ (d.personal||{}).first_name, (d.personal||{}).last_name ].filter(Boolean).join(" ");
+        addrCtl = window.GeekAddress.mount(ab, {}, { name:nm, phone: ((d.contact||{}).whatsapp_e164) || "" }); }
       const terms = document.getElementById("bxoTerms");
       const sync = ()=>{ const on = [...terms.querySelectorAll(".bxo-term.on")].map(b=> b.dataset.v);
         document.getElementById("bxoRateL").style.display = on.includes("paid") || on.includes("hybrid") ? "" : "none";
@@ -656,6 +679,9 @@
         if(min != null) patch.min_product_value = min;
         let r = await papi("save_profile_section", { p_section:"commercial_preference", p_patch:patch, p_correlation:"ui-onboard" });
         if(!r.error && rate && rate > 0) r = await papi("save_rate_card_item", { p_payload:{ deliverable_type:"IG Reel", amount:rate }, p_correlation:"ui-onboard" });
+        if(!r.error && addrCtl && ab){ const typed = [...ab.querySelectorAll("input")].some(i=> i.value.trim() && !/_name$|_phone$/.test(i.id));
+          if(typed){ try{ const payload = await addrCtl.collect({ label:"Home", is_default:true }); r = await papi("upsert_address", { p_payload:payload, p_correlation:"ui-onboard" }); }
+            catch(ex){ r = { error:{ message: (ex.message||ex) + " — or clear the address to add it later." } }; } } }
         if(r.error){ err.textContent = "Couldn't save: " + (r.error.message || r.error); btn.disabled = false; btn.textContent = "Save & explore campaigns ›"; return; }
         onbFinish(true);
       };
