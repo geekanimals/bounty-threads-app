@@ -45,13 +45,13 @@
       }
     });
     prods.forEach(c=> rows.push({ c, prod:true, amt:+c.product_value||0, sub:"Product", st:["Delivered","teal"] }));
-    box.innerHTML = `<div class="b2-earn"><div class="b2-ek">Earned so far</div><b>${INR(earned)}</b><span>${prods.length ? `+ ${prods.length} product${prods.length>1?"s":""} worth ${INR(prodVal)}` : "Paid and hybrid campaigns add up here"}</span></div>
-      <div class="b2-3t"><div><b>${INR(done)}</b><span class="t">Paid</span></div><div><b>${INR(pending)}</b><span class="o">Pending</span></div><div><b>${prods.length}</b><span>Products</span></div></div>
+    box.innerHTML = `<div class="b2-paygrid"><div class="b2-payl"><div class="b2-earn"><div class="b2-ek">Earned so far</div><b>${INR(earned)}</b><span>${prods.length ? `+ ${prods.length} product${prods.length>1?"s":""} worth ${INR(prodVal)}` : "Paid and hybrid campaigns add up here"}</span></div>
+      <div class="b2-3t"><div><b>${INR(done)}</b><span class="t">Paid</span></div><div><b>${INR(pending)}</b><span class="o">Pending</span></div><div><b>${prods.length}</b><span>Products</span></div></div></div><div class="b2-payr">
       <div class="b2-sec ink">— Payouts —</div>
       <div class="b2-list">${rows.length ? rows.map(r=>`<div class="b2-lrow"><div><b>${H(r.c.campaign||"Campaign")}${r.c.brand?" · "+H(r.c.brand):""}</b><span>${r.prod?"Product ":""}${INR(r.amt)} · ${H(r.sub)}</span></div><em class="b2-chip2 ${r.st[1]}">${r.st[0]}</em></div>`).join("")
         : `<div class="b2-lrow empty">No payouts yet — paid and barter campaigns show up here once you're selected.</div>`}</div>
       <div class="b2-bank"><span>🏦</span><div><b>Add your bank / UPI details</b><p>Must be in your own name. Only you and the Geek team see it.</p></div><button type="button" class="b2-mini forest" data-go="mycampaigns">${needs?"Add":"Manage"}</button></div>
-      ${TIP("I'll help you track every rupee!")}`;
+      ${TIP("Add your UPI once — every payout goes there automatically.")}</div></div>`;
     box.querySelectorAll("[data-go]").forEach(b=> b.onclick = ()=> go(b.dataset.go));
   }
 
@@ -81,13 +81,14 @@
       ["🪙","Payments & rewards","Earnings and payout details","bxpayments"],["⚙︎","Settings & privacy","Notifications, data, sidekick","bxsettings"]];
     const useKid = window.bxKid && bxKid.prefs().avatar;
     c.classList.add("b2-hubpage");
-    first.insertAdjacentHTML("beforebegin", `<button type="button" class="b2-back b2-hubback" id="bxHubBack">← My profile</button><div class="b2 b2-hub" id="bxHub">
+    const row = ([ic,t,sub,k])=>`<button type="button" class="b2-card b2-row" data-hub="${k}"><span class="ic">${ic}</span><span class="tx"><b>${t}</b><em>${H(sub)}</em></span><i>›</i></button>`;
+    first.insertAdjacentHTML("beforebegin", `<button type="button" class="b2-back b2-hubback" id="bxHubBack">← My profile</button><div class="b2 b2-hub" id="bxHub"><div class="b2-hubl">
       <div class="b2-bigav">${useKid?`<img src="${KI()}" data-kid-me alt="">`:H(nm.charAt(0).toUpperCase())}</div>
       <h1 class="b2-hubn">${H(nm)}</h1><div class="b2-hubh">${H([handle, pro.city_coarse || md.city].filter(Boolean).join(" · "))}${md.ig_handle && !ig.length ? ` <em class="b2-sr">self-reported</em>` : ""}</div>
       <label class="b2-card b2-tog wide"><span>Use ${H(KN())} as my profile picture</span><input type="checkbox" id="bxHubKid"${useKid?" checked":""}><i></i></label>
       ${pct!=null?`<div class="b2-card b2-pct"><b>Profile ${pct}% complete</b><div class="b2-bar2"><i style="width:${pct}%"></i></div></div>`:""}
-      <div class="b2-rows">${L.map(([ic,t,sub,k])=>`<button type="button" class="b2-card b2-row" data-hub="${k}"><span class="ic">${ic}</span><span class="tx"><b>${t}</b><em>${H(sub)}</em></span><i>›</i></button>`).join("")}</div>
-      ${TIP("Fill what helps brands match you — private fields stay private.")}</div>`);
+      ${L.slice(0,2).map(row).join("")}</div><div class="b2-hubr">${L.slice(2).map(row).join("")}
+      ${TIP("Add your city — nearby campaigns show up first.")}</div></div>`);
     document.getElementById("bxHubBack").onclick = ()=>{ c.classList.remove("b2-hub-open"); window.scrollTo(0,0); };
     const kidT = document.getElementById("bxHubKid"); if(kidT) kidT.onchange = async ()=>{ if(window.bxKid){ await bxKid.save({ avatar: kidT.checked }); const h = document.getElementById("bxHub"); if(h) h.remove(); touchProfile(); } };
     c.querySelectorAll("[data-hub]").forEach(b=> b.onclick = ()=>{
@@ -191,15 +192,18 @@
     const eng = m => (+m.like_count||0) + (+m.comments_count||0);
     const best = media.slice().sort((p,q)=> eng(q) - eng(p)).slice(0, 6);
     const img = m => m.media_type === "VIDEO" ? (m.thumbnail_url||m.media_url) : m.media_url;
-    box.insertAdjacentHTML("afterbegin", `<div id="bxPulse">
+    box.insertAdjacentHTML("afterbegin", `<div id="bxPulse" class="b2-angrid"><div class="b2-anl" id="b2AnL">
       <div class="b2-sec ink">— Performance over time —</div>
       <div class="card b2-perf">${pts.length > 1 ? `<div class="b2-bars3">${pts.map((m,i)=>{ const v = L[i] + C[i], mx = Math.max(1, ...pts.map((q,j)=> L[j]+C[j])); return `<i class="${i===pts.length-1?"last":""}" style="height:${Math.max(6, Math.round(100*v/mx))}%" title="${new Date(m.timestamp).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}: ${L[i]} likes, ${C[i]} comments"></i>`; }).join("")}</div>
         <div class="b2-perf-l">Likes + comments · last ${pts.length} posts</div>` : `<div class="muted">The chart appears after a couple of posts sync from Instagram.</div>`}</div>
+      </div><div class="b2-anr">
       <div class="b2-sec ink">— Insights —</div>
       <div class="card b2-ins"><ul>${best[0]?`<li>Your best post got ${eng(best[0])} likes + comments — lead with posts like it</li>`:""}${topGA?`<li>Top audience: ${H(topGA.replace(/^F\./,"Women ").replace(/^M\./,"Men "))}${topCity?" · "+H(String(topCity).split(",")[0]):""}</li>`:""}${media.length?`<li>${media.length} posts synced from Instagram</li>`:""}<li>Pin your best work below — brands see it first</li></ul></div>
-      ${best.length ? `<div class="card"><h3>Your top content <span class="muted">· pin up to 6 to your media kit</span></h3><div class="bx-top">${best.map(m=>`<div class="bx-top-i"><a href="${H(m.permalink||"#")}" target="_blank" rel="noopener"><img src="${H(img(m))}" alt="" loading="lazy"></a>
-          <div class="muted">❤ ${eng(m)}</div><button type="button" class="btn sm ${pins.includes(String(m.id))?"":"ghost"}" data-pin="${H(m.id)}">${pins.includes(String(m.id))?"📌 Pinned":"Pin to media kit"}</button></div>`).join("")}</div></div>` : ""}
-      ${TIP("Pin the posts that did best — brands see them first in your media kit.")}</div>`);
+      ${best.length ? `<div class="b2-sec ink">— Your top content —</div><div class="b2-toplist">${best.map(m=>`<div class="b2-toprow"><a href="${H(m.permalink||"#")}" target="_blank" rel="noopener"><img src="${H(img(m))}" alt="" referrerpolicy="no-referrer"></a>
+          <div class="tx"><b>${H(String(m.caption||"").split("\n")[0].slice(0,40) || (m.media_type==="VIDEO"?"Reel":"Post") + " · " + new Date(m.timestamp).toLocaleDateString("en-IN",{day:"numeric",month:"short"}))}</b><span>❤ ${eng(m)} likes + comments</span></div>
+          <button type="button" class="b2-pin${pins.includes(String(m.id))?" on":""}" data-pin="${H(m.id)}">${pins.includes(String(m.id))?"📌 Pinned":"📌 Pin to media kit"}</button></div>`).join("")}</div>` : ""}
+      ${TIP("Pin the posts that did best — brands see them first in your media kit.")}</div></div>`);
+    const anaTop = document.querySelector(".b2-ana"), anL = document.getElementById("b2AnL"); if(anaTop && anL) anL.insertBefore(anaTop, anL.firstChild);
     box.querySelectorAll("[data-pin]").forEach(b=> b.onclick = async ()=>{
       const id = b.dataset.pin, on = pins.includes(id);
       if(!on && pins.length >= 6){ if(typeof gateToast==="function") gateToast("You can pin up to 6 — unpin one in Media kit → Edit."); return; }
@@ -209,32 +213,69 @@
       b.disabled = false;
       if(error){ if(typeof gateToast==="function") gateToast("Couldn't pin: " + error.message); return; }
       pins = next; a.edits = Object.assign({}, a.edits || {}, { pinned: next });
-      b.textContent = on ? "Pin to media kit" : "📌 Pinned"; b.classList.toggle("ghost", on);
+      b.textContent = on ? "📌 Pin to media kit" : "📌 Pinned"; b.classList.toggle("on", !on);
     });
   }
 
-  /* ---------- V2-22 / W06 My media kit: the creator's identity card on top of the app's own kit ---------- */
-  let _mkProf = null;
+  /* ---------- V2-22 / W06 My media kit — the Figma layout on the creator's real data.
+     The app's own kit (#mkHeadWrap, refreshed every 60 s) keeps running underneath for its share / edit / sync logic. ---------- */
+  let _mkProf = null, _mkSig = "";
   async function touchMediaKit(){
     const c = document.getElementById("content"); if(!c || currentPage !== "mediakit") return;
     const head = c.querySelector(":scope > .page-head");
     if(head && !head.dataset.b2){ head.dataset.b2 = 1; head.innerHTML = `<div><div class="b2-eyebrow">Your creator portfolio</div><h1>My media kit</h1><p>Your story, your work, your impact.</p></div>`; }
-    const kit = c.querySelector(".mk-kit"); if(!kit || kit.dataset.b2) return; kit.dataset.b2 = 1;
-    const a = (typeof mkFetchAcct === "function") ? await mkFetchAcct().catch(()=> null) : null; if(!a || !kit.isConnected) return;
+    const body = document.getElementById("mkBody"), hw = document.getElementById("mkHeadWrap"); if(!body || !hw || !hw.querySelector(".mk-kit")) return;
+    body.classList.add("b2-mkhost");
+    const a = (window._mkLastAcct) || ((typeof mkFetchAcct === "function") ? await mkFetchAcct().catch(()=> null) : null); if(!a || !body.isConnected) return;
     if(!_mkProf && window.__ciProfileEnabled){ const r = await api("get_my_profile"); if(!r.error) _mkProf = r.data || {}; }
-    const pro = (_mkProf && _mkProf.professional) || {};
-    const media = (typeof mkAllMedia === "function" ? mkAllMedia(a) : (a.recent_media||[]));
-    const eng = (a.followers_count && media.length) ? (100 * media.reduce((t,m)=> t + (+m.like_count||0) + (+m.comments_count||0), 0) / media.length / a.followers_count).toFixed(1) + "%" : "—";
-    const avgL = media.length ? Math.round(media.reduce((t,m)=> t + (+m.like_count||0), 0) / media.length) : 0;
+    const sig = [a.id, a.updated_at, a.followers_count, JSON.stringify(a.edits||{}).length, !!_mkProf].join("|");
+    if(document.getElementById("b2Mk") && sig === _mkSig) return; _mkSig = sig;
+    const pro = (_mkProf && _mkProf.professional) || {}, cp = (_mkProf && _mkProf.commercial_preference) || {};
+    const E = (typeof mkEdits === "function") ? mkEdits(a) : (a.edits || {});
+    const all = (typeof mkAllMedia === "function" ? mkAllMedia(a) : (a.recent_media||[]));
+    const eng = (a.followers_count && all.length) ? (100 * all.slice(0,12).reduce((t,m)=> t + (+m.like_count||0) + (+m.comments_count||0), 0) / Math.min(all.length,12) / a.followers_count).toFixed(1) + "%" : "—";
+    const reels = all.filter(m=> m.media_type === "VIDEO" && m.video_views);
     const n = v => typeof fmtNum === "function" ? fmtNum(v||0) : String(v||0);
-    const card = document.createElement("div"); card.className = "b2 b2-mkid"; card.id = "b2MkId";
-    card.innerHTML = `${a.profile_picture_url?`<img src="${H(a.profile_picture_url)}" alt="">`:`<span class="b2-ini">${H(String(a.username||"C").charAt(0).toUpperCase())}</span>`}
-      <div class="b2-mkn"><b>${H(a.name || a.username)}</b><span>@${H(a.username)}${pro.city_coarse?" · "+H(pro.city_coarse):""}</span>${(pro.categories||[]).length||(pro.languages||[]).length?`<em>${H([].concat((pro.categories||[]).slice(0,3),(pro.languages||[]).slice(0,2)).join(" · "))}</em>`:""}</div>
-      <div class="b2-nums"><div><b>${n(a.followers_count)}</b><span>Followers</span></div><div><b>${eng}</b><span>Engagement</span></div><div><b>${a.avg_reach?n(a.avg_reach):n(avgL)}</b><span>${a.avg_reach?"Avg reach":"Avg likes"}</span></div></div>
-      <div class="b2-mkbtns"></div>`;
-    const btns = card.querySelector(".b2-mkbtns");
-    kit.querySelectorAll(".mk-cover button, .mk-cover a.btn").forEach(b=> btns.appendChild(b));
-    kit.insertBefore(card, kit.firstChild); kit.classList.add("b2-kit");
+    const third = reels.length ? [n(Math.round(reels.reduce((t,m)=> t + (+m.video_views||0), 0)/reels.length)), "Avg Reel views"] : a.avg_reach ? [n(a.avg_reach), "Avg reach"] : [n(Math.round(all.reduce((t,m)=> t + (+m.like_count||0), 0)/Math.max(all.length,1))), "Avg likes"];
+    // audience bars (top 3 gender·age groups) + top cities
+    const aud = a.audience || {}, ga = aud.gender_age || {}, tot = Object.values(ga).reduce((t,v)=> t + (+v||0), 0);
+    const GL = { F:"Women", M:"Men", U:"Others" };
+    const bars = tot ? Object.entries(ga).sort((x,y)=> y[1]-x[1]).slice(0,3).map(([k,v])=>{ const m = String(k).match(/^([FMU])\W+(.+)$/); const lbl = m ? `${GL[m[1]]} ${m[2].replace("-","–")}` : k; const p = Math.round(100*v/tot); return `<div class="b2-ab"><span>${H(lbl)}</span><i><b style="width:${p}%"></b></i><em>${p}%</em></div>`; }).join("") : "";
+    const cities = Object.entries(aud.city || {}).sort((x,y)=> y[1]-x[1]).slice(0,3).map(([k])=> String(k).split(",")[0]);
+    // the work I'm proud of: pinned first, then best posts
+    const pinIds = Array.isArray(E.pinned) ? E.pinned.map(String) : [];
+    const engOf = m => (+m.like_count||0) + (+m.comments_count||0);
+    const work = pinIds.map(id=> all.find(m=> String(m.id) === id)).filter(Boolean).concat(all.slice().sort((x,y)=> engOf(y)-engOf(x))).filter((m,i,arr)=> arr.indexOf(m) === i).slice(0,9);
+    const img = m => m.media_type === "VIDEO" ? (m.thumbnail_url || m.media_url) : m.media_url;
+    // let's create together
+    const open = [cp.accepts_barter ? "Barter" : "", cp.product_only ? "" : "Paid", cp.accepts_barter && !cp.product_only ? "Hybrid" : ""].filter(Boolean);
+    const rates = (Array.isArray(E.rate_card) ? E.rate_card : []).filter(r=> r && r.item).slice(0,3).map(r=> `${H(r.item)} from ${H(r.price||"—")}`);
+    const box = document.getElementById("b2Mk") || document.createElement("div");
+    box.id = "b2Mk"; box.className = "b2 b2-mk";
+    box.innerHTML = `<div class="b2-mkcol">
+        <div class="b2-mkid">${a.profile_picture_url?`<img src="${H(a.profile_picture_url)}" alt="">`:`<span class="b2-ini">${H(String(a.username||"C").charAt(0).toUpperCase())}</span>`}
+          <div class="b2-mkn"><b>${H(a.name || a.username)}</b><span>@${H(a.username)}${pro.city_coarse?" · "+H(pro.city_coarse):""}</span>${(pro.categories||[]).length||(pro.languages||[]).length?`<em>${H([].concat((pro.categories||[]).slice(0,3),(pro.languages||[]).slice(0,2)).join(" · "))}</em>`:""}</div>
+          <div class="b2-nums"><div><b>${n(a.followers_count)}</b><span>Followers</span></div><div><b>${eng}</b><span>Engagement</span></div><div><b>${third[0]}</b><span>${third[1]}</span></div></div></div>
+        <div class="b2-mkacct"><span>📸</span><b>@${H(a.username)}</b><em class="b2-chip2 ok">✓ Connected</em><a href="#" data-mk="add">+ Add account</a></div>
+        <div class="b2-sec ink">— Who follows my story —</div>
+        <div class="b2-card b2-aud">${bars || `<p class="b2-p it sm">Audience shows once Instagram shares it (needs 100+ followers and insights access).</p>`}${cities.length?`<p class="b2-cities">Top cities: ${H(cities.join(" · "))}</p>`:""}</div>
+      </div><div class="b2-mkcol">
+        <div class="b2-sec ink">— The work I'm proud of —</div>
+        ${work.length ? `<div class="b2-mkgrid">${work.map(m=>`<a href="${H(m.permalink||"#")}" target="_blank" rel="noopener"><img src="${H(img(m))}" alt="" referrerpolicy="no-referrer"></a>`).join("")}</div>` : `<div class="b2-card"><p class="b2-p it sm">Your posts show up here once Instagram has synced.</p></div>`}
+        <div class="b2-sec ink">— Let's create together —</div>
+        <div class="b2-card b2-together"><b>Open to: ${H(open.length ? open.join(" · ") : "Barter · Paid · Hybrid")}</b>${rates.length?`<span>${rates.join(" · ")}</span>`:`<span>Add your rates in Make it yours</span>`}<i>Rates shown only to brands you apply to</i></div>
+        <div class="b2-mkbtns2"><button type="button" class="b2-btn forest" data-mk="share">🔗 Share public link</button><button type="button" class="b2-btn light" data-mk="pdf">⤓ Download PDF</button></div>
+        <button type="button" class="b2-btn light full b2-mkedit" data-mk="edit">✎ Make it yours (edit)</button>
+        <p class="b2-quote ink">Get discovered by brands you love.<br>Build the creator career you want.</p>
+        ${TIP("Pin your 6 best posts — brands look there first.")}
+      </div>`;
+    if(!box.isConnected) body.insertBefore(box, hw);
+    box.querySelectorAll("[data-mk]").forEach(b=> b.onclick = e=>{ e.preventDefault(); const k = b.dataset.mk;
+      if(k === "share"){ const s2 = document.getElementById("mkShare"); if(s2) return s2.click(); if(typeof openKitShare === "function") return openKitShare(a); }
+      if(k === "edit"){ if(typeof openMkEdit === "function") return openMkEdit("profile", a); }
+      if(k === "add"){ if(typeof igAddAnother === "function") return igAddAnother("mediakit"); const t = document.querySelector(".mk-topbar button"); if(t) t.click(); }
+      if(k === "pdf"){ const u = (typeof kitPublicUrl === "function") ? kitPublicUrl(a) : "/p.html?u=" + encodeURIComponent(a.username); const w = window.open(u + (u.includes("?")?"&":"?") + "print=1", "_blank", "noopener"); if(!w && typeof gateToast === "function") gateToast("Allow pop-ups to download your media kit PDF."); }
+    });
   }
 
   /* ---------- V2-24 Analytics header: creator pulse + 4 numbers ---------- */
@@ -247,7 +288,8 @@
     const eng = (a.followers_count && media.length) ? (100 * media.reduce((t,m)=> t + (+m.like_count||0) + (+m.comments_count||0), 0) / media.length / a.followers_count).toFixed(1) + "%" : "—";
     const avgL = media.length ? Math.round(media.reduce((t,m)=> t + (+m.like_count||0), 0) / media.length) : 0;
     const n = v => typeof fmtNum === "function" ? fmtNum(v||0) : String(v||0);
-    head.insertAdjacentHTML("afterend", `<div class="b2 b2-ana"><div class="b2-pills"><span class="on">@${H(a.username)}</span><span>Last ${Math.min(media.length,12)||0} posts</span></div>
+    const anL0 = document.getElementById("b2AnL");
+    (anL0 ? anL0 : head).insertAdjacentHTML(anL0 ? "afterbegin" : "afterend", `<div class="b2 b2-ana"><div class="b2-pills"><span class="on">@${H(a.username)}</span><span>Last ${Math.min(media.length,12)||0} posts</span></div>
       <div class="b2-k4"><div><b>${n(a.followers_count)}</b><span>Followers</span></div><div><b>${a.avg_reach?n(a.avg_reach):"—"}</b><span>Avg reach</span></div>
         <div><b>${n(avgL)}</b><span>Avg likes</span></div><div><b>${eng}</b><span>Engagement</span></div></div></div>`);
   }
@@ -258,6 +300,7 @@
     const first = c.firstElementChild; if(!first) return;
     first.insertAdjacentHTML("beforebegin", `<div class="b2 b2-inbox" id="bxInbox"><h1 class="b2-h1">Inbox</h1><p class="b2-sub">Campaign updates and messages from Geek.</p><div id="bxInboxBody" class="b2-inboxb"><div class="b2-skel">Loading…</div></div></div>`);
     ciOps.loadAlerts(document.getElementById("bxInboxBody")).then(()=> tabsFor(document.getElementById("bxInboxBody")));
+    const rest = document.getElementById("bxInbox").nextElementSibling; if(rest) rest.insertAdjacentHTML("beforebegin", `<div class="b2 b2-sec ink b2-msgh">— Messages —</div>`);
   }
 
   /* ---------- M32 Settings & privacy (new page) ---------- */
@@ -276,7 +319,7 @@
     const k = window.bxKid ? bxKid.prefs() : {}, kid = window.bxKid ? (bxKid.kids[k.kid] || bxKid.kids.pip) : { n:"Pip", img:A+"rd/kid_pip.png" };
     const LANG = { auto:"Match me", english:"English", hindi:"Hindi", hinglish:"Hinglish" };
     let waNum = ""; try{ const r = await api("get_my_profile"); const e = r && r.data && r.data.contact && r.data.contact.whatsapp_e164; if(e){ const d = String(e).replace(/\D/g,"").slice(-10); waNum = "+91 " + d.slice(0,2) + "••• ••" + d.slice(-3); } }catch(e){}
-    box.innerHTML = `
+    box.innerHTML = `<div class="b2-setgrid"><div>
       <div class="b2-card b2-skid"><img src="${KI()}" data-kid-me alt=""><div><b>Sidekick: ${H(KN())}</b><span>${H((k.vibe||"playful").replace(/^./,x=>x.toUpperCase()))} · ${H(LANG[k.lang]||"Match me")} · ${H(k.scene==="forest"?"Forest":k.scene==="parchment"?"Parchment":"Auto scene")}</span></div><button type="button" class="b2-mini light" data-s="kid">Change</button></div>
       <div class="b2-sec ink">— Notifications —</div>
       <div class="b2-card b2-tlist">
@@ -286,10 +329,11 @@
       <div class="b2-sec ink">— Connected accounts —</div>
       <div class="b2-card b2-accl">${accts.length ? accts.map(x=>`<div><span>📸</span><b>@${H(x.username)}</b><em class="b2-chip2 ok">✓ Connected</em><button type="button" class="b2-link sm" data-s="manage">Manage</button></div>`).join("") : `<div><span>📸</span><b>No Instagram connected</b><button type="button" class="b2-mini forest" data-s="connect">Connect</button></div>`}
         ${waNum?`<div><span>💬</span><b>WhatsApp ${H(waNum)}</b></div>`:""}</div>
+      </div><div>
       <div class="b2-sec ink">— Your data —</div>
       <button type="button" class="b2-card b2-dl" data-s="download"><b>⤓ Download my data</b><span>Profile, Instagram and campaigns as a file</span></button>
       <div class="b2-del"><b>Delete my account</b><p>Removes your profile and campaign history. Type DELETE to confirm.</p><button type="button" class="b2-mini red" data-s="delete">Delete my account</button><div id="bxDel"></div></div>
-      ${TIP("You're in control — nothing is shared without your OK.")}`;
+      ${TIP("Alerts off? You'll still see every update in Inbox.")}</div></div>`;
     box.querySelector('[data-s="kid"]').onclick = ()=> window.bxKid && bxKid.sheet();
     const m = box.querySelector('[data-s="manage"]'); if(m) box.querySelectorAll('[data-s="manage"]').forEach(b=> b.onclick = ()=> go("profile"));
     const cn = box.querySelector('[data-s="connect"]'); if(cn) cn.onclick = ()=> typeof connectInstagram === "function" && connectInstagram();
@@ -324,6 +368,7 @@
   /* ---------- wire ---------- */
   const _rs = window.renderShell;
   window.renderShell = function(){
+    const c0 = document.getElementById("content"); if(c0) c0.classList.remove("b2-hubpage","b2-hub-open");
     const r = _rs.apply(this, arguments);
     if(isCreator()){
       if(currentPage === "bxpayments") loadPayments();
@@ -341,8 +386,29 @@
     "Delivered":["point","Time to create"], "Brief":["point","Create your draft"], "Video sent":["think","Brand is reviewing"],
     "Approved":["celebrate","Approved — go live"], "Posted":["wave","You're live"], "Done":["celebrate","Campaign complete"] };
   const hx = t => String(t||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  // V2-12: each campaign card shows the 5-step track (Applied · Selected · Agreement · Create · Publish) + the attention banner
+  const KEY5 = { "Applied":"Applied", "Selected":"Selected", "Contract":"Agreement", "Brief":"Create", "Posted":"Publish" };
+  function track5(card){
+    const tr = card.querySelector(".jr-track"); if(!tr || tr.dataset.b2) return; tr.dataset.b2 = 1;
+    const steps = [...tr.querySelectorAll(".jr-step")]; let nowIdx = steps.findIndex(x=> x.classList.contains("now")); if(nowIdx < 0) nowIdx = steps.length;
+    const keep = steps.map((x,i)=>({ x, i, k: KEY5[(x.querySelector("span")||{}).textContent] })).filter(o=> o.k);
+    let nowSet = false;
+    keep.forEach((o,j)=>{ o.x.classList.add("k5"); o.x.querySelector("span").textContent = o.k;
+      const nextI = keep[j+1] ? keep[j+1].i : steps.length;
+      o.x.classList.remove("done","now");
+      if(nextI <= nowIdx) o.x.classList.add("done");
+      else if(!nowSet && o.i <= nowIdx){ o.x.classList.add("now"); nowSet = true; }
+      const ic = o.x.querySelector("i"); if(ic) ic.textContent = ""; });
+    steps.forEach(x=>{ if(!x.classList.contains("k5")) x.classList.add("k5h"); });
+  }
   function touchMine(){
     const c = document.getElementById("content"); if(!c || currentPage !== "mycampaigns") return;
+    c.querySelectorAll(".mc-card").forEach(track5);
+    const body = document.getElementById("opsMineBody");
+    if(body){ const act = [...c.querySelectorAll(".mc-card .jr-now.act, .mc-card .jr-now")].filter(x=> /sign|confirm|upload|submit|post|add|accept|review/i.test(x.textContent)).length;
+      let ban = document.getElementById("b2Attn");
+      if(act){ if(!ban){ ban = document.createElement("div"); ban.id = "b2Attn"; ban.className = "b2 b2-attn"; body.parentNode.insertBefore(ban, body); } ban.textContent = `⚠ ${act} thing${act>1?"s":""} need${act>1?"":"s"} your attention`; }
+      else if(ban) ban.remove(); }
     const intro = c.querySelector(".ci-intro"); if(!intro || intro.dataset.b2) return; intro.dataset.b2 = 1;
     intro.classList.add("b2-intro"); intro.innerHTML = `<div class="b2-eyebrow">Your creator journey</div><h1 class="b2-h1">My campaigns</h1><p class="b2-sub">Every collaboration, all in one place.</p>`;
   }

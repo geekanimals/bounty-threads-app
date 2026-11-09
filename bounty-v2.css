@@ -923,3 +923,92 @@ body.b2app .page-head{ display:block !important; } body.b2app .page-head > div{ 
 .b2-nums span{ display:block; } .b2-nums > div{ display:flex; flex-direction:column; align-items:center; }
 body.b2app .mk-topbar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 body.b2app .sidebar .brand{ background:none !important; border:0 !important; box-shadow:none !important; }
+
+/* media kit v2 layout (V2-22 / W06) */
+body.b2app .b2-mkhost > #mkHeadWrap, body.b2app .b2-mkhost > .mk-topbar{ position:absolute !important; left:-9999px; width:1px; height:1px; overflow:hidden; }
+.b2-mk{ max-width:1000px; margin:0 auto; }
+.b2-mk .b2-mkid{ margin:0 0 12px; }
+.b2-mkacct{ display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:16px; background:var(--b2-card); border:1px solid var(--b2-card-bd); font:700 14px var(--b2-f-dm); color:var(--b2-ink2); }
+.b2-mkacct b{ flex:1; } .b2-mkacct a{ color:#b8452f; font:700 13px var(--b2-f-dm); text-decoration:none; white-space:nowrap; }
+.b2-aud{ text-align:left; }
+.b2-ab{ display:grid; grid-template-columns:92px 1fr 40px; align-items:center; gap:10px; padding:5px 0; font:500 13px var(--b2-f-dm); color:var(--b2-ink2); }
+.b2-ab i{ height:7px; border-radius:4px; background:#eadcbc; } .b2-ab i b{ display:block; height:100%; border-radius:4px; background:var(--b2-teal); } .b2-ab em{ font-style:normal; font-weight:700; text-align:right; }
+.b2-cities{ margin:8px 0 0; font:italic 400 12.5px var(--b2-f-serif); color:var(--b2-mute); }
+.b2-mkgrid{ display:grid; grid-template-columns:repeat(3,1fr); gap:4px; border-radius:12px; overflow:hidden; }
+.b2-mkgrid a{ aspect-ratio:1; display:block; background:#eadcbc; } .b2-mkgrid img{ width:100%; height:100%; object-fit:cover; display:block; }
+.b2-together{ text-align:left; display:grid; gap:4px; } .b2-together b{ font:700 15px var(--b2-f-dm); color:var(--b2-ink2); } .b2-together span{ font:400 13.5px var(--b2-f-dm); color:var(--b2-ink2); } .b2-together i{ font:italic 400 12px var(--b2-f-serif); color:var(--b2-mute); }
+.b2-mkbtns2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
+.b2-mkbtns2 .b2-btn{ min-height:46px; font-size:15px; padding:0 10px; border-radius:14px; }
+.b2-mk .b2-btn.light{ background:#fbf1dc; border:1px solid #cdb58a; color:var(--b2-ink2); min-height:46px; font-size:15px; border-radius:14px; }
+.b2-mkedit{ margin-top:10px; }
+.b2-quote.ink{ color:#9a6a2a; font-size:16px; }
+@media(min-width:761px){
+  .b2-mk{ display:grid; grid-template-columns:1fr 1fr; gap:0 48px; align-items:start; }
+  .b2-mk .b2-mkcol:last-child > .b2-sec:first-child{ margin-top:0; }
+}
+.b2-mkacct{ flex-wrap:wrap; } .b2-mkacct b{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.b2-mkgrid:has(a:only-child), .b2-mkgrid{ grid-auto-rows:auto; }
+
+/* my campaigns (V2-12): cards like Figma */
+body.b2app[data-pg="mycampaigns"] #growthBody, body.b2app[data-pg="mycampaigns"] #growthBody ~ *, body.b2app[data-pg="mycampaigns"] .ci-sub:has(+ #growthBody){ display:none !important; }
+.b2-attn{ margin:0 auto 12px; padding:10px 14px; border-radius:12px; background:#f6d6cf; border:1px solid #e3a99b; color:#a8321f; font:700 13.5px var(--b2-f-dm); text-align:left; max-width:900px; }
+body.b2app .mc-card{ padding:14px !important; }
+body.b2app .mc-card .mc-top h4{ font:600 18px var(--b2-f-serif) !important; }
+body.b2app .mc-card .mc-meta{ font:400 12.5px var(--b2-f-dm); }
+body.b2app .mc-card .jr-step.k5h{ display:none !important; }
+body.b2app .mc-card .jr-track{ display:flex !important; justify-content:space-between; position:relative; padding:4px 6px 0; gap:0 !important; overflow:visible !important; }
+body.b2app .mc-card .jr-track::before{ content:""; position:absolute; left:16px; right:16px; top:12px; height:2px; background:var(--b2-teal); opacity:.5; }
+body.b2app .mc-card .jr-step.k5{ position:relative; display:flex !important; flex-direction:column; align-items:center; gap:4px; flex:0 0 auto; min-width:0; background:none !important; }
+body.b2app .mc-card .jr-step.k5 i{ width:16px !important; height:16px !important; border-radius:50% !important; border:2px solid #b9c7c2 !important; background:#fbf1dc !important; font-size:0 !important; }
+body.b2app .mc-card .jr-step.k5.done i{ background:var(--b2-teal) !important; border-color:var(--b2-teal) !important; }
+body.b2app .mc-card .jr-step.k5.now i{ background:#fff !important; border:3px solid var(--b2-teal) !important; }
+body.b2app .mc-card .jr-step.k5 span{ font:400 10.5px var(--b2-f-dm) !important; color:var(--b2-mute) !important; white-space:nowrap; }
+body.b2app .mc-card .jr-step.k5.now span{ font-weight:700 !important; color:var(--b2-ink2) !important; }
+body.b2app .mc-card .bx-step-top{ display:none !important; }
+body.b2app .mc-card .jr-now{ background:none !important; border:0 !important; padding:8px 0 0 !important; }
+body.b2app .mc-card .jr-now .btn:not(.ghost){ border-radius:16px !important; background:var(--b2-green) !important; }
+/* inbox (V2-21) */
+.b2-msgh{ margin-top:20px; }
+body.b2app .ops-alert{ position:relative; padding:12px 14px 12px 28px !important; }
+body.b2app .ops-alert::before{ content:""; position:absolute; left:12px; top:18px; width:8px; height:8px; border-radius:50%; background:#c9b48a; }
+body.b2app .ops-alert.unread::before{ background:var(--b2-red); }
+body.b2app .ops-alert b, body.b2app .ops-alert strong{ font:700 14.5px var(--b2-f-dm); color:var(--b2-ink2); }
+body.b2app .ops-alert .btn{ border-radius:16px !important; height:30px; padding:0 18px !important; font-size:13px !important; }
+/* analytics top content list (V2-24) */
+.b2-toplist{ display:grid; gap:8px; }
+.b2-toprow{ display:flex; align-items:center; gap:12px; padding:8px 10px; border-radius:14px; background:var(--b2-card); border:1px solid var(--b2-card-bd); }
+.b2-toprow img{ width:52px; height:52px; border-radius:10px; object-fit:cover; display:block; }
+.b2-toprow .tx{ flex:1; min-width:0; } .b2-toprow b{ display:block; font:700 14px var(--b2-f-dm); color:var(--b2-ink2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .b2-toprow span{ font:400 12px var(--b2-f-dm); color:var(--b2-mute); }
+.b2-pin{ height:28px; padding:0 12px; border-radius:14px; border:1px solid #cdb58a; background:#fffdf6; font:700 11.5px var(--b2-f-dm); color:var(--b2-ink2); cursor:pointer; white-space:nowrap; } .b2-pin.on{ background:var(--b2-green); color:var(--b2-cream2); border-color:var(--b2-green); }
+body.b2app[data-pg="reports"] #crBody > .card:not(.b2-perf):not(.b2-ins){ display:none !important; }
+@media(min-width:761px){ .b2-toplist{ grid-template-columns:1fr 1fr; } body.b2app[data-pg="reports"] #crBody{ max-width:900px; margin:0 auto; } }
+
+/* desktop two-column pages (W08 payments, W20 profile) */
+@media(min-width:761px){
+  .b2-page.b2-pay{ max-width:960px; }
+  .b2-paygrid{ display:grid; grid-template-columns:1fr 1fr; gap:0 40px; align-items:start; }
+  .b2-payr > .b2-sec:first-child{ margin-top:0; }
+  .b2-hub{ max-width:960px; display:grid; grid-template-columns:1fr 1fr; gap:0 40px; align-items:start; }
+  .b2-hubr > .b2-card:first-child{ margin-top:0; }
+  .b2-rows{ display:block; }
+  body.b2app[data-pg="opencampaigns"] .b2-intro .b2-sub.plain{ color:var(--b2-mute); }
+}
+.b2-hub .b2-row{ text-align:left; }
+
+@media(min-width:761px){
+  body.b2app[data-pg="reports"] #crBody{ max-width:1000px !important; }
+  .b2-angrid{ display:grid; grid-template-columns:1fr 1fr; gap:0 40px; align-items:start; }
+  .b2-angrid .b2-ana{ margin:0 0 6px; } .b2-angrid .b2-k4{ grid-template-columns:1fr 1fr; }
+  .b2-anr > .b2-sec:first-child{ margin-top:0; } .b2-angrid .b2-toplist{ grid-template-columns:1fr; }
+  .b2-page.b2-set{ max-width:960px; }
+  .b2-setgrid{ display:grid; grid-template-columns:1fr 1fr; gap:0 40px; align-items:start; }
+  .b2-setgrid > div:last-child > .b2-sec:first-child{ margin-top:0; }
+}
+@media(min-width:761px){
+  body.b2app #opsMineBody{ display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; max-width:1000px; margin:0 auto; }
+  body.b2app #opsMineBody > .card:only-child, body.b2app #opsMineBody > .mc-pager{ grid-column:1/-1; }
+  body.b2app #opsMineStats, body.b2app .b2-attn{ max-width:1000px; margin-left:auto; margin-right:auto; }
+  .b2-inbox{ max-width:1000px; }
+  #bxInboxBody :has(> .ops-alert){ columns:2; column-gap:20px; }
+  #bxInboxBody .ops-alert{ break-inside:avoid; }
+}
