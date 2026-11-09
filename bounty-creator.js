@@ -365,7 +365,7 @@
   openGate();
   window.renderShell = function(){
     document.body.classList.remove("bx-pre");
-    if(isCreator() && window.__profileGate && !_landed && currentPage === "mediakit" && !window.__bxWantKit){ currentPage = "dashboard"; }
+    if(isCreator() && !_landed && currentPage === "mediakit" && !window.__bxWantKit && !new URLSearchParams(location.search).get("go")){ currentPage = "dashboard"; }
     if(isCreator()) _landed = true;
     if(window.bxMemberExploreOff) bxMemberExploreOff();
     if(window.__bxIg && window.__bxIgStage) __bxIgStage(2);

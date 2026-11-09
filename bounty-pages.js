@@ -80,16 +80,19 @@
       ["📸","Instagram accounts", ig.length ? ig.map(x=>"@"+x.username).join(", ") : "Connect Instagram","#ig"],["🗂","My media kit","Portfolio, analytics & sharing","mediakit"],
       ["🪙","Payments & rewards","Earnings and payout details","bxpayments"],["⚙︎","Settings & privacy","Notifications, data, sidekick","bxsettings"]];
     const useKid = window.bxKid && bxKid.prefs().avatar;
-    first.insertAdjacentHTML("beforebegin", `<div class="b2 b2-hub" id="bxHub">
+    c.classList.add("b2-hubpage");
+    first.insertAdjacentHTML("beforebegin", `<button type="button" class="b2-back b2-hubback" id="bxHubBack">← My profile</button><div class="b2 b2-hub" id="bxHub">
       <div class="b2-bigav">${useKid?`<img src="${KI()}" data-kid-me alt="">`:H(nm.charAt(0).toUpperCase())}</div>
       <h1 class="b2-hubn">${H(nm)}</h1><div class="b2-hubh">${H([handle, pro.city_coarse || md.city].filter(Boolean).join(" · "))}${md.ig_handle && !ig.length ? ` <em class="b2-sr">self-reported</em>` : ""}</div>
       <label class="b2-card b2-tog wide"><span>Use ${H(KN())} as my profile picture</span><input type="checkbox" id="bxHubKid"${useKid?" checked":""}><i></i></label>
       ${pct!=null?`<div class="b2-card b2-pct"><b>Profile ${pct}% complete</b><div class="b2-bar2"><i style="width:${pct}%"></i></div></div>`:""}
       <div class="b2-rows">${L.map(([ic,t,sub,k])=>`<button type="button" class="b2-card b2-row" data-hub="${k}"><span class="ic">${ic}</span><span class="tx"><b>${t}</b><em>${H(sub)}</em></span><i>›</i></button>`).join("")}</div>
       ${TIP("Fill what helps brands match you — private fields stay private.")}</div>`);
+    document.getElementById("bxHubBack").onclick = ()=>{ c.classList.remove("b2-hub-open"); window.scrollTo(0,0); };
     const kidT = document.getElementById("bxHubKid"); if(kidT) kidT.onchange = async ()=>{ if(window.bxKid){ await bxKid.save({ avatar: kidT.checked }); const h = document.getElementById("bxHub"); if(h) h.remove(); touchProfile(); } };
     c.querySelectorAll("[data-hub]").forEach(b=> b.onclick = ()=>{
       const k = b.dataset.hub;
+      if(k.startsWith("#")){ c.classList.add("b2-hub-open"); window.scrollTo(0,0); }
       if(k === "#ig") return scrollToSection(/Instagram accounts/i);
       if(k === "#collab") return scrollToSection(/Barter|Rate|Commercial|terms/i);
       if(k === "#dream") return scrollToSection(/Favourite brands|Dream/i);
@@ -107,6 +110,23 @@
     const box = pop.querySelector(".ci-pop-box"), head = pop.querySelector(".ci-pop-head"); if(!box || !head) return;
     const title = (head.querySelector("h3")||{}).textContent || "", brand = (head.querySelector(".muted")||{}).textContent || "";
     const hit = window.B2 && (B2.openList||[]).find(x=> String(x.name||"").trim() === String(title).trim());
+    if(hit && window.B2 && B2.briefHtml){
+      const x = Object.assign({}, hit);
+      if(!x.who_can_apply && x.eligibility && Array.isArray(x.eligibility.criteria)) x.who_can_apply = x.eligibility.criteria.map(c=> c.need).filter(Boolean);
+      const act = pop.querySelector(".ci-pop-foot [data-apply]") || [...pop.querySelectorAll(".ci-pop-foot button, .ci-pop-foot .btn")].find(b=> b.id !== "ciPopClose" && !/back/i.test(b.textContent));
+      const closer = document.getElementById("ciPopX") || document.getElementById("ciPopClose");
+      const stage = x.my_stage ? String(x.my_stage).replace(/_/g," ") : "";
+      const wrap = document.createElement("div"); wrap.className = "b2 b2-briefwrap";
+      wrap.innerHTML = B2.briefHtml(x, { applyLabel:"Apply to campaign →", sub: stage ? "You've already applied — track it in My campaigns." : "You review and accept terms if selected." });
+      box.innerHTML = ""; box.appendChild(wrap);
+      const slot = wrap.querySelector(".b2-applybox [data-apply]");
+      if(stage){ slot.outerHTML = `<div class="b2-applied">✓ ${H(stage.replace(/^./,c=>c.toUpperCase()))}</div>`; }
+      else if(act){ act.className = "b2-btn cyan full" + (/not eligible/i.test(act.textContent) ? " ne" : ""); if(!/not eligible/i.test(act.textContent)) act.innerHTML = "Apply to campaign&nbsp; →"; slot.replaceWith(act); }
+      else if(x.applications_closed){ slot.outerHTML = `<div class="b2-applied">Applications closed</div>`; }
+      wrap.querySelector("[data-go]").onclick = ()=>{ if(closer) closer.click(); else { pop.remove(); document.body.style.overflow = ""; } };
+      pop.scrollTop = 0; window.scrollTo(0,0);
+      return;
+    }
     const ph = window.B2 ? B2.camPhoto(hit || { name:title, brand }) : "";
     head.insertAdjacentHTML("beforebegin", `<button type="button" class="b2-back bx-brief-back">← Back to campaigns</button><div class="b2-bhero bx-brief-cover">${ph?`<img src="${ph}" alt="">`:""}</div>`);
     const foot = pop.querySelector(".ci-pop-foot");
@@ -191,6 +211,45 @@
       pins = next; a.edits = Object.assign({}, a.edits || {}, { pinned: next });
       b.textContent = on ? "Pin to media kit" : "📌 Pinned"; b.classList.toggle("ghost", on);
     });
+  }
+
+  /* ---------- V2-22 / W06 My media kit: the creator's identity card on top of the app's own kit ---------- */
+  let _mkProf = null;
+  async function touchMediaKit(){
+    const c = document.getElementById("content"); if(!c || currentPage !== "mediakit") return;
+    const head = c.querySelector(":scope > .page-head");
+    if(head && !head.dataset.b2){ head.dataset.b2 = 1; head.innerHTML = `<div><div class="b2-eyebrow">Your creator portfolio</div><h1>My media kit</h1><p>Your story, your work, your impact.</p></div>`; }
+    const kit = c.querySelector(".mk-kit"); if(!kit || kit.dataset.b2) return; kit.dataset.b2 = 1;
+    const a = (typeof mkFetchAcct === "function") ? await mkFetchAcct().catch(()=> null) : null; if(!a || !kit.isConnected) return;
+    if(!_mkProf && window.__ciProfileEnabled){ const r = await api("get_my_profile"); if(!r.error) _mkProf = r.data || {}; }
+    const pro = (_mkProf && _mkProf.professional) || {};
+    const media = (typeof mkAllMedia === "function" ? mkAllMedia(a) : (a.recent_media||[]));
+    const eng = (a.followers_count && media.length) ? (100 * media.reduce((t,m)=> t + (+m.like_count||0) + (+m.comments_count||0), 0) / media.length / a.followers_count).toFixed(1) + "%" : "—";
+    const avgL = media.length ? Math.round(media.reduce((t,m)=> t + (+m.like_count||0), 0) / media.length) : 0;
+    const n = v => typeof fmtNum === "function" ? fmtNum(v||0) : String(v||0);
+    const card = document.createElement("div"); card.className = "b2 b2-mkid"; card.id = "b2MkId";
+    card.innerHTML = `${a.profile_picture_url?`<img src="${H(a.profile_picture_url)}" alt="">`:`<span class="b2-ini">${H(String(a.username||"C").charAt(0).toUpperCase())}</span>`}
+      <div class="b2-mkn"><b>${H(a.name || a.username)}</b><span>@${H(a.username)}${pro.city_coarse?" · "+H(pro.city_coarse):""}</span>${(pro.categories||[]).length||(pro.languages||[]).length?`<em>${H([].concat((pro.categories||[]).slice(0,3),(pro.languages||[]).slice(0,2)).join(" · "))}</em>`:""}</div>
+      <div class="b2-nums"><div><b>${n(a.followers_count)}</b><span>Followers</span></div><div><b>${eng}</b><span>Engagement</span></div><div><b>${a.avg_reach?n(a.avg_reach):n(avgL)}</b><span>${a.avg_reach?"Avg reach":"Avg likes"}</span></div></div>
+      <div class="b2-mkbtns"></div>`;
+    const btns = card.querySelector(".b2-mkbtns");
+    kit.querySelectorAll(".mk-cover button, .mk-cover a.btn").forEach(b=> btns.appendChild(b));
+    kit.insertBefore(card, kit.firstChild); kit.classList.add("b2-kit");
+  }
+
+  /* ---------- V2-24 Analytics header: creator pulse + 4 numbers ---------- */
+  async function touchAnaHead(){
+    const c = document.getElementById("content"); if(!c || currentPage !== "reports") return;
+    const head = c.querySelector(":scope > .page-head"); if(!head || head.dataset.b2) return; head.dataset.b2 = 1;
+    head.innerHTML = `<div><div class="b2-eyebrow">Creator pulse</div><h1>Analytics</h1><p>How your content is doing — from Instagram.</p></div>`;
+    const a = (typeof mkFetchAcct === "function") ? await mkFetchAcct().catch(()=> null) : null; if(!a || !head.isConnected) return;
+    const media = (typeof mkAllMedia === "function" ? mkAllMedia(a) : (a.recent_media||[]));
+    const eng = (a.followers_count && media.length) ? (100 * media.reduce((t,m)=> t + (+m.like_count||0) + (+m.comments_count||0), 0) / media.length / a.followers_count).toFixed(1) + "%" : "—";
+    const avgL = media.length ? Math.round(media.reduce((t,m)=> t + (+m.like_count||0), 0) / media.length) : 0;
+    const n = v => typeof fmtNum === "function" ? fmtNum(v||0) : String(v||0);
+    head.insertAdjacentHTML("afterend", `<div class="b2 b2-ana"><div class="b2-pills"><span class="on">@${H(a.username)}</span><span>Last ${Math.min(media.length,12)||0} posts</span></div>
+      <div class="b2-k4"><div><b>${n(a.followers_count)}</b><span>Followers</span></div><div><b>${a.avg_reach?n(a.avg_reach):"—"}</b><span>Avg reach</span></div>
+        <div><b>${n(avgL)}</b><span>Avg likes</span></div><div><b>${eng}</b><span>Engagement</span></div></div></div>`);
   }
 
   /* ---------- M22 Inbox: campaign updates at the top of Messages (same alerts, actions and "Mark all read") ---------- */
@@ -311,12 +370,23 @@
       }
     });
   }
+  /* ---------- V2-11B / W33 "not eligible" as the v2 sheet ---------- */
+  function touchElig(el){
+    if(!document.body.classList.contains("b2app") || el.dataset.b2) return; el.dataset.b2 = 1;
+    el.classList.add("b2-elig");
+    const box = el.querySelector(".ci-pop-box"); if(!box) return;
+    box.insertAdjacentHTML("afterbegin", `<i class="b2-grab"></i><img class="b2-elig-kid" src="${KI()}" data-kid-me alt="">`);
+    const h = box.querySelector(".ci-pop-head h3"); if(h && /not eligible/i.test(h.textContent)) h.textContent = "You're not eligible for this one";
+    const foot = box.querySelector(".ci-pop-foot"); if(foot) foot.insertAdjacentHTML("afterend", TIP("Missing info? Add it in Profile and check again."));
+  }
   let q = false;
   new MutationObserver(()=>{ if(q) return; q = true; requestAnimationFrame(()=>{ q = false;
     const pop = document.getElementById("ciPop"); if(pop && !pop.dataset.bx) touchBrief(pop);
+    const el = document.getElementById("ciElig"); if(el && !el.dataset.b2) touchElig(el);
     touchAlerts(); touchMe();
     if(isCreator() && currentPage === "profile" && !document.getElementById("bxHub")) touchProfile();
-    if(isCreator() && currentPage === "reports") touchAnalytics();
+    if(isCreator() && currentPage === "reports"){ touchAnalytics(); touchAnaHead(); }
+    if(isCreator() && currentPage === "mediakit") touchMediaKit();
     if(isCreator() && currentPage === "messages") touchInbox();
     if(isCreator()){ touchSteps(); touchMine(); }
   }); }).observe(document.body, { childList:true, subtree:true });
