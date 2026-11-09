@@ -148,7 +148,8 @@
     dr.classList.add("b2-notif");
     const head = dr.querySelector(".drawer-head"); if(!head) return;
     const st = head.querySelector("strong"); if(st && st.textContent !== "Notifications") st.textContent = "Notifications";
-    const all = head.querySelector("#notifAll"); if(all){ const old = dr.querySelector(":scope > .b2-notif-all"); if(old && old !== all) old.remove(); all.textContent = "View all alerts →"; all.classList.add("b2-notif-all"); dr.appendChild(all); }
+    const all = head.querySelector("#notifAll"); if(all){ const old = dr.querySelector(":scope > .b2-notif-all"); if(old && old !== all) old.remove(); all.textContent = "View all alerts →"; all.classList.add("b2-notif-all"); dr.appendChild(all);
+      if(!all.dataset.b2){ all.dataset.b2 = 1; all.onclick = null; all.addEventListener("click", e=>{ e.preventDefault(); e.stopImmediatePropagation(); const cl = document.getElementById("notifClose"); if(cl) cl.click(); const ov = document.getElementById("notifOverlay"); if(ov) ov.classList.remove("open"); go("messages"); }, true); } }
     if(st && !head.querySelector(".b2-notif-mark")){ const mk = document.createElement("button"); mk.type = "button"; mk.className = "b2-notif-mark"; mk.textContent = "Mark all read";
       mk.onclick = ()=>{ const b = body.querySelector("#opsMarkAll"); if(b) b.click(); else body.querySelectorAll(".ops-alert").forEach(r=> r.classList.add("read")); };
       st.after(mk); }
@@ -386,6 +387,7 @@
   window.renderShell = function(){
     const c0 = document.getElementById("content"); if(c0) c0.classList.remove("b2-hubpage","b2-hub-open");
     const r = _rs.apply(this, arguments);
+    if(currentPage !== "dashboard") document.body.classList.remove("b2-home-on");
     if(isCreator()){
       if(currentPage === "bxpayments") loadPayments();
       if(currentPage === "bxsettings") loadSettings();

@@ -61,6 +61,8 @@
     if(locked(k)){ if(window.gateToast) gateToast(joinNeedsText()); return; }
     currentPage = k; renderShell(); window.scrollTo(0,0);
   }
+  // moving to another page (bottom bar or ☰ menu) closes the "Make your sidekick yours" sheet
+  document.addEventListener("click", e=>{ if(e.target.closest && e.target.closest("#nav a, #bxBottom button")){ const ks = document.getElementById("bxKidSheet"); if(ks) ks.remove(); } }, true);
 
   /* ---------- body flags ---------- */
   function flags(){
@@ -308,18 +310,19 @@
     box.querySelector(".b2-next").innerHTML = `<span class="b2-tagred${act.tag==="Next step"?" soft":""}">${act.tag}</span><h3>${H(act.t)}</h3><div class="b2-due">⏳ ${H(act.s)}</div>
       <button type="button" class="b2-mini cream" data-hgo="${act.go}">${act.b} →</button>`;
     // 2) active campaigns
-    const ah = document.getElementById("b2HAct");
+    const ah = box.querySelector("#b2HAct"); if(!ah) return;
     ah.innerHTML = `<div class="b2-sec">— Active campaigns —</div><div class="b2-sec2">${live.length} in progress</div>
       <div class="b2-gc b2-active"><div class="b2-gc-h d-only">Active campaigns · ${live.length} in progress</div>${live.length ? live.slice(0,4).map(x=>`<div class="b2-arow" data-hgo="mycampaigns"><span class="b2-ini2">${H(String(x.brand||x.campaign||"C").charAt(0).toUpperCase())}</span><span class="b2-an"><b>${H(x.brand||x.campaign||"")}</b> · ${H(STAGE_SHORT[x.stage]||String(x.stage||"").replace(/_/g," "))}</span><span class="b2-st ${WAIT_ST.includes(x.stage)?"teal":"red"}">${WAIT_ST.includes(x.stage)?"In progress":"Action needed"}</span></div>`).join("") : `<div class="b2-arow empty">No active campaigns yet — apply to one below.</div>`}</div>`;
     // 3) made for your world
-    const fresh = d.open.filter(x=> !x.my_stage && !x.applications_closed).slice(0,3);
+    const elr = x => x.eligibility && x.eligibility.eligible === true ? 0 : x.eligibility && x.eligibility.eligible === false ? 2 : 1;
+    const fresh = d.open.filter(x=> !x.my_stage && !x.applications_closed).sort((a,b)=> elr(a) - elr(b)).slice(0,3);
     if(fresh.length && window.B2){
       const first = fresh[0], k = B2.kind(first);
       box.insertAdjacentHTML("beforeend", `<div class="b2-sec">— Made for your world —</div>
         <div class="b2-gc b2-rec m-only" data-hbrief="${H(first.campaign_id)}"><img src="${B2.camPhoto(first)}" alt=""><div><div class="b2-rk">Campaign</div><h4>${H(first.name||"Campaign")}</h4>
-          <div class="b2-rl">🎁 ${H(B2.KL[k]||"Campaign")} · ${k==="paid"?"Payment":"Product"}</div><span class="b2-pm">${first.eligibility&&first.eligibility.eligible===true?"Eligible":"Potential match"}</span>
-          <div class="b2-rf"><i>Not guaranteed eligible</i><button type="button" class="b2-vb" data-hbrief="${H(first.campaign_id)}">Explore</button></div></div></div>
-        <div class="b2-cgrid d-only b2-home-camps">${fresh.map(x=> B2.card(x, { btn:`${x.eligibility&&x.eligibility.eligible===true?`<span class="b2-match ok">✓ Eligible</span>`:`<span class="b2-match chk">⇄ Check fit</span>`}<button type="button" class="b2-vb" data-hbrief="${H(x.campaign_id)}">View brief →</button>` }).replace('class="b2-camp"', `class="b2-camp" data-hbrief="${H(x.campaign_id)}"`)).join("")}</div>`);
+          <div class="b2-rl">🎁 ${H(B2.KL[k]||"Campaign")} · ${k==="paid"?"Payment":"Product"}</div><span class="b2-pm${elr(first)===2?" no":""}">${["✓ Eligible","Potential match","✗ Not eligible yet"][elr(first)]}</span>
+          <div class="b2-rf"><i>${["You can apply now","Not guaranteed eligible","Finish your profile to qualify"][elr(first)]}</i><button type="button" class="b2-vb" data-hbrief="${H(first.campaign_id)}">Explore</button></div></div></div>
+        <div class="b2-cgrid d-only b2-home-camps">${fresh.map(x=> B2.card(x, { btn:`${elr(x)===0?`<span class="b2-match ok">✓ Eligible</span>`:elr(x)===2?`<span class="b2-match no">✗ Not eligible</span>`:`<span class="b2-match chk">⇄ Check fit</span>`}<button type="button" class="b2-vb" data-hbrief="${H(x.campaign_id)}">View brief →</button>` }).replace('class="b2-camp"', `class="b2-camp" data-hbrief="${H(x.campaign_id)}"`)).join("")}</div>`);
     }
     // 4) dream brand board + media kit progress
     const dreams = d.dreams.slice(0,5);
