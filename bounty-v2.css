@@ -1012,3 +1012,13 @@ body.b2app[data-pg="reports"] #crBody > .card:not(.b2-perf):not(.b2-ins){ displa
   #bxInboxBody :has(> .ops-alert){ columns:2; column-gap:20px; }
   #bxInboxBody .ops-alert{ break-inside:avoid; }
 }
+/* campaign card photo = full-height left panel, edge to edge (V2-09) */
+.b2-camp{ grid-template-columns:136px 1fr; }
+body.b2app .ci-ccard.b2-camp{ grid-template-columns:136px 1fr !important; overflow:hidden !important; }
+.b2-camp > .b2-camp-ph, body.b2app .ci-ccard.b2-camp > .b2-camp-ph{ margin:0 !important; padding:0 !important; width:auto !important; min-width:0; position:relative; border-radius:17px 0 0 17px; overflow:hidden; align-self:stretch; }
+.b2-camp > .b2-camp-b, body.b2app .ci-ccard.b2-camp > .b2-camp-b{ margin:0 !important; }
+.b2-camp-ph img{ object-fit:cover; object-position:center; }
+@media(min-width:761px){
+  .b2-camp, body.b2app .ci-ccard.b2-camp{ grid-template-columns:1fr !important; }
+  .b2-camp > .b2-camp-ph, body.b2app .ci-ccard.b2-camp > .b2-camp-ph{ border-radius:0; height:150px; }
+}
