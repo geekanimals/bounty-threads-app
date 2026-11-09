@@ -169,9 +169,9 @@
     if(!isCreator()){ bar.innerHTML = ""; return; }
     bar.classList.add("b2-nav");
     const NIC = { home:B2I.home, megaphone:B2I.meg, chart:B2I.bars, user:B2I.user };
-    const camp = ["mycampaigns","opencampaigns","marketplace","bxpayments"], prof = ["profile","mediakit","bxsettings","instagram","messages"];
+    const camp = ["mycampaigns","opencampaigns","marketplace","bxpayments"], prof = ["profile","mediakit","bxsettings","instagram"];
     const kidOpen = !!document.getElementById("b2KidSheet");
-    const isOn = k => !kidOpen && (k === currentPage || (k === "mycampaigns" && camp.includes(currentPage)) || (k === "profile" && prof.includes(currentPage) && currentPage !== "mediakit") || (k === "reports" && currentPage === "mediakit"));
+    const isOn = k => !kidOpen && (k === currentPage || (k === "dashboard" && currentPage === "messages") || (k === "mycampaigns" && camp.includes(currentPage)) || (k === "profile" && prof.includes(currentPage) && currentPage !== "mediakit") || (k === "reports" && currentPage === "mediakit"));
     bar.innerHTML = bottomItems().map(([k,l,ic])=> k==="__sprout"
       ? `<button type="button" class="b2-nav-kid${document.getElementById("b2KidSheet")?" on":""}" data-k="__sprout" aria-label="Ask ${H(KN())}"><span class="ring"><img src="${KI()}" data-kid-me alt=""></span><span>${H(KN())}</span></button>`
       : `<button type="button" data-k="${k}" class="${isOn(k)?"on":""} ${locked(k)?"locked":""}"><span class="ic">${NIC[ic]||svg(ic)}</span><span>${l}</span></button>`).join("");

@@ -367,11 +367,71 @@
 
   /* ---------- M22 Inbox: campaign updates at the top of Messages (same alerts, actions and "Mark all read") ---------- */
   function touchInbox(){
-    const c = document.getElementById("content"); if(!c || c.querySelector("#bxInbox") || !(window.ciOps && ciOps.loadAlerts)) return;
-    const first = c.firstElementChild; if(!first) return;
-    first.insertAdjacentHTML("beforebegin", `<div class="b2 b2-inbox" id="bxInbox"><h1 class="b2-h1">Inbox</h1><p class="b2-sub">Campaign updates and messages from Geek.</p><div id="bxInboxBody" class="b2-inboxb">${SK.inbox()}</div></div>`);
-    ciOps.loadAlerts(document.getElementById("bxInboxBody")).then(()=> tabsFor(document.getElementById("bxInboxBody")));
-    const rest = document.getElementById("bxInbox").nextElementSibling; if(rest) rest.insertAdjacentHTML("beforebegin", `<div class="b2 b2-sec ink b2-msgh">— Messages —</div>`);
+    const c = document.getElementById("content"); if(!c || c.querySelector("#bxInbox")) return;
+    c.insertAdjacentHTML("afterbegin", `<div class="b2 b2-inbox" id="bxInbox"><h1 class="b2-h1">Inbox</h1><p class="b2-sub">Campaign updates and messages from Geek.</p>
+      <div class="b2-ibtabs" role="tablist"><button type="button" class="on" data-ib="all">All</button><button type="button" data-ib="act">Action needed</button><button type="button" data-ib="upd">Updates</button></div>
+      <div class="b2-ibmark"><button type="button" id="bxIbMark">Mark all read</button></div>
+      <div id="bxIbList">${SK.alerts(3)}</div></div>`);
+    const box = document.getElementById("bxInbox");
+    box.querySelectorAll("[data-ib]").forEach(b=> b.onclick = ()=>{ IB.tab = b.dataset.ib; box.querySelectorAll("[data-ib]").forEach(x=> x.classList.toggle("on", x === b)); paintInbox(); });
+    document.getElementById("bxIbMark").onclick = async ()=>{
+      const unread = IB.items.filter(n=> !n.read); if(!unread.length) return;
+      IB.items.forEach(n=> n.read = true); paintInbox();
+      await api("mark_all_notifications_read"); if(window.ciOps && ciOps.updateAlertsBadge) ciOps.updateAlertsBadge();
+    };
+    IB.tab = "all"; loadInbox();
+  }
+  /* ---------- V2-21 Inbox: the Figma list on the creator's real notifications ---------- */
+  const IB = { items:[], tab:"all", loaded:false };
+  const GEEK_WA = "916398566704";
+  const ibAct = n => n.kind === "action_required" && !n.acted;
+  const ibMsg = n => n.kind === "message" || /^geek( team)?\b/i.test(n.title || "");
+  function ibWhen(d){
+    const t = new Date(d); if(isNaN(t)) return "";
+    const now = new Date(), day = 864e5, start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if(t.getTime() >= start) return t.toLocaleTimeString("en-IN", { hour:"2-digit", minute:"2-digit", hour12:false });
+    if(t.getTime() >= start - day) return "Yesterday";
+    if(t.getTime() >= start - 6*day) return t.toLocaleDateString("en-IN", { weekday:"short" });
+    return t.toLocaleDateString("en-IN", { day:"numeric", month:"short" });
+  }
+  async function loadInbox(){
+    const r = await api("get_my_notifications", { p_only_unread:false });
+    IB.items = (r && !r.error && Array.isArray(r.data)) ? r.data : []; IB.loaded = true; IB.err = r && r.error ? (r.error.message || "error") : "";
+    paintInbox();
+  }
+  function ibOpen(n){
+    let route = n.action_route; if(!route) return;
+    route = ({ onboarding:"profile", alerts:"messages", growth:"mycampaigns", barter:"opencampaigns", marketplace:"opencampaigns", campaignops:"mycampaigns", approvals:"mycampaigns" })[route] || route;
+    if(String(route).indexOf("admin:") === 0) route = "mycampaigns";
+    go(route);
+  }
+  window.bxInbox = { state: IB, paint: ()=> paintInbox(), reload: ()=> loadInbox() };
+  function paintInbox(){
+    const list = document.getElementById("bxIbList"); if(!list) return;
+    const mk = document.getElementById("bxIbMark"); if(mk) mk.disabled = !IB.items.some(n=> !n.read);
+    if(IB.err){ list.innerHTML = `<div class="b2-ib empty">Couldn't load your inbox. <button type="button" class="b2-ib-btn" id="bxIbRetry">Try again</button></div>`; document.getElementById("bxIbRetry").onclick = ()=>{ list.innerHTML = SK.alerts(3); loadInbox(); }; return; }
+    const rows = IB.items.filter(n=> IB.tab === "all" || (IB.tab === "act" ? ibAct(n) : !ibAct(n)));
+    if(!rows.length){ list.innerHTML = `<div class="b2-ib empty">${IB.tab === "act" ? "Nothing needs you right now. We'll tell you the moment something does." : IB.tab === "upd" ? "No updates yet." : "No alerts yet. When something needs you, it'll show here."}</div>`; return; }
+    list.innerHTML = rows.map(n=>{
+      const act = ibAct(n), msg = ibMsg(n);
+      const btn = msg ? `<button type="button" class="b2-ib-btn" data-ibr="${H(n.notification_id)}">Reply</button>`
+        : n.action_route ? `<button type="button" class="b2-ib-btn${act ? " pri" : ""}" data-ibg="${H(n.notification_id)}">${H(n.action_label || "Open")}</button>` : "";
+      return `<div class="b2-ib${act ? " act" : ""}${n.read ? "" : " unread"}" data-nid="${H(n.notification_id)}"><i class="b2-ib-dot ${msg ? "msg" : act || !n.read ? "red" : ""}"></i>
+        <div class="b2-ib-h"><b>${H(n.title || "Update")}</b><time>${H(ibWhen(n.created_at))}</time></div>
+        ${n.body ? `<p>${H(String(n.body).replace(/[*_`]/g,""))}</p>` : ""}${btn}</div>`;
+    }).join("");
+    const find = id => IB.items.find(n=> String(n.notification_id) === String(id));
+    list.querySelectorAll(".b2-ib[data-nid]").forEach(row=> row.onclick = ()=>{
+      const n = find(row.dataset.nid); if(!n || n.read) return; n.read = true; row.classList.remove("unread");
+      const dot = row.querySelector(".b2-ib-dot"); if(dot && !ibAct(n) && !ibMsg(n)) dot.classList.remove("red");
+      api("mark_notification_read", { p_id:n.notification_id }).then(()=> window.ciOps && ciOps.updateAlertsBadge && ciOps.updateAlertsBadge());
+      const m2 = document.getElementById("bxIbMark"); if(m2) m2.disabled = !IB.items.some(x=> !x.read);
+    });
+    list.querySelectorAll("[data-ibg]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); const n = find(b.dataset.ibg); if(!n) return;
+      n.read = true; if(n.kind === "action_required") n.acted = true;
+      api("mark_notification_acted", { p_id:n.notification_id }).then(()=> window.ciOps && ciOps.updateAlertsBadge && ciOps.updateAlertsBadge()); ibOpen(n); });
+    list.querySelectorAll("[data-ibr]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); const n = find(b.dataset.ibr); if(n && !n.read){ n.read = true; api("mark_notification_read", { p_id:n.notification_id }); }
+      window.open(`https://wa.me/${GEEK_WA}?text=${encodeURIComponent("Hi Geek team, about: " + ((n && n.title) || "my campaign") + " — ")}`, "_blank", "noopener"); });
   }
 
   /* ---------- M32 Settings & privacy (new page) ---------- */
