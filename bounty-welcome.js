@@ -42,7 +42,13 @@
     [/fit|gym|sport|health|yoga/i,"ph_fitness"],[/pet|dog|cat/i,"ph_pets"],[/travel|trip|hotel|stay/i,"ph_travel"],[/tech|gadget|audio|phone|electr|camera/i,"ph_circle"],
     [/home|decor|interior|lifestyle|living/i,"ph_vaaree"],[/groom|\bmen\b|fragrance|perfume|beard|shav/i,"ph_beardo"]];
   const BR = { beardo:"ph_beardo", vaaree:"ph_vaaree", snuggles:"ph_pets", circle:"ph_circle", nykaa:"ph_beauty", typsy:"ph_food", zomato:"ph_food", myntra:"ph_fashion", boat:"ph_circle", mcaffeine:"ph_beauty" };
-  const camPhoto = c => { const b = String(c.brand||"").toLowerCase().replace(/[^a-z]/g,""); if(BR[b]) return R + BR[b] + ".jpg";
+  // the campaign photo uploaded by the Super Admin (public.campaign_covers) comes first
+  let COVERS = {}, _cov = null;
+  const loadCovers = () => _cov || (_cov = (window.sb ? sb.rpc("campaign_covers").then(r=>{ if(r && !r.error && r.data && typeof r.data === "object") COVERS = r.data; return COVERS; }, ()=> COVERS) : Promise.resolve(COVERS)));
+  B2.loadCovers = loadCovers; B2.covers = () => COVERS;
+  setTimeout(loadCovers, 300);
+  const camPhoto = c => { const id = c && (c.campaign_id || c.id); if(id && COVERS[id]) return COVERS[id]; if(c && c.cover_url) return c.cover_url;
+    const b = String(c.brand||"").toLowerCase().replace(/[^a-z]/g,""); if(BR[b]) return R + BR[b] + ".jpg";
     const s = [c.category, c.product, c.name, c.brand].join(" "); const m = PH.find(([rx])=> rx.test(s)); return R + (m ? m[1] : "ph_vaaree") + ".jpg"; };
   const kind = c => c.campaign_type || ({cash:"paid",hybrid:"barter_paid",barter:"barter"})[c.comp_type] || "";
   const KL = { paid:"Paid", barter:"Barter", barter_paid:"Hybrid" };
@@ -198,7 +204,7 @@
   let G = { on:false, page:"home", list:null, f:"foryou", brief:null, member:false };
   async function loadList(){
     if(G.list) return G.list;
-    try{ const r = await sb.rpc("explore_campaigns"); G.list = (r && !r.error && r.data) || []; G.err = r && r.error ? 1 : 0; }
+    try{ const [r] = await Promise.all([ sb.rpc("explore_campaigns"), loadCovers() ]); G.list = (r && !r.error && r.data) || []; G.err = r && r.error ? 1 : 0; }
     catch(e){ G.list = []; G.err = 1; }
     return G.list;
   }

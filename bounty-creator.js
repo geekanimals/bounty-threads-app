@@ -276,9 +276,9 @@
   async function homeData(){
     if(_home && Date.now()-_homeAt < 45000) return _home;
     const api = (fn,a)=> sb.schema("api").rpc(fn, a||{}).then(r=> r && !r.error ? r.data : null, ()=> null);
-    const [mine, open, prof] = await Promise.all([ api("get_my_campaigns"), window.__ciOpsEnabled ? api("list_open_campaigns") : null, window.__ciProfileEnabled ? api("get_my_profile") : null ]);
+    const [mine, open, prof] = await Promise.all([ api("get_my_campaigns"), window.__ciOpsEnabled ? api("list_open_campaigns") : null, window.__ciProfileEnabled ? api("get_my_profile") : null, window.B2 && B2.loadCovers ? B2.loadCovers() : null ]);
     _home = { mine: Array.isArray(mine)?mine:[], open: Array.isArray(open)?open:[], dreams: (prof && Array.isArray(prof.dream_brands)) ? prof.dream_brands : [] };
-    _homeAt = Date.now(); return _home;
+    _homeAt = Date.now(); if(window.B2) B2.openList = _home.open; return _home;
   }
   const DONE_ST = ["completed"], OUT_ST = ["ineligible","brand_declined","dropped","rejected"], WAIT_ST = ["applied","eligible","sent_to_brand","shortlisted","content_submitted","published","address_confirmed","accepted","brand_confirmed"];
   const H = s => String(s==null?"":s).replace(/[&<>"']/g, ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
@@ -535,7 +535,7 @@
   const inputBar = () => `<form class="b2k-in" id="b2kForm"><input id="b2kQ" placeholder="Ask ${H(KN())} anything…" autocomplete="off"><button type="button" class="b2k-mic" data-k="mic" aria-label="Speak">${B2I.mic}</button><button type="submit" class="b2k-send" aria-label="Send">${B2I.send}</button></form>`;
   function taskCard(x){
     if(!x) return "";
-    const ph = window.B2 ? B2.camPhoto({ brand:x.brand, name:x.campaign, product:x.product, category:x.category }) : "";
+    const ph = window.B2 ? B2.camPhoto({ campaign_id:x.campaign_id, brand:x.brand, name:x.campaign, product:x.product, category:x.category }) : "";
     return `<div class="b2k-task">${ph?`<img src="${ph}" alt="">`:""}<div><b>${H(taskTitle(x))}</b><span>📅 ${H(STAGE_SHORT[x.stage]||String(x.stage||"").replace(/_/g," "))}</span>
       <button type="button" class="b2-mini forest" data-k="go:mycampaigns">Open brief ›</button></div><i class="b2k-chev">${B2I.chev}</i></div>`;
   }

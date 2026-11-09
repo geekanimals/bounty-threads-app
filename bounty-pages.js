@@ -106,7 +106,8 @@
     pop.classList.add("bx-brief"); document.body.style.overflow = "";
     const box = pop.querySelector(".ci-pop-box"), head = pop.querySelector(".ci-pop-head"); if(!box || !head) return;
     const title = (head.querySelector("h3")||{}).textContent || "", brand = (head.querySelector(".muted")||{}).textContent || "";
-    const ph = window.B2 ? B2.camPhoto({ name:title, brand }) : "";
+    const hit = window.B2 && (B2.openList||[]).find(x=> String(x.name||"").trim() === String(title).trim());
+    const ph = window.B2 ? B2.camPhoto(hit || { name:title, brand }) : "";
     head.insertAdjacentHTML("beforebegin", `<button type="button" class="b2-back bx-brief-back">← Back to campaigns</button><div class="b2-bhero bx-brief-cover">${ph?`<img src="${ph}" alt="">`:""}</div>`);
     const foot = pop.querySelector(".ci-pop-foot");
     if(foot){

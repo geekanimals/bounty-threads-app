@@ -1553,6 +1553,7 @@ function ccDetailsHtml(c){
                    left!=null ? `<span class="cc-left${left<0?" past":left<=3?" soon":""}">${left<0?"ended":left===0?"ends today":`${left} day${left>1?"s":""} left`}</span>` : ""].filter(Boolean).join("");
   return `<details class="card cc-info cc-fold"><summary><b>📋 Campaign details</b><span class="cc-sumchips">${sumBits}</span><span class="cc-fold-tap">Tap to see all</span></summary>
     <div class="cc-grid">
+      ${it("🖼","Campaign photo", c.cover_url ? `<img src="${esc(c.cover_url)}" alt="" style="width:120px;height:76px;object-fit:cover;border-radius:10px;display:block">` : '<span class="muted">None — creators see a matching stock photo · Edit campaign to upload</span>')}
       ${it("📦","Each creator posts", deliv || '<span class="muted">Not set — Edit campaign</span>')}
       ${it("#","Hashtags", tg.tags.length?chips(tg.tags):'<span class="muted">—</span>')}
       ${it("@","Mentions", tg.ments.length?chips(tg.ments):'<span class="muted">—</span>')}
@@ -1691,6 +1692,7 @@ function openCampaignModal(existing, preset){
   const vb = (ed.video_brief && typeof ed.video_brief==="object") ? ed.video_brief : {};
   const tk = (ed.tracking && typeof ed.tracking==="object") ? ed.tracking : {};
   let files = Array.isArray(ed.attachments) ? ed.attachments.slice() : [];
+  const cover = { url: ed.cover_url || "", file: null };            // the campaign photo creators see on cards + the brief
   const ctype = ed.campaign_type || preset.campaign_type || (/paid/i.test(ed.type||"") && !/hybrid/i.test(ed.type||"") ? "paid" : /hybrid/i.test(ed.type||"") ? "barter_paid" : "barter");
   const opt = (arr,val)=>arr.map(o=>`<option${o===val?' selected':''}>${o}</option>`).join("");
   const kv = (arr,val)=>arr.map(([k,l])=>`<option value="${k}"${k===val?' selected':''}>${l}</option>`).join("");
@@ -1732,6 +1734,13 @@ function openCampaignModal(existing, preset){
       <div class="cm-sec">@ Mentions <span class="muted" style="font-weight:400;font-size:12px">— accounts every post must tag</span></div>
       ${tagBoxHtml("cmMents", "@", tg.ments, tg.ments.length ? "Add another…" : "@lumecosmetics — press Enter after each")}
       <label>Brief / notes<textarea name="brief" rows="3" placeholder="Goals, key messaging, dos & don'ts, references…">${esc(ed.brief||'')}</textarea></label>
+      <div class="cm-sec">🖼 Campaign photo <span class="muted" style="font-weight:400;font-size:12px">— creators see it on the campaign card and the brief (JPG / PNG / WebP, max 5 MB)</span></div>
+      <div id="cmCover" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <div class="cm-cv-img" style="width:150px;height:96px;border-radius:12px;overflow:hidden;background:var(--chip,#f3f0ff);display:grid;place-items:center;text-align:center;font-size:11px;color:var(--muted,#777);padding:4px;flex:none"></div>
+        <div style="display:grid;gap:6px;flex:1;min-width:220px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap"><label class="btn sm" style="cursor:pointer">⬆ Upload photo<input type="file" id="cmCoverFile" accept="image/jpeg,image/png,image/webp" hidden></label><button type="button" class="btn sm ghost" id="cmCoverRm">Remove</button></div>
+          <input id="cmCoverLink" type="url" placeholder="…or paste an image link (https://…)" value="${esc(/^https:/i.test(ed.cover_url||"")?ed.cover_url:"")}">
+        </div></div>
       <label>Attach anything <span class="muted" style="font-weight:400">(brief PDF, mood board, product images — max 10 MB each)</span><input type="file" id="cmFiles" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.heic,.mp4,.mov,.csv,.txt,.zip,.doc,.docx,.ppt,.pptx,.xls,.xlsx"></label>
       <div id="cmFileList" class="cm-files"></div>
       <div class="mf-row"><label>Start date<input name="start_date" type="date" value="${esc(ed.start_date||'')}"></label>
@@ -1907,6 +1916,20 @@ function openCampaignModal(existing, preset){
     box.querySelectorAll("[data-rmp]").forEach(b=> b.onclick = ()=>{ pending.splice(+b.dataset.rmp,1); paintFiles(); });
   };
   paintFiles();
+  const paintCover = ()=>{ const box = document.querySelector("#cmCover .cm-cv-img"); if(!box) return;
+    const src = cover.file ? URL.createObjectURL(cover.file) : cover.url;
+    box.innerHTML = src ? `<img src="${esc(src)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:10px">` : "No photo yet — creators see a matching stock photo";
+    document.getElementById("cmCoverRm").hidden = !src; };
+  document.getElementById("cmCoverFile").onchange = e=>{ const f = e.target.files && e.target.files[0]; e.target.value = ""; if(!f) return;
+    const err = document.getElementById("cmErr"); err.textContent = "";
+    if(!/^image\/(jpeg|png|webp)$/.test(f.type)){ err.textContent = "Campaign photo: use a JPG, PNG or WebP image."; return; }
+    if(f.size > 5*1024*1024){ err.textContent = "Campaign photo must be under 5 MB."; return; }
+    cover.file = f; document.getElementById("cmCoverLink").value = ""; paintCover(); };
+  document.getElementById("cmCoverLink").onchange = e=>{ const v = e.target.value.trim(), err = document.getElementById("cmErr"); err.textContent = "";
+    if(v && !/^https:\/\/\S+$/i.test(v)){ err.textContent = "Campaign photo link must start with https://"; return; }
+    cover.url = v; cover.file = null; paintCover(); };
+  document.getElementById("cmCoverRm").onclick = ()=>{ cover.url = ""; cover.file = null; document.getElementById("cmCoverLink").value = ""; paintCover(); };
+  paintCover();
   document.getElementById("cmFiles").onchange = e=>{
     const err = document.getElementById("cmErr"); err.textContent = "";
     for(const f of e.target.files){
@@ -1978,6 +2001,15 @@ function openCampaignModal(existing, preset){
           pending.splice(pending.indexOf(file),1);
         }
       }
+      if(cover.file){
+        if(!org) throw new Error("Your workspace isn't set up yet — can't upload the campaign photo.");
+        btn.textContent = "Uploading campaign photo…";
+        const ext = (cover.file.type.split("/")[1]||"jpg").replace(/[^a-z0-9]/gi,"").slice(0,5) || "jpg";
+        const cpath = `${org}/cover/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+        const cup = await sb.storage.from("campaign-files").upload(cpath, cover.file, { contentType: cover.file.type, upsert:false });
+        if(cup.error) throw new Error("Couldn't upload the campaign photo: " + cup.error.message);
+        cover.url = sb.storage.from("campaign-files").getPublicUrl(cpath).data.publicUrl; cover.file = null;
+      }
       const creators = t==="paid" ? parseInt(f.get("creators_paid")) : parseInt(f.get("creators"));
       const pick = String(f.get("brand_pick")||""), newBrand = String(f.get("brand")||"").trim();
       if(!isReq && (!pick || (pick==="__new" && !newBrand))){ throw new Error(pick==="__new" ? "Type the new brand's name." : "Pick the brand (or ➕ Add a new brand)."); }
@@ -1987,7 +2019,7 @@ function openCampaignModal(existing, preset){
         product_link: t==="paid" ? null : (pl||null), product_value: t==="paid" ? null : num(f.get("product_value")),
         platforms:"Instagram", hashtags:[...tagList, ...mentList].join(" ") || null, deliverables:delivText, brief:f.get("brief"),
         start_date:f.get("start_date")||null, end_date:f.get("end_date")||null,
-        creators: isFinite(creators) && creators>=0 ? creators : 0, attachments: files, ideal_profile: ideal };
+        creators: isFinite(creators) && creators>=0 ? creators : 0, attachments: files, ideal_profile: ideal, cover_url: cover.url || null };
       if(pick && pick!=="__new") row.brand_id = pick; else row.brand_id = null;
       const txt = k => String(f.get(k)||"").trim();
       row.contract_terms = { product: txt("ct_product") || null, product_value: t==="paid" ? null : num(f.get("product_value")),
@@ -2015,6 +2047,7 @@ function openCampaignModal(existing, preset){
       const save = r => existing ? sb.from("campaigns").update(r).eq("id", existing.id) : sb.from("campaigns").insert(r);
       if(!existing && window.Auth&&Auth.profile){ row.org_name=Auth.profile.org; row.org_id=Auth.profile.org_id; }
       ({ error } = await save(row));
+      if(error && /cover_url/i.test(error.message||"")){ delete row.cover_url; ({ error } = await save(row)); }   // before the campaign-photo update
       if(error && /brand_id/i.test(error.message||"")){ delete row.brand_id; ({ error } = await save(row)); }   // before the Brand CRM update
       if(error && /tracking/i.test(error.message||"")){ delete row.tracking; ({ error } = await save(row)); }   // before the tracking update
       if(error && /contract_terms|video_brief/i.test(error.message||"")){   // database not upgraded yet — save the rest
