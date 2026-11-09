@@ -1187,3 +1187,12 @@ body.b2app .bx-tools [data-t="search"] span{ flex:1; text-align:left; color:var(
 .b2-pm.no{ background:rgba(232,102,74,.15) !important; border-color:#e8664a !important; color:#f3a08f !important; } .b2-match.no{ color:#e8664a; font:700 12px var(--b2-f-dm); }
 body.b2app .bx-next .b2-nx-r{ display:block !important; padding-left:16px; position:relative; line-height:1.35; } body.b2app .bx-next .b2-nx-r .dot{ position:absolute; left:2px; top:6px; } body.b2app .bx-next .b2-nx-r b{ margin-right:4px; }
 @media(min-width:761px){ body.b2app #opsMineBody{ max-width:1000px !important; width:100% !important; margin:0 auto !important; grid-template-columns:repeat(2, minmax(0,1fr)) !important; gap:16px !important; } body.b2app #opsMineBody > .mc-card:only-child{ grid-column:1 / -1; max-width:560px; justify-self:center; width:100%; } }
+/* profile hero (old dark card) now sits on parchment — dark text everywhere inside it */
+body.b2app .cp-hero, body.b2app .cp-hero *:not(.cp-ring):not(.cp-ring *):not(.btn):not(.btn *){ text-shadow:none !important; }
+body.b2app .cp-hero .av-btn{ background:#fffdf6 !important; border:1px solid #cdb58a !important; color:var(--b2-ink2) !important; font-weight:600 !important; }
+body.b2app .cp-hero .av-btn.on, body.b2app .cp-hero .av-btn.active, body.b2app .cp-hero .av-btn.sel, body.b2app .cp-hero .av-btn[aria-pressed="true"]{ background:var(--b2-green) !important; border-color:var(--b2-green) !important; color:var(--b2-cream2) !important; }
+body.b2app .cp-hero-foot .cp-req-it, body.b2app .cp-req-it{ background:#fffdf6 !important; border:1px solid #cdb58a !important; color:var(--b2-ink2) !important; }
+body.b2app .cp-req-it.done, body.b2app .cp-req-it.ok{ background:#e3f1ea !important; border-color:#9fcfb8 !important; color:#1f6b4c !important; }
+body.b2app .cp-ring span, body.b2app .cp-ring b, body.b2app .cp-ring i{ color:#fdf3df !important; }
+body.b2app .cp-hero .muted, body.b2app .cp-hero-k{ color:#7a6a4a !important; }
+@media(max-width:760px){ body.b2app .cp-hero-id h3{ text-overflow:ellipsis !important; white-space:nowrap !important; font-size:17px !important; } body.b2app .cp-hero .av-pick{ gap:6px !important; } body.b2app .cp-hero .av-btn{ padding:4px 9px !important; font-size:12px !important; min-height:0 !important; } }
