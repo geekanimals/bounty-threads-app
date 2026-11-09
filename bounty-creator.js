@@ -343,6 +343,22 @@
 
   /* ---------- wrap the shell ---------- */
   const _renderShell = window.renderShell;
+  /* ---------- the v2 loader between sign-in and the first screen (instead of the old Geek OS "Media Kit" early shell) ---------- */
+  function bootLoader(){
+    if(!document.documentElement.classList.contains("bx-door") || document.getElementById("bootSplash")) return;
+    const b = document.createElement("div"); b.id = "bootSplash"; b.className = "boot-splash b2-boot";
+    b.innerHTML = `<div class="b2-boot-in">${LOGO.replace('bx-logo b2-logo','b2-logo')}<div class="b2-boot-by">by geek</div><div class="b2-boot-orb"><img src="${KI()}" alt=""></div><div class="b2-boot-t">Getting your world ready…</div><div class="b2-boot-bar"><i></i></div></div>`;
+    document.body.appendChild(b);
+    clearTimeout(window.__b2BootT); window.__b2BootT = setTimeout(()=>{ const x = document.getElementById("bootSplash"); if(x) x.remove(); }, 15000);
+  }
+  window.bxBootLoader = bootLoader;
+  if(typeof window.paintEarlyShell === "function"){
+    const _pes = window.paintEarlyShell;
+    window.paintEarlyShell = function(){
+      if(document.documentElement.classList.contains("bx-door") && !(window.Auth && Auth.profile && Auth.profile.role && Auth.profile.role !== "creator")){ bootLoader(); window.__earlyShell = false; return; }
+      return _pes.apply(this, arguments);
+    };
+  }
   // WhatsApp verified, no Instagram: every page opens — Instagram is asked only when they apply (Discover runs as "member explore")
   let _landed = false;
   const openGate = ()=>{ try{ if(typeof GATE_OPEN_PAGES !== "undefined") ["dashboard","opencampaigns","marketplace","mycampaigns","reports","bxpayments","bxsettings","instagram","mediakit","profile","messages"].forEach(k=>{ if(!GATE_OPEN_PAGES.includes(k)) GATE_OPEN_PAGES.push(k); }); }catch(e){} };
