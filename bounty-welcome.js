@@ -72,7 +72,16 @@
     o.querySelector(".b2-vx").onclick = close;
     o.onclick = e=>{ if(e.target === o) close(); };
     o.querySelector(".b2-play").onclick = ()=>{
-      document.getElementById("b2Player").innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${VIDEO}?autoplay=1&rel=0&modestbranding=1&playsinline=1" title="How Bounty works" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
+      o.classList.add("playing");
+      const pl = document.getElementById("b2Player");
+      pl.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${VIDEO}?autoplay=1&rel=0&modestbranding=1&playsinline=1&iv_load_policy=3&fs=1&color=white" title="How Bounty works" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
+      pl.insertAdjacentHTML("afterend", `<div class="b2-vrow"><button type="button" class="b2-vfs" data-v="fs">⛶&nbsp; Full screen</button><button type="button" class="b2-vfs" data-v="steps">How it works ›</button></div>`);
+      o.querySelector('[data-v="fs"]').onclick = ()=>{
+        const f = pl.querySelector("iframe"), req = f && (f.requestFullscreen || f.webkitRequestFullscreen);
+        if(req) req.call(f).catch(()=> window.open("https://youtu.be/" + VIDEO, "_blank", "noopener"));
+        else window.open("https://youtu.be/" + VIDEO, "_blank", "noopener");
+      };
+      o.querySelector('[data-v="steps"]').onclick = e=>{ o.classList.toggle("steps"); e.currentTarget.textContent = o.classList.contains("steps") ? "Hide steps ‹" : "How it works ›"; };
     };
     o.querySelector('[data-v="go"]').onclick = ()=>{ close(); if(onGo) onGo(); };
     document.addEventListener("keydown", function esc(e){ if(e.key === "Escape"){ close(); document.removeEventListener("keydown", esc); } });

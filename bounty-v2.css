@@ -811,3 +811,20 @@ body.b2app #meOut{ color:var(--b2-red) !important; font:500 14.5px var(--b2-f-dm
 .b2-exprow span{ text-align:left; flex:1; }
 .b2-term .ic.sm{ font-size:12px; white-space:nowrap; letter-spacing:-.04em; }
 @media(max-width:380px){ .b2-h.fit{ font-size:29px; } }
+
+/* video playing: bigger player (theatre on desktop, edge to edge on phones) */
+.b2-vrow{ display:flex; justify-content:center; gap:10px; margin-top:12px; }
+.b2-vfs{ height:34px; padding:0 16px; border-radius:17px; border:1px solid rgba(232,176,74,.7); background:rgba(251,243,226,.08); color:var(--b2-cream2); font:700 13px var(--b2-f-ui); cursor:pointer; }
+.b2-vid.playing .b2-vbox{ max-width:min(1040px, calc((100vh - 230px) * 16 / 9 + 32px)); }
+.b2-vid.playing .b2-how, .b2-vid.playing .b2-vtip{ display:none; }
+.b2-vid.playing.steps .b2-how{ display:grid; }
+.b2-vid.playing .b2-player{ box-shadow:0 10px 30px rgba(0,0,0,.45); }
+.b2-vid.playing .b2-vbox > .b2-btn{ margin-top:14px; }
+@media(max-width:900px){
+  .b2-vid.playing{ padding:0; justify-content:center; }
+  .b2-vid.playing .b2-vbox{ max-width:none; width:100%; border-radius:0; border-left:0; border-right:0; padding:16px 0 18px; }
+  .b2-vid.playing .b2-player{ border-radius:0; }
+  .b2-vid.playing .b2-vbox h3{ padding:0 48px; }
+  .b2-vid.playing .b2-vbox > .b2-btn, .b2-vid.playing .b2-how{ width:calc(100% - 32px); margin-left:16px; margin-right:16px; }
+}
+@media(min-width:901px){ .b2-vbox{ max-width:640px; } }
