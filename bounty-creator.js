@@ -30,7 +30,13 @@
   };
   const svg = (k, sw) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw||1.8}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[k]}</svg>`;
   const TARGET = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#D3A94E"/><circle cx="12" cy="12" r="8" fill="#C2362F"/><circle cx="12" cy="12" r="5" fill="#F4E8CE"/><circle cx="12" cy="12" r="2.4" fill="#C2362F"/></svg>';
-  const LOGO = `<span class="bx-logo" aria-label="Bounty">B${TARGET}UNTY</span>`;
+  const TG2 = '<svg class="b2-tg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#d9332b"/><circle cx="12" cy="12" r="8" style="fill:var(--tg-gap)"/><circle cx="12" cy="12" r="5.5" fill="#d9332b"/><circle cx="12" cy="12" r="2.6" style="fill:var(--tg-gap)"/><circle cx="12" cy="12" r="1.3" fill="#d9332b"/></svg>';
+  const LOGO = `<span class="bx-logo b2-logo" aria-label="Bounty">B${TG2}UNTY</span>`;
+  const KN = () => (window.bxKid ? bxKid.name() : "Pip");
+  const KI = () => (window.bxKid ? bxKid.img() : A + "rd/kid_pip.png");
+  // v2 sidebar icons (Figma W02)
+  const EMO = { dashboard:"🏠", opencampaigns:"🧭", marketplace:"🧭", mycampaigns:"◈", bxpayments:"🪙", mediakit:"🗂", reports:"📊", instagram:"📸",
+    intelligence:"📊", profile:"👤", messages:"✉︎", bxsettings:"⚙︎", dream:"💙" };
 
   // creator nav: Figma names + icons + groups (keys come from the app, so gating/filters are unchanged)
   const LABEL = { dashboard:"Home", opencampaigns:"Discover", marketplace:"Discover", mycampaigns:"My campaigns",
@@ -46,10 +52,11 @@
   function profileKey(keys){ return keys.includes("profile") ? "profile" : "mediakit"; }
   function bottomItems(){
     const keys = creatorNavKeys();
-    return [["dashboard","Home","home"],["mycampaigns","Campaigns","megaphone"],["__sprout","Sprout",""],
-      ["reports","Analytics","chart"],[profileKey(keys),"Profile","user"]].filter(b=> b[0]==="__sprout" || keys.includes(b[0]));
+    const camp = keys.includes("mycampaigns") ? "mycampaigns" : keys.includes("opencampaigns") ? "opencampaigns" : "marketplace";
+    return [["dashboard","Home","home"],[camp,"Campaigns","megaphone"],["__sprout","Sprout",""],
+      [keys.includes("reports") ? "reports" : "mediakit","Analytics","chart"],[profileKey(keys),"Profile","user"]];
   }
-  const locked = k => window.__profileGate && typeof GATE_OPEN_PAGES!=="undefined" && !GATE_OPEN_PAGES.includes(k);
+  const locked = k => false;   // no page is locked for a signed-in creator (Instagram is asked only at apply)
   function go(k){
     if(locked(k)){ if(window.gateToast) gateToast(joinNeedsText()); return; }
     currentPage = k; renderShell(); window.scrollTo(0,0);
@@ -59,6 +66,7 @@
   function flags(){
     const on = isCreator();
     document.body.classList.toggle("bx", on);
+    document.body.classList.toggle("b2app", on);
     if(on){ document.body.dataset.pg = currentPage; document.body.dataset.bg = FOREST.has(currentPage) ? "forest" : "parch"; }
     else { delete document.body.dataset.pg; delete document.body.dataset.bg; }
   }
@@ -68,6 +76,7 @@
     if(document.getElementById("bxBottom")) return;
     const brand = document.querySelector(".sidebar .brand");
     if(brand && !brand.querySelector(".bx-logo")) brand.insertAdjacentHTML("beforeend", LOGO);
+    if(brand && !brand.querySelector(".b2-drx")){ brand.insertAdjacentHTML("afterbegin", `<button type="button" class="b2-drx" aria-label="Close menu">✕</button>`); brand.querySelector(".b2-drx").onclick = ()=> document.getElementById("sidebar").classList.remove("open"); }
     const menu = document.getElementById("menuBtn");
     if(menu && !document.querySelector(".topbar .bx-logo")) menu.insertAdjacentHTML("afterend", LOGO);
     const nav = document.getElementById("nav");
@@ -110,13 +119,13 @@
     nav.querySelectorAll("a[data-page]").forEach(a=>{
       const k = a.dataset.page, ic = a.querySelector(".ic"), lb = a.querySelector("span:last-child");
       if(lb && LABEL[k]) lb.textContent = (k==="profile" && window.__profileReq && window.__profileReq.complete) ? "Profile ✓" : LABEL[k];
-      if(ic && ICON[k]) ic.innerHTML = ic.textContent === "🔒" ? svg(ICON[k]) : svg(ICON[k]);
+      if(ic) ic.innerHTML = `<span class="b2-emo">${EMO[k] || "•"}</span>`;
       if(a.style.opacity && !a.querySelector(".bx-lk")) a.insertAdjacentHTML("beforeend", `<i class="bx-lk">${svg("lock")}</i>`);
       if(dup.has(k)) a.classList.add("bx-dup");
       // Instagram not connected yet: Discover still opens — the public campaign list, Apply asks for Instagram
       if((k==="opencampaigns" || k==="marketplace") && window.__profileGate && window.bxMemberExplore){
         a.style.opacity = ""; a.title = "Browse live campaigns";
-        if(ic) ic.innerHTML = svg(ICON[k]);
+        if(ic) ic.innerHTML = `<span class="b2-emo">${EMO[k] || "•"}</span>`;
         a.onclick = ()=>{
           nav.querySelectorAll("a.active").forEach(x=> x.classList.remove("active")); a.classList.add("active");
           document.body.dataset.pg = "opencampaigns"; document.body.dataset.bg = "forest";
@@ -142,21 +151,28 @@
       t = "Unlock campaigns"; s = /instagram/.test(n) && /whatsapp/.test(n) ? "Connect Instagram & WhatsApp" : /whatsapp/.test(n) ? "Verify WhatsApp" : "Connect Instagram"; k = "mediakit"; }
     else if(req && !req.complete && creatorNavKeys().includes("profile")){ t = "Finish your profile"; s = Math.round(100*req.done/Math.max(req.total,1)) + "% complete"; k = "profile"; }
     else if(window.__alertsUnread > 0){ t = "Your next move"; s = window.__alertsUnread + " action" + (window.__alertsUnread>1?"s":"") + " due"; k = "dashboard"; }
-    b.innerHTML = `<span class="tg">${TARGET}</span><span><b>${t}</b><i>${s}</i></span>`;
+    b.innerHTML = `<span class="tg b2-emo">🎯</span><span><b>${t}</b><i>${s}</i></span>`;
     b.onclick = ()=> go(k);
   }
   function paintSprout(){
     const l = document.getElementById("aiLaunch");
     if(l && !l.dataset.bx){ l.dataset.bx = 1; l.dataset.old = l.innerHTML; }
-    if(l) l.innerHTML = isCreator() ? `<img src="${A}sprout_wave.png" alt=""><span><b>Ask Sprout</b><i>Help with anything</i></span>` : (l.dataset.old || l.innerHTML);
+    if(l) l.innerHTML = isCreator() ? `<img src="${KI()}" data-kid-me alt=""><span><b>Ask ${H(KN())}</b><i>Help with anything</i></span>` : (l.dataset.old || l.innerHTML);
+    if(l && isCreator()) l.onclick = ()=> openKid();
+    paintMeChip();
   }
   function paintBottom(){
     const bar = document.getElementById("bxBottom"); if(!bar) return;
     if(!isCreator()){ bar.innerHTML = ""; return; }
+    bar.classList.add("b2-nav");
+    const NIC = { home:B2I.home, megaphone:B2I.meg, chart:B2I.bars, user:B2I.user };
+    const camp = ["mycampaigns","opencampaigns","marketplace","bxpayments"], prof = ["profile","mediakit","bxsettings","instagram","messages"];
+    const kidOpen = !!document.getElementById("b2KidSheet");
+    const isOn = k => !kidOpen && (k === currentPage || (k === "mycampaigns" && camp.includes(currentPage)) || (k === "profile" && prof.includes(currentPage) && currentPage !== "mediakit") || (k === "reports" && currentPage === "mediakit"));
     bar.innerHTML = bottomItems().map(([k,l,ic])=> k==="__sprout"
-      ? `<button type="button" class="sp" data-k="__sprout" aria-label="Ask Sprout"><span class="orb"><img src="${A}sprout_wave.png" alt=""></span>${l}</button>`
-      : `<button type="button" data-k="${k}" class="${k===currentPage?"on":""} ${locked(k)?"locked":""}">${svg(ic)}${l}</button>`).join("");
-    bar.querySelectorAll("button").forEach(b=> b.onclick = ()=>{ const k = b.dataset.k; if(k==="__sprout") return openAi(); go(k); });
+      ? `<button type="button" class="b2-nav-kid${document.getElementById("b2KidSheet")?" on":""}" data-k="__sprout" aria-label="Ask ${H(KN())}"><span class="ring"><img src="${KI()}" data-kid-me alt=""></span><span>${H(KN())}</span></button>`
+      : `<button type="button" data-k="${k}" class="${isOn(k)?"on":""} ${locked(k)?"locked":""}"><span class="ic">${NIC[ic]||svg(ic)}</span><span>${l}</span></button>`).join("");
+    bar.querySelectorAll("button").forEach(b=> b.onclick = ()=>{ const k = b.dataset.k; if(k==="__sprout") return openKid(); closeKid(); go(k); });
   }
 
   /* ---------- small fixes on top of the shell ---------- */
@@ -212,7 +228,8 @@
     if(currentPage === "opencampaigns") touchDiscover();
     if(currentPage === "dashboard"){
       const head = c.querySelector(".page-head");
-      if(head && !head.querySelector(".bx-eyebrow")){
+      if(head) head.classList.add("b2-hide");
+      if(false && head && !head.querySelector(".bx-eyebrow")){
         const hr = new Date().getHours(), part = hr < 12 ? "morning" : hr < 17 ? "afternoon" : "evening";
         head.firstElementChild.insertAdjacentHTML("afterbegin", `<div class="bx-eyebrow">✦ Good ${part}, creator</div>`);
         const p = head.querySelector("p"); if(p) p.textContent = "Get discovered by brands you love. Build the creator career you want.";
@@ -230,27 +247,27 @@
 
   /* ---------- Discover (signed in) like the Figma (M10 / W03): title, cover band, why you do / don't qualify ---------- */
   async function touchDiscover(){
-    const c = document.getElementById("content"); if(!c) return;
-    const head = c.querySelector(".card:first-child h3");
-    if(head && !head.dataset.bx && /Discover campaigns|^Campaigns$/.test(head.textContent.trim())){
-      head.dataset.bx = 1; head.textContent = "Discover your next collaboration."; head.classList.add("bx-disc-h");
-      const p = head.parentElement.querySelector(".muted, p"); if(p) p.textContent = "Opportunities made for your world. Every brief, reward and timeline up front — apply in one tap.";
-    }
-    const cards = [...c.querySelectorAll(".ci-ccard[data-cdetail]")].filter(x=> !x.dataset.bx);
+    const c = document.getElementById("content"); if(!c || !window.B2) return;
+    const intro = c.querySelector(".ci-intro");
+    if(intro && !intro.dataset.b2){ intro.dataset.b2 = 1; intro.innerHTML = `<h1 class="b2-h1">Made for your world.</h1><p class="b2-sub plain">Campaigns that match your style</p>`; intro.classList.add("b2-intro"); }
+    const chips = c.querySelector("#campChips"); if(chips) chips.classList.add("b2-campchips");
+    const cards = [...c.querySelectorAll(".ci-ccard[data-cdetail]")].filter(x=> !x.dataset.b2);
     if(!cards.length) return;
     let d; try{ d = await homeData(); }catch(e){ return; }
     cards.forEach(card=>{
-      if(card.dataset.bx) return; card.dataset.bx = 1;
+      if(card.dataset.b2) return; card.dataset.b2 = 1;
       const x = (d.open||[]).find(o=> String(o.campaign_id) === card.dataset.cdetail); if(!x) return;
-      const k = x.campaign_type || ({cash:"paid",hybrid:"barter_paid",barter:"barter"})[x.comp_type] || "", KL = {paid:"Paid",barter:"Barter",barter_paid:"Hybrid"};
-      const el = x.eligibility || {}, cr = Array.isArray(el.criteria) ? el.criteria : [];
-      const tag = el.eligible === true ? `<span class="bxg-match ok">✓ You qualify</span>` : el.eligible === false ? `<span class="bxg-match no">Not eligible yet</span>` : `<span class="bxg-match">Potential match</span>`;
-      card.insertAdjacentHTML("afterbegin", `<div class="bxg-cover sm"><span class="bxg-ini">${H(String(x.brand||x.name||"B").charAt(0).toUpperCase())}</span></div>`);
-      const foot = card.querySelector(".ci-ccard-foot");
-      if(foot) foot.insertAdjacentHTML("beforebegin", `<div class="bx-elig">${tag}${cr.length?`<div class="bx-elig-l">${cr.slice(0,3).map(r=>`<span class="${r.ok?"ok":"no"}">${r.ok?"✓":"✗"} ${H(r.need)}</span>`).join("")}</div>`:""}</div>`);
+      const el = x.eligibility || {};
+      const act = card.querySelector("[data-apply]");
+      const tag = x.my_stage ? `<span class="b2-match ok">✓ ${H(String(x.my_stage).replace(/_/g," "))}</span>` : x.applications_closed ? `<span class="b2-match no">Applications closed</span>`
+        : el.eligible === true ? `<span class="b2-match ok">✓ Eligible</span>` : el.eligible === false ? `<span class="b2-match no">✗ Not eligible yet</span>` : `<span class="b2-match chk">⇄ Check fit</span>`;
+      const tmp = document.createElement("div"); tmp.innerHTML = B2.card(x, { btn: tag + `<button type="button" class="b2-vb" data-b2open>View brief →</button>` });
+      const art = tmp.firstElementChild;
+      card.className = "ci-ccard b2-camp"; card.innerHTML = art.innerHTML;
+      if(act){ act.classList.add("b2-hide"); card.appendChild(act); }
     });
-    if(!c.querySelector(".bx-disc-tip")){ const grid = c.querySelector(".ci-ccard")?.parentElement;
-      if(grid) grid.insertAdjacentHTML("afterend", `<div class="bxg-tip bx-disc-tip"><img src="${A}sprout_point.png" alt=""><div>A high match isn't always eligible — check the reasons!</div></div>`); }
+    const grid = c.querySelector(".ci-cgrid"); if(grid) grid.classList.add("b2-cgrid");
+    if(!c.querySelector(".b2-disc-tip") && grid) grid.insertAdjacentHTML("afterend", `<div class="b2-disc-tip">${B2.tip("A high match isn't always eligible — check the reasons in each brief.")}</div>`);
   }
 
   /* ---------- Home like the Figma (M09 / W02): your next move, active campaigns, made for your world,
@@ -265,13 +282,14 @@
   }
   const DONE_ST = ["completed"], OUT_ST = ["ineligible","brand_declined","dropped","rejected"], WAIT_ST = ["applied","eligible","sent_to_brand","shortlisted","content_submitted","published","address_confirmed","accepted","brand_confirmed"];
   const H = s => String(s==null?"":s).replace(/[&<>"']/g, ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  const BRAND_PH = { nike:"ph_b_nike", nykaa:"ph_b_nykaa", boat:"ph_b_boat", beardo:"ph_b_beardo", snuggles:"ph_b_snuggles", circle:"ph_b_circle" };
   async function buildHome(body){
-    const box = document.createElement("div"); box.id = "bxHome"; box.className = "bx-home";
-    box.innerHTML = `<div class="bx-home-row"><div class="card bx-home-act"><div class="muted">Finding your next move…</div></div>
-      <div class="card bx-home-sprout"><img src="${A}sprout_celebrate.png" onerror="this.src='${A}sprout_wave.png'" alt=""><i id="bxHomeQuote">“I'm on it — checking your campaigns.”</i></div></div>`;
+    const box = document.createElement("div"); box.id = "bxHome"; box.className = "b2 b2-home";
+    const hr = new Date().getHours(), part = hr < 12 ? "morning" : hr < 17 ? "afternoon" : "evening";
+    box.innerHTML = `<div class="b2-hello">Good ${part}, creator.</div><h1 class="b2-h1 b2-hh">Your next move.</h1>
+      <div class="b2-hrow"><div class="b2-gc b2-next"><div class="b2-skel">Finding your next move…</div></div><div class="b2-hact" id="b2HAct"></div></div>`;
     body.insertBefore(box, body.firstChild);
-    // the old "ready / profile %" banner and "Running campaigns" card say the same thing as these — once only
-    body.querySelectorAll(".bx-hero").forEach(x=> x.classList.add("bx-dupe"));
+    document.body.classList.add("b2-home-on");
     let d; try{ d = await homeData(); }catch(e){ d = { mine:[], open:[], dreams:[] }; }
     if(!box.isConnected) return;
     const order = (typeof AI_ACTION_ORDER!=="undefined") ? AI_ACTION_ORDER : [];
@@ -280,37 +298,38 @@
     const req = window.__profileReq, pct = req ? Math.round(100*req.done/Math.max(req.total,1)) : null;
     // 1) the one action that matters now
     let act;
-    if(window.__profileGate) act = { pill:"Action needed", t:"Connect Instagram to unlock campaigns", s:"Your media kit builds itself — then every campaign opens for you.", b:"Connect Instagram", go:"mediakit" };
-    else if(yours[0]) act = { pill:"Action needed", t:`${yours[0].brand?yours[0].brand+" · ":""}${yours[0].campaign||"Campaign"}`, s: STAGE_TXT[yours[0].stage] || String(yours[0].stage||"").replace(/_/g," "), b:"Open task", go:"mycampaigns" };
-    else if(req && !req.complete) act = { pill:"Next step", t:`Your profile is ${pct}% complete`, s:"Brands pick complete profiles first — it takes a couple of minutes.", b:"Finish profile", go:"profile" };
-    else act = { pill:"Next step", t:"Find your next campaign", s:`${d.open.filter(x=>!x.my_stage && !x.applications_closed).length} campaigns open for you right now.`, b:"Explore campaigns", go:"opencampaigns" };
-    box.querySelector(".bx-home-act").innerHTML = `<span class="bxg-pill">${act.pill}</span><div class="bx-ha-row"><span class="bx-ha-ic">${svg("clip")}</span><b>${H(act.t)}</b></div><div class="muted">${H(act.s)}</div>
-      <div class="bxg-btns"><button type="button" class="btn" data-hgo="${act.go}">${act.b} ›</button><button type="button" class="btn ghost" data-hgo="__sprout">Ask Sprout ›</button></div>`;
-    const steps = (window.__profileGate?1:0) + yours.length + (req && !req.complete ? 1 : 0);
-    document.getElementById("bxHomeQuote").textContent = steps ? `“You're ${steps} step${steps>1?"s":""} away from your next win!”` : "“All caught up — let's find your next collab!”";
+    if(window.__profileGate) act = { tag:"Action needed", t:"Connect Instagram to apply", s:"Explore freely — brands check real reach when you apply.", b:"Connect Instagram", go:"mediakit" };
+    else if(yours[0]) act = { tag:"Action needed", t:`${yours[0].brand?yours[0].brand+" · ":""}${STAGE_SHORT[yours[0].stage] || (yours[0].campaign||"Campaign")}`, s: STAGE_TXT[yours[0].stage] || String(yours[0].stage||"").replace(/_/g," "), b:"Open brief", go:"mycampaigns" };
+    else if(req && !req.complete) act = { tag:"Next step", t:`Your profile is ${pct}% complete`, s:"Brands pick complete profiles first", b:"Finish profile", go:"profile" };
+    else act = { tag:"Next step", t:"Find your next campaign", s:`${d.open.filter(x=>!x.my_stage && !x.applications_closed).length} campaigns open for you`, b:"Explore campaigns", go:"opencampaigns" };
+    box.querySelector(".b2-next").innerHTML = `<span class="b2-tagred${act.tag==="Next step"?" soft":""}">${act.tag}</span><h3>${H(act.t)}</h3><div class="b2-due">⏳ ${H(act.s)}</div>
+      <button type="button" class="b2-mini cream" data-hgo="${act.go}">${act.b} →</button>`;
     // 2) active campaigns
-    if(live.length){
-      box.insertAdjacentHTML("beforeend", `<div class="card bx-home-active"><h3>Active campaigns <span class="muted">· ${live.length} in progress</span></h3>
-        ${live.slice(0,5).map(x=>`<div class="bx-ha-item" data-hgo="mycampaigns"><span class="bxg-ini sm">${H(String(x.brand||x.campaign||"C").charAt(0).toUpperCase())}</span><div><b>${H(x.brand||"")}</b> <span class="muted">· ${H(x.campaign||"")}</span><div class="muted">${H(STAGE_TXT[x.stage]||String(x.stage||"").replace(/_/g," "))}</div></div><span class="bx-st ${WAIT_ST.includes(x.stage)?"wait":"act"}">${WAIT_ST.includes(x.stage)?"In progress":"Action needed"}</span></div>`).join("")}</div>`);
-      body.querySelectorAll(".card").forEach(cd=>{ const h = cd.querySelector("h3"); if(h && /Running campaigns/.test(h.textContent)) cd.classList.add("bx-dupe"); });
-    }
-    // 3) made for your world: open campaigns you haven't applied to
+    const ah = document.getElementById("b2HAct");
+    ah.innerHTML = `<div class="b2-sec">— Active campaigns —</div><div class="b2-sec2">${live.length} in progress</div>
+      <div class="b2-gc b2-active"><div class="b2-gc-h d-only">Active campaigns · ${live.length} in progress</div>${live.length ? live.slice(0,4).map(x=>`<div class="b2-arow" data-hgo="mycampaigns"><span class="b2-ini2">${H(String(x.brand||x.campaign||"C").charAt(0).toUpperCase())}</span><span class="b2-an"><b>${H(x.brand||x.campaign||"")}</b> · ${H(STAGE_SHORT[x.stage]||String(x.stage||"").replace(/_/g," "))}</span><span class="b2-st ${WAIT_ST.includes(x.stage)?"teal":"red"}">${WAIT_ST.includes(x.stage)?"In progress":"Action needed"}</span></div>`).join("") : `<div class="b2-arow empty">No active campaigns yet — apply to one below.</div>`}</div>`;
+    // 3) made for your world
     const fresh = d.open.filter(x=> !x.my_stage && !x.applications_closed).slice(0,3);
-    if(fresh.length){
-      box.insertAdjacentHTML("beforeend", `<div class="bx-divider">✦ Made for your world ✦</div><div class="bxg-grid bx-home-camps">${fresh.map(x=>{
-        const k = x.campaign_type || ({cash:"paid",hybrid:"barter_paid",barter:"barter"})[x.comp_type] || "", KL = {paid:"Paid",barter:"Barter",barter_paid:"Hybrid"};
-        const ok = x.eligibility && x.eligibility.eligible === true, no = x.eligibility && x.eligibility.eligible === false;
-        return `<article class="bxg-camp" data-hbrief="${H(x.campaign_id)}"><div class="bxg-cover"><span class="bxg-ini">${H(String(x.brand||x.name||"B").charAt(0).toUpperCase())}</span><span class="bxg-type t-${H(k||"x")}">${KL[k]||"Campaign"}</span></div>
-          <div class="bxg-body"><h4>${H(x.brand||"")} · ${H(x.name||"Campaign")}</h4><div class="bxg-comp">${KL[k]||"Campaign"}${x.product_value?" · ₹"+Number(x.product_value).toLocaleString("en-IN"):""}${x.ends_on?" · till "+H(new Date(x.ends_on+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short"})):""}</div>
-          <span class="bxg-match ${ok?"ok":""}">${ok?"✓ You qualify":no?"Check eligibility":"Potential match"}</span><button type="button" class="btn" data-hbrief="${H(x.campaign_id)}">View brief ›</button></div></article>`; }).join("")}</div>`);
-      [...body.children].filter(x=> x.classList.contains("bx-divider")).forEach(x=> x.remove());
+    if(fresh.length && window.B2){
+      const first = fresh[0], k = B2.kind(first);
+      box.insertAdjacentHTML("beforeend", `<div class="b2-sec">— Made for your world —</div>
+        <div class="b2-gc b2-rec m-only" data-hbrief="${H(first.campaign_id)}"><img src="${B2.camPhoto(first)}" alt=""><div><div class="b2-rk">Campaign</div><h4>${H(first.name||"Campaign")}</h4>
+          <div class="b2-rl">🎁 ${H(B2.KL[k]||"Campaign")} · ${k==="paid"?"Payment":"Product"}</div><span class="b2-pm">${first.eligibility&&first.eligibility.eligible===true?"Eligible":"Potential match"}</span>
+          <div class="b2-rf"><i>Not guaranteed eligible</i><button type="button" class="b2-vb" data-hbrief="${H(first.campaign_id)}">Explore</button></div></div></div>
+        <div class="b2-cgrid d-only b2-home-camps">${fresh.map(x=> B2.card(x, { btn:`${x.eligibility&&x.eligibility.eligible===true?`<span class="b2-match ok">✓ Eligible</span>`:`<span class="b2-match chk">⇄ Check fit</span>`}<button type="button" class="b2-vb" data-hbrief="${H(x.campaign_id)}">View brief →</button>` }).replace('class="b2-camp"', `class="b2-camp" data-hbrief="${H(x.campaign_id)}"`)).join("")}</div>`);
     }
     // 4) dream brand board + media kit progress
     const dreams = d.dreams.slice(0,5);
-    box.insertAdjacentHTML("beforeend", `<div class="bx-home-row two">
-      <div class="card bx-home-dream"><h3>Your Dream Brand Board</h3>${dreams.length?`<div class="bx-dream-chips">${dreams.map(x=>`<span>${H(x.submitted_brand_name||"Brand")} ✓</span>`).join("")}</div><button type="button" class="btn sm" data-hgo="opencampaigns">See opportunities ›</button>`:`<div class="muted">Pick up to 5 brands you'd love to work with — private to you.</div><button type="button" class="btn sm" data-hgo="profile">Add dream brands ›</button>`}</div>
-      <div class="card bx-home-kit"><h3>${pct!=null?`Media kit · ${pct}% complete`:"Your media kit"}</h3>${pct!=null?`<div class="bx-bar"><i style="width:${pct}%"></i></div>`:""}<button type="button" class="btn sm ${pct!=null&&pct<100?"":"ghost"}" data-hgo="${pct!=null&&pct<100?"profile":"mediakit"}">${pct!=null&&pct<100?"Finish profile ›":"View media kit ›"}</button></div></div>`);
-    box.querySelectorAll("[data-hgo]").forEach(b=> b.onclick = ()=>{ const k = b.dataset.hgo; if(k==="__sprout") return openAi(); go(k); });
+    box.insertAdjacentHTML("beforeend", `<div class="b2-sec m-only">— Your dream brand board —</div>
+      <div class="b2-gc b2-dream m-only">${dreams.length ? `<div class="b2-dthumbs">${dreams.slice(0,3).map(x=>{ const n = String(x.submitted_brand_name||"Brand"), ph = BRAND_PH[n.toLowerCase().replace(/[^a-z]/g,"")];
+          return ph ? `<img src="${A}rd/${ph}.jpg" alt="${H(n)}">` : `<span>${H(n)}</span>`; }).join("")}</div>
+          <div class="b2-df"><span>${H(dreams.map(x=>x.submitted_brand_name).filter(Boolean).slice(0,3).join(" · "))}</span><a href="#" data-hgo="opencampaigns">See opportunities →</a></div>`
+        : `<div class="b2-df"><span>Pick up to 5 brands you'd love to work with — private to you.</span><a href="#" data-hgo="profile">Add dream brands →</a></div>`}</div>
+      <div class="b2-hrow2"><div class="b2-gc b2-kitp"><h4>${pct!=null?`Your media kit · ${pct}% complete`:"Your media kit"}</h4>${pct!=null?`<div class="b2-bar"><i style="width:${pct}%"></i></div>`:""}
+        <button type="button" class="b2-mini cream" data-hgo="${pct!=null&&pct<100?"profile":"mediakit"}">${pct!=null&&pct<100?"Finish profile":"View media kit"}</button></div>
+        ${window.B2 ? B2.tip("Keep your media kit updated for better brand matches!") : ""}</div>
+      <p class="b2-quote">Get discovered by brands you love.<br class="m-only"> Build the creator career you want.</p>`);
+    box.querySelectorAll("[data-hgo]").forEach(b=> b.onclick = e=>{ e.preventDefault(); const k = b.dataset.hgo; if(k==="__sprout") return openKid(); go(k); });
     box.querySelectorAll("[data-hbrief]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); try{ localStorage.setItem("geek_apply", b.dataset.hbrief); }catch(x){} go("opencampaigns"); });
   }
   let _mo = null;
@@ -324,14 +343,22 @@
 
   /* ---------- wrap the shell ---------- */
   const _renderShell = window.renderShell;
+  // WhatsApp verified, no Instagram: every page opens — Instagram is asked only when they apply (Discover runs as "member explore")
+  let _landed = false;
+  const openGate = ()=>{ try{ if(typeof GATE_OPEN_PAGES !== "undefined") ["dashboard","opencampaigns","marketplace","mycampaigns","reports","bxpayments","bxsettings","instagram","mediakit","profile","messages"].forEach(k=>{ if(!GATE_OPEN_PAGES.includes(k)) GATE_OPEN_PAGES.push(k); }); }catch(e){} };
+  openGate();
   window.renderShell = function(){
     document.body.classList.remove("bx-pre");
+    if(isCreator() && window.__profileGate && !_landed && currentPage === "mediakit" && !window.__bxWantKit){ currentPage = "dashboard"; }
+    if(isCreator()) _landed = true;
     if(window.bxMemberExploreOff) bxMemberExploreOff();
     if(window.__bxIg && window.__bxIgStage) __bxIgStage(2);
     chromeOnce(); flags();
     const r = _renderShell.apply(this, arguments);
-    flags(); paintNext(); paintSprout(); paintBottom(); watch(); touchPage(); tidyNames();
+    flags(); paintNext(); paintSprout(); paintBottom(); watch(); touchPage(); tidyNames(); paintMe();
+    const st = document.querySelector("#searchTrigger span"); if(st && isCreator()) st.textContent = "🔍 Search or run a command…";
     if(isCreator() && window.bxMaybeOnboard) setTimeout(()=> bxMaybeOnboard(), 600);   // new creator: profile setup step 1–3, once
+    if(isCreator() && window.__profileGate && (currentPage === "opencampaigns" || currentPage === "marketplace") && window.bxMemberExplore) setTimeout(()=> bxMemberExplore("discover"), 30);
     return r;
   };
   /* ---------- Ask Sprout sheet (Figma M28): greeting, quick asks, your next task, then the same chat ---------- */
@@ -340,6 +367,9 @@
     invited:"You're invited — accept or decline", content_submitted:"Draft sent — waiting for review", address_confirmed:"Address confirmed — product ships soon",
     published:"Post live — waiting for verification", brand_confirmed:"Brand confirmed you", accepted:"Confirmed — next step coming", sent_to_brand:"With the brand for review",
     shortlisted:"Shortlisted", eligible:"Eligible — waiting for the brand", applied:"Applied — waiting for the brand", completed:"Completed" };
+  const STAGE_SHORT = { changes_requested:"Changes requested", content_created:"Draft due", contract_sent:"Sign agreement", contract_signed:"Confirm address",
+    content_approved:"Approved — post it", product_sent:"Kit on the way", invited:"Invited", content_submitted:"Draft in review", address_confirmed:"Awaiting product",
+    published:"Post live", brand_confirmed:"Confirmed", accepted:"Confirmed", sent_to_brand:"With the brand", shortlisted:"Shortlisted", eligible:"In review", applied:"Applied", completed:"Completed" };
   let _sproutNext = null, _sproutNextAt = 0;
   async function sproutNext(){
     if(_sproutNext && Date.now()-_sproutNextAt < 60000) return _sproutNext;
@@ -464,26 +494,144 @@
     });
   }
 
-  // Sprout = the creator's AI assistant (same chat, same backend — new face)
+  /* ---------- the sidekick sheet (Figma V2-27 · 27A Ask · 27B Prepare · 27C Confirm / W40–W43) ----------
+     Tap the sidekick in the footer (or "Ask Pip" in the sidebar). Answers come from the app's own helper
+     (builtInAnswer — the creator's real campaigns, brief and contract). Nothing is sent without the creator's OK:
+     "Confirm" opens the real step to finish it. */
   const _openAi = window.openAi;
-  if(typeof _openAi === "function") window.openAi = function(){
-    const r = _openAi.apply(this, arguments);
-    if(isCreator() && window.bxKid){ const cl = document.getElementById("aiClose");
-      if(cl && !document.getElementById("bxKidGear")){ cl.insertAdjacentHTML("beforebegin", `<button class="icon-btn" id="bxKidGear" title="Make your sidekick yours" aria-label="Sidekick settings">⚙</button>`);
-        document.getElementById("bxKidGear").onclick = ()=> bxKid.sheet(); } }
-    if(isCreator()){ const t = document.getElementById("aiTitle"), s = document.getElementById("aiSub");
-      if(t) t.textContent = "Sprout"; if(s) s.textContent = "Your sidekick · ask me anything";
-      try{
-        const old = ROLES.creator.ai.title;
-        if(AI_HISTORY[0] && AI_HISTORY[0].role==="assistant" && old && AI_HISTORY[0].content.includes(old)){
-          AI_HISTORY[0].content = AI_HISTORY[0].content.replace("Hi Creator — I'm your " + old, "Hi, I'm Sprout — your sidekick").replace(old, "Sprout");
-          renderAiChat();
-        }
-        const inp = document.querySelector("#aiBody input, #aiBody textarea"); if(inp) inp.placeholder = "Ask Sprout…";
-      }catch(e){}
-    }
-    return r;
+  if(typeof _openAi === "function") window.openAi = function(){ if(isCreator()) return openKid(); return _openAi.apply(this, arguments); };
+  const B2I = {
+    home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></svg>',
+    meg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4h3l6 4V6L7 10z"/><path d="M17 9.5a3.5 3.5 0 0 1 0 5"/></svg>',
+    bars:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 20v-6M12 20V8M18 20v-9"/></svg>',
+    user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+    bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 21h4"/></svg>',
+    doc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg>',
+    layers:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></svg>',
+    gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M4.2 6.2l2.1 2.1M17.7 15.7l2.1 2.1M2.5 12h3M18.5 12h3M4.2 17.8l2.1-2.1M17.7 8.3l2.1-2.1"/></svg>',
+    x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+    mic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+    send:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M21 3 3 10.5l7 2.5 2.5 7z"/><path d="m10 13 4-4"/></svg>',
+    chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>',
+    clip:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9zM9.5 13l2 2 3.5-4"/></svg>'
   };
+  const md = t => H(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/\n/g,"<br>");
+  const firstName = () => String((window.Auth && Auth.profile && !/^wa_\d+@/.test(Auth.profile.name||"") && Auth.profile.name) || "there").split(" ")[0];
+  let K = { view:"home", thread:[], task:null };
+  function closeKid(){ const o = document.getElementById("b2KidSheet"); if(o){ o.remove(); paintBottom(); } }
+  window.bxCloseKid = closeKid;
+  async function openKid(view){
+    let o = document.getElementById("b2KidSheet");
+    if(!o){ o = document.createElement("div"); o.id = "b2KidSheet"; o.className = "b2 b2-kdim"; document.body.appendChild(o);
+      o.onclick = e=>{ if(e.target === o) closeKid(); }; }
+    K.view = view || "home";
+    paintKid(); paintBottom();
+    K.task = await sproutNext(); if(document.getElementById("b2KidSheet")) paintKid();
+  }
+  window.bxOpenKid = openKid;
+  function taskTitle(x){ return x ? `${x.brand?x.brand+" · ":""}${x.campaign||"Campaign"}` : ""; }
+  function kidHead(){ return `<i class="b2-grab"></i><div class="b2k-h"><img src="${KI()}" data-kid-me alt=""><span class="b2k-div"></span><div><b>${H(KN())} · Your sidekick</b><span><i></i>Here to help</span></div>
+      <button type="button" class="b2k-ic" data-k="gear" aria-label="Make your sidekick yours" title="Make your sidekick yours">${B2I.gear}</button><button type="button" class="b2k-ic" data-k="x" aria-label="Close">${B2I.x}</button></div>`; }
+  const inputBar = () => `<form class="b2k-in" id="b2kForm"><input id="b2kQ" placeholder="Ask ${H(KN())} anything…" autocomplete="off"><button type="button" class="b2k-mic" data-k="mic" aria-label="Speak">${B2I.mic}</button><button type="submit" class="b2k-send" aria-label="Send">${B2I.send}</button></form>`;
+  function taskCard(x){
+    if(!x) return "";
+    const ph = window.B2 ? B2.camPhoto({ brand:x.brand, name:x.campaign, product:x.product, category:x.category }) : "";
+    return `<div class="b2k-task">${ph?`<img src="${ph}" alt="">`:""}<div><b>${H(taskTitle(x))}</b><span>📅 ${H(STAGE_SHORT[x.stage]||String(x.stage||"").replace(/_/g," "))}</span>
+      <button type="button" class="b2-mini forest" data-k="go:mycampaigns">Open brief ›</button></div><i class="b2k-chev">${B2I.chev}</i></div>`;
+  }
+  function paintKid(){
+    const o = document.getElementById("b2KidSheet"); if(!o) return;
+    const x = K.task;
+    let body = "";
+    if(K.view === "home"){
+      const brand = x && x.brand ? x.brand : "";
+      body = `<div class="b2k-hi">Hey ${H(firstName())}! What can we tackle today?</div>
+        <div class="b2k-quick">
+          <button type="button" data-k="ask:What needs my attention?"><i>${B2I.bell}</i><span>What needs my attention?</span><em>${B2I.chev}</em></button>
+          <button type="button" data-k="ask:${brand?`What do I need to do for ${H(brand)}?`:"Help with my brief"}"><i>${B2I.doc}</i><span>${brand?`Help with my ${H(brand)} brief`:"Help with my brief"}</span><em>${B2I.chev}</em></button>
+          <button type="button" data-k="go:opencampaigns"><i>${B2I.meg}</i><span>Find campaigns for me</span><em>${B2I.chev}</em></button>
+          <button type="button" data-k="go:mediakit"><i>${B2I.layers}</i><span>Improve my media kit</span><em>${B2I.chev}</em></button></div>
+        <div class="b2k-next"><div class="b2k-nk">✦ Next up</div>${x ? `<b>${H(taskTitle(x))}</b><div class="b2k-ns">${H(STAGE_TXT[x.stage]||"")}</div>
+            <div class="b2k-nb"><button type="button" class="b2-mini forest" data-k="prep">Open task ›</button><button type="button" class="b2-mini light" data-k="remind">${B2I.bell}Remind me</button></div>`
+          : `<b>Nothing due right now</b><div class="b2k-ns">Find a campaign that fits you.</div><div class="b2k-nb"><button type="button" class="b2-mini forest" data-k="go:opencampaigns">Find campaigns ›</button></div>`}</div>`;
+    }
+    if(K.view === "ask"){
+      body = `<div class="b2k-thread" id="b2kThread">${K.thread.map(m=> m.role === "user"
+          ? `<div class="b2k-u"><span class="b2k-ua">${B2I.user}</span><p>${H(m.text)}<i>${m.at||""} ✓✓</i></p></div>`
+          : `<div class="b2k-b"><img src="${KI()}" data-kid-me alt=""><p class="${m.pending?"pending":""}">${m.pending?"<span class='b2k-dots'><i></i><i></i><i></i></span>":md(m.text)}</p></div>`).join("")}</div>
+        ${x ? taskCard(x) : ""}
+        <div class="b2k-chips"><button type="button" data-k="ask:What are the key requirements?">${B2I.doc}See key requirements</button><button type="button" data-k="ask:When is my deadline?">📅 View deadline</button><button type="button" data-k="ask:Suggest a content idea for this campaign">💡 Suggest content idea</button>${x?`<button type="button" data-k="prep">✓ Help me with this step</button>`:""}</div>`;
+    }
+    if(K.view === "prep" && x){
+      body = `<div class="b2k-u"><span class="b2k-ua">${B2I.user}</span><p>Help me with it.<i>${now()} ✓✓</i></p></div>
+        <div class="b2k-b"><img src="${KI()}" data-kid-me alt=""><p>Of course! I checked your brief. Here's your next step for <b>${H(x.brand||x.campaign||"this campaign")}</b> — have it ready before you continue.</p></div>
+        <div class="b2k-prep"><div class="b2k-ph">${B2I.clip}<div><b>${H(STAGE_SHORT[x.stage]||"Your next step")}</b><span>${H(STAGE_TXT[x.stage]||"")}</span></div></div>
+          <ul>${(PREP[x.stage]||PREP._).map(t=>`<li>${H(t)}</li>`).join("")}</ul>
+          <div class="b2k-ns2">ⓘ <i>Nothing is sent yet.</i></div></div>
+        <button type="button" class="b2-btn ghost-gold full" data-k="confirm">Review ${H((STAGE_SHORT[x.stage]||"step").toLowerCase())} ›</button>`;
+    }
+    if(K.view === "confirm" && x){
+      body = `<div class="b2k-b"><img src="${KI()}" data-kid-me alt=""><p>You're in control. I'll open it only when you confirm.</p></div>
+        <div class="b2k-conf"><i class="b2k-ci">${B2I.clip}</i><h4>${H(CONF[x.stage]||"Continue this step")} — ${H(x.brand||"")}?</h4>
+          <div class="b2k-cr">🏛 <b>Campaign:</b> ${H(taskTitle(x))}</div><div class="b2k-cr">📄 <b>Action:</b> ${H(STAGE_TXT[x.stage]||"")}</div>
+          <button type="button" class="b2-btn forest full" data-k="go:mycampaigns">↥ ${H(CONF[x.stage]||"Continue")}</button>
+          <button type="button" class="b2-btn light full" data-k="prep">✎ Back to edit</button></div>
+        <div class="b2k-await">ⓘ <i>Awaiting your confirmation.</i></div>`;
+    }
+    o.innerHTML = `<div class="b2k-sheet" role="dialog" aria-label="${H(KN())} — your sidekick">${kidHead()}<div class="b2k-body">${body}</div>${inputBar()}</div>`;
+    const th = document.getElementById("b2kThread"); if(th) th.scrollTop = th.scrollHeight;
+    o.querySelectorAll("[data-k]").forEach(b=> b.onclick = e=>{ e.preventDefault(); kidAct(b.dataset.k); });
+    document.getElementById("b2kForm").onsubmit = e=>{ e.preventDefault(); const v = document.getElementById("b2kQ").value.trim(); if(v) ask(v); };
+    const mic = o.querySelector('[data-k="mic"]'); if(mic && !(window.SpeechRecognition || window.webkitSpeechRecognition)) mic.style.display = "none";
+  }
+  const PREP = { content_created:["Shoot as per the brief — check the do's and don'ts","Upload the draft video for review","Don't post on Instagram yet"],
+    changes_requested:["Read the brand's notes","Fix only what they asked","Upload the revised draft"], contract_sent:["Read the deliverables, fee and dates","Check ad rights and disclosure","Sign when everything looks right"],
+    contract_signed:["Pick the address for the kit","Double-check the pincode"], product_sent:["Track the parcel","Tap Received when it arrives — the brief timer starts"],
+    content_approved:["Post exactly the approved video","Use the caption, tags and Paid partnership label","Paste the post link"], invited:["Read the brief","Accept or decline the invite"],
+    _:["Open the step in My campaigns","Follow the brief","Confirm when you're done"] };
+  const CONF = { content_created:"Submit draft", changes_requested:"Submit revised draft", contract_sent:"Review & sign agreement", contract_signed:"Confirm address",
+    product_sent:"Confirm the kit arrived", content_approved:"Add your post link", invited:"Answer the invite" };
+  const now = () => new Date().toLocaleTimeString("en-IN",{ hour:"numeric", minute:"2-digit" }).toUpperCase();
+  async function ask(text){
+    K.view = "ask"; K.thread.push({ role:"user", text, at:now() }); K.thread.push({ role:"bot", pending:true }); paintKid();
+    let reply = "";
+    try{ reply = typeof builtInAnswer === "function" ? await builtInAnswer(text) : ""; }catch(e){ reply = "Sorry — I couldn't answer right now. " + (e.message||""); }
+    K.thread = K.thread.filter(m=> !m.pending); K.thread.push({ role:"bot", text: reply || "I'm not sure yet — open My campaigns and I'll guide you step by step." });
+    if(document.getElementById("b2KidSheet")) paintKid();
+  }
+  function kidAct(k){
+    if(k === "x") return closeKid();
+    if(k === "gear"){ if(window.bxKid) bxKid.sheet(); return; }
+    if(k.startsWith("go:")){ closeKid(); go(k.slice(3)); return; }
+    if(k.startsWith("ask:")) return ask(k.slice(4));
+    if(k === "prep"){ K.view = K.task ? "prep" : "home"; return paintKid(); }
+    if(k === "confirm"){ K.view = "confirm"; return paintKid(); }
+    if(k === "remind"){ try{ localStorage.setItem("bx_remind", JSON.stringify({ t:taskTitle(K.task), at: Date.now() + 864e5 })); }catch(e){}
+      if(typeof gateToast === "function") gateToast(`🔔 I'll remind you tomorrow — ${taskTitle(K.task)}`); return; }
+    if(k === "mic"){ const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if(!SR) return; const r = new SR(); r.lang = "en-IN"; r.onresult = e=>{ const v = e.results[0][0].transcript; const i = document.getElementById("b2kQ"); if(i){ i.value = v; } }; r.start(); return; }
+  }
+  // a reminder that came due
+  setTimeout(()=>{ try{ const r = JSON.parse(localStorage.getItem("bx_remind")||"null"); if(r && r.at < Date.now() && isCreator()){ localStorage.removeItem("bx_remind"); if(typeof gateToast==="function") gateToast(`🔔 Reminder from ${KN()}: ${r.t}`); } }catch(e){} }, 6000);
+
+  /* ---------- header avatar: the gold initial (V2 header) + sidebar "me" chip ---------- */
+  function paintMe(){
+    const me = document.getElementById("me"); if(!me || !isCreator() || me.dataset.bxKid) return;
+    const P = (window.Auth && Auth.profile) || {}, nm = /^wa_\d+@/.test(P.name||"") ? "Creator" : (P.name || "Creator");
+    const ini = nm.trim().charAt(0).toUpperCase() || "C";
+    if(me.querySelector(".b2-av") && me.querySelector(".b2-av").textContent === ini) return;
+    me.classList.add("b2-me"); me.innerHTML = `<span class="b2-av">${H(ini)}</span>`;
+  }
+  let _handle = null;
+  async function paintMeChip(){
+    const foot = document.querySelector(".sidebar-foot"); if(!foot || !isCreator()) return;
+    let chip = document.getElementById("b2MeChip");
+    if(!chip){ chip = document.createElement("button"); chip.type = "button"; chip.id = "b2MeChip"; chip.className = "b2-mechip"; foot.appendChild(chip); chip.onclick = ()=> go(creatorNavKeys().includes("profile") ? "profile" : "mediakit"); }
+    if(_handle === null){ _handle = ""; try{ const r = await sb.from("social_accounts").select("username").eq("platform","instagram").eq("member_id", Auth.profile.id).order("updated_at",{ascending:false}).limit(1); _handle = (r && r.data && r.data[0] && r.data[0].username) || ""; }catch(e){} }
+    const md2 = (window.__bxMeta && __bxMeta.bx_manual) || {};
+    chip.innerHTML = `<span class="b2-mav"><img src="${KI()}" data-kid-me alt=""></span><b>${H(_handle ? "@"+_handle : (md2.ig_handle || "My profile"))}</b>`;
+  }
+  new MutationObserver(()=>{ if(isCreator()) paintMe(); }).observe(document.documentElement, { childList:true, subtree:true });
+
   // badge/next-move refresh when the dashboard loader learns the real counts
   setInterval(()=>{ if(isCreator()) paintNext(); }, 15000);
   // if the shell already painted before this file loaded

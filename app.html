@@ -12,6 +12,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=20261106r">
   <link rel="stylesheet" href="bounty-creator.css?v=20261107s">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="bounty-v2.css?v=20261109b">
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,600&display=swap" rel="stylesheet">
   <script>
   /* Bounty creator door: decide before the first paint, so a refresh never flashes the old Geek OS screens.
@@ -107,7 +110,7 @@
   <div class="auth-root" id="authRoot"></div>
   <!-- shown until the first screen (login or the app) is painted — never a blank page -->
   <div class="boot-splash" id="bootSplash"><div class="boot-box"><img src="/assets/geek-icon-192.png" alt="" class="boot-logo"><div class="mk-spin"></div><div class="boot-t">Loading Geek OS…</div></div></div>
-  <script>(function(){var b=document.getElementById("bootSplash");if(b&&document.documentElement.classList.contains("bx-door"))b.innerHTML='<div class="boot-box bx-boot"><div class="bx-boot-logo">B<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#D3A94E"/><circle cx="12" cy="12" r="8" fill="#C2362F"/><circle cx="12" cy="12" r="5" fill="#F4E8CE"/><circle cx="12" cy="12" r="2.4" fill="#C2362F"/></svg>UNTY</div><img src="/assets/bounty/sprout_wave.png" alt="" class="bx-boot-sprout"><div class="bx-boot-bar"><i></i></div><div class="boot-t">Getting your world ready…</div></div>';try{var j=JSON.parse(localStorage.getItem("bx_prefs_last")||"null");if(j&&j.kid&&j.kid!=="sprout"){var im=b.querySelector(".bx-boot-sprout");if(im)im.src="/assets/bounty/kid_"+j.kid+".png";}}catch(e){}})();</script>
+  <script>(function(){var b=document.getElementById("bootSplash");if(b&&document.documentElement.classList.contains("bx-door"))b.innerHTML='<div class="boot-box bx-boot"><div class="bx-boot-logo">B<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#D3A94E"/><circle cx="12" cy="12" r="8" fill="#C2362F"/><circle cx="12" cy="12" r="5" fill="#F4E8CE"/><circle cx="12" cy="12" r="2.4" fill="#C2362F"/></svg>UNTY</div><img src="/assets/bounty/rd/kid_pip.png" alt="" class="bx-boot-sprout"><div class="bx-boot-bar"><i></i></div><div class="boot-t">Getting your world ready…</div></div>';try{var j=JSON.parse(localStorage.getItem("bx_prefs_last")||"null");var KK={pip:1,mochi:1,sprout:1,pebble:1,rumi:1,dot:1};if(j&&j.kid&&KK[j.kid]){var im=b.querySelector(".bx-boot-sprout");if(im)im.src="/assets/bounty/rd/kid_"+j.kid+".png";}}catch(e){}})();</script>
   <script>window.hideBootSplash=function(){var b=document.getElementById("bootSplash");if(b)b.remove();};setTimeout(window.hideBootSplash,15000);</script>
 
   <script src="consent.js?v=20261028k"></script>
@@ -127,9 +130,9 @@
   <script src="app.js?v=20261107a"></script>
   <script src="payments.js?v=20261028k"></script>
   <script src="tracking.js?v=20261031g"></script>
-  <script src="bounty-creator.js?v=20261107r"></script>
-  <script src="bounty-welcome.js?v=20261107n"></script>
-  <script src="bounty-kid.js?v=20261107p"></script>
-  <script src="bounty-pages.js?v=20261107s"></script>
+  <script src="bounty-creator.js?v=20261109b"></script>
+  <script src="bounty-welcome.js?v=20261109b"></script>
+  <script src="bounty-kid.js?v=20261109a"></script>
+  <script src="bounty-pages.js?v=20261109b"></script>
 </body>
 </html>
