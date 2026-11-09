@@ -83,14 +83,14 @@
     c.classList.add("b2-hubpage");
     const row = ([ic,t,sub,k])=>`<button type="button" class="b2-card b2-row" data-hub="${k}"><span class="ic">${ic}</span><span class="tx"><b>${t}</b><em>${H(sub)}</em></span><i>›</i></button>`;
     first.insertAdjacentHTML("beforebegin", `<button type="button" class="b2-back b2-hubback" id="bxHubBack">← My profile</button><div class="b2 b2-hub" id="bxHub"><div class="b2-hubl">
-      <div class="b2-bigav">${useKid?`<img src="${KI()}" data-kid-me alt="">`:H(nm.charAt(0).toUpperCase())}</div>
+      <div class="b2-bigav${useKid || (ig[0] && ig[0].profile_picture_url) ? " pic" : ""}">${useKid?`<img src="${KI()}" data-kid-me alt="">`:(ig[0] && ig[0].profile_picture_url ? `<img src="${H(ig[0].profile_picture_url)}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('${H(nm.charAt(0).toUpperCase())}'))">` : H(nm.charAt(0).toUpperCase()))}</div>
       <h1 class="b2-hubn">${H(nm)}</h1><div class="b2-hubh">${H([handle, pro.city_coarse || md.city].filter(Boolean).join(" · "))}${md.ig_handle && !ig.length ? ` <em class="b2-sr">self-reported</em>` : ""}</div>
       <label class="b2-card b2-tog wide"><span>Use ${H(KN())} as my profile picture</span><input type="checkbox" id="bxHubKid"${useKid?" checked":""}><i></i></label>
       ${pct!=null?`<div class="b2-card b2-pct"><b>Profile ${pct}% complete</b><div class="b2-bar2"><i style="width:${pct}%"></i></div></div>`:""}
       ${L.slice(0,2).map(row).join("")}</div><div class="b2-hubr">${L.slice(2).map(row).join("")}
       ${TIP("Add your city — nearby campaigns show up first.")}</div></div>`);
     document.getElementById("bxHubBack").onclick = ()=>{ c.classList.remove("b2-hub-open"); window.scrollTo(0,0); };
-    const kidT = document.getElementById("bxHubKid"); if(kidT) kidT.onchange = async ()=>{ if(window.bxKid){ await bxKid.save({ avatar: kidT.checked }); const h = document.getElementById("bxHub"); if(h) h.remove(); touchProfile(); } };
+    const kidT = document.getElementById("bxHubKid"); if(kidT) kidT.onchange = async ()=>{ if(window.bxKid){ await bxKid.save({ avatar: kidT.checked }); if(window.bxPaintMeChip) bxPaintMeChip(); const h = document.getElementById("bxHub"); if(h) h.remove(); touchProfile(); } };
     c.querySelectorAll("[data-hub]").forEach(b=> b.onclick = ()=>{
       const k = b.dataset.hub;
       if(k.startsWith("#")){ c.classList.add("b2-hub-open"); window.scrollTo(0,0); }

@@ -638,21 +638,39 @@
   setTimeout(()=>{ try{ const r = JSON.parse(localStorage.getItem("bx_remind")||"null"); if(r && r.at < Date.now() && isCreator()){ localStorage.removeItem("bx_remind"); if(typeof gateToast==="function") gateToast(`🔔 Reminder from ${KN()}: ${r.t}`); } }catch(e){} }, 6000);
 
   /* ---------- header avatar: the gold initial (V2 header) + sidebar "me" chip ---------- */
+  // the creator's Instagram profile picture (cached), used wherever the gold initial used to show
+  let _igPic = null, _igPicP = null;
+  window.bxIgPic = function(){
+    if(_igPic) return Promise.resolve(_igPic);
+    if(!_igPicP) _igPicP = (async()=>{ try{ const r = await sb.from("social_accounts").select("username,profile_picture_url").eq("platform","instagram").eq("member_id", Auth.profile.id).order("updated_at",{ascending:false}).limit(1); const row = r && r.data && r.data[0]; _igPic = { url: (row && row.profile_picture_url) || "", username: (row && row.username) || "" }; }catch(e){ _igPic = { url:"", username:"" }; } return _igPic; })();
+    return _igPicP;
+  };
+  window.bxAvatarHtml = function(ini){   // Pip (if chosen as profile picture) → Instagram photo → initial
+    const useKid = window.bxKid && bxKid.prefs().avatar;
+    if(useKid) return `<img src="${KI()}" data-kid-me alt="">`;
+    if(_igPic && _igPic.url) return `<img src="${H(_igPic.url)}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('${H(ini)}'))">`;
+    return H(ini);
+  };
   function paintMe(){
     const me = document.getElementById("me"); if(!me || !isCreator() || me.dataset.bxKid) return;
     const P = (window.Auth && Auth.profile) || {}, nm = /^wa_\d+@/.test(P.name||"") ? "Creator" : (P.name || "Creator");
     const ini = nm.trim().charAt(0).toUpperCase() || "C";
-    if(me.querySelector(".b2-av") && me.querySelector(".b2-av").textContent === ini) return;
-    me.classList.add("b2-me"); me.innerHTML = `<span class="b2-av">${H(ini)}</span>`;
+    if(!_igPic && window.sb && P.id) window.bxIgPic().then(()=>{ const m = document.getElementById("me"); if(m) m.dataset.av = ""; paintMe(); paintMeChip(); });
+    const want = (window.bxKid && bxKid.prefs().avatar ? "kid" : (_igPic && _igPic.url) || "") + "|" + ini;
+    if(me.querySelector(".b2-av") && me.dataset.av === want) return;
+    me.dataset.av = want; me.classList.add("b2-me"); me.innerHTML = `<span class="b2-av${want.startsWith("|")?"":" pic"}">${window.bxAvatarHtml(ini)}</span>`;
   }
   let _handle = null;
+  window.bxPaintMeChip = () => paintMeChip();
   async function paintMeChip(){
     const foot = document.querySelector(".sidebar-foot"); if(!foot || !isCreator()) return;
     let chip = document.getElementById("b2MeChip");
     if(!chip){ chip = document.createElement("button"); chip.type = "button"; chip.id = "b2MeChip"; chip.className = "b2-mechip"; foot.appendChild(chip); chip.onclick = ()=> go(creatorNavKeys().includes("profile") ? "profile" : "mediakit"); }
     if(_handle === null){ _handle = ""; try{ const r = await sb.from("social_accounts").select("username").eq("platform","instagram").eq("member_id", Auth.profile.id).order("updated_at",{ascending:false}).limit(1); _handle = (r && r.data && r.data[0] && r.data[0].username) || ""; }catch(e){} }
     const md2 = (window.__bxMeta && __bxMeta.bx_manual) || {};
-    chip.innerHTML = `<span class="b2-mav"><img src="${KI()}" data-kid-me alt=""></span><b>${H(_handle ? "@"+_handle : (md2.ig_handle || "My profile"))}</b>`;
+    const useKid = window.bxKid && bxKid.prefs().avatar;
+    const av = !useKid && _igPic && _igPic.url ? `<img src="${H(_igPic.url)}" alt="" referrerpolicy="no-referrer" onerror="this.src='${KI()}'">` : `<img src="${KI()}" data-kid-me alt="">`;
+    chip.innerHTML = `<span class="b2-mav">${av}</span><b>${H(_handle ? "@"+_handle : (md2.ig_handle || "My profile"))}</b>`;
   }
   new MutationObserver(()=>{ if(isCreator()) paintMe(); }).observe(document.documentElement, { childList:true, subtree:true });
 
