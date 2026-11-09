@@ -732,6 +732,8 @@
     try{ localStorage.setItem(onbKey(), "1"); localStorage.setItem("ci_ob_commercial_" + ((Auth.profile && (Auth.profile.id||Auth.profile.user_id)) || "me"), "1"); }catch(e){}
     const o = document.getElementById("bxOnb"); if(o) o.remove();
     if(window.__profileReq && typeof creatorProfileGate === "function"){ creatorProfileGate().then(()=>{}).catch(()=>{}); }
+    const ret = window.__bxOnbReturn; window.__bxOnbReturn = null;
+    if(ret){ currentPage = ret; renderShell(); window.scrollTo(0,0); return; }
     if(goExplore){ if(window.__profileGate && window.bxMemberExplore){ currentPage = "opencampaigns"; renderShell(); setTimeout(()=> bxMemberExplore("discover"), 50); } else { currentPage = "opencampaigns"; renderShell(); } }
     else { currentPage = "dashboard"; renderShell(); }
   }

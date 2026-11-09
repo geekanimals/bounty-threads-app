@@ -1244,3 +1244,44 @@ body.b2app[data-pg="messages"] #content > :not(#bxInbox){ display:none !importan
 .b2-inbox .b2sk-alert{ margin:0; }
 .b2-ib{ padding:9px 14px 12px 32px; } .b2-ib-dot{ top:14px; } .b2-ib-h b{ font-size:14.5px; } .b2-ib p{ margin-top:3px; } .b2-ib-btn{ margin-top:11px; } .b2-ibtabs button{ padding:0 15px; }
 .b2-ib-btn{ margin-top:9px; } .b2-ib:not(:has(.b2-ib-btn)){ padding-bottom:20px; }
+/* ===== nav per Figma: phone vs desktop ===== */
+@media(max-width:760px){ body.b2app .nav .b2-d-only{ display:none !important; } body.b2app .bx-next .b2-nx-s{ display:none !important; } }
+@media(min-width:761px){
+  body.b2app .nav .b2-m-only{ display:none !important; }
+  body.b2app .bx-next .b2-nx-r, body.b2app .bx-next .b2-nx-h em{ display:none !important; }
+  body.b2app .bx-next{ flex-direction:row !important; flex-wrap:wrap; gap:0 10px !important; padding:10px 14px !important; }
+  body.b2app .bx-next .b2-nx-h b{ font-size:15px !important; }
+  body.b2app .bx-next .b2-nx-s{ display:block; width:100%; padding-left:28px; margin-top:-2px; font:italic 400 12px var(--b2-f-serif); color:var(--b2-dim); }
+  body.b2app .b2-home .b2-quote{ display:none !important; }
+}
+/* Discover empty state readable on both backgrounds */
+body.b2app[data-pg="opencampaigns"] #opsOpenBody > .card{ text-align:center; padding:22px 18px !important; border-radius:16px !important; }
+body.b2app[data-pg="opencampaigns"] #opsOpenBody > .card .muted{ color:#e9dcc0 !important; font:italic 400 14.5px var(--b2-f-serif) !important; }
+@media(min-width:761px){ body.b2app[data-pg="opencampaigns"] #opsOpenBody > .card{ background:var(--b2-card) !important; border:1px solid var(--b2-card-bd) !important; max-width:640px; margin:0 auto; } body.b2app[data-pg="opencampaigns"] #opsOpenBody > .card .muted{ color:#6f6250 !important; } }
+@media(min-width:761px){ body.b2app .b2-camp-b .b2-camp-l{ display:inline !important; font-size:12.5px; } body.b2app .b2-camp-b .b2-camp-l svg{ display:none !important; } body.b2app .b2-camp-b .b2-camp-l + .b2-camp-l::before{ content:" · "; } }
+/* My campaigns per Figma */
+body.b2app .mc-card .jr-step.k5.done i{ background:var(--b2-teal) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.6 2.5L12 5.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/12px no-repeat !important; }
+body.b2app .b2-mc:not(.b2-open) .b2-mcact .mc-ask{ display:none !important; }
+body.b2app .b2-mcempty{ text-align:center; padding:20px 16px !important; font:400 14px var(--b2-f-dm); color:#6f6250; margin-bottom:12px; }
+body.b2app .mc-tabs .b2-acttab b{ color:#b8452f !important; }
+@media(min-width:761px){
+  body.b2app #opsMineStats, body.b2app #opsMineBody, body.b2app .b2-attn{ max-width:780px !important; margin-left:auto !important; margin-right:auto !important; }
+  body.b2app .mc-tabs{ justify-content:flex-start !important; margin-left:0 !important; margin-right:0 !important; padding:0 !important; flex-wrap:wrap !important; }
+  body.b2app #opsMineBody{ column-gap:40px !important; }
+}
+@media(min-width:761px){ body.b2app #b2Mk .b2-mkgrid{ gap:8px !important; border-radius:0 !important; overflow:visible !important; } body.b2app #b2Mk .b2-mkgrid a, body.b2app #b2Mk .b2-mkgrid img{ border-radius:12px !important; overflow:hidden; } body.b2app #b2Mk .b2-mkgrid a:nth-child(n+7){ display:none; } body.b2app .b2-mk{ max-width:860px !important; column-gap:64px !important; } }
+body.b2app[data-pg="reports"] #crCsv{ display:none !important; }
+body.b2app .b2-bank b{ font:700 16px var(--b2-f-dm) !important; color:var(--b2-ink2) !important; } body.b2app .b2-bank.need{ border-color:#e3a99b !important; } @media(min-width:761px){ body.b2app .b2-bank{ padding:18px 18px !important; } body.b2app .b2-earn b{ font-size:44px !important; } body.b2app .b2-3t div{ padding:16px 6px !important; } body.b2app .b2-3t b{ font-size:22px !important; } }
+body.b2app .b2-set .b2-accl .b2-link{ display:none !important; } body.b2app .b2-set .b2-accl b{ flex:0 1 auto !important; } body.b2app .b2-set .b2-accl .b2-chip2{ margin-left:10px !important; margin-right:auto !important; } body.b2app .b2-del .b2-mini.red{ background:#b5392b !important; }
+.b2-ibtip{ margin-top:14px; text-align:left; }
+@media(min-width:761px){
+  .b2-inbox{ max-width:800px; }
+  .b2-ibcols{ columns:2; column-gap:56px; text-align:left; }
+  .b2-ibcols > *{ break-inside:avoid; }
+  .b2-ibtabs{ justify-content:center; margin-top:18px; }
+  #bxIbList{ display:block !important; } #bxIbList > .b2-ib, #bxIbList > .b2sk-alert{ break-inside:avoid; margin-bottom:16px; display:block; }
+}
+.b2-mctip{ max-width:780px; margin:6px auto 0; } @media(min-width:761px){ .b2-mctip{ display:flex; justify-content:flex-end; } }
+@media(min-width:761px){ .b2-ibcols > #bxIbList{ break-inside:auto !important; } }
+@media(min-width:761px){ body.b2app #opsMineStats{ text-align:left !important; display:block !important; } body.b2app #opsMineStats .mc-tabs{ width:100% !important; justify-content:flex-start !important; } body.b2app .b2-mctip{ justify-content:flex-end; } }
+@media(min-width:761px){ body.b2app #opsMineStats{ width:100% !important; } body.b2app #opsMineStats .mc-tabs{ max-width:none !important; margin-left:0 !important; } }

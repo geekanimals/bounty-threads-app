@@ -44,7 +44,7 @@
   const ICON = { dashboard:"home", opencampaigns:"compass", marketplace:"compass", mycampaigns:"clip", mediakit:"layers", bxpayments:"coins", bxsettings:"gear",
     reports:"chart", instagram:"insta", messages:"chat", profile:"user", intelligence:"chart" };
   const GROUPS = [["Today",["dashboard","messages"]],["Campaigns",["opencampaigns","marketplace","mycampaigns","bxpayments"]],
-    ["Create & grow",["mediakit","reports","instagram","intelligence"]],["My account",["profile","bxsettings"]]];
+    ["Create & grow",["mediakit","reports","intelligence"]],["My account",["profile","bxsettings"]]];
   // page titles that follow the new names (only when the title is still the old one)
   const TITLE = { "Dashboard":"Your next move.", "Campaigns":"Discover campaigns", "Open Campaigns":"Discover campaigns",
     "Reports":"Analytics", "Media Kit":"My Media Kit", "Creator Profile":"My profile", "My Campaigns":"My campaigns" };
@@ -115,7 +115,7 @@
       if(!ks.length) return;
       navHeading(nav, title); ks.forEach(k=> used.add(k)); renderNavKeys(nav, ks);
     });
-    const rest = keys.filter(k=> !used.has(k));             // anything new the app adds still shows
+    const rest = keys.filter(k=> !used.has(k) && k !== "instagram");   // anything new the app adds still shows (Instagram lives in Profile / avatar menu, as in Figma)
     if(rest.length){ navHeading(nav, "More"); renderNavKeys(nav, rest); }
     const dup = new Set(bottomItems().map(b=> b[0]));
     nav.querySelectorAll("a[data-page]").forEach(a=>{
@@ -136,6 +136,22 @@
         };
       }
     });
+    // Figma: phone menu = Today · Home, Inbox / Create & grow · …, Dream brand board; desktop sidebar = Today · Home / My account · Profile, Messages, Settings
+    const msg = nav.querySelector('a[data-page="messages"]'), prof = nav.querySelector('a[data-page="profile"]'), ana = nav.querySelector('a[data-page="reports"]') || nav.querySelector('a[data-page="mediakit"]');
+    if(msg && prof && !nav.querySelector(".b2-msg-d")){
+      msg.classList.add("b2-m-only");
+      const c2 = msg.cloneNode(true); c2.classList.remove("b2-m-only"); c2.classList.add("b2-d-only","b2-msg-d");
+      const l2 = c2.querySelector(":scope > span:last-child"); if(l2) l2.textContent = "Messages";
+      c2.onclick = e=>{ e.preventDefault(); msg.click(); }; prof.after(c2);
+    }
+    if(ana && prof && !nav.querySelector(".b2-dream-m")){
+      const dm = prof.cloneNode(true); dm.classList.remove("active"); dm.classList.add("b2-m-only","b2-dream-m"); dm.dataset.page = "dreamboard";
+      const ic = dm.querySelector(".ic"); if(ic) ic.innerHTML = `<span class="b2-emo">💙</span>`;
+      const lb = dm.querySelector(":scope > span:last-child"); if(lb) lb.textContent = "Dream brand board";
+      dm.onclick = e=>{ e.preventDefault(); if(window.innerWidth<=760) document.getElementById("sidebar").classList.remove("open"); go("profile");
+        let n = 0; const t = setInterval(()=>{ n++; const r = document.querySelector('#bxHub [data-hub="#dream"]'); if(r){ clearInterval(t); r.click(); } else if(n > 40) clearInterval(t); }, 150); };
+      ana.after(dm);
+    }
     // a heading whose items all live in the phone's bottom bar hides with them
     nav.querySelectorAll(".nav-sec").forEach(h=>{
       let n = h.nextElementSibling, any = false, all = true;
@@ -154,7 +170,8 @@
     else if(req && !req.complete && creatorNavKeys().includes("profile")){ t = "Finish your profile"; s = Math.round(100*req.done/Math.max(req.total,1)) + "% complete"; k = "profile"; }
     else if(window.__alertsUnread > 0){ t = "Check your inbox"; s = "new updates"; k = "messages"; }
     const due = window.__alertsUnread > 0 ? `<em>${window.__alertsUnread} action${window.__alertsUnread>1?"s":""} due</em>` : "";
-    b.innerHTML = `<span class="b2-nx-h"><span class="tg b2-emo">🎯</span><b>Your next move</b>${due}</span><span class="b2-nx-r"><i class="dot"></i><b>${t}</b><span>· ${s}</span></span>`;
+    const sub = window.__alertsUnread > 0 ? `${window.__alertsUnread} action${window.__alertsUnread>1?"s":""} due` : `${t} · ${s}`;
+    b.innerHTML = `<span class="b2-nx-h"><span class="tg b2-emo">🎯</span><b>Your next move</b>${due}</span><span class="b2-nx-r"><i class="dot"></i><b>${t}</b><span>· ${s}</span></span><i class="b2-nx-s">${sub}</i>`;
     b.onclick = ()=> go(k);
   }
   function paintSprout(){
@@ -264,7 +281,7 @@
       const x = (d.open||[]).find(o=> String(o.campaign_id) === card.dataset.cdetail); if(!x) return;
       const el = x.eligibility || {};
       const act = card.querySelector("[data-apply]");
-      const tag = x.my_stage ? `<span class="b2-match ok">✓ ${H(String(x.my_stage).replace(/_/g," "))}</span>` : x.applications_closed ? `<span class="b2-match no">Applications closed</span>`
+      const tag = x.my_stage ? `<span class="b2-match ok">✓ ${H((STAGE_SHORT[x.my_stage] || String(x.my_stage).replace(/_/g," ")).replace(/^./, m=> m.toUpperCase()))}</span>` : x.applications_closed ? `<span class="b2-match no">Applications closed</span>`
         : el.eligible === true ? `<span class="b2-match ok">✓ Eligible</span>` : el.eligible === false ? `<span class="b2-match no">✗ Not eligible</span>` : `<span class="b2-match chk">⇄ Check fit</span>`;
       const tmp = document.createElement("div"); tmp.innerHTML = B2.card(x, { btn: tag + `<button type="button" class="b2-vb" data-b2open>View brief →</button>` });
       const art = tmp.firstElementChild;

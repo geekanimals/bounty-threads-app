@@ -83,7 +83,7 @@
     const [mine, fl] = await Promise.all([ api("get_my_campaigns"), api("my_campaign_flows") ]);
     if(!box.isConnected) return;
     const list = (mine && !mine.error && Array.isArray(mine.data)) ? mine.data : [], flows = (fl && !fl.error && fl.data) || {};
-    const rows = []; let earned = 0, pending = 0, done = 0, needs = 0;
+    const rows = []; let earned = 0, pending = 0, done = 0, needs = 0, needPart = null, haveBank = null;
     const GOT = ["product_sent","content_created","changes_requested","content_submitted","content_approved","published","completed","brand_confirmed"];
     const prods = list.filter(c=> c.product_value && GOT.includes(c.stage) && (c.campaign_type||"") !== "paid");
     const prodVal = prods.reduce((s,c)=> s + (+c.product_value||0), 0);
@@ -93,7 +93,8 @@
         const pos = p.payouts || [], sumPaid = pos.filter(o=> o.status === "paid").reduce((s,o)=> s + (+o.amount||0), 0);
         const amt = p.amount != null ? +p.amount : null;
         if(amt != null){ earned += sumPaid; done += sumPaid; pending += Math.max(0, amt - sumPaid); }
-        const need = !p.method || ["pending","failed","needs_update"].includes(p.details_status); if(need) needs++;
+        const need = !p.method || ["pending","failed","needs_update"].includes(p.details_status); if(need){ needs++; if(!needPart) needPart = c.participation_id; }
+        if(p.method && !haveBank) haveBank = { part:c.participation_id, txt: p.method === "upi" ? "UPI " + (p.upi_id||"") : "Bank ••••" + (p.account_last4||""), st: p.details_status };
         pos.forEach(o=> rows.push({ c, amt:+o.amount||0, sub: (o.part==="advance"?"advance":o.part==="balance"?"after post":"fee"), st: o.status==="paid" ? ["Paid","teal"] : ["queued","processing"].includes(o.status) ? ["Pending","orange"] : ["Waiting for post","ink"] }));
         if(!pos.length) rows.push({ c, amt:amt||0, sub: need ? "add payout details" : "after post", st: need ? ["Action needed","red"] : ["Waiting for post","ink"] });
       }
@@ -104,9 +105,20 @@
       <div class="b2-sec ink">— Payouts —</div>
       <div class="b2-list">${rows.length ? rows.map(r=>`<div class="b2-lrow"><div><b>${H(r.c.campaign||"Campaign")}${r.c.brand?" · "+H(r.c.brand):""}</b><span>${r.prod?"Product ":""}${INR(r.amt)} · ${H(r.sub)}</span></div><em class="b2-chip2 ${r.st[1]}">${r.st[0]}</em></div>`).join("")
         : `<div class="b2-lrow empty">No payouts yet — paid and barter campaigns show up here once you're selected.</div>`}</div>
-      <div class="b2-bank"><div><b>🏦 Add your bank / UPI details</b><p>Must be in your own name. Only you and the Geek team see it.</p></div><button type="button" class="b2-mini forest" data-go="mycampaigns">Add</button></div>
+      ${haveBank && !needPart ? `<div class="b2-bank"><div><b>🏦 ${H(haveBank.txt)}</b><p>${haveBank.st === "verified" ? "Verified ✓ — every payout goes here." : "Received — the Geek team is checking it."}</p></div><button type="button" class="b2-mini light" data-pay="${H(haveBank.part)}">Update</button></div>`
+        : `<div class="b2-bank need"><div><b>🏦 Add your bank / UPI details</b><p>Must be in your own name. Only you and the Geek team see it.</p></div><button type="button" class="b2-mini forest" data-pay="${H(needPart||"")}">Add</button></div>`}
       ${TIP("Add your UPI once — every payout goes there automatically.")}</div></div>`;
     box.querySelectorAll("[data-go]").forEach(b=> b.onclick = ()=> go(b.dataset.go));
+    box.querySelectorAll("[data-pay]").forEach(b=> b.onclick = ()=> openPayDetails(b.dataset.pay));
+  }
+  // bank / UPI lives on each paid campaign (asked after you sign): open that campaign's payment form
+  function openPayDetails(part){
+    if(!part){ const t = "You'll add bank / UPI details when a paid campaign needs them — right after you sign its agreement.";
+      if(typeof gateToast === "function") gateToast(t); return; }
+    go("mycampaigns"); let n = 0;
+    const tick = setInterval(()=>{ n++; const b = document.querySelector(`[data-paydetails="${CSS.escape(part)}"]`);
+      if(b){ clearInterval(tick); const card = b.closest(".mc-card"); if(card && !card.classList.contains("b2-open")){ const g = card.querySelector(".b2-mcgo"); if(g) g.click(); } b.scrollIntoView({ block:"center" }); b.click(); }
+      else if(n > 40) clearInterval(tick); }, 150);
   }
 
   /* ---------- M26 profile hub (top of Creator Profile) ---------- */
@@ -115,6 +127,10 @@
     if(h){ (h.closest(".card,section,details") || h).scrollIntoView({ behavior:"smooth", block:"start" }); if(h.tagName === "SUMMARY" && h.parentElement && !h.parentElement.open) h.click(); }
   }
   async function touchProfile(){
+    if(touchProfile.busy) return; touchProfile.busy = true;
+    try{ await touchProfile2(); } finally { touchProfile.busy = false; }
+  }
+  async function touchProfile2(){
     const c = document.getElementById("content"); if(!c || c.querySelector("#bxHub")) return;
     const first = [...c.children].find(x=> x.id !== "bxHubSk"); if(!first) return;
     const P = (window.Auth && Auth.profile) || {}, req = window.__profileReq;
@@ -124,6 +140,9 @@
     const md = (window.__bxMeta && __bxMeta.bx_manual) || {};
     const nm = /^wa_\d+@/.test(P.name||"") ? (ig[0] ? ig[0].username : "Creator") : (P.name || "Creator");
     const pro = (pf && pf.professional) || {}, per = (pf && pf.personal) || {}, cp = (pf && pf.commercial_preference) || {};
+    let acct = null; try{ acct = window._mkLastAcct || (typeof mkFetchAcct === "function" ? await mkFetchAcct() : null); }catch(e){}
+    const rc = acct ? (((typeof mkEdits === "function" ? mkEdits(acct) : acct.edits) || {}).rate_card || []).filter(r=> r && r.item) : [];
+    const rateSub = rc.slice(0,2).map(r=> `${String(r.item).replace(/^Instagram\s+/i,"")} ${r.price||""}`.trim()).join(" · ");
     const handle = ig[0] ? "@" + ig[0].username : (md.ig_handle || "");
     const pct = req ? Math.round(100*req.done/Math.max(req.total,1)) : null;
     const dreams = ((pf && pf.dream_brands) || []).map(x=> x.submitted_brand_name).filter(Boolean);
@@ -131,8 +150,7 @@
     const L = [["👤","About you","Name, birthday, gender, city","#about"],["🎬","What you create",[(pro.categories||[]).slice(0,2).join(", "),(pro.content_formats||[]).slice(0,2).join(", "),(pro.languages||[]).slice(0,2).join(", ")].filter(Boolean).join(" · ") || "Categories, formats, languages","#create"],
       ["💙","Dream brands", dreams.slice(0,3).join(", ") || "Brands you'd love to work with","#dream"],["🤝","Your terms", terms || "Barter, paid, rates","#collab"],
       ["📍","Addresses", ((pf && pf.addresses)||[]).map(a=> a.label).filter(Boolean).join(" · ") || "Where brands send your kit","#addr"],
-      ["📸","Instagram accounts", ig.length ? ig.map(x=>"@"+x.username).join(", ") : "Connect Instagram","#ig"],["🗂","My media kit","Portfolio, analytics & sharing","mediakit"],
-      ["🪙","Payments & rewards","Earnings and payout details","bxpayments"],["⚙︎","Settings & privacy","Notifications, data, sidekick","bxsettings"]];
+      ["📸","Instagram accounts", ig.length ? ig.map(x=>"@"+x.username).join(", ") : "Connect Instagram","#ig"],["🧾","Rate card", rateSub || "Your price for a Reel, Story or post","@rates"]];
     const useKid = window.bxKid && bxKid.prefs().avatar;
     c.classList.add("b2-hubpage"); { const sk = document.getElementById("bxHubSk"); if(sk) sk.remove(); }
     const row = ([ic,t,sub,k])=>`<button type="button" class="b2-card b2-row" data-hub="${k}"><span class="ic">${ic}</span><span class="tx"><b>${t}</b><em>${H(sub)}</em></span><i>›</i></button>`;
@@ -149,7 +167,8 @@
       const k = b.dataset.hub;
       if(k.startsWith("#")){ c.classList.add("b2-hub-open"); window.scrollTo(0,0); }
       if(k === "#ig") return scrollToSection(/Instagram accounts/i);
-      if(k === "#collab") return scrollToSection(/Barter|Rate|Commercial|terms/i);
+      if(k === "#collab"){ c.classList.remove("b2-hub-open"); if(window.B2 && B2.screens && B2.screens.onbStep){ window.__bxOnbReturn = "profile"; B2.screens.onbStep(3, pf || {}); } return; }
+      if(k === "@rates"){ if(typeof openMkEdit === "function" && acct) return openMkEdit("ratecard", acct); return go("mediakit"); }
       if(k === "#dream") return scrollToSection(/Favourite brands|Dream/i);
       if(k === "#about") return scrollToSection(/About you|Personal|Basic/i);
       if(k === "#create") return scrollToSection(/What you create|Categor|Professional|content/i);
@@ -369,9 +388,9 @@
   function touchInbox(){
     const c = document.getElementById("content"); if(!c || c.querySelector("#bxInbox")) return;
     c.insertAdjacentHTML("afterbegin", `<div class="b2 b2-inbox" id="bxInbox"><h1 class="b2-h1">Inbox</h1><p class="b2-sub">Campaign updates and messages from Geek.</p>
-      <div class="b2-ibtabs" role="tablist"><button type="button" class="on" data-ib="all">All</button><button type="button" data-ib="act">Action needed</button><button type="button" data-ib="upd">Updates</button></div>
+      <div class="b2-ibcols"><div class="b2-ibtabs" role="tablist"><button type="button" class="on" data-ib="all">All</button><button type="button" data-ib="act">Action needed</button><button type="button" data-ib="upd">Updates</button></div>
       <div class="b2-ibmark"><button type="button" id="bxIbMark">Mark all read</button></div>
-      <div id="bxIbList">${SK.alerts(3)}</div></div>`);
+      <div id="bxIbList">${SK.alerts(3)}</div><div class="b2-ibtip">${TIP("Red dot = something only you can do.")}</div></div></div>`);
     const box = document.getElementById("bxInbox");
     box.querySelectorAll("[data-ib]").forEach(b=> b.onclick = ()=>{ IB.tab = b.dataset.ib; box.querySelectorAll("[data-ib]").forEach(x=> x.classList.toggle("on", x === b)); paintInbox(); });
     document.getElementById("bxIbMark").onclick = async ()=>{
@@ -463,7 +482,7 @@
       </div><div>
       <div class="b2-sec ink">— Your data —</div>
       <button type="button" class="b2-card b2-dl" data-s="download"><b>⤓ Download my data</b><span>Profile, Instagram and campaigns as a file</span></button>
-      <div class="b2-del"><b>Delete my account</b><p>Removes your profile and campaign history. Type DELETE to confirm.</p><button type="button" class="b2-mini red" data-s="delete">Delete my account</button><div id="bxDel"></div></div>
+      <div class="b2-del"><b>Delete my account</b><p>Removes your profile and campaign history. Type DELETE to confirm.</p><button type="button" class="b2-mini red" data-s="delete">Delete account</button><div id="bxDel"></div></div>
       ${TIP("Alerts off? You'll still see every update in Inbox.")}</div></div>`;
     box.querySelector('[data-s="kid"]').onclick = ()=> window.bxKid && bxKid.sheet();
     const m = box.querySelector('[data-s="manage"]'); if(m) box.querySelectorAll('[data-s="manage"]').forEach(b=> b.onclick = ()=> go("profile"));
@@ -502,6 +521,7 @@
     const c0 = document.getElementById("content"); if(c0) c0.classList.remove("b2-hubpage","b2-hub-open");
     const r = _rs.apply(this, arguments);
     if(currentPage !== "dashboard") document.body.classList.remove("b2-home-on");
+    if(currentPage !== "mycampaigns"){ MC.init = false; MC.act = false; }
     if(isCreator()){
       if(currentPage === "bxpayments") loadPayments();
       if(currentPage === "bxsettings") loadSettings();
@@ -565,6 +585,18 @@
     b.textContent = lbl(); b.onclick = ()=>{ card.classList.toggle("b2-open"); b.textContent = lbl(); };
     row.appendChild(b); (jr || card.lastElementChild).after(row);
   }
+  const MC = { act:false, n:0 };
+  function mcApplyAct(){
+    const c = document.getElementById("content"), tabs = c && c.querySelector(".mc-tabs"); if(!tabs) return;
+    const at = tabs.querySelector(".b2-acttab"); if(!at) return;
+    if(MC.act){ tabs.querySelectorAll(".mc-tab").forEach(t=> t.classList.toggle("act", t === at)); }
+    else at.classList.remove("act");
+    let shown = 0;
+    c.querySelectorAll(".mc-card").forEach(card=>{ const keep = !MC.act || !!card.querySelector(".b2-mcst.act"); card.classList.toggle("b2-hide", !keep); if(keep) shown++; });
+    let em = document.getElementById("b2McEmpty");
+    if(MC.act && !shown){ if(!em){ const body = document.getElementById("opsMineBody"); if(body){ body.insertAdjacentHTML("afterbegin", `<div class="b2-card b2-mcempty" id="b2McEmpty">Nothing needs you right now — we'll tell you the moment something does.</div>`); } } }
+    else if(em) em.remove();
+  }
   function touchMine(){
     const c = document.getElementById("content"); if(!c || currentPage !== "mycampaigns") return;
     c.querySelectorAll(".mc-card").forEach(track5);
@@ -573,7 +605,23 @@
     if(tabs && !tabs.dataset.b2){ tabs.dataset.b2 = 1; const L = { "All time":"All", "Running now":"In progress", "Applied / waiting":"Applied", "Completed":"Completed", "Not selected":"Not selected" };
       tabs.querySelectorAll(".mc-tab").forEach(t=>{ const sp = t.querySelector("span"), bb = t.querySelector("b"); if(sp){ const k = sp.textContent.replace(/^[^A-Za-z]+/,"").trim(); if(L[k]) sp.textContent = L[k]; if(k==="All time") t.classList.add("b2-first"); }
         if(bb && /^\d$/.test(bb.textContent.trim())) bb.textContent = "0" + bb.textContent.trim(); }); }
+    // Figma tabs: All · Action needed · In progress · Completed (Applied / Not selected kept after them)
+    if(tabs && !tabs.querySelector(".b2-acttab")){
+      const ord = { All:1, Active:3, Done:4, Upcoming:5, Declined:6 };
+      tabs.querySelectorAll(".mc-tab").forEach(t=>{ t.style.order = ord[t.dataset.minetab] || 7; t.addEventListener("click", ()=>{ MC.act = false; }, true); });
+      tabs.insertAdjacentHTML("beforeend", `<button type="button" class="mc-tab b2-acttab" style="order:2"><b>00</b><span>Action needed</span></button>`);
+      tabs.querySelector(".b2-acttab").onclick = ()=>{ const all = tabs.querySelector('[data-minetab="All"]'); if(all && !all.classList.contains("act")) all.click(); MC.act = true; mcApplyAct(); };
+    }
+    if(tabs){ const allOn = tabs.querySelector('[data-minetab="All"].act'); const nAct = c.querySelectorAll(".b2-mc .b2-mcst.act").length; if(allOn || nAct > MC.n) MC.n = allOn ? nAct : Math.max(MC.n, nAct);
+      const b = tabs.querySelector(".b2-acttab b"); if(b){ const t = String(MC.n).padStart(2, "0"); if(b.textContent !== t) b.textContent = t; } }
+    if(tabs && !MC.init){ MC.init = true; const all = tabs.querySelector('[data-minetab="All"]'); if(all && !all.classList.contains("act")) setTimeout(()=> all.click(), 0); }
+    c.querySelectorAll(".mc-pager").forEach(pg=>{ const bs = [...pg.querySelectorAll("button")]; const one = bs.length && bs.filter(b=> /Prev|Next/.test(b.textContent)).every(b=> b.disabled); pg.classList.toggle("b2-hide", one); });
+    mcApplyAct();
     const body = document.getElementById("opsMineBody");
+    if(body && body.querySelector(".mc-card")){ const words = ["No","One","Two","Three","Four","Five"], na = MC.n;
+      const tt = na ? `${words[na] || na} little step${na>1?"s":""}, then you're rolling!` : "Brands reply on WhatsApp — we'll ping you the moment there's news.";
+      let tp = document.getElementById("b2McTip"); if(!tp){ body.insertAdjacentHTML("afterend", `<div id="b2McTip" class="b2-mctip">${TIP(tt)}</div>`); }
+      else if(!tp.textContent.includes(tt)) tp.innerHTML = TIP(tt); }
     if(body){ const act = [...c.querySelectorAll(".mc-card .jr-now.act, .mc-card .jr-now")].filter(x=> /sign|confirm|upload|submit|post|add|accept|review/i.test(x.textContent)).length;
       let ban = document.getElementById("b2Attn");
       if(act){ if(!ban){ ban = document.createElement("div"); ban.id = "b2Attn"; ban.className = "b2 b2-attn"; body.parentNode.insertBefore(ban, body); } ban.textContent = `⚠ ${act} thing${act>1?"s":""} need${act>1?"":"s"} your attention`; }
