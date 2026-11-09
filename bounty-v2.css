@@ -894,7 +894,7 @@ body.b2app .mc-tabs .mc-tab span{ font:600 12.5px var(--b2-f-dm) !important; col
 body.b2app .mc-tabs .mc-tab.act{ background:var(--b2-green) !important; border-color:var(--b2-green) !important; color:var(--b2-cream2) !important; }
 body.b2app .mc-tabs .mc-tab.act b{ color:var(--b2-gold2) !important; }
 /* profile = the hub; a row opens that part of the profile */
-body.b2app .b2-hubpage > :not(#bxHub):not(.b2-hubback){ display:none !important; }
+body.b2app .b2-hubpage > :not(#bxHub):not(#bxHubSk):not(.b2-hubback){ display:none !important; }
 body.b2app .b2-hubpage.b2-hub-open > :not(#bxHub):not(.b2-hubback){ display:revert !important; }
 body.b2app .b2-hubpage.b2-hub-open > #bxHub{ display:none !important; }
 body.b2app .b2-hubback{ display:none; margin-bottom:8px; }
@@ -1197,3 +1197,26 @@ body.b2app .cp-ring span, body.b2app .cp-ring b, body.b2app .cp-ring i{ color:#f
 body.b2app .cp-hero .muted, body.b2app .cp-hero-k{ color:#7a6a4a !important; }
 @media(max-width:760px){ body.b2app .cp-hero-id h3{ text-overflow:ellipsis !important; white-space:nowrap !important; font-size:17px !important; } body.b2app .cp-hero .av-pick{ gap:6px !important; } body.b2app .cp-hero .av-btn{ padding:4px 9px !important; font-size:12px !important; min-height:0 !important; } }
 body.b2app #me .b2-av.pic{ width:100%; height:100%; display:block; } body.b2app #me .b2-av.pic img{ width:100%; height:100%; object-fit:cover; border-radius:50%; display:block; } .b2-bigav.pic img{ width:100% !important; height:100% !important; object-fit:cover; } .b2-bigav.pic img[data-kid-me]{ width:80% !important; height:auto !important; object-fit:contain; } .b2-mav img{ object-fit:cover; border-radius:50%; }
+/* ===== v2 skeletons (same shapes as the content that replaces them) ===== */
+body.b2app{ --b2sk-a:rgba(120,92,40,.10); --b2sk-b:rgba(120,92,40,.22); }
+@media(max-width:760px){ body.b2app[data-pg="dashboard"], body.b2app[data-pg="opencampaigns"], body.b2app[data-pg="marketplace"]{ --b2sk-a:rgba(255,255,255,.08); --b2sk-b:rgba(255,255,255,.18); } }
+.b2sk-dk, .b2-gc.b2-next, .b2-earn, .b2-mkid{ --b2sk-a:rgba(255,255,255,.08); --b2sk-b:rgba(255,255,255,.18); }
+.b2sk{ display:block; flex:0 0 auto; max-width:100%; border-radius:7px; background:linear-gradient(90deg,var(--b2sk-a) 25%,var(--b2sk-b) 37%,var(--b2sk-a) 63%); background-size:400% 100%; animation:b2skShim 1.3s ease infinite; }
+@keyframes b2skShim{ 0%{ background-position:100% 50%; } 100%{ background-position:0 50%; } }
+@media (prefers-reduced-motion:reduce){ .b2sk{ animation:none; } }
+.b2sk-row{ display:flex; align-items:center; gap:10px; }
+.b2sk-pills{ display:flex; gap:6px; margin:6px 0 12px; overflow:hidden; } .b2sk-pills.c{ justify-content:center; }
+.b2sk-card{ pointer-events:none; } .b2sk-card .b2-camp-foot{ display:flex; align-items:center; justify-content:space-between; margin-top:10px; } @media(min-width:761px){ .b2sk-card .b2-camp-ph{ min-height:150px; } }
+.b2sk-mc{ padding:14px 16px 12px !important; margin-bottom:12px; }
+.b2sk-track{ display:flex; justify-content:space-between; margin-top:14px; } .b2sk-track span{ display:flex; flex-direction:column; align-items:center; }
+.b2sk-alert{ padding:14px !important; margin-bottom:10px; }
+.b2sk-bars{ display:flex; align-items:flex-end; gap:8px; height:150px; padding:0 4px; border-bottom:1px solid #cdb58a; } .b2sk-bars .b2sk{ flex:1; }
+.b2sk-tog{ justify-content:space-between; padding:9px 0; } .b2sk-tog + .b2sk-tog{ border-top:1px solid #eadcbc; }
+.b2sk-mk .b2-mkid{ grid-template-columns:84px 1fr; } .b2sk-mk .b2-mkid .b2-nums{ grid-column:1 / -1; display:grid; grid-template-columns:repeat(3,1fr); margin-top:6px; padding-top:10px; }
+.b2sk-mk .b2-mkacct{ display:flex; align-items:center; justify-content:space-between; }
+.b2sk-mk .b2-mkbtns2{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
+.b2-rec > .b2sk:first-child{ min-height:132px; }
+.b2sk-hub .b2-row{ pointer-events:none; } .b2sk-hub .b2-bigav{ background:none !important; border:0 !important; }
+.b2k-next{ --b2sk-a:rgba(120,92,40,.10); --b2sk-b:rgba(120,92,40,.22); } .b2k-next .b2k-nb{ display:flex; gap:8px; }
+.b2sk-ana{ max-width:900px; margin:0 auto 6px; } body.b2app[data-pg="reports"] #crBody > .b2sk-angrid{ display:grid; }
+.b2sk-mk .b2-mkgrid{ gap:6px !important; border-radius:0 !important; } .b2sk-mk .b2-mkgrid a{ border-radius:12px; overflow:hidden; background:none; }

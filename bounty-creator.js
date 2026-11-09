@@ -292,7 +292,7 @@
     const box = document.createElement("div"); box.id = "bxHome"; box.className = "b2 b2-home";
     const hr = new Date().getHours(), part = hr < 12 ? "morning" : hr < 17 ? "afternoon" : "evening";
     box.innerHTML = `<div class="b2-hello">Good ${part}, creator.</div><h1 class="b2-h1 b2-hh">Your next move.</h1>
-      <div class="b2-hrow"><div class="b2-gc b2-next"><div class="b2-skel">Finding your next move…</div></div><div class="b2-hact" id="b2HAct"></div></div>`;
+      <div class="b2-hrow"><div class="b2-gc b2-next">${window.B2SK ? B2SK.homeNext() : `<div class="b2-skel">Finding your next move…</div>`}</div><div class="b2-hact" id="b2HAct">${window.B2SK ? B2SK.homeAct() : ""}</div></div>${window.B2SK ? B2SK.homeRec() : ""}`;
     body.insertBefore(box, body.firstChild);
     document.body.classList.add("b2-home-on");
     let d; try{ d = await homeData(); }catch(e){ d = { mine:[], open:[], dreams:[] }; }
@@ -314,6 +314,7 @@
     ah.innerHTML = `<div class="b2-sec">— Active campaigns —</div><div class="b2-sec2">${live.length} in progress</div>
       <div class="b2-gc b2-active"><div class="b2-gc-h d-only">Active campaigns · ${live.length} in progress</div>${live.length ? live.slice(0,4).map(x=>`<div class="b2-arow" data-hgo="mycampaigns"><span class="b2-ini2">${H(String(x.brand||x.campaign||"C").charAt(0).toUpperCase())}</span><span class="b2-an"><b>${H(x.brand||x.campaign||"")}</b> · ${H(STAGE_SHORT[x.stage]||String(x.stage||"").replace(/_/g," "))}</span><span class="b2-st ${WAIT_ST.includes(x.stage)?"teal":"red"}">${WAIT_ST.includes(x.stage)?"In progress":"Action needed"}</span></div>`).join("") : `<div class="b2-arow empty">No active campaigns yet — apply to one below.</div>`}</div>`;
     // 3) made for your world
+    { const skr = box.querySelector("#b2HSkRec"); if(skr) skr.remove(); }
     const elr = x => x.eligibility && x.eligibility.eligible === true ? 0 : x.eligibility && x.eligibility.eligible === false ? 2 : 1;
     const fresh = d.open.filter(x=> !x.my_stage && !x.applications_closed).sort((a,b)=> elr(a) - elr(b)).slice(0,3);
     if(fresh.length && window.B2){
@@ -548,8 +549,9 @@
     if(!o){ o = document.createElement("div"); o.id = "b2KidSheet"; o.className = "b2 b2-kdim"; document.body.appendChild(o);
       o.onclick = e=>{ if(e.target === o) closeKid(); }; }
     K.view = view || "home";
+    if(K.task == null) K.loading = true;
     paintKid(); paintBottom();
-    K.task = await sproutNext(); if(document.getElementById("b2KidSheet")) paintKid();
+    try{ K.task = await sproutNext(); }finally{ K.loading = false; } if(document.getElementById("b2KidSheet")) paintKid();
   }
   window.bxOpenKid = openKid;
   function taskTitle(x){ if(!x) return ""; let c = String(x.campaign||"Campaign"); const b = String(x.brand||"");
@@ -575,7 +577,7 @@
           <button type="button" data-k="ask:${brand?`What do I need to do for ${H(brand)}?`:"Help with my brief"}"><i>${B2I.doc}</i><span>${brand?`Help with my ${H(brand)} brief`:"Help with my brief"}</span><em>${B2I.chev}</em></button>
           <button type="button" data-k="go:opencampaigns"><i>${B2I.meg}</i><span>Find campaigns for me</span><em>${B2I.chev}</em></button>
           <button type="button" data-k="go:mediakit"><i>${B2I.layers}</i><span>Improve my media kit</span><em>${B2I.chev}</em></button></div>
-        <div class="b2k-next"><div class="b2k-nk">✦ Next up</div>${x ? `<b>${H(taskTitle(x))}</b><div class="b2k-ns">${H(STAGE_TXT[x.stage]||"")}</div>
+        <div class="b2k-next"><div class="b2k-nk">✦ Next up</div>${K.loading && !x ? `<i class="b2sk" style="width:78%;height:18px;margin-top:6px"></i><i class="b2sk" style="width:52%;height:12px;margin-top:8px"></i><div class="b2k-nb"><i class="b2sk" style="width:104px;height:32px;border-radius:16px"></i><i class="b2sk" style="width:112px;height:32px;border-radius:16px"></i></div>` : x ? `<b>${H(taskTitle(x))}</b><div class="b2k-ns">${H(STAGE_TXT[x.stage]||"")}</div>
             <div class="b2k-nb"><button type="button" class="b2-mini forest" data-k="prep">Open task ›</button><button type="button" class="b2-mini light" data-k="remind">${B2I.bell}Remind me</button></div>`
           : `<b>Nothing due right now</b><div class="b2k-ns">Find a campaign that fits you.</div><div class="b2k-nb"><button type="button" class="b2-mini forest" data-k="go:opencampaigns">Find campaigns ›</button></div>`}</div>`;
     }

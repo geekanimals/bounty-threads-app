@@ -14,6 +14,60 @@
   const TIP = t => window.B2 ? B2.tip(t) : "";
   const HEAD = (eb, h, p) => `<div class="b2-ph"><div class="b2-eyebrow">${eb}</div><h1 class="b2-h1">${h}</h1><p class="b2-sub">${p}</p></div>`;
 
+  /* ---------- Skeletons: each page's loading state has the same shape as the content that replaces it ---------- */
+  const SKB = (w, h, x) => `<i class="b2sk" style="width:${w};height:${h}px;${x||""}"></i>`;
+  const SKP = (w, h) => SKB(w + "px", h, `border-radius:${h/2}px`);
+  const SKC = d => SKB(d + "px", d, "border-radius:50%;flex:0 0 " + d + "px");
+  const SK = {
+    camp: () => `<article class="b2-camp ci-ccard b2sk-card"><div class="b2-camp-ph">${SKB("100%", 0, "position:absolute;inset:0;height:auto;border-radius:0")}</div><div class="b2-camp-b">${SKB("38%",11)}${SKB("88%",17,"margin-top:8px")}${SKB("64%",17,"margin-top:6px")}${SKB("70%",12,"margin-top:9px")}${SKB("52%",11,"margin-top:7px")}<div class="b2-camp-foot">${SKB("72px",13)}${SKP(98,30)}</div></div></article>`,
+    discover: n => `<div class="ci-cgrid b2-cgrid">${Array.from({length:n||3}, SK.camp).join("")}</div>`,
+    tabs: k => `<div class="b2sk-pills">${Array.from({length:k}, (_, i)=> SKP(i ? 96 : 54, 32)).join("")}</div>`,
+    mcCard: () => `<div class="b2-card b2sk-mc">${SKB("72%",19)}${SKB("40%",11,"margin-top:8px")}<div class="b2sk-track">${Array.from({length:5}, ()=> `<span>${SKC(18)}${SKB("44px",9,"margin-top:6px")}</span>`).join("")}</div>${SKB("58%",12,"margin-top:12px")}${SKB("66%",12,"margin-top:8px")}<div class="b2sk-row" style="justify-content:space-between;margin-top:12px">${SKB("64px",12)}${SKP(118,32)}</div></div>`,
+    mine: () => SK.mcCard() + SK.mcCard(),
+    alert: () => `<div class="b2-card b2sk-alert"><div class="b2sk-row">${SKC(8)}${SKB("52%",14)}${SKB("40px",10,"margin-left:auto")}</div>${SKB("70%",11,"margin:8px 0 0 18px")}${SKP(96,30).replace('style="','style="margin:12px 0 0 18px;')}</div>`,
+    alerts: n => Array.from({length:n||3}, SK.alert).join(""),
+    inbox: () => `<div class="b2sk-pills c">${SKP(54,32)}${SKP(118,32)}${SKP(84,32)}</div><div class="b2sk-row" style="justify-content:flex-end;margin:6px 0 8px">${SKB("86px",12)}</div>` + SK.alerts(3),
+    ana: () => `<div class="b2-angrid b2sk-angrid"><div class="b2-anl"><div class="b2sk-ana"><div class="b2sk-pills c">${SKP(150,32)}${SKP(100,32)}</div><div class="b2-k4">${Array.from({length:4}, ()=> `<div>${SKB("46%",22)}${SKB("62%",11,"margin-top:8px")}</div>`).join("")}</div></div>
+      <div class="b2-sec ink">— Performance over time —</div><div class="card b2-perf"><div class="b2sk-bars">${[30,44,38,56,50,66,60,78,70,88,82,96].map(h=> SKB("100%", 0, `height:${h}%;border-radius:4px 4px 0 0`)).join("")}</div>${SKB("44%",11,"margin:10px auto 0")}</div>
+      <div class="b2-sec ink">— Insights —</div><div class="card b2-ins">${SKB("84%",12)}${SKB("62%",12,"margin-top:10px")}${SKB("72%",12,"margin-top:10px")}</div></div>
+      <div class="b2-anr"><div class="b2-sec ink">— Your top content —</div><div class="card b2-ins">${Array.from({length:3}, ()=> `<div class="b2sk-row" style="padding:8px 0">${SKB("48px",48,"border-radius:10px")}<span style="flex:1">${SKB("60%",13)}${SKB("40%",11,"margin-top:7px")}</span>${SKP(58,26)}</div>`).join("")}</div></div></div>`,
+    kit: () => `<div class="b2 b2-mk b2sk-mk"><div class="b2-mkcol"><div class="b2-mkid b2sk-dk">${SKC(84)}<div class="b2-mkn">${SKB("78%",19)}${SKB("60%",12,"margin-top:8px")}${SKB("70%",11,"margin-top:8px")}</div><div class="b2-nums">${Array.from({length:3}, ()=> `<div>${SKB("44px",20,"margin:0 auto")}${SKB("56px",10,"margin:6px auto 0")}</div>`).join("")}</div></div>
+      <div class="b2-mkacct">${SKB("46%",14)}${SKP(92,22)}</div><div class="b2-sec ink">— Who follows my story —</div><div class="b2-card b2-aud">${[86,58,34].map(w=> `<div class="b2sk-row" style="margin:6px 0">${SKB("84px",12)}${SKB(w+"%",8,"flex:1;max-width:"+w+"%")}${SKB("28px",12)}</div>`).join("")}</div></div>
+      <div class="b2-mkcol"><div class="b2-sec ink">— The work I'm proud of —</div><div class="b2-mkgrid">${Array.from({length:9}, ()=> `<a>${SKB("100%",0,"height:100%;border-radius:0")}</a>`).join("")}</div>
+      <div class="b2-sec ink">— Let's create together —</div><div class="b2-card b2-together">${SKB("70%",14)}${SKB("50%",11,"margin-top:8px")}</div><div class="b2-mkbtns2">${SKP(0,44).replace("width:0px","width:100%")}${SKP(0,44).replace("width:0px","width:100%")}</div></div></div>`,
+    pay: () => `<div class="b2-paygrid"><div class="b2-payl"><div class="b2-earn b2sk-dk">${SKB("34%",11)}${SKB("46%",34,"margin-top:10px")}${SKB("62%",12,"margin-top:10px")}</div><div class="b2-3t">${Array.from({length:3}, ()=> `<div>${SKB("54%",20,"margin:0 auto")}${SKB("44%",11,"margin:8px auto 0")}</div>`).join("")}</div></div>
+      <div class="b2-payr"><div class="b2-sec ink">— Payouts —</div><div class="b2-list">${Array.from({length:3}, ()=> `<div class="b2-lrow"><div>${SKB("62%",13)}${SKB("40%",11,"margin-top:6px")}</div>${SKP(70,22)}</div>`).join("")}</div>
+      <div class="b2-bank"><div style="flex:1">${SKB("78%",15)}${SKB("88%",11,"margin-top:8px")}</div>${SKP(64,34)}</div></div></div>`,
+    set: () => `<div class="b2-setgrid"><div><div class="b2-card b2-skid">${SKC(48)}<div>${SKB("54%",15)}${SKB("74%",11,"margin-top:7px")}</div>${SKP(84,30)}</div>
+      <div class="b2-sec ink">— Notifications —</div><div class="b2-card b2-tlist">${Array.from({length:3}, ()=> `<div class="b2sk-row b2sk-tog">${SKB("58%",13)}${SKP(46,26)}</div>`).join("")}</div>
+      <div class="b2-sec ink">— Connected accounts —</div><div class="b2-card b2-accl">${Array.from({length:2}, ()=> `<div class="b2sk-row" style="padding:9px 0">${SKC(16)}${SKB("52%",13)}${SKP(90,22).replace('style="','style="margin-left:auto;')}</div>`).join("")}</div></div>
+      <div><div class="b2-sec ink">— Your data —</div><div class="b2-card b2-dl">${SKB("46%",14)}${SKB("70%",11,"margin-top:8px")}</div><div class="b2-del">${SKB("42%",15)}${SKB("86%",11,"margin-top:8px")}${SKP(160,34).replace('style="','style="margin-top:12px;')}</div></div></div>`,
+    homeNext: () => `${SKP(76,22)}${SKB("82%",21,"margin-top:12px")}${SKB("58%",13,"margin-top:10px")}${SKP(132,34).replace('style="','style="margin-top:14px;')}`,
+    homeAct: () => `<div class="b2-sec">— Active campaigns —</div><div class="b2-sec2">${SKB("70px",11,"margin:0 auto")}</div><div class="b2-gc b2-active"><div class="b2-gc-h d-only">${SKB("62%",17)}</div>${Array.from({length:2}, ()=> `<div class="b2-arow">${SKC(32)}${SKB("46%",14)}${SKP(76,20).replace('style="','style="margin-left:auto;')}</div>`).join("")}</div>`,
+    homeRec: () => `<div id="b2HSkRec"><div class="b2-sec">— Made for your world —</div><div class="b2-gc b2-rec m-only">${SKB("100%",0,"height:100%;border-radius:0")}<div>${SKB("40%",10)}${SKB("80%",17,"margin-top:8px")}${SKB("60%",12,"margin-top:8px")}${SKP(104,22).replace('style="','style="margin-top:10px;')}<div class="b2sk-row" style="justify-content:space-between;margin-top:12px">${SKB("40%",11)}${SKP(78,30)}</div></div></div><div class="b2-cgrid d-only b2-home-camps">${SK.camp()+SK.camp()+SK.camp()}</div></div>`,
+    hub: () => `<div class="b2 b2-hub b2sk-hub" id="bxHubSk"><div class="b2-hubl"><div class="b2-bigav">${SKC(100)}</div>${SKB("60%",26,"margin:0 auto")}${SKB("44%",12,"margin:10px auto 14px")}<div class="b2-card b2sk-row" style="padding:13px 16px;min-height:52px;margin-top:0">${SKB("62%",13)}${SKP(46,26).replace('style="','style="margin-left:auto;')}</div><div class="b2-card b2-pct">${SKB("54%",17)}${SKB("100%",8,"margin-top:12px")}</div>
+      ${Array.from({length:2}, ()=> `<div class="b2-card b2-row b2sk-row">${SKC(24)}<span style="flex:1">${SKB("46%",15)}${SKB("70%",11,"margin-top:7px")}</span></div>`).join("")}</div><div class="b2-hubr">${Array.from({length:4}, ()=> `<div class="b2-card b2-row b2sk-row">${SKC(24)}<span style="flex:1">${SKB("46%",15)}${SKB("70%",11,"margin-top:7px")}</span></div>`).join("")}</div></div>`
+  };
+  window.B2SK = SK;
+  // the app's own loading placeholders (skel) → the v2 shapes, per page, for creators only
+  const _skel = window.skel;
+  if(typeof _skel === "function"){
+    const v2skel = function(kind, n){
+      if(!isCreator() || !document.body.classList.contains("b2app")) return _skel(kind, n);
+      const pg = typeof currentPage !== "undefined" ? currentPage : "";
+      if(pg === "opencampaigns" || pg === "marketplace") return kind === "cards" ? SK.discover(4) : "";
+      if(pg === "mycampaigns") return kind === "stats" ? SK.tabs(4) : kind === "list" && n === 3 ? SK.mine() : "";
+      if(pg === "reports") return SK.ana();
+      if(pg === "mediakit") return SK.kit();
+      if(pg === "messages" || kind === "list" && n === 4) return SK.alerts(3);
+      if(kind === "kit" || kind === "dash") return "";   // boot / Home: Home paints its own skeleton
+      return _skel(kind, n);
+    };
+    window.skel = v2skel; try{ skel = v2skel; }catch(e){}
+  }
+  // the media kit's "Loading your media kit…" bar: the skeleton already says it
+  if(typeof window.mkLoadingHtml === "function"){ const _mkl = window.mkLoadingHtml; const v2mkl = function(){ return isCreator() && document.body.classList.contains("b2app") ? "" : _mkl(); }; window.mkLoadingHtml = v2mkl; try{ mkLoadingHtml = v2mkl; }catch(e){} }
+
   /* ---------- M21 Payments & payouts (new page, creator only) ---------- */
   try{
     if(typeof NAV_META !== "undefined" && !NAV_META.bxpayments) NAV_META.bxpayments = { ic:"💰", label:"Payments" };
@@ -21,7 +75,7 @@
       const i = ROLES.creator.nav.indexOf("mycampaigns"); ROLES.creator.nav.splice(i >= 0 ? i+1 : ROLES.creator.nav.length, 0, "bxpayments");
     }
     if(typeof PAGES !== "undefined" && !PAGES.bxpayments){
-      PAGES.bxpayments = () => `<div class="b2 b2-page b2-pay">${HEAD("Your earnings","Payments &amp; rewards","Every rupee and every product, in one place.")}<div id="bxPayBody"><div class="b2-skel">Loading your payments…</div></div></div>`;
+      PAGES.bxpayments = () => `<div class="b2 b2-page b2-pay">${HEAD("Your earnings","Payments &amp; rewards","Every rupee and every product, in one place.")}<div id="bxPayBody">${SK.pay()}</div></div>`;
     }
   }catch(e){}
   async function loadPayments(){
@@ -62,7 +116,7 @@
   }
   async function touchProfile(){
     const c = document.getElementById("content"); if(!c || c.querySelector("#bxHub")) return;
-    const first = c.firstElementChild; if(!first) return;
+    const first = [...c.children].find(x=> x.id !== "bxHubSk"); if(!first) return;
     const P = (window.Auth && Auth.profile) || {}, req = window.__profileReq;
     let ig = null; try{ const r = await sb.from("social_accounts").select("username,profile_picture_url").eq("platform","instagram").eq("member_id", P.id).limit(3); ig = (r && r.data) || []; }catch(e){ ig = []; }
     let pf = null; if(window.__ciProfileEnabled){ const r = await api("get_my_profile"); if(!r.error) pf = r.data; }
@@ -80,7 +134,7 @@
       ["📸","Instagram accounts", ig.length ? ig.map(x=>"@"+x.username).join(", ") : "Connect Instagram","#ig"],["🗂","My media kit","Portfolio, analytics & sharing","mediakit"],
       ["🪙","Payments & rewards","Earnings and payout details","bxpayments"],["⚙︎","Settings & privacy","Notifications, data, sidekick","bxsettings"]];
     const useKid = window.bxKid && bxKid.prefs().avatar;
-    c.classList.add("b2-hubpage");
+    c.classList.add("b2-hubpage"); { const sk = document.getElementById("bxHubSk"); if(sk) sk.remove(); }
     const row = ([ic,t,sub,k])=>`<button type="button" class="b2-card b2-row" data-hub="${k}"><span class="ic">${ic}</span><span class="tx"><b>${t}</b><em>${H(sub)}</em></span><i>›</i></button>`;
     first.insertAdjacentHTML("beforebegin", `<button type="button" class="b2-back b2-hubback" id="bxHubBack">← My profile</button><div class="b2 b2-hub" id="bxHub"><div class="b2-hubl">
       <div class="b2-bigav${useKid || (ig[0] && ig[0].profile_picture_url) ? " pic" : ""}">${useKid?`<img src="${KI()}" data-kid-me alt="">`:(ig[0] && ig[0].profile_picture_url ? `<img src="${H(ig[0].profile_picture_url)}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('${H(nm.charAt(0).toUpperCase())}'))">` : H(nm.charAt(0).toUpperCase()))}</div>
@@ -315,7 +369,7 @@
   function touchInbox(){
     const c = document.getElementById("content"); if(!c || c.querySelector("#bxInbox") || !(window.ciOps && ciOps.loadAlerts)) return;
     const first = c.firstElementChild; if(!first) return;
-    first.insertAdjacentHTML("beforebegin", `<div class="b2 b2-inbox" id="bxInbox"><h1 class="b2-h1">Inbox</h1><p class="b2-sub">Campaign updates and messages from Geek.</p><div id="bxInboxBody" class="b2-inboxb"><div class="b2-skel">Loading…</div></div></div>`);
+    first.insertAdjacentHTML("beforebegin", `<div class="b2 b2-inbox" id="bxInbox"><h1 class="b2-h1">Inbox</h1><p class="b2-sub">Campaign updates and messages from Geek.</p><div id="bxInboxBody" class="b2-inboxb">${SK.inbox()}</div></div>`);
     ciOps.loadAlerts(document.getElementById("bxInboxBody")).then(()=> tabsFor(document.getElementById("bxInboxBody")));
     const rest = document.getElementById("bxInbox").nextElementSibling; if(rest) rest.insertAdjacentHTML("beforebegin", `<div class="b2 b2-sec ink b2-msgh">— Messages —</div>`);
   }
@@ -324,7 +378,7 @@
   try{
     if(typeof NAV_META !== "undefined" && !NAV_META.bxsettings) NAV_META.bxsettings = { ic:"⚙", label:"Settings" };
     if(typeof ROLES !== "undefined" && ROLES.creator && !ROLES.creator.nav.includes("bxsettings")) ROLES.creator.nav.push("bxsettings");
-    if(typeof PAGES !== "undefined" && !PAGES.bxsettings) PAGES.bxsettings = () => `<div class="b2 b2-page b2-set">${HEAD("My account","Settings &amp; privacy","You stay in control of your data.")}<div id="bxSetBody"><div class="b2-skel">Loading…</div></div></div>`;
+    if(typeof PAGES !== "undefined" && !PAGES.bxsettings) PAGES.bxsettings = () => `<div class="b2 b2-page b2-set">${HEAD("My account","Settings &amp; privacy","You stay in control of your data.")}<div id="bxSetBody">${SK.set()}</div></div>`;
     if(typeof GATE_OPEN_PAGES !== "undefined" && !GATE_OPEN_PAGES.includes("bxsettings")) GATE_OPEN_PAGES.push("bxsettings");
   }catch(e){}
   async function loadSettings(){
@@ -391,7 +445,12 @@
     if(isCreator()){
       if(currentPage === "bxpayments") loadPayments();
       if(currentPage === "bxsettings") loadSettings();
-      if(currentPage === "profile") setTimeout(touchProfile, 400);
+      if(currentPage === "profile"){
+        const c1 = document.getElementById("content");
+        if(c1 && !c1.querySelector("#bxHub") && !c1.querySelector("#bxHubSk")){ c1.classList.add("b2-hubpage"); c1.insertAdjacentHTML("afterbegin", SK.hub());
+          setTimeout(()=>{ const sk = document.getElementById("bxHubSk"); if(sk && !document.getElementById("bxHub")){ sk.remove(); c1.classList.remove("b2-hubpage"); } }, 9000); }
+        setTimeout(touchProfile, 400);
+      }
       touchDrawer();
     }
     return r;
