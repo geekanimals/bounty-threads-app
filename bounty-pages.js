@@ -50,7 +50,7 @@
       <div class="b2-sec ink">— Payouts —</div>
       <div class="b2-list">${rows.length ? rows.map(r=>`<div class="b2-lrow"><div><b>${H(r.c.campaign||"Campaign")}${r.c.brand?" · "+H(r.c.brand):""}</b><span>${r.prod?"Product ":""}${INR(r.amt)} · ${H(r.sub)}</span></div><em class="b2-chip2 ${r.st[1]}">${r.st[0]}</em></div>`).join("")
         : `<div class="b2-lrow empty">No payouts yet — paid and barter campaigns show up here once you're selected.</div>`}</div>
-      <div class="b2-bank"><span>🏦</span><div><b>Add your bank / UPI details</b><p>Must be in your own name. Only you and the Geek team see it.</p></div><button type="button" class="b2-mini forest" data-go="mycampaigns">${needs?"Add":"Manage"}</button></div>
+      <div class="b2-bank"><div><b>🏦 Add your bank / UPI details</b><p>Must be in your own name. Only you and the Geek team see it.</p></div><button type="button" class="b2-mini forest" data-go="mycampaigns">Add</button></div>
       ${TIP("Add your UPI once — every payout goes there automatically.")}</div></div>`;
     box.querySelectorAll("[data-go]").forEach(b=> b.onclick = ()=> go(b.dataset.go));
   }
@@ -142,12 +142,26 @@
   }
 
   /* ---------- M30 alerts: All · Action needed · Updates ---------- */
-  function touchAlerts(){ tabsFor(document.getElementById("notifBody")); }
+  /* V2-29 bell popover: "Notifications" + "Mark all read" header, alert list, "View all alerts" at the foot (no tabs here) */
+  function touchAlerts(){
+    const dr = document.getElementById("notifDrawer"), body = document.getElementById("notifBody"); if(!dr || !body || !document.body.classList.contains("b2app")) return;
+    dr.classList.add("b2-notif");
+    const head = dr.querySelector(".drawer-head"); if(!head) return;
+    const st = head.querySelector("strong"); if(st && st.textContent !== "Notifications") st.textContent = "Notifications";
+    const all = head.querySelector("#notifAll"); if(all){ const old = dr.querySelector(":scope > .b2-notif-all"); if(old && old !== all) old.remove(); all.textContent = "View all alerts →"; all.classList.add("b2-notif-all"); dr.appendChild(all); }
+    if(st && !head.querySelector(".b2-notif-mark")){ const mk = document.createElement("button"); mk.type = "button"; mk.className = "b2-notif-mark"; mk.textContent = "Mark all read";
+      mk.onclick = ()=>{ const b = body.querySelector("#opsMarkAll"); if(b) b.click(); else body.querySelectorAll(".ops-alert").forEach(r=> r.classList.add("read")); };
+      st.after(mk); }
+    const top = body.querySelector("#opsMarkAll"); if(top && top.parentElement && !top.parentElement.classList.contains("b2-hide")) top.parentElement.classList.add("b2-hide");
+  }
+
   function tabsFor(body){
     if(!body || body.querySelector(".bx-al-tabs")) return;
-    const rows = [...body.querySelectorAll(".ops-alert")]; if(!rows.length) return;
+    const rows = [...body.querySelectorAll(".ops-alert")];
     const act = rows.filter(r=> r.classList.contains("act") || r.querySelector("[data-act]"));
-    body.insertAdjacentHTML("afterbegin", `<div class="bxg-chips bx-al-tabs b2-tabs"><button type="button" data-t="all" class="on">All</button><button type="button" data-t="act">Action needed</button><button type="button" data-t="upd">Updates</button></div>`);
+    const hasMark = [...body.querySelectorAll("button,a")].some(b=> /mark all read/i.test(b.textContent));
+    body.insertAdjacentHTML("afterbegin", `<div class="bxg-chips bx-al-tabs b2-tabs"><button type="button" data-t="all" class="on">All</button><button type="button" data-t="act">Action needed</button><button type="button" data-t="upd">Updates</button></div>${hasMark?"":`<div class="b2-markall"><button type="button" class="b2-link sm" id="b2MarkAll">Mark all read</button></div>`}`);
+    const ma = body.querySelector("#b2MarkAll"); if(ma) ma.onclick = ()=>{ rows.forEach(r=> r.classList.add("read")); ma.disabled = true; };
     body.querySelectorAll(".bx-al-tabs button").forEach(b=> b.onclick = ()=>{ body.querySelectorAll(".bx-al-tabs button").forEach(x=> x.classList.toggle("on", x===b));
       rows.forEach(r=>{ const a = act.includes(r); r.style.display = b.dataset.t==="all" || (b.dataset.t==="act" && a) || (b.dataset.t==="upd" && !a) ? "" : "none"; }); });
     if(!body.querySelector(".bx-al-foot")) body.insertAdjacentHTML("beforeend", `<div class="bx-al-foot muted">Campaign alerts are separate from optional tips. Change them in Settings.</div>`);
@@ -281,9 +295,11 @@
   /* ---------- V2-24 Analytics header: creator pulse + 4 numbers ---------- */
   async function touchAnaHead(){
     const c = document.getElementById("content"); if(!c || currentPage !== "reports") return;
-    const head = c.querySelector(":scope > .page-head"); if(!head || head.dataset.b2) return; head.dataset.b2 = 1;
-    head.innerHTML = `<div><div class="b2-eyebrow">Creator pulse</div><h1>Analytics</h1><p>How your content is doing — from Instagram.</p></div>`;
-    const a = (typeof mkFetchAcct === "function") ? await mkFetchAcct().catch(()=> null) : null; if(!a || !head.isConnected) return;
+    const head = c.querySelector(":scope > .page-head"); if(!head) return;
+    if(!head.dataset.b2){ head.dataset.b2 = 1; head.innerHTML = `<div><div class="b2-eyebrow">Creator pulse</div><h1>Analytics</h1><p>How your content is doing — from Instagram.</p></div>`; }
+    if(c.querySelector(".b2-ana") || touchAnaHead.busy) return; touchAnaHead.busy = true;
+    let a = null; try{ a = (typeof mkFetchAcct === "function") ? await mkFetchAcct().catch(()=> null) : null; } finally { touchAnaHead.busy = false; }
+    if(!a || !head.isConnected || c.querySelector(".b2-ana")) return;
     const media = (typeof mkAllMedia === "function" ? mkAllMedia(a) : (a.recent_media||[]));
     const eng = (a.followers_count && media.length) ? (100 * media.reduce((t,m)=> t + (+m.like_count||0) + (+m.comments_count||0), 0) / media.length / a.followers_count).toFixed(1) + "%" : "—";
     const avgL = media.length ? Math.round(media.reduce((t,m)=> t + (+m.like_count||0), 0) / media.length) : 0;
@@ -401,16 +417,48 @@
       const ic = o.x.querySelector("i"); if(ic) ic.textContent = ""; });
     steps.forEach(x=>{ if(!x.classList.contains("k5")) x.classList.add("k5h"); });
   }
+  /* V2-12 card: "Brand · Campaign", status line, 5-step track, 📅/🎁 lines, one action button; full details on tap */
+  function slimCard(card){
+    if(card.dataset.b2s) return; const top = card.querySelector(".mc-top"); if(!top) return; card.dataset.b2s = 1; card.classList.add("b2-mc");
+    const h4 = top.querySelector("h4"), sub = top.querySelector(".mc-title .muted"), pill = top.querySelector(".ci-pill");
+    const brand = sub ? sub.textContent.split("·")[0].trim() : "";
+    if(h4 && brand && !h4.textContent.includes("·")){ const t = h4.textContent.trim(); const rest = t.toLowerCase().indexOf(brand.toLowerCase()) === 0 ? t.slice(brand.length).trim() : t; if(rest) h4.textContent = brand + " · " + rest; }
+    const nowH = (card.querySelector(".jr-now-h b")||{}).textContent || "";
+    const st = card.querySelector(".jr-step.k5.now span"); const step = st ? st.textContent : (pill ? pill.textContent : "");
+    const ptxt = pill ? pill.textContent.trim() : "";
+    const act = /sign|confirm|upload|submit|post it|add your|accept|review|share/i.test(nowH);
+    const done = /complete|done|paid/i.test(ptxt) && !act, lost = /not selected|rejected|declined/i.test(ptxt);
+    const line = document.createElement("div"); line.className = "b2-mcst " + (act ? "act" : done ? "ok" : lost ? "off" : "prog");
+    line.textContent = act ? "Action needed · " + step : done ? "Completed" : lost ? "Not selected" : (/applied/i.test(ptxt) ? "In review · Applied" : "In progress · " + step);
+    top.querySelector(".mc-title").appendChild(line);
+    const meta = card.querySelector(".mc-meta");
+    if(meta){ const sp = [...meta.children]; const type = (meta.querySelector(".ci-type")||{}).textContent || ""; const who = (meta.querySelector("b")||{}).textContent || ""; const date = sp.length ? sp[sp.length-1].textContent.replace(/^[^0-9A-Za-z]+/,"") : "";
+      const info = document.createElement("div"); info.className = "b2-mcinfo";
+      info.innerHTML = `${date?`<div>📅 ${H(date)}</div>`:""}<div>🎁 ${H(type.replace(/^[^A-Za-z]+/,"").trim() || "Campaign")}${who?` · @${H(who.replace(/^@/,""))}`:""}</div>`;
+      const jr0 = card.querySelector(".jr"); (jr0 || meta).after(info); }
+    const jr = card.querySelector(".b2-mcinfo") || card.querySelector(".jr");
+    const row = document.createElement("div"); row.className = "b2-mcact";
+    const ask = top.querySelector(".mc-ask"); if(ask){ ask.textContent = "💬 Ask us"; row.appendChild(ask); }
+    const b = document.createElement("button"); b.type = "button"; b.className = "b2-mcgo" + (act ? "" : " light");
+    const lbl = () => card.classList.contains("b2-open") ? "Hide details ▴" : (act ? (nowH.replace(/[.!]$/,"") || "Open") + " →" : "View details ▾");
+    b.textContent = lbl(); b.onclick = ()=>{ card.classList.toggle("b2-open"); b.textContent = lbl(); };
+    row.appendChild(b); (jr || card.lastElementChild).after(row);
+  }
   function touchMine(){
     const c = document.getElementById("content"); if(!c || currentPage !== "mycampaigns") return;
     c.querySelectorAll(".mc-card").forEach(track5);
+    c.querySelectorAll(".mc-card").forEach(slimCard);
+    const tabs = c.querySelector(".mc-tabs");
+    if(tabs && !tabs.dataset.b2){ tabs.dataset.b2 = 1; const L = { "All time":"All", "Running now":"In progress", "Applied / waiting":"Applied", "Completed":"Completed", "Not selected":"Not selected" };
+      tabs.querySelectorAll(".mc-tab").forEach(t=>{ const sp = t.querySelector("span"), bb = t.querySelector("b"); if(sp){ const k = sp.textContent.replace(/^[^A-Za-z]+/,"").trim(); if(L[k]) sp.textContent = L[k]; if(k==="All time") t.classList.add("b2-first"); }
+        if(bb && /^\d$/.test(bb.textContent.trim())) bb.textContent = "0" + bb.textContent.trim(); }); }
     const body = document.getElementById("opsMineBody");
     if(body){ const act = [...c.querySelectorAll(".mc-card .jr-now.act, .mc-card .jr-now")].filter(x=> /sign|confirm|upload|submit|post|add|accept|review/i.test(x.textContent)).length;
       let ban = document.getElementById("b2Attn");
       if(act){ if(!ban){ ban = document.createElement("div"); ban.id = "b2Attn"; ban.className = "b2 b2-attn"; body.parentNode.insertBefore(ban, body); } ban.textContent = `⚠ ${act} thing${act>1?"s":""} need${act>1?"":"s"} your attention`; }
       else if(ban) ban.remove(); }
     const intro = c.querySelector(".ci-intro"); if(!intro || intro.dataset.b2) return; intro.dataset.b2 = 1;
-    intro.classList.add("b2-intro"); intro.innerHTML = `<div class="b2-eyebrow">Your creator journey</div><h1 class="b2-h1">My campaigns</h1><p class="b2-sub">Every collaboration, all in one place.</p>`;
+    intro.classList.add("b2-intro","b2-intro-mc"); intro.innerHTML = `<div class="b2-eyebrow">Your creator journey</div><h1 class="b2-h1">My campaigns</h1><p class="b2-sub">Every collaboration, all in one place.</p>`;
   }
   function touchSteps(){
     document.querySelectorAll(".mc-card").forEach(card => {

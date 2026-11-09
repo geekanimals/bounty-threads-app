@@ -36,15 +36,15 @@
   const KI = () => (window.bxKid ? bxKid.img() : A + "rd/kid_pip.png");
   // v2 sidebar icons (Figma W02)
   const EMO = { dashboard:"🏠", opencampaigns:"🧭", marketplace:"🧭", mycampaigns:"◈", bxpayments:"🪙", mediakit:"🗂", reports:"📊", instagram:"📸",
-    intelligence:"📊", profile:"👤", messages:"✉︎", bxsettings:"⚙︎", dream:"💙" };
+    intelligence:"📊", profile:"👤", messages:"✉️", bxsettings:"⚙︎", dream:"💙" };
 
   // creator nav: Figma names + icons + groups (keys come from the app, so gating/filters are unchanged)
   const LABEL = { dashboard:"Home", opencampaigns:"Discover", marketplace:"Discover", mycampaigns:"My campaigns",
-    mediakit:"Media kit", reports:"Analytics", bxpayments:"Payments", bxsettings:"Settings", instagram:"Instagram", messages:"Messages", profile:"Profile", intelligence:"Insights" };
+    mediakit:"Media kit", reports:"Analytics", bxpayments:"Payments", bxsettings:"Settings", instagram:"Instagram", messages:"Inbox", profile:"Profile", intelligence:"Insights" };
   const ICON = { dashboard:"home", opencampaigns:"compass", marketplace:"compass", mycampaigns:"clip", mediakit:"layers", bxpayments:"coins", bxsettings:"gear",
     reports:"chart", instagram:"insta", messages:"chat", profile:"user", intelligence:"chart" };
-  const GROUPS = [["Today",["dashboard"]],["Campaigns",["opencampaigns","marketplace","mycampaigns","bxpayments"]],
-    ["Create & grow",["mediakit","reports","instagram","intelligence"]],["My account",["profile","messages","bxsettings"]]];
+  const GROUPS = [["Today",["dashboard","messages"]],["Campaigns",["opencampaigns","marketplace","mycampaigns","bxpayments"]],
+    ["Create & grow",["mediakit","reports","instagram","intelligence"]],["My account",["profile","bxsettings"]]];
   // page titles that follow the new names (only when the title is still the old one)
   const TITLE = { "Dashboard":"Your next move.", "Campaigns":"Discover campaigns", "Open Campaigns":"Discover campaigns",
     "Reports":"Analytics", "Media Kit":"My Media Kit", "Creator Profile":"My profile", "My Campaigns":"My campaigns" };
@@ -91,8 +91,8 @@
     // phone: search + theme move from the top bar into the ☰ drawer (the Figma header is ☰ · logo · bell · avatar)
     if(nav && !document.getElementById("bxTools")){
       const t = document.createElement("div"); t.id = "bxTools"; t.className = "bx-tools";
-      t.innerHTML = `<button type="button" data-t="search">${svg("search")}<span>Search</span></button><button type="button" data-t="theme">${svg("moon")}<span>Theme</span></button>`;
-      nav.parentNode.insertBefore(t, nav);
+      t.innerHTML = `<button type="button" data-t="search">${svg("search")}<span>Search or run a command…</span><kbd>⌘K</kbd></button><button type="button" data-t="theme">${svg("moon")}<span>Theme</span></button>`;
+      const nx = document.getElementById("bxNext"); nav.parentNode.insertBefore(t, nx || nav);
       t.querySelector('[data-t="search"]').onclick = ()=>{ document.getElementById("sidebar").classList.remove("open"); const st = document.getElementById("searchTrigger"); if(st) st.click(); };
       t.querySelector('[data-t="theme"]').onclick = ()=>{ if(typeof toggleTheme==="function") toggleTheme(); };
     }
@@ -150,8 +150,9 @@
       const n = (window.__joinNeeds||[]).join(" ").toLowerCase();
       t = "Unlock campaigns"; s = /instagram/.test(n) && /whatsapp/.test(n) ? "Connect Instagram & WhatsApp" : /whatsapp/.test(n) ? "Verify WhatsApp" : "Connect Instagram"; k = "mediakit"; }
     else if(req && !req.complete && creatorNavKeys().includes("profile")){ t = "Finish your profile"; s = Math.round(100*req.done/Math.max(req.total,1)) + "% complete"; k = "profile"; }
-    else if(window.__alertsUnread > 0){ t = "Your next move"; s = window.__alertsUnread + " action" + (window.__alertsUnread>1?"s":"") + " due"; k = "dashboard"; }
-    b.innerHTML = `<span class="tg b2-emo">🎯</span><span><b>${t}</b><i>${s}</i></span>`;
+    else if(window.__alertsUnread > 0){ t = "Check your inbox"; s = "new updates"; k = "messages"; }
+    const due = window.__alertsUnread > 0 ? `<em>${window.__alertsUnread} action${window.__alertsUnread>1?"s":""} due</em>` : "";
+    b.innerHTML = `<span class="b2-nx-h"><span class="tg b2-emo">🎯</span><b>Your next move</b>${due}</span><span class="b2-nx-r"><i class="dot"></i><b>${t}</b><span>· ${s}</span></span>`;
     b.onclick = ()=> go(k);
   }
   function paintSprout(){
@@ -250,7 +251,9 @@
     const c = document.getElementById("content"); if(!c || !window.B2) return;
     const intro = c.querySelector(".ci-intro");
     if(intro && !intro.dataset.b2){ intro.dataset.b2 = 1; intro.innerHTML = `<h1 class="b2-h1">Made for your world.</h1><p class="b2-sub plain">Campaigns that match your style</p>`; intro.classList.add("b2-intro"); }
-    const chips = c.querySelector("#campChips"); if(chips) chips.classList.add("b2-campchips");
+    const chips = c.querySelector("#campChips"); if(chips){ chips.classList.add("b2-campchips");
+      const CL = { all:"For you", paid:"Paid", barter:"Barter", celebrity:"Story" };
+      chips.querySelectorAll("[data-campf]").forEach(b=>{ const l = CL[b.dataset.campf]; if(l && b.firstChild && b.firstChild.nodeType === 3 && b.firstChild.nodeValue.trim() !== l) b.firstChild.nodeValue = l + " "; if(!l) b.classList.add("b2-hide"); }); }
     const cards = [...c.querySelectorAll(".ci-ccard[data-cdetail]")].filter(x=> !x.dataset.b2);
     if(!cards.length) return;
     let d; try{ d = await homeData(); }catch(e){ return; }
@@ -260,7 +263,7 @@
       const el = x.eligibility || {};
       const act = card.querySelector("[data-apply]");
       const tag = x.my_stage ? `<span class="b2-match ok">✓ ${H(String(x.my_stage).replace(/_/g," "))}</span>` : x.applications_closed ? `<span class="b2-match no">Applications closed</span>`
-        : el.eligible === true ? `<span class="b2-match ok">✓ Eligible</span>` : el.eligible === false ? `<span class="b2-match no">✗ Not eligible yet</span>` : `<span class="b2-match chk">⇄ Check fit</span>`;
+        : el.eligible === true ? `<span class="b2-match ok">✓ Eligible</span>` : el.eligible === false ? `<span class="b2-match no">✗ Not eligible</span>` : `<span class="b2-match chk">⇄ Check fit</span>`;
       const tmp = document.createElement("div"); tmp.innerHTML = B2.card(x, { btn: tag + `<button type="button" class="b2-vb" data-b2open>View brief →</button>` });
       const art = tmp.firstElementChild;
       card.className = "ci-ccard b2-camp"; card.innerHTML = art.innerHTML;
@@ -327,8 +330,8 @@
         : `<div class="b2-df"><span>Pick up to 5 brands you'd love to work with — private to you.</span><a href="#" data-hgo="profile">Add dream brands →</a></div>`}</div>
       <div class="b2-hrow2"><div class="b2-gc b2-kitp"><h4>${pct!=null?`Your media kit · ${pct}% complete`:"Your media kit"}</h4>${pct!=null?`<div class="b2-bar"><i style="width:${pct}%"></i></div>`:""}
         <button type="button" class="b2-mini cream" data-hgo="${pct!=null&&pct<100?"profile":"mediakit"}">${pct!=null&&pct<100?"Finish profile":"View media kit"}</button></div>
-        ${window.B2 ? B2.tip("Keep your media kit updated for better brand matches!") : ""}</div>
-      <p class="b2-quote">Get discovered by brands you love.<br class="m-only"> Build the creator career you want.</p>`);
+        <p class="b2-quote">Get discovered by brands you love.<br class="m-only"> Build the creator career you want.</p>
+        ${window.B2 ? B2.tip("Keep your media kit updated for better brand matches!") : ""}</div>`);
     box.querySelectorAll("[data-hgo]").forEach(b=> b.onclick = e=>{ e.preventDefault(); const k = b.dataset.hgo; if(k==="__sprout") return openKid(); go(k); });
     box.querySelectorAll("[data-hbrief]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); try{ localStorage.setItem("geek_apply", b.dataset.hbrief); }catch(x){} go("opencampaigns"); });
   }
@@ -532,7 +535,8 @@
     clip:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9zM9.5 13l2 2 3.5-4"/></svg>'
   };
   const md = t => H(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/\n/g,"<br>");
-  const firstName = () => String((window.Auth && Auth.profile && !/^wa_\d+@/.test(Auth.profile.name||"") && Auth.profile.name) || "there").split(" ")[0];
+  const firstName = () => { let f = String((window.Auth && Auth.profile && !/^wa_\d+@/.test(Auth.profile.name||"") && Auth.profile.name) || "there").trim().split(" ")[0];
+    if(/[._\d]/.test(f)){ f = f.split(/[._]/)[0].replace(/\d+/g,""); f = f ? f[0].toUpperCase() + f.slice(1) : "there"; } return f; };
   let K = { view:"home", thread:[], task:null };
   function closeKid(){ const o = document.getElementById("b2KidSheet"); if(o){ o.remove(); paintBottom(); } }
   window.bxCloseKid = closeKid;
@@ -545,7 +549,8 @@
     K.task = await sproutNext(); if(document.getElementById("b2KidSheet")) paintKid();
   }
   window.bxOpenKid = openKid;
-  function taskTitle(x){ return x ? `${x.brand?x.brand+" · ":""}${x.campaign||"Campaign"}` : ""; }
+  function taskTitle(x){ if(!x) return ""; let c = String(x.campaign||"Campaign"); const b = String(x.brand||"");
+    if(b && c.toLowerCase().indexOf(b.toLowerCase()) === 0 && c.length > b.length) c = c.slice(b.length).trim(); return `${b?b+" · ":""}${c}`; }
   function kidHead(){ return `<i class="b2-grab"></i><div class="b2k-h"><img src="${KI()}" data-kid-me alt=""><span class="b2k-div"></span><div><b>${H(KN())} · Your sidekick</b><span><i></i>Here to help</span></div>
       <button type="button" class="b2k-ic" data-k="gear" aria-label="Make your sidekick yours" title="Make your sidekick yours">${B2I.gear}</button><button type="button" class="b2k-ic" data-k="x" aria-label="Close">${B2I.x}</button></div>`; }
   const inputBar = () => `<form class="b2k-in" id="b2kForm"><input id="b2kQ" placeholder="Ask ${H(KN())} anything…" autocomplete="off"><button type="button" class="b2k-mic" data-k="mic" aria-label="Speak">${B2I.mic}</button><button type="submit" class="b2k-send" aria-label="Send">${B2I.send}</button></form>`;
