@@ -11863,8 +11863,10 @@ function showEmailGate(){
 }
 
 // Super Admin: label, Admin panel first in the nav, and land on the command centre after sign-in
+const ADMIN_MEMO = ()=> "gk_admin_" + navUid();
 function markSuperAdmin(){
   const wasAdmin = window.__isAdmin; window.__isAdmin = true;
+  try{ if(navUid()) localStorage.setItem(ADMIN_MEMO(), "1"); }catch(e){}
   // a deep link straight to Brand CRM painted before we knew this is the Super Admin → paint it again with the admin buttons
   if(!wasAdmin && currentPage==="brands") setTimeout(()=>{ if(currentPage==="brands") renderContent(); }, 0);
   // links in WhatsApp / email use the live domain set as APP_URL on Vercel (unless the APP_URL secret overrides it)
@@ -12121,7 +12123,17 @@ async function bootOS(){
   }
   // Gate: agency-side accounts awaiting platform approval don't enter the OS.
   if(window.Auth && Auth.profile && Auth.profile.status === "pending"){ showPending(); return; }
-  if(!window.__osBooted) paintEarlyShell();
+  if(!window.__osBooted){
+    let memo = false; try{ memo = !!navUid() && localStorage.getItem(ADMIN_MEMO()) === "1"; }catch(e){}
+    if(memo && !(window.Auth && Auth.profile && Auth.profile.role === "creator")){
+      window.__isAdmin = true;
+      if(window.Auth && Auth.profile && ROLES[Auth.profile.role]) currentRole = Auth.profile.role;
+      const sv = navSaved(), deep = new URLSearchParams(location.search).get("go");
+      if(!deep){ if(sv && sv.page && sv.page!=="admin"){ currentPage = sv.page; } else { currentPage = "admin"; _adminTab = (sv && sv.admin) || "overview"; } window.__adminLanded = true; }
+    }
+    paintEarlyShell();
+    if(window.__isAdmin){ const wrap = document.querySelector(".role-switch"); if(wrap) wrap.innerHTML = `<label>Signed in as</label><div class="role-static">🛡 Super Admin</div>`; }
+  }
   if(window.Auth && Auth.profile && Auth.profile.role === "creator"){
     await claimCreatorInvites();
     if(!(await creatorHasInstagram())){ showInstagramGate(); return; }
@@ -12168,14 +12180,17 @@ async function bootOS(){
     nav = deep ? null : navSaved();
     if(nav && (PAGES[nav.page] || (window.BrandPortal && BrandPortal.handles && BrandPortal.handles(nav.page)))
        && !(window.__profileGate && !GATE_OPEN_PAGES.includes(nav.page))){
-      if(nav.page==="admin"){ window.__pendingAdminTab = nav.admin || "overview"; }   // painted once we know it is the Super Admin
+      if(nav.page==="admin"){ if(window.__isAdmin){ currentPage = "admin"; _adminTab = nav.admin || "overview"; window.__adminLanded = true; } else window.__pendingAdminTab = nav.admin || "overview"; }   // painted once we know it is the Super Admin
       else { currentPage = nav.page; if(nav.admin) _adminTab = nav.admin; window.__adminLanded = true; }
     } else nav = null;
   }
   window.__navRestoring = !!(nav && nav.camp);   // don't overwrite the saved campaign while the first paint happens
   init();
   // Platform admins get an Admin queue in the nav.
-  const adminCheck = window.sb ? sb.rpc("is_platform_admin").then(({data})=>{ if(data===true){ markSuperAdmin(); } }).catch(()=>{}) : Promise.resolve();
+  const adminCheck = window.sb ? sb.rpc("is_platform_admin").then(({data, error})=>{
+    if(data===true){ markSuperAdmin(); return; }
+    if(!error && window.__isAdmin){ try{ localStorage.removeItem(ADMIN_MEMO()); }catch(e){} window.__isAdmin = false; if(currentPage==="admin") currentPage = "dashboard"; renderShell(); }
+  }).catch(()=>{}) : Promise.resolve();
   if(nav && nav.camp){
     Promise.resolve(adminCheck).then(async ()=>{
       try{ window.__navRestoring = false; await openCampaignWorkspace(nav.camp);
