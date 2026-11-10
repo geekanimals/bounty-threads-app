@@ -73,14 +73,13 @@ const ADMIN_NAV = [["admin:overview","🛡","Command centre"],["admin:applicatio
 // Mass Barter / Celebrity Stories are filters on the Campaigns page.
 // Super Admin sidebar — thought from the admin's side: what's waiting first, then running campaigns (the priority),
 // then creators, brands, messages, numbers, and the platform tools last. Each key appears once (no duplicates).
+// Grouped like the Mission Control design: Operate → Network → Communicate → Insights → Platform (every page kept)
 const ADMIN_SECTIONS = [
-  ["Today",     ["admin:overview","approvals"]],
-  ["Campaigns", ["campaigns","admin:applications","logistics"]],
-  ["Creators",  ["admin:creators","discover","admin:upload"]],
-  ["Brands",    ["brands"]],
-  ["Messages",  ["messages","admin:delivery","admin:bot"]],
-  ["Insights",  ["reports","admin:activity"]],
-  ["Platform",  ["admin:users","admin:settings"]]];
+  ["Operate",     ["admin:overview","approvals","campaigns","admin:applications","logistics"]],
+  ["Network",     ["admin:creators","discover","brands","admin:upload"]],
+  ["Communicate", ["messages","admin:delivery","admin:bot"]],
+  ["Insights",    ["reports","admin:activity"]],
+  ["Platform",    ["admin:users","admin:settings"]]];
 const ADMIN_HIDE_KEYS = ["barter","celebrity","campaignops","creators","irm","brandsetup","finance","listening","settings"];   // settings → ⚙️ Settings above
 Object.keys(NAV_SECTIONS).forEach(r=>{ ROLES[r].nav = NAV_SECTIONS[r].reduce((a,s)=>a.concat(s[1]),[]); });
 

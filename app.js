@@ -10490,7 +10490,7 @@ function renderAdmin(){
     upload:"Add creators who aren't on Geek OS yet and invite them to the live campaigns.",
     activity:"Who is on the platform, from where, for how long and doing what.",
     approvals:"Agency and brand accounts waiting for approval." };
-  let html = pageHead("Super Admin" + (ADMIN_TITLES[_adminTab] ? " · " + ADMIN_TITLES[_adminTab] : ""), ADMIN_SUBS[_adminTab] || "Platform settings, team, links and system tools.");
+  let html = _adminTab==="overview" ? ovHeadHtml() : pageHead("Super Admin" + (ADMIN_TITLES[_adminTab] ? " · " + ADMIN_TITLES[_adminTab] : ""), ADMIN_SUBS[_adminTab] || "Platform settings, team, links and system tools.");
   if(ADMIN_ADVANCED.some(t=> t[0]===_adminTab)) html += `<div class="admin-tabs">${ADMIN_ADVANCED.map(t=>`<button class="${_adminTab===t[0]?'act':''}" data-atab="${t[0]}">${esc(t[1])}</button>`).join("")}</div>`;
   html += `<div id="adminBody">${skel("table")}</div>`;
   return html;
@@ -10568,6 +10568,14 @@ async function runSystemCheck(){
 }
 
 let _ovTimer = null, _ovSig = "", _ovAct = "all";
+// Command centre head: "GEEK OS / SUPER ADMIN" · Good morning, <name> · + New campaign
+function ovHeadHtml(){
+  const h = new Date().getHours(), hi = h<12 ? "Good morning" : h<17 ? "Good afternoon" : "Good evening";
+  const first = String((window.Auth && Auth.profile && Auth.profile.name) || "").trim().split(/\s+/)[0];
+  return `<div class="ovh"><div><div class="ovh-eye">Geek OS / Super Admin</div><h1>${esc(hi)}${first?`, ${esc(first)}`:""} <span class="ovh-star">✳</span></h1>
+    <p>One workspace for the decisions, people and campaigns that move Geek OS forward.</p></div>
+    <button type="button" class="btn ovh-new" id="ovNewCamp">+ New campaign</button></div>`;
+}
 async function adminOverview(body, silent){
   if(!silent) body.innerHTML = skel("dash");
   const [{ data, error }, wl] = await Promise.all([ sb.rpc("admin_dashboard"), sb.schema("api").rpc("workspace_live").then(r=>r, ()=>({data:null})) ]);
@@ -10610,7 +10618,37 @@ async function adminOverview(body, silent){
   const chips = [["all","All"],["camp","Campaigns"],["ig","Instagram"],["in","Sign-ins"],["prof","Profiles"]];
   // a quiet refresh only swaps the numbers and the feed — the page never jumps
   const feed = body.querySelector("#ovFeed"), feedTop = feed ? feed.scrollTop : 0;
-  body.innerHTML = `<div class="ov">
+  const B = W.barter||{}, msg = W.messages||{}, ig = W.instagram||{};
+  const toSend = Math.max(0, N(B.total) - N(B.shipped) - N(B.delivered)), inTransit = N(B.shipped);
+  const queue = open.filter(x=> x[0]!=="creators_incomplete"), actions = queue.reduce((a,x)=> a + N(t[x[0]]), 0);
+  const PRI = { bad:["Critical","bad"], warn:["High","warn"], info:["Medium","info"] };
+  const hero = (v,l,sub,go,main)=>`<button type="button" class="ovx-kpi${main?" main":""}" data-ovgo="${go}"><b>${fmtNum(N(v))}</b><span class="ovx-kpi-l">${l}</span>${sub?`<span class="ovx-kpi-s">${sub}</span>`:""}</button>`;
+  const pipe = (v,l,go)=>`<button type="button" class="ovx-pipe" data-ovgo="${go}"><b>${fmtNum(N(v))}</b><span>${l}</span></button>`;
+  const delPct = N(B.total) ? Math.round(100*N(B.delivered)/N(B.total)) : 0;
+  const top = `<div class="ovx-kpis">
+      ${hero(actions,"Actions requiring review","Across campaign operations","@approvals",true)}
+      ${hero(wc.live!=null?wc.live:c.live,"Campaigns live",`${fmtNum(N(c.total))} campaigns total`,"@campaigns")}
+      ${hero(pe.creators,"Creators",`${fmtNum(N(pe.instagram_connected))} connected to Instagram`,"creators:all")}
+      ${hero(toSend+inTransit,"Shipments need progress",`${fmtNum(toSend)} to send · ${fmtNum(inTransit)} in transit`,"@logistics")}
+      ${hero(wco.published,"Posts published","Across current campaigns","@reports")}</div>
+    <div class="ovx-two">
+      <section class="ov-card"><div class="ov-h"><div><h3>⚡ Your priority queue</h3><div class="muted ovx-hsub">One-click triage. Open an item to review its context before acting.</div></div><button type="button" class="ovx-link" data-ovgo="@approvals">View all tasks →</button></div>
+        ${queue.length ? `<div class="ovx-queue">${queue.map(([k,ic,l,sub,go,tone])=>{ const p = PRI[tone]||PRI.info; return `<div class="ovx-q">
+            <span class="ovx-q-ic">${ic}</span><div class="ovx-q-main"><b>${esc(l)}</b> <span class="ovx-q-n">${fmtNum(N(t[k]))}</span><small>${esc(sub)}</small></div>
+            <span class="ovx-pri ${p[1]}">${p[0]}</span><button type="button" class="ovx-rev" data-ovgo="${go}">Review →</button></div>`; }).join("")}</div>`
+          : `<div class="ov-clear">✅ All clear — nothing waiting on you right now.</div>`}</section>
+      <div class="ovx-side">
+        <section class="ov-card"><div class="ov-h"><h3>Creator pipeline</h3><span class="ovx-tag good">Live</span></div>
+          <div class="ovx-pipes">${pipe(pe.creators,"Signed up","creators:all")}${pipe(pe.instagram_connected,"IG linked","creators:ig")}${pipe(Math.max(0,N(pe.creators)-N(t.creators_incomplete)),"Profile ready","creators:all")}${pipe(c.applications,"Applied","applications")}${pipe(c.approved,"Approved","applications")}</div>
+          ${N(t.creators_incomplete) ? `<div class="ovx-eye">Activation opportunity</div><div class="ovx-note"><b>${fmtNum(N(t.creators_incomplete))} profiles are unfinished.</b> Offer targeted, optional steps that explain the benefit of each detail.</div>
+            <button type="button" class="ovx-out" data-ovgo="creators:incomplete">Explore creator activation →</button>` : ""}</section>
+        <section class="ov-card"><div class="ov-h"><h3>Fulfilment pulse</h3><button type="button" class="ovx-link" data-ovgo="@logistics">Open logistics →</button></div>
+          <div class="ovx-pipes three">${pipe(toSend,"To send","@logistics")}${pipe(inTransit,"In transit","@logistics")}${pipe(B.delivered,"Delivered","@logistics")}</div>
+          <div class="ovx-eye">Shipment completion</div><div class="ovx-bar"><i style="width:${delPct}%"></i></div><div class="muted ovx-hsub">${fmtNum(N(B.delivered))} of ${fmtNum(N(B.total))} marked received</div></section>
+        <section class="ov-card"><div class="ov-h"><h3>Platform health</h3>${ig.last_sync?`<span class="ovx-tag good">Instagram synced ${esc(ago(ig.last_sync))}</span>`:""}</div>
+          <div class="ovx-pipes two">${pipe(msg.unread_24h,"Unread messages · 24 h","@messages")}${pipe(ig.connected!=null?ig.connected:pe.instagram_connected,"Instagram connected","creators:ig")}</div></section>
+      </div></div>`;
+  body.innerHTML = `<div class="ov">${top}
     <section class="ov-card ov-att"><div class="ov-h"><h3>⚡ Needs your attention</h3>${open.length?`<span class="ov-pill warn">${open.length} to do</span>`:""}</div>
       ${open.length ? `<div class="ov-att-grid">${open.map(([k,ic,l,sub,go,tone])=>`<button type="button" class="ov-todo ${tone}" data-ovgo="${go}">
           <span class="ov-todo-ic">${ic}</span><span class="ov-todo-txt"><b>${esc(l)}</b><small>${esc(sub)}</small></span><span class="ov-todo-n">${fmtNum(N(t[k]))}</span><span class="ov-todo-go">Open →</span></button>`).join("")}</div>`
@@ -10635,6 +10673,8 @@ async function adminOverview(body, silent){
   const nf = body.querySelector("#ovFeed"); if(nf && silent) nf.scrollTop = feedTop;
   body.querySelectorAll("[data-ovact]").forEach(b=> b.onclick = ()=>{ _ovAct = b.dataset.ovact;
     body.querySelectorAll("[data-ovact]").forEach(x=> x.classList.toggle("on", x===b)); const f = body.querySelector("#ovFeed"); if(f){ f.innerHTML = actHtml(); f.scrollTop = 0; } });
+  const nc = document.getElementById("ovNewCamp");
+  if(nc) nc.onclick = ()=>{ currentPage = "campaigns"; renderShell(); setTimeout(()=>{ const b = document.getElementById("addCampaignBtn"); if(b) b.click(); }, 150); };
   body.querySelectorAll("[data-ovgo]").forEach(el=> el.onclick = ()=>{
     const go = el.dataset.ovgo;
     if(go.startsWith("@")){ currentPage = go.slice(1); renderShell(); return; }
