@@ -100,6 +100,7 @@ function renderNav(){
         nav.appendChild(a);
       });
     });
+    nav.querySelectorAll("a[data-page]").forEach(a=>{ const sv = ADMIN_SVG[a.getAttribute("data-page")], ic = a.querySelector(".ic"); if(sv && ic){ ic.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${sv}</svg>`; ic.classList.add("svg-ic"); } });
     paintNavCounts();
     return;
   }
@@ -112,6 +113,25 @@ function renderNav(){
   });
   paintNavCounts();
 }
+// Super Admin sidebar icons — thin line glyphs (like the Mission Control design) instead of emoji
+const ADMIN_SVG = {
+  "admin:overview":'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  approvals:'<path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/>',
+  campaigns:'<path d="M12 2.5 21.5 12 12 21.5 2.5 12z"/><path d="M12 7.5 16.5 12 12 16.5 7.5 12z"/>',
+  "admin:applications":'<path d="M4 12.5 9 17.5 20 6.5"/>',
+  logistics:'<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8.5" y="8.5" width="7" height="7" rx="1"/>',
+  "admin:creators":'<circle cx="12" cy="7.5" r="3.5"/><path d="M5 20.5c.8-4 3.6-6 7-6s6.2 2 7 6"/>',
+  discover:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/>',
+  brands:'<rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M3.5 9h17M3.5 14h17M9 4v16"/>',
+  "admin:upload":'<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v4a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-4"/>',
+  messages:'<path d="M4 13h4.5l1.5 2.5h4l1.5-2.5H20"/><path d="M6 4.5h12l2 8.5v5.5A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5V13z"/>',
+  "admin:delivery":'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/>',
+  "admin:bot":'<rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.5h5"/>',
+  reports:'<path d="M4 20h16"/><path d="M7 16v-5M12 16V6M17 16v-8"/>',
+  "admin:activity":'<path d="M3 12h4l3-7 4 14 3-7h4"/>',
+  "admin:users":'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.7.8 2.8 2.5 3.1 5.2"/>',
+  "admin:settings":'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'
+};
 function navHeading(nav, title){ const h = el("div","nav-sec"); h.textContent = title; nav.appendChild(h); }
 // live numbers beside the sidebar items (what's waiting on you), refreshed every 30 s
 let _navCounts = null, _navCountTimer = null;

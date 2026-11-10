@@ -2902,8 +2902,12 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .ovx-kpi-s{font-size:12.5px;color:var(--muted)}
 .ovx-kpi.main{background:linear-gradient(135deg,#6d5df6,#8b7bff);border-color:transparent;color:#fff;box-shadow:0 10px 26px rgba(109,93,246,.35)}
 .ovx-kpi.main .ovx-kpi-s{color:rgba(255,255,255,.82)}
-.ovx-two{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
-.ovx-side{display:grid;gap:16px;min-width:0}
+.ovx-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:stretch}
+.ovx-side{display:contents}
+.ovx-two>.ov-card,.ovx-side>.ov-card{display:flex;flex-direction:column}
+/* Super Admin sidebar: thin line icons like the Mission Control design */
+.nav a .ic.svg-ic{display:inline-grid;place-items:center;width:20px;height:20px}
+.nav a .ic.svg-ic svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .ovx-hsub{font-size:12.5px;margin-top:3px}
 .ovx-link{all:unset;cursor:pointer;font-size:14px;font-weight:700;color:var(--brand);white-space:nowrap}
 .ovx-queue{display:grid;gap:10px}
@@ -2929,7 +2933,7 @@ a.ig-h{ color:inherit; text-decoration:none } a.ig-h:hover{ color:var(--accent,#
 .ovx-eye{font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
 .ovx-note{font-size:13px;line-height:1.45;padding:12px 14px;border-radius:12px;background:#fff8eb;border:1px solid #fde3b0;color:#7a4b00}
 .ovx-note b{color:#b54708}
-.ovx-out{all:unset;cursor:pointer;display:inline-block;margin-top:12px;font-size:14px;font-weight:700;color:var(--brand);padding:10px 16px;border:1px solid var(--line);border-radius:12px}
+.ovx-out{all:unset;cursor:pointer;display:inline-block;align-self:flex-start;margin-top:12px;font-size:14px;font-weight:700;color:var(--brand);padding:10px 16px;border:1px solid var(--line);border-radius:12px}
 .ovx-out:hover{border-color:var(--brand)}
 .ovx-bar{height:8px;border-radius:999px;background:var(--chip);overflow:hidden}
 .ovx-bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#6d5df6,#a99dff)}
