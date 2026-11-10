@@ -1285,3 +1285,8 @@ body.b2app .b2-set .b2-accl .b2-link{ display:none !important; } body.b2app .b2-
 @media(min-width:761px){ .b2-ibcols > #bxIbList{ break-inside:auto !important; } }
 @media(min-width:761px){ body.b2app #opsMineStats{ text-align:left !important; display:block !important; } body.b2app #opsMineStats .mc-tabs{ width:100% !important; justify-content:flex-start !important; } body.b2app .b2-mctip{ justify-content:flex-end; } }
 @media(min-width:761px){ body.b2app #opsMineStats{ width:100% !important; } body.b2app #opsMineStats .mc-tabs{ max-width:none !important; margin-left:0 !important; } }
+
+/* Bounty is the creator side only — Super Admin, brand and partner screens never show its logo, bottom bar or drawer bits
+   (the logo also carries .b2-logo, whose display:inline-flex above would otherwise show it everywhere) */
+body:not(.bx) .bx-logo, body:not(.bx) .bx-bottom, body:not(.bx) .b2-nav, body:not(.bx) .bx-tools,
+body:not(.bx) .bx-next, body:not(.bx) .bx-trust-links, body:not(.bx) .b2-drx{ display:none !important; }
