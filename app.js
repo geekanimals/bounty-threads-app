@@ -8333,19 +8333,9 @@ function bpStageBanner(list){
   const lbl = ((BARTER_STEPS.find(s=>s[0]===_bpStage)||[])[1]||"").replace(/^\d+\.\s*/,"");
   return `<div class="bp-stage-ban"><span>Showing <b>${L.length}</b> who reached <b>${esc(lbl)}</b> · <b>${here}</b> on this step right now</span><button class="mini-btn ghost" id="bpStageClear">Show everyone ✕</button></div>`;
 }
-// reach of a public-only post is private to the creator — estimated from views with this campaign's own
-// reach ÷ views of the creators who connected Instagram (falls back to 0.7, the usual reel ratio)
-function campReachRatio(){
-  let r = 0, v = 0;
-  ((_bpData||{}).creators||[]).forEach(x=> (x.posts||[]).forEach(p=>{ const s = p.stats||{}; if(s.source!=="public" && +s.reach>0 && +s.views>0){ r += +s.reach; v += +s.views; } }));
-  ((_bpAnalytics||{}).creators||[]).forEach(x=> (x.posts||[]).forEach(p=>{ const s = p.stats||{}; if(s.source!=="public" && s.source!=="screenshot" && +s.reach>0 && +s.views>0){ r += +s.reach; v += +s.views; } }));
-  const k = v > 0 ? r / v : 0.7; return Math.min(1, Math.max(0.2, k));
-}
-function estReach(views){ return views==null || !(+views>0) ? null : Math.round(+views * campReachRatio()); }
 function bpMetricLine(st){
   st = st||{}; const K = [["views","views"],["reach","reach"],["likes","likes"],["comments","comments"],["shares","shares"],["saves","saves"],["replies","replies"],["link_clicks","link clicks"],["sticker_taps","sticker taps"]];
   const parts = K.filter(k=> st[k[0]]!=null).map(k=>`${esc(k[1])} <b>${fmtNum(st[k[0]])}</b>`);
-  if(st.reach==null && st.views!=null && st.source==="public"){ const e = estReach(st.views); if(e!=null) parts.splice(1, 0, `<span title="Estimated — reach is private to the creator; worked out from views × this campaign's reach/views (${Math.round(campReachRatio()*100)}%)">est. reach <b>≈${fmtNum(e)}</b></span>`); }
   return parts.length ? parts.join(" · ") + (st.source==="public" ? ' <span class="muted">(public counts — full insights load once Instagram shares them)</span>' : st.source==="screenshot" ? ' <span class="muted">(read from the screenshot)</span>' : st.source==="manual" ? ' <span class="muted">(typed in)</span>' : "") : '<span class="muted">numbers load within a few hours of posting</span>';
 }
 // Public Instagram profile (photo, followers, bio…) for creators who haven't connected Instagram on Geek OS —
@@ -8520,18 +8510,30 @@ function bpAnalyticsHtml(){
   const t = a.totals||{}, rows = a.creators||[];
   { const need = rows.filter(r=> { const c = r.creator||{}; return bpRepHandle(r) && (!c.profile_picture_url || c.followers==null) && !pubOf(bpRepHandle(r)); }).map(bpRepHandle);
     if(need.length) setTimeout(()=> pubFill(need, ()=>{ if(_bpTab==="analytics") paintBarterProcess(); }), 0); }
-  const er = (t.followers && (t.likes!=null||t.comments!=null)) ? (100*((t.likes||0)+(t.comments||0)+(t.shares||0)+(t.saves||0))/t.followers).toFixed(2)+"%" : "—";
-  const tile = (v,l)=>`<div class="ws-stat"><b>${v==null?"—":fmtNum(v)}</b><span>${l}</span></div>`;
+  // every total is added up from the creators below, and says how many creators it comes from (never estimated)
+  const N = rows.length, folOf = r=>{ const c = r.creator||{}, pp = pubOf(bpRepHandle(r)); return c.followers ?? (pp && pp.followers); };
+  const sum = k=>{ let n = 0, v = 0; rows.forEach(r=>{ const x = (r.totals||{})[k]; if(x!=null && x!==""){ n++; v += +x||0; } }); return { v: n ? v : null, n }; };
+  const S = { views:sum("views"), reach:sum("reach"), likes:sum("likes"), comments:sum("comments"), shares:sum("shares"), saves:sum("saves") };
+  const hidLikes = rows.filter(r=> pubOnly(r) && (r.totals||{}).likes==null && ((r.totals||{}).views!=null || (r.totals||{}).comments!=null)).length;
+  const noNums = rows.filter(r=> ["views","likes","comments","reach"].every(k=> (r.totals||{})[k]==null)).length;
+  // engagement only over the creators whose numbers we have (so missing creators don't pull it down)
+  let eNum = 0, eFol = 0, eN = 0;
+  rows.forEach(r=>{ const x = r.totals||{}, f = +folOf(r)||0; if(f>0 && (x.likes!=null || x.comments!=null)){ eN++; eFol += f; eNum += (+x.likes||0)+(+x.comments||0)+(+x.shares||0)+(+x.saves||0); } });
+  const er = eFol ? (100*eNum/eFol).toFixed(2)+"%" : "—";
+  const cov = (n, extra)=> N ? `<small class="muted" style="display:block;font-size:11px;margin-top:2px;line-height:1.3">from <span style="font-weight:700">${n}</span> of ${N} creator${N>1?"s":""}${extra?` · ${extra}`:""}</small>` : "";
+  const tile = (v,l,sub)=>`<div class="ws-stat"><b>${v==null?"—":fmtNum(v)}</b><span>${l}</span>${sub||""}</div>`;
   return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
       <div><h4 style="margin:0">Campaign report</h4><div class="muted" style="font-size:13px">Every creator who posted, with their numbers. Updates on its own as Instagram shares insights.</div></div>
       <button class="btn sm" id="bpRepCsv" ${rows.length?"":"disabled"}>⬇ Download report</button></div>
     <div class="ws-stats" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr));margin-top:12px">
-      ${tile(t.creators_live,"Creators live")}${tile(t.posts,"Posts")}${tile(t.views,"Views")}${tile(t.reach,"Reach")}
-      ${tile(t.likes,"Likes")}${tile(t.comments,"Comments")}${tile(t.shares,"Shares")}${tile(t.saves,"Saves")}
-      <div class="ws-stat"><b>${er}</b><span>Engagement on followers</span></div>${tile(t.followers,"Combined followers")}</div></div>
+      ${tile(t.creators_live,"Creators live")}${tile(t.posts,"Posts", noNums?`<small class="muted" style="display:block;font-size:11px;margin-top:2px">${noNums} still waiting for numbers</small>`:"")}
+      ${tile(S.views.v,"Views",cov(S.views.n))}${tile(S.reach.v,"Reach",cov(S.reach.n,"real insights only"))}
+      ${tile(S.likes.v,"Likes",cov(S.likes.n, hidLikes?`${hidLikes} hide likes`:""))}${tile(S.comments.v,"Comments",cov(S.comments.n))}
+      ${tile(S.shares.v,"Shares",cov(S.shares.n))}${tile(S.saves.v,"Saves",cov(S.saves.n))}
+      <div class="ws-stat"><b>${er}</b><span>Engagement on followers</span>${cov(eN)}</div>${tile(t.followers,"Combined followers",cov(rows.filter(r=> folOf(r)!=null).length))}</div></div>
     ${t.not_connected?`<div class="card" style="padding:10px 14px"><div style="font-size:13px"><b>${esc(t.not_connected)} creator${t.not_connected>1?"s":""} haven't connected Instagram</b> (or are only on the bulk sheet) — so their views / reach can't come from Instagram insights.</div>
       <div class="muted" style="font-size:12.5px;margin-top:4px">${t.public_ready
-        ? `Their followers, likes and comments are read from their public profile every hour (public Business / Creator accounts only, post must be in their latest 200). ≈ reach = estimated from views (reach ÷ views of this campaign's connected creators) · 🔒 = shares and saves are private to the creator's own insights · 🙈 = the creator hides like counts.${t.waiting_numbers?` <b>${esc(t.waiting_numbers)}</b> post${t.waiting_numbers>1?"s":""} still waiting.`:""}`
+        ? `Their views, likes and comments are read from their public profile (public Business / Creator accounts, post among their latest 50). Instagram allows only a limited number of profile reads per hour, so a big upload fills in over the next few hours on its own${noNums?` — <b>${noNums}</b> creator${noNums>1?"s":""} still waiting`:""}. 🔒 = reach, shares and saves are private to the creator's own insights (we never estimate them — add their insights screenshot with 📷) · 🙈 = the creator hides like counts on Instagram, so nobody (not even Meta's API) can read them.`
         : `To show their followers, likes and comments too, connect Facebook once as Super Admin (Instagram reads public profiles only through a Facebook Page).`}
         For full numbers (views, reach, shares, saves) ask them to connect Instagram in the app.</div>
       ${!t.public_ready && window.__isAdmin ? `<button class="btn sm" id="bpRepFb" style="margin-top:8px">Connect Facebook (one time)</button>` : ""}</div>`:""}
@@ -8541,7 +8543,7 @@ function bpAnalyticsHtml(){
         return `<tr><td><div style="display:flex;gap:10px;align-items:center">${pic?`<img class="ap-pic" style="width:38px;height:38px" src="${esc(safeUrl(pic))}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="avatar">${esc((h||"?").slice(0,2).toUpperCase())}</span>`}
           <div style="min-width:0"><b>${h?igLink(h):esc(c.name||"—")}</b> ${off?NOT_ON_GEEK:""}${(c.name||(pp&&pp.name))?`<div class="muted" style="font-size:11px">${esc(c.name||pp.name)}</div>`:""}
           ${pp&&pp.engagement!=null&&!c.followers?`<div class="muted" style="font-size:11px">${esc(pp.engagement)}% avg engagement</div>`:""}${(r.posts||[]).map(p=>p.permalink?` <a href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener" title="${esc(p.media_type)}">↗</a>`:"").join("")}</div></div></td>
-          <td>${n(fol)}</td><td>${(r.posts||[]).length}</td><td>${n(s.views)}</td><td>${pubOnly(r)&&s.reach==null ? (estReach(s.views)!=null ? `<span class="muted" title="Estimated from views × ${Math.round(campReachRatio()*100)}% (reach ÷ views of this campaign's connected creators). Real reach: add their insights screenshot.">≈${fmtNum(estReach(s.views))}</span>` : NA_PUB) : n(s.reach)}</td><td>${s.likes==null&&pubOnly(r)&&(s.views!=null||s.comments!=null)?`<span class="muted" title="The creator hides like counts on Instagram, so Meta doesn't share them">🙈 hidden</span>`:n(s.likes)}</td><td>${n(s.comments)}</td><td>${pubOnly(r)&&s.shares==null?NA_PUB:n(s.shares)}</td><td>${pubOnly(r)&&s.saves==null?NA_PUB:n(s.saves)}</td>
+          <td>${n(fol)}</td><td>${(r.posts||[]).length}</td><td>${n(s.views)}</td><td>${pubOnly(r)&&s.reach==null ? NA_PUB : n(s.reach)}</td><td>${s.likes==null&&pubOnly(r)&&(s.views!=null||s.comments!=null)?`<span class="muted" title="The creator hides like counts on Instagram, so Meta doesn't share them">🙈 hidden</span>`:n(s.likes)}</td><td>${n(s.comments)}</td><td>${pubOnly(r)&&s.shares==null?NA_PUB:n(s.shares)}</td><td>${pubOnly(r)&&s.saves==null?NA_PUB:n(s.saves)}</td>
           <td>${r.on_sheet?'<span class="tag good">Done</span> <span class="muted" style="font-size:11px">· bulk sheet, not registered</span>':r.stage==="completed"?'<span class="tag good">Done</span>':r.stage==="published"?'<span class="tag warn">Live</span>':'<span class="tag">Approved — not posted</span>'}${(r.posts||[]).length && (r.posts||[]).every(p=>!p.stats||!Object.keys(p.stats).filter(k=>!["at","source"].includes(k)).length)?'<div class="muted" style="font-size:11px">numbers coming</div>':(r.posts||[]).some(p=>p.stats&&p.stats.source==="public")?'<div class="muted" style="font-size:11px">public numbers</div>':""}</td>
           <td>${(r.posts||[]).some(p=> p.stats && p.stats.screenshot_url) ? `<span class="tag good" title="Numbers read from their insights screenshot">📷 added</span><br>` : ""}<button class="mini-btn${pubOnly(r)?"":" ghost"}" data-repshot="${ri}" title="Upload the creator's Instagram insights screenshot — we read reach, shares, saves, views and likes from it">📷 ${pubOnly(r)?"Add insights":"Update"}</button></td></tr>`; }).join("")}
     </tbody></table></div></div>`:`<div class="card"><div class="muted">No posts yet — creators show up here as soon as their reel goes live.</div></div>`}`;
@@ -8584,19 +8586,19 @@ async function bpDownloadReport(){
   const a = _bpAnalytics||{}, rows = a.creators||[], c = a.campaign||{};
   await pubFill(rows.map(bpRepHandle));   // photo + followers for creators not on Geek OS before the file is made
   const cell = v=>{ v = v==null?"":String(v); return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; };
-  const head = ["Instagram","Name","Profile link","Profile picture","On Geek OS","Followers","Avg likes","Avg engagement %","Bio","Post type","Post link","Posted on","Views","Reach","Est. reach (from views)","Likes","Comments","Shares","Saves","Numbers from","Status"];
+  const head = ["Instagram","Name","Profile link","Profile picture","On Geek OS","Followers","Avg likes","Avg engagement %","Bio","Post type","Post link","Posted on","Views","Reach","Likes","Comments","Shares","Saves","Numbers from","Status"];
   const lines = [];
   rows.forEach(r=>{ const cr=r.creator||{}, h=bpRepHandle(r), pp=pubOf(h)||{};
     (r.posts||[]).forEach(p=>{ const s=p.stats||{};
     lines.push([h?"@"+h:"", cr.name||pp.name||"", h?`https://instagram.com/${h}`:"", cr.profile_picture_url||pp.profile_picture_url||"", bpRepOff(r)?"Not yet":"Yes",
       cr.followers??pp.followers??"", pp.avg_likes!=null?Math.round(pp.avg_likes):"", pp.engagement??"", String(cr.bio||pp.bio||"").replace(/\s+/g," ").slice(0,200),
       p.media_type, p.permalink||"", p.posted_at?new Date(p.posted_at).toLocaleDateString("en-IN"):"",
-      s.views??"", s.reach??"", s.reach==null ? (estReach(s.views)??"") : "", s.likes??"", s.comments??"", s.shares??"", s.saves??"",
+      s.views??"", s.reach??"", s.likes??"", s.comments??"", s.shares??"", s.saves??"",
       s.source==="public"?"public profile":s.source==="screenshot"?"screenshot":s.source==="manual"?"typed in":"Instagram insights", r.stage].map(cell).join(",")); }); });
   const t = a.totals||{};
   const csv = [`${c.name||"Campaign"} — report`, `${c.brand||""}`, "",
-    `Creators live,${t.creators_live??""}`, `Posts,${t.posts??""}`, `Views,${t.views??""}`, `Reach,${t.reach??""}`, `Likes,${t.likes??""}`,
-    `Comments,${t.comments??""}`, `Shares,${t.shares??""}`, `Saves,${t.saves??""}`, "", head.join(","), ...lines].join("\n");
+    `Creators live,${t.creators_live??""}`, `Posts,${t.posts??""}`, ...[["views","Views"],["reach","Reach"],["likes","Likes"],["comments","Comments"],["shares","Shares"],["saves","Saves"]].map(([k,l])=>{
+      let n = 0, v = 0; rows.forEach(r=>{ const x = (r.totals||{})[k]; if(x!=null && x!==""){ n++; v += +x||0; } }); return `${l},${n?v:""},from ${n} of ${rows.length} creators`; }), "", head.join(","), ...lines].join("\n");
   const el2 = document.createElement("a");
   el2.href = URL.createObjectURL(new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8" }));
   el2.download = `${(c.name||"campaign").replace(/[^\w\-]+/g,"_")}_report.csv`; el2.click();
