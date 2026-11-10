@@ -159,10 +159,11 @@ Deno.serve(async (req) => {
     // business discovery works only with a Facebook Login (Page) token — "Connect Facebook (one time)" as Super Admin
     if (dt?.access_token && dt?.ig_user_id && dt?.platform === "facebook" && jobs.length) {
       const FB = "https://graph.facebook.com/v23.0";
-      const read = async (h: string, withViews: boolean) => {
+      const read = async (h: string, withViews: boolean, after?: string) => {
         const mf = withViews ? "id,permalink,like_count,comments_count,media_type,media_product_type,timestamp,view_count"
                              : "id,permalink,like_count,comments_count,media_type,media_product_type,timestamp";
-        const fields = `business_discovery.username(${encodeURIComponent(h)}){username,name,followers_count,media_count,profile_picture_url,media.limit(50){${mf}}}`;
+        const pg = after ? `.after(${encodeURIComponent(after)})` : "";
+        const fields = `business_discovery.username(${encodeURIComponent(h)}){username,name,followers_count,media_count,profile_picture_url,media${pg}.limit(50){${mf}}}`;
         const r = await fetch(`${FB}/${encodeURIComponent(String(dt.ig_user_id))}?fields=${fields}&access_token=${encodeURIComponent(String(dt.access_token))}`);
         return { ok: r.ok, j: await r.json().catch(() => ({})) as any };
       };
@@ -178,10 +179,25 @@ Deno.serve(async (req) => {
             continue;
           }
           const bd = r.j.business_discovery;
+          // the campaign post may be older than the latest 50 — keep paging (up to 200 posts) until every code is found
+          const items: any[] = [...(bd.media?.data ?? [])];
+          const codeOf = (u: string) => { const m = /instagram\.com\/(?:[^/]+\/)?(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i.exec(String(u || "")); return m ? m[1] : null; };
+          const want = new Set(job.codes);
+          const missing = () => [...want].filter((c) => !items.some((it) => codeOf(it.permalink) === c));
+          let after: string | undefined = bd.media?.paging?.cursors?.after, pages = 1, limited = false;
+          const withViews = !/view_count/.test(JSON.stringify(r.j?.error ?? ""));
+          while (after && pages < 4 && missing().length) {
+            const more = await read(job.handle, withViews, after);
+            if (!more.ok || !more.j?.business_discovery) { if ([4, 17, 32, 613].includes(Number(more.j?.error?.code))) limited = true; break; }
+            const md = more.j.business_discovery.media;
+            items.push(...(md?.data ?? []));
+            after = md?.paging?.cursors?.after; pages++;
+          }
           const { data: n } = await api.rpc("ops_public_post_save", { p_handle: job.handle,
             p_profile: { name: bd.name ?? null, followers_count: bd.followers_count ?? null, media_count: bd.media_count ?? null, profile_picture_url: bd.profile_picture_url ?? null },
-            p_codes: job.codes, p_items: bd.media?.data ?? [], p_error: null });
+            p_codes: job.codes, p_items: items, p_error: missing().length ? `not among this profile's latest ${items.length} posts` : null });
           publicRead++; publicPosts += Number(n || 0);
+          if (limited) break;                                                          // rate limit while paging → next run
         } catch (e) { publicFailed++; console.error("ci-post-insights-worker public:", job.handle, (e as Error).message); }
       }
     }
