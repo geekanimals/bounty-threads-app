@@ -12132,7 +12132,8 @@ async function creatorProfileGate(){
       sb.schema("api").rpc("get_my_profile").then(r=>r, e=>({error:e})),
       P0.id ? sb.from("social_accounts").select("username").eq("platform","instagram").eq("member_id", P0.id).limit(1).then(r=>r, e=>({error:e})) : Promise.resolve({data:[]})]);
     if(!rq.error && rq.data){
-      const d = rq.data, its = (d.items||[]).filter(it=> !["reel_rate","barter"].includes(it.key) && !["rate","barter"].includes(it.section));
+      const d = rq.data, its = (d.items||[]).filter(it=> !["reel_rate","barter"].includes(it.key) && !["rate","barter"].includes(it.section))
+        .map(it=> /^favourite brands/i.test(it.label||"") ? Object.assign({}, it, { label: String(it.label).replace(/^favourite brands/i, "Dream brands") }) : it);
       // one profile % everywhere (dashboard, sidebar, hub, media kit): the server checklist + what the setup asks
       if(!mp.error && mp.data){
         const pf = mp.data, pro = pf.professional || {}, per = pf.personal || {}, cp = pf.commercial_preference || {};

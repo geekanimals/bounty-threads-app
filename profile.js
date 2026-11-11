@@ -289,7 +289,7 @@
     // (the "Building your verified Creator Intelligence profile" progress card is no longer shown here)
     // Profile complete — what's done / what's left, right at the top
     window.__hasIg = !!(IG || (conn && conn.connected));
-    if(window.__ciOpsEnabled) body += section("campready","Profile complete",'<div id="opsOnbBody">'+(window.skel?skel("list",2):'')+'</div>',{sub:""});
+    if(window.__ciOpsEnabled) body += section("campready","Finish your profile",'<div id="opsOnbBody">'+(window.skel?skel("list",2):'')+'</div>',{sub:""});
 
     // connection (verified IG) — read-only, live
     if(conn && conn.connected){
@@ -442,13 +442,13 @@
 
     // I Dream brands
     var dreams = (d.dream_brands||[]);
-    body += section("dreams","Favourite brands",
+    body += section("dreams","Dream brands",
         '<div class="cp-list" id="cp_dream_list">'+(dreams.length?dreams.map(function(x,i){
             return '<div class="cp-item"><div><b>#'+(x.priority_rank||i+1)+'</b> '+esc(x.submitted_brand_name||"(brand)")+'</div>'
               +'<button class="btn sm ghost" data-deldream="'+esc(x.aspiration_id)+'">Remove</button></div>';
-          }).join(""):'<div class="muted">No favourite brands yet (add up to 10).</div>')+'</div>'
+          }).join(""):'<div class="muted">No dream brands yet — add the brands you love (up to 10).</div>')+'</div>'
       + (dreams.length<10 ? '<div class="cp-addrow"><input id="cp_dream_name" placeholder="Brand name"><button class="btn sm" data-add="dream">+ Add</button></div>' : '<div class="muted">Maximum 10 reached.</div>')
-      + '<div class="cp-note">Favourite brands are preferences — not campaign history or brand affinity.</div>',
+      + '<div class="cp-note">Dream brands are your wish list — private to you, not campaign history.</div>',
       {sub:"At least 1"});
 
     // J Visibility

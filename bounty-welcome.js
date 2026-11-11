@@ -938,14 +938,19 @@
       const RATES = [["IG Reel","Reel rate"],["IG Story","Story rate"],["IG Static Post","Post rate"]];
       const rItems = ((d.rate_cards && d.rate_cards[0] && d.rate_cards[0].items) || []);
       const rateOf = t => { const x = rItems.find(i=> i.deliverable_type === t); return x ? Math.round(Number(x.amount)) : null; };
-      const o = onbShell("onb3", "jungle", `${top(6, "06/06")}
+      // what they picked last time (so the screen opens with their saved terms ticked)
+      const was = new Set(); if(cp.accepts_barter === true && cp.product_only === true) was.add("barter");
+      else if(cp.accepts_barter === true) was.add("hybrid"); else if(cp.accepts_barter === false) was.add("paid");
+      if(/open to discuss/i.test(cp.notes || "")) was.add("discuss");
+      const tOn = v => was.has(v) ? " on" : "";
+      const o = onbShell("onb3", "jungle", `${window.__bxOnbOnly ? `<div class="b2-ptop"><div class="b2-plogo m-only">${LOGO}</div></div>` : top(6, "06/06")}
         <h2 class="b2-h light fit">Your work. Your <u class="or">terms.</u></h2>
         <p class="b2-p light">What kind of collaborations are you open to?</p>
         <div class="b2-terms" id="bxoTerms">
-          <button type="button" class="b2-term${cp.accepts_barter?" on":""}" data-v="barter"><span class="ic">🎁</span><div><b>Barter</b><em>Products or experiences in return for content</em></div><i class="b2-tick"></i></button>
-          <button type="button" class="b2-term" data-v="paid"><span class="ic">₹</span><div><b>Paid</b><em>A cash fee for your creative work</em></div><i class="b2-tick"></i></button>
-          <button type="button" class="b2-term" data-v="hybrid"><span class="ic sm">🎁+₹</span><div><b>Hybrid</b><em>A mix of product and payment</em></div><i class="b2-tick"></i></button>
-          <button type="button" class="b2-term" data-v="discuss"><span class="ic">💬</span><div><b>Open to discuss</b></div><i class="b2-tick"></i></button></div>
+          <button type="button" class="b2-term${tOn("barter")}" data-v="barter"><span class="ic">🎁</span><div><b>Barter</b><em>Products or experiences in return for content</em></div><i class="b2-tick"></i></button>
+          <button type="button" class="b2-term${tOn("paid")}" data-v="paid"><span class="ic">₹</span><div><b>Paid</b><em>A cash fee for your creative work</em></div><i class="b2-tick"></i></button>
+          <button type="button" class="b2-term${tOn("hybrid")}" data-v="hybrid"><span class="ic sm">🎁+₹</span><div><b>Hybrid</b><em>A mix of product and payment</em></div><i class="b2-tick"></i></button>
+          <button type="button" class="b2-term${tOn("discuss")}" data-v="discuss"><span class="ic">💬</span><div><b>Open to discuss</b></div><i class="b2-tick"></i></button></div>
         <div class="b2-exph"><i></i>Your expectations</div>
         <div id="bxoRateL">${RATES.map(([t,l],i)=>`<label class="b2-exprow"><span>${l} (optional)</span><b>₹ <input id="bxoRate${i}" data-t="${t}" inputmode="numeric" placeholder="—" value="${rateOf(t)!=null?E(rateOf(t)):""}"> →</b></label>`).join("")}</div>
         <label class="b2-exprow" id="bxoMinL"><span>Product value you prefer (optional)</span><b><input id="bxoMin" inputmode="numeric" placeholder="Any" value="${cp.min_product_value!=null?E(cp.min_product_value):""}"> →</b></label>
@@ -969,12 +974,12 @@
         btn.disabled = true; btn.textContent = "Saving…";
         const patch = {};
         if(on.length) patch.accepts_barter = on.includes("barter") || on.includes("hybrid");
-        if(on.includes("barter") && !on.includes("paid") && !on.includes("hybrid")) patch.product_only = true;
+        if(on.length) patch.product_only = on.includes("barter") && !on.includes("paid") && !on.includes("hybrid");
         if(min != null) patch.min_product_value = min;
-        if(on.includes("discuss")) patch.notes = "Open to discuss";
+        if(on.length) patch.notes = on.includes("discuss") ? "Open to discuss" : null;
         let r = Object.keys(patch).length ? await papi("save_profile_section", { p_section:"commercial_preference", p_patch:patch, p_correlation:"ui-onboard" }) : {};
         for(const [t,v] of rates){ if(r.error) break; r = await papi("save_rate_card_item", { p_payload:{ deliverable_type:t, amount:v }, p_correlation:"ui-onboard" }); }
-        if(r.error){ err("Couldn't save: " + (r.error.message || r.error)); btn.disabled = false; btn.innerHTML = "Find collaborations for me&nbsp; →"; return; }
+        if(r.error){ err("Couldn't save: " + (r.error.message || r.error)); btn.disabled = false; btn.innerHTML = window.__bxOnbOnly ? "Save&nbsp; →" : "Find collaborations for me&nbsp; →"; return; }
         onbFinish(true);
       };
     }

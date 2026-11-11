@@ -1458,7 +1458,15 @@
       + funnel
       + '<div class="ops-checks">'+checks.map(function(c){ return '<div class="ops-check '+(c[1]?"on":"")+'">'+(c[1]?"✓":"○")+' '+esc(c[0])+'</div>'; }).join("")+'</div>'
       + '<div class="ci-note">'+(ready?'You\'re connected — invitations appear under “My Campaigns”.'+(done?'':' Completing your profile is optional but helps brands pick you.'):'Connect Instagram (media kit) and WhatsApp to open campaigns. The profile is optional.')+'</div></div>';
-    document.getElementById("opsOnbBody").innerHTML=body;
+    // what is still left — each one opens its own profile section
+    var left=req?(req.items||[]).filter(function(it){ return !it.done; }):[];
+    if(left.length) body+='<div class="ops-left"><b>'+left.length+' thing'+(left.length===1?'':'s')+' left to finish</b><div class="cp-req-list">'
+      +left.map(function(it){ return '<a href="#" class="cp-req-it" data-goto="'+esc(it.section)+'">○ '+esc(it.label)+' ›</a>'; }).join("")+'</div></div>';
+    var ob=document.getElementById("opsOnbBody"); ob.innerHTML=body;
+    ob.querySelectorAll("[data-goto]").forEach(function(a){ a.onclick=function(e){ e.preventDefault();
+      var g=a.getAttribute("data-goto"), row=document.querySelector('#bxHub [data-hub="#'+g+'"]')||document.querySelector('#bxHub [data-hub="*'+g+'"]');
+      if(row){ row.click(); return; }
+      var sec=document.querySelector('.cp-sec[data-sec="'+g+'"]'); if(sec) sec.scrollIntoView({behavior:"smooth",block:"start"}); }; });
   }
 
   /* ============================ 4. BRAND SETUP (create campaign brief) ============================ */
