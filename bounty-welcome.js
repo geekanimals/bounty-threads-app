@@ -537,13 +537,12 @@
       <div class="b2-ptop"><div class="b2-plogo m-only">${LOGO}</div><div class="b2-progrow">${prog(4, "04/06")}</div></div>
       <h2 class="b2-h">Let your work <u class="cy">speak.</u></h2>
       <p class="b2-p">Connect Instagram to build your media kit in seconds.</p>
-      <div class="b2-igart">${kidImg("b2-igkid")}<div class="b2-mkprev"><div class="mk-h"><img src="${R}ph_portrait.jpg" alt=""><b>Your Media Kit</b></div><i></i><i class="s"></i>
+      <div class="b2-igart">${kidImg("b2-igkid")}<div class="b2-igsay"><b>${E(K())}:</b> <i>Connect once — I'll build your media kit while you wait.</i></div><div class="b2-mkprev"><div class="mk-h"><img src="${R}ph_portrait.jpg" alt=""><b>Your Media Kit</b></div><i></i><i class="s"></i>
         <div class="mk-r"><span>👥&nbsp; Audience</span><em class="bars"><b></b><b></b><b></b><b></b><b></b></em></div><div class="mk-r"><span>▶&nbsp; Top content</span><em class="sq"><b></b><b></b><b></b></em></div></div></div>
       <div class="b2-benefits"><div><span>🗂</span>Auto-build your media kit</div><div><span>🎯</span>Get better-fit campaign matches</div><div><span>🛡</span>Share verified insights with brands</div></div>
       <button type="button" class="b2-btn forest full ig" id="gateIg"><span class="b2-iglogo"></span>Connect with Instagram&nbsp; →</button>
       <button type="button" class="b2-link ink" id="bxIgLater">I'll do this later</button>
       <div class="b2-note sm">🛡 <span>Official Meta connection. No password shared. Disconnect anytime.</span></div>
-      ${tip("Connect once — I'll build your media kit while you wait.")}
       <button type="button" class="b2-link mute" id="gateSignout">Sign out</button>`);
     if(!root) return;
     document.getElementById("gateIg").onclick = ()=>{ if(window.Tracker) Tracker.security("instagram_connect_start"); connectInstagram(); };

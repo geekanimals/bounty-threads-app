@@ -1494,7 +1494,7 @@ body.b2app .b2-oneextra h4{ font:600 18px var(--b2-f-serif) !important; color:va
 .b2-navsay-m{ bottom:calc(84px + env(safe-area-inset-bottom) + 36px); }
 /* the sidekick gently floats in 3D wherever it shows */
 @keyframes bxFloat3d{ 0%,100%{ transform:perspective(320px) translateY(0) rotateY(-10deg) rotateZ(-1.5deg); } 50%{ transform:perspective(320px) translateY(-5px) rotateY(10deg) rotateZ(1.5deg); } }
-.b2-tip > img, .b2-nav-kid .ring img, .b2-bigav img[data-kid-me], .b2k-h > img, .b2-skid > img, .b2-elig-kid, .b2k-b > img, #b2kImg, .b2s-head > img{
+.b2-tip > img, .b2-nav-kid .ring img, .b2-bigav img[data-kid-me], .b2k-h > img, .b2-skid > img, .b2-elig-kid, .b2k-b > img, #b2kImg, .b2s-head > img, .b2-igkid, .b2-lorb img, .b2-sheet-kid{
   animation:bxFloat3d 3.8s ease-in-out infinite; transform-origin:50% 85%; will-change:transform; }
 .b2-nav-kid .ring{ animation:b2ringglow 3.8s ease-in-out infinite; }
 @keyframes b2ringglow{ 50%{ box-shadow:0 8px 22px rgba(0,0,0,.45), 0 0 0 4px rgba(232,176,74,.22); } }
@@ -1519,3 +1519,11 @@ body.b2app .b2-mkhost > #b2MkSk{ max-width:680px; margin:0 auto; }
 .b2-agree.dark input:checked + i{ background:var(--b2-cyan2); border-color:var(--b2-cyan2); } .b2-agree.dark input:checked + i::after{ border-color:var(--b2-ink); }
 .b2-agree.shake{ animation:b2shake .4s; border-color:#e0392f; }
 @keyframes b2shake{ 20%,60%{ transform:translateX(-5px); } 40%,80%{ transform:translateX(5px); } }
+
+/* Connect Instagram: the sidekick talks from the top (speech bubble next to it), not a second sidekick at the bottom */
+.b2-igart{ height:236px; }
+.b2-igart .b2-igkid{ top:66px; }
+.b2-igart .b2-mkprev{ top:58px; }
+.b2-igsay{ position:absolute; left:0; top:0; z-index:3; max-width:74%; padding:8px 12px; border-radius:14px; background:#fffdf6; border:1.5px solid var(--b2-gold2); font:italic 400 12.5px/1.35 var(--b2-f-serif); color:var(--b2-ink2); text-align:left; box-shadow:0 6px 14px rgba(60,40,10,.14); }
+.b2-igsay b{ font-style:normal; font-weight:700; color:#b8452f; }
+.b2-igsay::after{ content:""; position:absolute; left:46px; bottom:-8px; width:14px; height:14px; background:#fffdf6; border-right:1.5px solid var(--b2-gold2); border-bottom:1.5px solid var(--b2-gold2); transform:rotate(45deg); }
