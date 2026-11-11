@@ -1402,3 +1402,9 @@ body.b2app #content.b2-hub-open[data-one="dreams"] .cp-sec[data-sec="dreams"],
 body.b2app #content.b2-hub-open[data-one="visibility"] .cp-sec[data-sec="visibility"]{ display:block !important; }
 body.b2app #content.b2-hub-open[data-one="pages"] .cp-conn{ display:block !important; }
 body.b2app #content.b2-hub-open[data-one] .cp-sec{ margin-top:6px; }
+
+/* "What you create": niche, languages & city card shown above the Professional section */
+body.b2app #content.b2-hub-open > .b2-oneextra:not(#bxHub):not(#bxHubSk){ display:none !important; }   /* outweighs the "show the opened part" rule */
+body.b2app #content.b2-hub-open[data-one="professional"] > .b2-oneextra:not(#bxHub):not(#bxHubSk){ display:block !important; margin-bottom:12px; }
+.b2-oneextra h4{ margin:0 0 10px; } .b2-cx-row{ display:flex; gap:10px; padding:6px 0; border-bottom:1px solid rgba(0,0,0,.06); font-size:14px; } .b2-cx-row span{ width:90px; color:#7a6a4a; flex:none; }
+.b2-oneextra #bxCxEdit{ margin:10px 0 4px; } .b2-cx-city{ display:block; margin-top:10px; font-size:13px; font-weight:600; } .b2-cx-in{ display:flex; gap:8px; margin-top:6px; } .b2-cx-in input{ flex:1; min-width:0; height:38px; padding:0 12px; border:1px solid #d8c9a3; border-radius:10px; font:inherit; }
