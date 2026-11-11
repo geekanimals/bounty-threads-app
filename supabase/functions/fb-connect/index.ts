@@ -22,11 +22,12 @@ const APP_SECRET = (Deno.env.get("FB_APP_SECRET") || "").trim();
 const CONFIG_ID = (Deno.env.get("FB_LOGIN_CONFIG_ID") || "").trim();
 const VER = Deno.env.get("FB_GRAPH_VER") || "v23.0";
 const GRAPH = `https://graph.facebook.com/${VER}`;
-// Business discovery (Instagram Public Content Access), hashtag search and Creator Marketplace only need these.
-// Not asked: instagram_manage_insights (creators' own insights come through Instagram Login → instagram_business_manage_insights)
-// and pages_manage_metadata (no Page webhooks) — Meta rejected both as "not needed" in App Review.
+// Business discovery (Instagram Public Content Access), hashtag search and Creator Marketplace need these.
+// instagram_manage_insights is required by Meta for business_discovery (without it: "(#10) Application does not have
+// permission for this action" — tested Nov 2026) and also shows the brand its own account's reach/insights.
+// Not asked: pages_manage_metadata (no Page webhooks).
 // Override with the FB_SCOPES secret if Meta ever asks for a different set.
-const SCOPES = (Deno.env.get("FB_SCOPES") || "instagram_basic,pages_show_list,pages_read_engagement,business_management,ads_read,instagram_creator_marketplace_discovery").trim();
+const SCOPES = (Deno.env.get("FB_SCOPES") || "instagram_basic,instagram_manage_insights,pages_show_list,pages_read_engagement,business_management,ads_read,instagram_creator_marketplace_discovery").trim();
 const err = (j: any) => j?.error?.error_user_msg || j?.error?.message || null;
 
 Deno.serve(async (req) => {
