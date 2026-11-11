@@ -299,7 +299,8 @@
     if(_home && Date.now()-_homeAt < 45000) return _home;
     const api = (fn,a)=> sb.schema("api").rpc(fn, a||{}).then(r=> r && !r.error ? r.data : null, ()=> null);
     const [mine, open, prof] = await Promise.all([ api("get_my_campaigns"), window.__ciOpsEnabled ? api("list_open_campaigns") : null, window.__ciProfileEnabled ? api("get_my_profile") : null, window.B2 && B2.loadCovers ? B2.loadCovers() : null ]);
-    _home = { mine: Array.isArray(mine)?mine:[], open: Array.isArray(open)?open:[], dreams: (prof && Array.isArray(prof.dream_brands)) ? prof.dream_brands : [] };
+    _home = { mine: Array.isArray(mine)?mine:[], open: Array.isArray(open)?open:[], dreams: (prof && Array.isArray(prof.dream_brands)) ? prof.dream_brands : [],
+      first: (prof && ((prof.personal||{}).first_name || (prof.professional||{}).display_name)) || "" };
     _homeAt = Date.now(); if(window.B2) B2.openList = _home.open; return _home;
   }
   const DONE_ST = ["completed"], OUT_ST = ["ineligible","brand_declined","dropped","rejected"], WAIT_ST = ["applied","eligible","sent_to_brand","shortlisted","content_submitted","published","address_confirmed","accepted","brand_confirmed"];
@@ -322,10 +323,11 @@
     let act;
     if(window.__profileGate) act = { tag:"Action needed", t:"Connect Instagram to apply", s:"Explore freely — brands check real reach when you apply.", b:"Connect Instagram", go:"mediakit" };
     else if(yours[0]) act = { tag:"Action needed", t:`${yours[0].brand?yours[0].brand+" · ":""}${STAGE_SHORT[yours[0].stage] || (yours[0].campaign||"Campaign")}`, s: STAGE_TXT[yours[0].stage] || String(yours[0].stage||"").replace(/_/g," "), b:"Open brief", go:"mycampaigns" };
-    else if(req && !req.complete) act = { tag:"Next step", t:`Your profile is ${pct}% complete`, s:"Brands pick complete profiles first", b:"Finish profile", go:"profile" };
+    else if(req && !req.complete) act = { tag:"Next step", t:`Your profile is ${pct}% complete`, s:"Brands pick complete profiles first", b:"Finish profile", go:"profile", hub:"campready" };
     else act = { tag:"Next step", t:"Find your next campaign", s:`${d.open.filter(x=>!x.my_stage && !x.applications_closed).length} campaigns open for you`, b:"Explore campaigns", go:"opencampaigns" };
+    { const hi = box.querySelector(".b2-hello"); if(hi && d.first) hi.textContent = hi.textContent.replace("creator.", String(d.first).split(" ")[0] + "."); }
     box.querySelector(".b2-next").innerHTML = `<span class="b2-tagred${act.tag==="Next step"?" soft":""}">${act.tag}</span><h3>${H(act.t)}</h3><div class="b2-due">⏳ ${H(act.s)}</div>
-      <button type="button" class="b2-mini cream" data-hgo="${act.go}">${act.b} →</button>`;
+      <button type="button" class="b2-mini cream" data-hgo="${act.go}"${act.hub?` data-hub1="${act.hub}"`:""}>${act.b} →</button>`;
     // 2) active campaigns
     const ah = box.querySelector("#b2HAct"); if(!ah) return;
     ah.innerHTML = `<div class="b2-sec">— Active campaigns —</div><div class="b2-sec2">${live.length} in progress</div>
@@ -348,12 +350,12 @@
       <div class="b2-gc b2-dream m-only">${dreams.length ? `<div class="b2-dthumbs">${dreams.slice(0,3).map(x=>{ const n = String(x.submitted_brand_name||"Brand"), ph = BRAND_PH[n.toLowerCase().replace(/[^a-z]/g,"")];
           return ph ? `<img src="${A}rd/${ph}.jpg" alt="${H(n)}">` : `<span>${H(n)}</span>`; }).join("")}</div>
           <div class="b2-df"><span>${H(dreams.map(x=>x.submitted_brand_name).filter(Boolean).slice(0,3).join(" · "))}</span><a href="#" data-hgo="opencampaigns">See opportunities →</a></div>`
-        : `<div class="b2-df"><span>Pick up to 5 brands you'd love to work with — private to you.</span><a href="#" data-hgo="profile">Add dream brands →</a></div>`}</div>
-      <div class="b2-hrow2"><div class="b2-gc b2-kitp"><h4>${pct!=null?`Your media kit · ${pct}% complete`:"Your media kit"}</h4>${pct!=null?`<div class="b2-bar"><i style="width:${pct}%"></i></div>`:""}
-        <button type="button" class="b2-mini cream" data-hgo="${pct!=null&&pct<100?"profile":"mediakit"}">${pct!=null&&pct<100?"Finish profile":"View media kit"}</button></div>
+        : `<div class="b2-df"><span>Pick up to 5 brands you'd love to work with — private to you.</span><a href="#" data-hgo="profile" data-hub1="dreams">Add dream brands →</a></div>`}</div>
+      <div class="b2-hrow2"><div class="b2-gc b2-kitp"><h4>Your media kit</h4><div class="b2-df" style="margin:6px 0 10px"><span>Your Instagram numbers, ready to send to brands.</span></div>
+        <button type="button" class="b2-mini cream" data-hgo="mediakit">View media kit</button></div>
         <p class="b2-quote">Get discovered by brands you love.<br class="m-only"> Build the creator career you want.</p>
         ${window.B2 ? B2.tip("Keep your media kit updated for better brand matches!") : ""}</div>`);
-    box.querySelectorAll("[data-hgo]").forEach(b=> b.onclick = e=>{ e.preventDefault(); const k = b.dataset.hgo; if(k==="__sprout") return openKid(); go(k); });
+    box.querySelectorAll("[data-hgo]").forEach(b=> b.onclick = e=>{ e.preventDefault(); const k = b.dataset.hgo; if(k==="__sprout") return openKid(); if(b.dataset.hub1) window.__bxHubOpen = b.dataset.hub1; go(k); });
     box.querySelectorAll("[data-hbrief]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); try{ localStorage.setItem("geek_apply", b.dataset.hbrief); }catch(x){} go("opencampaigns"); });
   }
   let _mo = null;

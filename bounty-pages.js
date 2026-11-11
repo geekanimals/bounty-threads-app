@@ -148,10 +148,7 @@
     //           + what the setup asks (name, city, categories, languages, formats, Instagram, terms)
     let rq = req; try{ if(typeof creatorProfileGate === "function"){ await creatorProfileGate(); rq = window.__profileReq || req; } }catch(e){}
     if(c.querySelector("#bxHub") || !first.isConnected) return;
-    const extra = [!!(pro.display_name || per.first_name), !!(pro.city_coarse || md.city), (pro.categories||[]).length > 0, (pro.languages||[]).length > 0,
-      (pro.content_formats||[]).length > 0, ig.length > 0 || !!pro.ig_handle_self || !!md.ig_handle,
-      cp.accepts_barter != null || cp.product_only != null || cp.min_product_value != null];
-    const tot = (rq ? rq.total : 0) + extra.length, dn = (rq ? rq.done : 0) + extra.filter(Boolean).length;
+    const tot = rq ? rq.total : 0, dn = rq ? rq.done : 0;   // creatorProfileGate already counts the setup items too
     const pct = Math.round(100 * dn / Math.max(tot, 1));
     const dreams = ((pf && pf.dream_brands) || []).map(x=> x.submitted_brand_name).filter(Boolean);
     const terms = (pf && pf.commercial_preference && Object.keys(cp).length) ? [cp.accepts_barter?"Barter":"", cp.product_only?"":"Paid"].filter(Boolean).join(", ") : "";
@@ -206,6 +203,7 @@
       if(k === "@rates"){ if(typeof openMkEdit === "function" && acct) return openMkEdit("ratecard", acct); return go("mediakit"); }
       go(k);
     });
+    if(window.__bxHubOpen){ const k1 = window.__bxHubOpen; window.__bxHubOpen = null; const r1 = c.querySelector(`[data-hub="#${k1}"]`); if(r1) r1.click(); }
   }
 
   /* ---------- M11 campaign brief: the app's brief opens as a page, not a pop-up ---------- */

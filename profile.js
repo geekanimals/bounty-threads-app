@@ -187,6 +187,10 @@
 
   var REQ = null;
   async function loadReq(){
+    // same profile % as the dashboard / hub: creatorProfileGate (app.js) builds the one shared checklist
+    if(typeof window.creatorProfileGate === "function" || typeof creatorProfileGate === "function"){
+      try{ await creatorProfileGate(); if(window.__profileReq){ REQ = window.__profileReq;
+        if(window.onProfileRequirements) window.onProfileRequirements(REQ); return REQ; } }catch(e){} }
     try{ var r = await api("get_profile_requirements"); if(r && !r.error && r.data){ REQ = r.data;
       // rate card + barter preference are off for now — never count them, even if the server still lists them
       var its = (REQ.items||[]).filter(function(it){ return ["reel_rate","barter"].indexOf(it.key) < 0 && ["rate","barter"].indexOf(it.section) < 0; });
@@ -681,6 +685,9 @@
   function wireReq(){
     document.querySelectorAll("#cpGoCampaigns").forEach(function(gc){ gc.onclick=function(){ currentPage = window.__ciOpsEnabled ? "mycampaigns" : "marketplace"; renderShell(); }; });
     document.querySelectorAll("[data-goto]").forEach(function(a){ a.onclick=function(e){ e.preventDefault();
+      // inside the profile hub: open that one section (its own row) instead of scrolling to a hidden one
+      var g=a.getAttribute("data-goto"), row=document.querySelector('#bxHub [data-hub="#'+g+'"]')||document.querySelector('#bxHub [data-hub="*'+g+'"]');
+      if(row && document.getElementById("bxHub")){ row.click(); return; }
       var sec=document.querySelector('.cp-sec[data-sec="'+a.getAttribute("data-goto")+'"]'); if(sec){ sec.scrollIntoView({behavior:"smooth",block:"start"}); sec.classList.add("cp-flash"); setTimeout(function(){ sec.classList.remove("cp-flash"); },1600); } }; });
   }
 
