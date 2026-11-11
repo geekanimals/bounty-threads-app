@@ -22,8 +22,9 @@
 @media(min-width:901px){ .b2 .m-only{ display:none !important; } }
 
 /* ---------- logo ---------- */
-.b2-logo{ --tg-gap:var(--b2-green); display:inline-flex; align-items:center; font:700 22px/1 var(--b2-f-logo); letter-spacing:.06em; color:var(--b2-ink2); white-space:nowrap; }
-.b2-logo .b2-tg{ width:.78em; height:.78em; margin:0 .04em 0 .05em; flex:none; }
+.b2-logo{ --tg-gap:var(--b2-green); display:inline-flex; align-items:baseline; font:700 22px/1 var(--b2-f-logo); letter-spacing:.06em; color:var(--b2-ink2); white-space:nowrap; }
+/* target = the O: Cinzel cap .70em + overshoot, sits on the baseline like a letter */
+.b2-logo .b2-tg{ width:.754em; height:.754em; margin:0 .09em 0 .03em; flex:none; position:relative; top:.014em; }
 .b2-logo.light, .b2-hero .b2-logo, .b2-dark .b2-logo, [data-scene="jungle"] .b2-ptop .b2-logo, .b2g .b2-logo{ color:var(--b2-cream3); --tg-gap:var(--b2-green); }
 .b2-panel .b2-logo{ --tg-gap:var(--b2-cream2); }
 [data-scene="jungle"] .b2-panel .b2-logo{ --tg-gap:var(--b2-green); color:var(--b2-cream3); }
@@ -487,8 +488,8 @@ body.b2app .content{ font-family:var(--b2-f-dm); }
 }
 body.b2app .menu-btn{ width:40px; height:44px; border:0 !important; background:none !important; color:#f3e6c8 !important; font-size:0 !important; display:grid; place-items:center; }
 body.b2app .menu-btn::before{ content:""; width:22px; height:14px; background:linear-gradient(currentColor,currentColor) 0 0/100% 2px no-repeat, linear-gradient(currentColor,currentColor) 0 6px/100% 2px no-repeat, linear-gradient(currentColor,currentColor) 0 12px/100% 2px no-repeat; }
-body.b2app .bx-logo.b2-logo{ display:inline-flex; font-family:var(--b2-f-logo) !important; font-weight:700; letter-spacing:.06em; color:#f3e6c8; --tg-gap:#123524; }
-body.b2app .bx-logo.b2-logo svg{ width:.78em !important; height:.78em !important; margin:0 .04em 0 .05em; }
+body.b2app .bx-logo.b2-logo{ display:inline-flex; align-items:baseline; font-family:var(--b2-f-logo) !important; font-weight:700; letter-spacing:.06em; color:#f3e6c8; --tg-gap:#123524; }
+body.b2app .bx-logo.b2-logo svg{ width:.754em !important; height:.754em !important; margin:0 .09em 0 .03em; position:relative; top:.014em; }
 body.b2app .icon-btn{ border:0 !important; background:none !important; color:#f3e6c8 !important; }
 body.b2app #bellBtn{ font-size:0 !important; width:40px; height:40px; position:relative; display:grid; place-items:center; }
 body.b2app #bellBtn::before{ content:""; width:24px; height:24px; background:currentColor; -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z'/%3E%3Cpath d='M10 21h4'/%3E%3C/svg%3E") center/contain no-repeat; mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z'/%3E%3Cpath d='M10 21h4'/%3E%3C/svg%3E") center/contain no-repeat; }
