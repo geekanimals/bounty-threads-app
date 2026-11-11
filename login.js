@@ -263,7 +263,7 @@ function mountLogin(mode="login", role){
 async function finishBrandFacebook(){
   const q = new URLSearchParams(location.search), st = q.get("state") || "", code = q.get("code");
   if(!/^fbbrand:login:/.test(st)) return null;
-  history.replaceState({}, "", location.pathname);
+  history.replaceState(history.state, "", location.pathname);
   let saved = ""; try{ saved = sessionStorage.getItem("geek_fb_brand") || ""; sessionStorage.removeItem("geek_fb_brand"); }catch(e){}
   if(saved !== st.split(":")[2] + ":login") return "That Facebook sign-in expired — please try again.";
   if(!code) return q.get("error") === "access_denied" || /permission/i.test(q.get("error_description")||"") ? "Facebook sign-in was cancelled — tap Continue with Facebook to try again." : (q.get("error_description") || "Facebook sign-in was cancelled.");

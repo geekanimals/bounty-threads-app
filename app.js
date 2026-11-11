@@ -1474,6 +1474,7 @@ async function openCampaignWorkspace(id){
   const pipe = ((pRes && pRes.data) || []).filter(p=>p.legacy_campaign_id===id);
   renderCampaignWorkspace(c, apps, barter, pipe);
   navSave({ camp: id });
+  BxHist.mark("c", id, { role: currentRole, page: currentPage });   // ← Back returns to this campaign page
 }
 
 // campaign page: what each creator posts + who has posted everything (live from the posts on the campaign)
@@ -11294,7 +11295,7 @@ async function handleOAuthCallback(){
   const expected = localStorage.getItem("geekos_oauth_state");
   const platform = (state.split(":")[0]) || "";
   // Clean the URL immediately so the code isn't left in the address bar.
-  history.replaceState({}, "", location.pathname);
+  history.replaceState(history.state, "", location.pathname);
   // Instagram: the one-time ticket inside state proves who started it, even when we came back in another browser
   const igTicket = platform === "instagram" ? (state.split(":")[2] || "") : "";
   if(state !== expected && !(platform === "instagram" && /^[0-9a-f]{48}$/.test(igTicket))){ console.warn("OAuth state mismatch — ignoring."); return; }
@@ -11602,6 +11603,71 @@ function renderContent(){
 // ↻ a refresh keeps you where you were — page, Super Admin tab, the open campaign and its section — in THIS browser tab
 // only (sessionStorage): a new tab / a link opened fresh starts at the beginning; another account never inherits it.
 const NAV_KEY = "gk_nav";
+/* ← Back (browser / phone) steps back to the screen you were on — page, Super Admin tab, guest page, sign-in step — instead of
+   leaving the site. A popup / sheet that is open closes first. Screens register with BxHist.on(kind, fn) and call BxHist.mark(kind, key). */
+const BxHist = (function(){
+  const H = {}; let popping = false, last = null;
+  function mark(k, v, d){
+    if(popping) return;
+    const s = { bxh:1, k, v:String(v), d:d||null };
+    const cur = history.state;
+    try{
+      if(cur && cur.bxh && cur.k === s.k && cur.v === s.v){ history.replaceState(s, "", location.href); }
+      else if(cur && cur.bxh) history.pushState(s, "", location.href);
+      else history.replaceState(s, "", location.href);
+    }catch(e){}
+    last = s;
+  }
+  function closeTop(){
+    const kid = document.getElementById("b2KidSheet"); if(kid){ if(window.bxCloseKid) bxCloseKid(); else kid.remove(); return true; }
+    const dims = document.querySelectorAll(".b2-dim"); if(dims.length){ dims[dims.length-1].remove(); return true; }
+    const mo = document.querySelectorAll(".modal-overlay.open"); if(mo.length){ mo[mo.length-1].classList.remove("open"); return true; }
+    for(const id of ["aiOverlay","paletteOverlay"]){ const x = document.getElementById(id); if(x && x.classList.contains("open")){ x.classList.remove("open"); return true; } }
+    if(document.getElementById("meCard") && typeof closeMeCard === "function"){ closeMeCard(); return true; }
+    const sbar = document.getElementById("sidebar"); if(sbar && sbar.classList.contains("open") && window.innerWidth <= 760){ sbar.classList.remove("open"); return true; }
+    return false;
+  }
+  // a popup / sheet opening adds one Back step (so Back closes it, even on the first screen); closing it with its own button removes that step
+  const isOv = n => n && n.nodeType === 1 && (n.id === "b2KidSheet" || n.classList.contains("b2-dim") || (n.classList.contains("modal-overlay") && n.classList.contains("open")));
+  const anyOv = ()=> !!document.querySelector("#b2KidSheet, .b2-dim, .modal-overlay.open");
+  let skip = false;
+  function ovOpened(){ if(popping || !last) return; const cur = history.state; if(cur && cur.ov) return; try{ history.pushState(Object.assign({}, cur && cur.bxh ? cur : last, { ov:1 }), "", location.href); }catch(e){} }
+  function ovClosed(){ if(anyOv()) return; const cur = history.state; if(cur && cur.ov){ skip = true; history.back(); } }
+  try{
+    new MutationObserver(ms=>{
+      let op = false, cl = false;
+      for(const m of ms){
+        if(m.type === "childList"){ m.addedNodes.forEach(n=>{ if(isOv(n)) op = true; }); m.removedNodes.forEach(n=>{ if(n.nodeType === 1 && (n.id === "b2KidSheet" || n.classList.contains("b2-dim") || n.classList.contains("modal-overlay"))) cl = true; }); }
+        else if(m.target.classList && m.target.classList.contains("modal-overlay")){ if(m.target.classList.contains("open")) op = true; else cl = true; }
+      }
+      if(op && anyOv()) ovOpened(); else if(cl) ovClosed();
+    }).observe(document.body || document.documentElement, { childList:true, attributes:true, attributeFilter:["class"], subtree:true });
+  }catch(e){}
+  window.addEventListener("popstate", e=>{
+    if(skip){ skip = false; return; }
+    if(closeTop()) return;
+    const s = e.state; if(!s || !s.bxh) return;
+    if(s.ov && last && s.k === last.k && s.v === last.v) return;   // the popup's own step — nothing to repaint
+    const h = H[s.k]; let ok = false;
+    popping = true;
+    try{ ok = !!h && h(s.v, s.d) !== false; }catch(err){ console.warn("back", err); }
+    finally{ popping = false; }
+    if(ok) last = s; else history.back();   // that screen can't be shown any more (e.g. sign-in after signing in) — keep going back
+  });
+  return { on:(k, fn)=>{ H[k] = fn; }, mark, popping:()=> popping };
+})();
+window.BxHist = BxHist;
+BxHist.on("a", (v, d)=>{
+  if(!window.__osBooted || !d || (d.role && d.role !== currentRole)) return false;
+  currentPage = d.page; if(d.admin) _adminTab = d.admin;
+  if(typeof _wsMode !== "undefined") _wsMode = false;
+  renderShell(); window.scrollTo(0,0); return true;
+});
+BxHist.on("c", (id, d)=>{
+  if(!window.__osBooted || !d || (d.role && d.role !== currentRole)) return false;
+  if(d.page && currentPage !== d.page){ currentPage = d.page; renderShell(); }
+  openCampaignWorkspace(id); window.scrollTo(0,0); return true;
+});
 function navUid(){ return (window.Auth && ((Auth.user && Auth.user.id) || (Auth.profile && Auth.profile.id))) || ""; }
 function navSave(extra){
   try{ const uid = navUid(); if(!uid || window.__navRestoring) return;
@@ -11626,6 +11692,7 @@ function renderShell(){
   renderNav(); renderMe(); renderContent();
   if(window.sb && currentRole!=="creator") ooLoad();
   navSave({ camp: null, bpTab: null });   // any page change leaves the campaign workspace
+  if(window.__osBooted) BxHist.mark("a", currentRole + "|" + currentPage + "|" + (currentPage === "admin" ? _adminTab : ""), { role: currentRole, page: currentPage, admin: _adminTab });
 }
 
 /* ---------- Command palette ---------- */
@@ -12162,7 +12229,7 @@ async function bootOS(){
   // came from a campaign invite → whatever is still pending first (profile), then the campaign itself
   // tapped Apply on the public /explore.html page → Open Campaigns, where that campaign pops open (after the profile, if pending)
   let __exploreApply = null; try{ __exploreApply = localStorage.getItem("geek_apply"); }catch(e){}
-  if(new URLSearchParams(location.search).get("apply")) history.replaceState({}, "", location.pathname);
+  if(new URLSearchParams(location.search).get("apply")) history.replaceState(history.state, "", location.pathname);
   if(__exploreApply && currentRole==="creator" && !window.__inviteGo && !window.__osBooted){
     currentPage = window.__profileGate ? "mediakit" : "opencampaigns";
     if(window.__profileGate) setTimeout(()=> gateToast("🎯 Finish connecting your profile — then open Open Campaigns and the campaign you picked opens right away."), 900);
@@ -12253,7 +12320,7 @@ function init(){
   // deep links from WhatsApp / email alerts: app.html?go=<route>  (role-aware; "admin:<tab>" opens a Super Admin tab)
   let go = new URLSearchParams(location.search).get("go");
   if(go){
-    history.replaceState({}, "", location.pathname);
+    history.replaceState(history.state, "", location.pathname);
     if(/^admin:/.test(go)){ const tab = go.split(":")[1] || "overview"; if(window.__isAdmin){ _adminTab = tab; go = "admin"; } else { window.__pendingAdminTab = tab; go = "dashboard"; } }
     if(currentRole==="creator") go = ({ onboarding:"profile", alerts:"dashboard", campaigns:"mycampaigns", approvals:"mycampaigns", campaignops:"mycampaigns", marketplace:"opencampaigns" })[go] || go;
     else go = ({ mycampaigns:"campaigns", opencampaigns:"campaigns", onboarding:"dashboard", profile:"dashboard", mediakit:"dashboard" })[go] || go;

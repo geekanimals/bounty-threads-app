@@ -88,7 +88,7 @@
     }
     const foot = document.querySelector(".sidebar-foot");
     if(foot && !foot.querySelector(".bx-trust-links")){
-      foot.insertAdjacentHTML("beforeend", `<div class="bx-trust-links"><a href="/privacy.html" target="_blank" rel="noopener">Privacy</a><a href="/terms.html" target="_blank" rel="noopener">Terms</a><a href="/contact.html" target="_blank" rel="noopener">Help</a><span>© Bounty · by Geek Creative Agency</span></div>`);
+      foot.insertAdjacentHTML("beforeend", `<div class="bx-trust-links"><a href="/privacy.html" target="_blank" rel="noopener">Privacy</a><a href="/terms.html" target="_blank" rel="noopener">Terms</a><a href="/contact.html" target="_blank" rel="noopener">Help</a><span>© Bounty · <a class="b2-geek" href="https://geekcreativeagency.com/" target="_blank" rel="noopener">by Geek Creative Agency</a></span></div>`);
     }
     // phone: search + theme move from the top bar into the ☰ drawer (the Figma header is ☰ · logo · bell · avatar)
     if(nav && !document.getElementById("bxTools")){
@@ -371,7 +371,7 @@
   function bootLoader(){
     if(!document.documentElement.classList.contains("bx-door") || document.getElementById("bootSplash")) return;
     const b = document.createElement("div"); b.id = "bootSplash"; b.className = "boot-splash b2-boot";
-    b.innerHTML = `<div class="b2-boot-in">${LOGO.replace('bx-logo b2-logo','b2-logo')}<div class="b2-boot-by">by geek</div><div class="b2-boot-orb"><img src="${KI()}" alt=""></div><div class="b2-boot-t">Getting your world ready…</div><div class="b2-boot-bar"><i></i></div></div>`;
+    b.innerHTML = `<div class="b2-boot-in">${LOGO.replace('bx-logo b2-logo','b2-logo')}<div class="b2-boot-by"><a class="b2-geek" href="https://geekcreativeagency.com/" target="_blank" rel="noopener">by geek</a></div><div class="b2-boot-orb"><img src="${KI()}" alt=""></div><div class="b2-boot-t">Getting your world ready…</div><div class="b2-boot-bar"><i></i></div></div>`;
     document.body.appendChild(b);
     clearTimeout(window.__b2BootT); window.__b2BootT = setTimeout(()=>{ const x = document.getElementById("bootSplash"); if(x) x.remove(); }, 15000);
   }

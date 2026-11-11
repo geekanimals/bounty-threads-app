@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="bounty-creator.css?v=20261107s">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="bounty-v2.css?v=20261111a">
+  <link rel="stylesheet" href="bounty-v2.css?v=20261111b">
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,600&display=swap" rel="stylesheet">
   <script>
   /* Bounty creator door: decide before the first paint, so a refresh never flashes the old Geek OS screens.
@@ -110,14 +110,14 @@
   <div class="auth-root" id="authRoot"></div>
   <!-- shown until the first screen (login or the app) is painted — never a blank page -->
   <div class="boot-splash" id="bootSplash"><div class="boot-box"><img src="/assets/geek-icon-192.png" alt="" class="boot-logo"><div class="mk-spin"></div><div class="boot-t">Loading Geek OS…</div></div></div>
-  <script>(function(){var b=document.getElementById("bootSplash");if(!b||!document.documentElement.classList.contains("bx-door"))return;var k="pip";try{var j=JSON.parse(localStorage.getItem("bx_prefs_last")||"null");var KK={pip:1,mochi:1,sprout:1,pebble:1,rumi:1,dot:1,flick:"mochi",nimbus:"pip"};if(j&&j.kid&&KK[j.kid])k=KK[j.kid]===1?j.kid:KK[j.kid];}catch(e){}b.className="boot-splash b2-boot";b.innerHTML='<div class="b2-boot-in"><span class="b2-logo">B<svg class="b2-tg" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="53.5" r="46.5" fill="#7d1510"/><circle cx="50" cy="50" r="46.5" fill="#e0392f"/><path d="M12.5 36 A40 40 0 0 1 58 10.8" stroke="#fff" stroke-linecap="round" fill="none" stroke-opacity=".45" stroke-width="4"/><circle cx="50" cy="50" r="34" fill="#123524"/><circle cx="50" cy="50" r="34" fill="#000" fill-opacity=".32"/><circle cx="50" cy="53" r="31" fill="#123524"/><circle cx="50" cy="52.5" r="23" fill="#7d1510"/><circle cx="50" cy="50" r="23" fill="#e0392f"/><path d="M32.4 42.9 A19 19 0 0 1 54.9 31.7" stroke="#fff" stroke-linecap="round" fill="none" stroke-opacity=".4" stroke-width="3"/><circle cx="50" cy="50" r="12" fill="#123524"/><circle cx="50" cy="50" r="12" fill="#000" fill-opacity=".32"/><circle cx="50" cy="51.6" r="10.4" fill="#123524"/><circle cx="50" cy="51.8" r="6.2" fill="#7d1510"/><circle cx="50" cy="50" r="6.2" fill="#ef4a3c"/><circle cx="47.8" cy="47.8" r="1.8" fill="#fff" fill-opacity=".7"/></svg>UNTY</span><div class="b2-boot-by">by geek</div><div class="b2-boot-orb"><img src="/assets/bounty/rd/kid_'+k+'.png" alt=""></div><div class="b2-boot-t">Getting your world ready…</div><div class="b2-boot-bar"><i></i></div></div>';})();</script>
+  <script>(function(){var b=document.getElementById("bootSplash");if(!b||!document.documentElement.classList.contains("bx-door"))return;var k="pip";try{var j=JSON.parse(localStorage.getItem("bx_prefs_last")||"null");var KK={pip:1,mochi:1,sprout:1,pebble:1,rumi:1,dot:1,flick:"mochi",nimbus:"pip"};if(j&&j.kid&&KK[j.kid])k=KK[j.kid]===1?j.kid:KK[j.kid];}catch(e){}b.className="boot-splash b2-boot";b.innerHTML='<div class="b2-boot-in"><span class="b2-logo">B<svg class="b2-tg" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="53.5" r="46.5" fill="#7d1510"/><circle cx="50" cy="50" r="46.5" fill="#e0392f"/><path d="M12.5 36 A40 40 0 0 1 58 10.8" stroke="#fff" stroke-linecap="round" fill="none" stroke-opacity=".45" stroke-width="4"/><circle cx="50" cy="50" r="34" fill="#123524"/><circle cx="50" cy="50" r="34" fill="#000" fill-opacity=".32"/><circle cx="50" cy="53" r="31" fill="#123524"/><circle cx="50" cy="52.5" r="23" fill="#7d1510"/><circle cx="50" cy="50" r="23" fill="#e0392f"/><path d="M32.4 42.9 A19 19 0 0 1 54.9 31.7" stroke="#fff" stroke-linecap="round" fill="none" stroke-opacity=".4" stroke-width="3"/><circle cx="50" cy="50" r="12" fill="#123524"/><circle cx="50" cy="50" r="12" fill="#000" fill-opacity=".32"/><circle cx="50" cy="51.6" r="10.4" fill="#123524"/><circle cx="50" cy="51.8" r="6.2" fill="#7d1510"/><circle cx="50" cy="50" r="6.2" fill="#ef4a3c"/><circle cx="47.8" cy="47.8" r="1.8" fill="#fff" fill-opacity=".7"/></svg>UNTY</span><div class="b2-boot-by"><a class="b2-geek" href="https://geekcreativeagency.com/" target="_blank" rel="noopener">by geek</a></div><div class="b2-boot-orb"><img src="/assets/bounty/rd/kid_'+k+'.png" alt=""></div><div class="b2-boot-t">Getting your world ready…</div><div class="b2-boot-bar"><i></i></div></div>';})();</script>
   <script>window.hideBootSplash=function(){var b=document.getElementById("bootSplash");if(b)b.remove();};setTimeout(window.hideBootSplash,15000);</script>
 
   <script src="consent.js?v=20261028k"></script>
   <script src="data.js?v=20261110c"></script>
   <script src="auth.js?v=20261106a"></script>
   <script src="track.js?v=20261028k"></script>
-  <script src="login.js?v=20261029c"></script>
+  <script src="login.js?v=20261111b"></script>
   <script src="ig-connect.js?v=20261028k"></script>
   <script src="address-form.js?v=20261028k"></script>
   <script src="profile.js?v=20261029d"></script>
@@ -127,12 +127,12 @@
   <script src="operations.js?v=20261101a"></script>
   <script src="brand-portal.js?v=20261028m"></script>
   <script src="whatsapp.js?v=20261110r"></script>
-  <script src="app.js?v=20261110e"></script>
+  <script src="app.js?v=20261111b"></script>
   <script src="payments.js?v=20261028k"></script>
   <script src="tracking.js?v=20261031g"></script>
   <script src="bounty-kid.js?v=20261109b"></script>
-  <script src="bounty-creator.js?v=20261111a"></script>
-  <script src="bounty-welcome.js?v=20261111a"></script>
+  <script src="bounty-creator.js?v=20261111b"></script>
+  <script src="bounty-welcome.js?v=20261111b"></script>
   <script src="bounty-pages.js?v=20261109t"></script>
 </body>
 </html>
