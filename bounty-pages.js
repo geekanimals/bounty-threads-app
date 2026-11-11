@@ -151,8 +151,7 @@
     const tot = rq ? rq.total : 0, dn = rq ? rq.done : 0;   // creatorProfileGate already counts the setup items too
     const pct = Math.round(100 * dn / Math.max(tot, 1));
     const dreams = ((pf && pf.dream_brands) || []).map(x=> x.submitted_brand_name).filter(Boolean);
-    const terms = [cp.accepts_barter === true && cp.product_only === true ? "Barter" : cp.accepts_barter === true ? "Barter + paid" : cp.accepts_barter === false ? "Paid" : "",
-      /open to discuss/i.test(cp.notes || "") ? "Open to discuss" : ""].filter(Boolean).join(", ");
+    const terms = (window.B2 && B2.onbKit && B2.onbKit.termsLabel) ? B2.onbKit.termsLabel(cp) : "";
     // every part of the old Creator Profile, one row each — a row opens just that section ("#key" = profile.js data-sec)
     const ciRates = ((pf && pf.rate_cards && pf.rate_cards[0] && pf.rate_cards[0].items) || []).slice(0,2).map(i=> `${String(i.deliverable_type).replace(/^IG\s+/,"").replace("Static ","")} ₹${Number(i.amount).toLocaleString("en-IN")}`).join(" · ");
     const L = [["👤","About you", [per.first_name, per.gender ? String(per.gender).replace(/_/g," ") : ""].filter(Boolean).join(" · ") || "Name, gender, birthday, married, pets","#personal"],
@@ -226,8 +225,7 @@
       const RATES = [["IG Reel","Reel"],["IG Story","Story"],["IG Static Post","Post"]];
       const rItems = ((pf && pf.rate_cards && pf.rate_cards[0] && pf.rate_cards[0].items) || []);
       const rateOf = t=> { const x = rItems.find(i=> i.deliverable_type === t); return x ? Math.round(Number(x.amount)) : null; };
-      const was = new Set(); if(cp.accepts_barter === true && cp.product_only === true) was.add("barter"); else if(cp.accepts_barter === true) was.add("hybrid"); else if(cp.accepts_barter === false) was.add("paid");
-      if(/open to discuss/i.test(cp.notes || "")) was.add("discuss");
+      const was = K.termsOf ? K.termsOf(cp) : new Set();
       const T = [["barter","🎁","Barter","Products or experiences for content"],["paid","₹","Paid","A cash fee for your work"],["hybrid","🎁+₹","Hybrid","Product + payment"],["discuss","💬","Open to discuss",""]];
       box.innerHTML = `<h4>Your terms &amp; rate card</h4>
         <div class="b2-cx-lab">What are you open to? <em>pick all that fit</em></div>
@@ -246,7 +244,7 @@
         const b = document.getElementById("bxTxSave"), o = [...terms.querySelectorAll(".b2-term.on")].map(x=> x.dataset.v);
         const num = id=> { const v = String(document.getElementById(id).value||"").replace(/[^\d.]/g,""); return v === "" ? null : Number(v); };
         const patch = {}, min = num("bxTxMin");
-        if(o.length){ patch.accepts_barter = o.includes("barter") || o.includes("hybrid"); patch.product_only = o.includes("barter") && !o.includes("paid") && !o.includes("hybrid"); patch.notes = o.includes("discuss") ? "Open to discuss" : null; }
+        if(o.length && K.termsPatch) Object.assign(patch, K.termsPatch(o));
         patch.min_product_value = min;
         const rates = RATES.map(([t],i)=> [t, num("bxTxR" + i)]).filter(([t,v])=> v != null && v > 0 && v !== rateOf(t));
         b.disabled = true; b.textContent = "Saving…"; msg("");
@@ -435,7 +433,7 @@
     const img = m => m.media_type === "VIDEO" ? (m.thumbnail_url || m.media_url) : m.media_url;
     // let's create together
     // open to = what they picked in Your terms (nothing picked → nothing claimed)
-    const open = cp.accepts_barter === true && cp.product_only === true ? ["Barter"] : cp.accepts_barter === true ? ["Barter", "Paid", "Hybrid"] : cp.accepts_barter === false ? ["Paid"] : [];
+    const open = (window.B2 && B2.onbKit && B2.onbKit.termsLabel) ? B2.onbKit.termsLabel(cp).split(", ").filter(Boolean) : [];
     // rates = the one rate card from Your terms (Reel / Story / Post); the old media-kit list only if that is empty
     const tRates = ((_mkProf && _mkProf.rate_cards && _mkProf.rate_cards[0] && _mkProf.rate_cards[0].items) || []).filter(i=> i && Number(i.amount) > 0)
       .slice(0,3).map(i=> `${H(String(i.deliverable_type).replace(/^IG\s+/,"").replace("Static ",""))} ₹${Number(i.amount).toLocaleString("en-IN")}`);

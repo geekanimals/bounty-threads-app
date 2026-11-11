@@ -839,6 +839,17 @@
     ["Lifestyle",US("photo-1622049605334-72e1e4432346")],["Tech",US("photo-1614624532983-4ce03382d63d")],["Gaming",US("photo-1636487658616-14850c8f496c")],
     ["Parenting",US("photo-1589169011402-8b2cbd1ee593")],["Home & Decor",US("photo-1745429523617-0d837856ca35")],["Education",US("photo-1617009762269-c062aaf6b3a0")]];
   const LANG = ["Hindi","Hinglish","English","Bengali","Tamil","Telugu","Marathi","Gujarati","Kannada","Malayalam","Punjabi","Odia","Assamese","Urdu"];
+  // which terms a creator picked: saved word-for-word in notes ("Open to: Barter, Paid") so the same boxes come back ticked;
+  // older rows fall back to accepts_barter / product_only
+  const TERMK = { barter:"Barter", paid:"Paid", hybrid:"Hybrid", discuss:"Open to discuss" };
+  function termsOf(cp){ cp = cp || {}; const was = new Set(), m = /^open to:\s*(.+)$/i.exec(String(cp.notes || "").trim());
+    if(m){ m[1].split(",").map(x=> x.trim().toLowerCase()).forEach(x=> Object.keys(TERMK).forEach(k=> { if(TERMK[k].toLowerCase() === x) was.add(k); })); return was; }
+    if(cp.accepts_barter === true && cp.product_only === true) was.add("barter"); else if(cp.accepts_barter === true) was.add("hybrid"); else if(cp.accepts_barter === false) was.add("paid");
+    if(/open to discuss/i.test(cp.notes || "")) was.add("discuss"); return was; }
+  function termsPatch(on){ if(!on.length) return {};
+    return { accepts_barter: on.includes("barter") || on.includes("hybrid"), product_only: on.includes("barter") && !on.includes("paid") && !on.includes("hybrid"),
+      notes: "Open to: " + ["barter","paid","hybrid","discuss"].filter(k=> on.includes(k)).map(k=> TERMK[k]).join(", ") }; }
+  function termsLabel(cp){ const w = termsOf(cp); return ["barter","paid","hybrid","discuss"].filter(k=> w.has(k)).map(k=> TERMK[k]).join(", "); }
   function onbStep(n, d){
     const pro = d.professional || {}, cp = d.commercial_preference || {};
     if(n === 1){
@@ -940,9 +951,7 @@
       const rItems = ((d.rate_cards && d.rate_cards[0] && d.rate_cards[0].items) || []);
       const rateOf = t => { const x = rItems.find(i=> i.deliverable_type === t); return x ? Math.round(Number(x.amount)) : null; };
       // what they picked last time (so the screen opens with their saved terms ticked)
-      const was = new Set(); if(cp.accepts_barter === true && cp.product_only === true) was.add("barter");
-      else if(cp.accepts_barter === true) was.add("hybrid"); else if(cp.accepts_barter === false) was.add("paid");
-      if(/open to discuss/i.test(cp.notes || "")) was.add("discuss");
+      const was = termsOf(cp);
       const tOn = v => was.has(v) ? " on" : "";
       const o = onbShell("onb3", "jungle", `${window.__bxOnbOnly ? `<div class="b2-ptop"><div class="b2-plogo m-only">${LOGO}</div></div>` : top(6, "06/06")}
         <h2 class="b2-h light fit">Your work. Your <u class="or">terms.</u></h2>
@@ -974,10 +983,8 @@
         const rates = RATES.map(([t],i)=> [t, num("bxoRate" + i)]).filter(([t,v])=> v != null && v > 0 && v !== rateOf(t));
         btn.disabled = true; btn.textContent = "Saving…";
         const patch = {};
-        if(on.length) patch.accepts_barter = on.includes("barter") || on.includes("hybrid");
-        if(on.length) patch.product_only = on.includes("barter") && !on.includes("paid") && !on.includes("hybrid");
+        Object.assign(patch, termsPatch(on));
         if(min != null) patch.min_product_value = min;
-        if(on.length) patch.notes = on.includes("discuss") ? "Open to discuss" : null;
         let r = Object.keys(patch).length ? await papi("save_profile_section", { p_section:"commercial_preference", p_patch:patch, p_correlation:"ui-onboard" }) : {};
         for(const [t,v] of rates){ if(r.error) break; r = await papi("save_rate_card_item", { p_payload:{ deliverable_type:t, amount:v }, p_correlation:"ui-onboard" }); }
         if(r.error){ err("Couldn't save: " + (r.error.message || r.error)); btn.disabled = false; btn.innerHTML = window.__bxOnbOnly ? "Save&nbsp; →" : "Find collaborations for me&nbsp; →"; return; }
@@ -987,6 +994,6 @@
   }
 
   window.bxGuest = { start:startGuest, go, video };
-  B2.onbKit = { CATS, LANG };
+  B2.onbKit = { CATS, LANG, termsOf, termsPatch, termsLabel };
   B2.screens = { onbStep, onbManual, manualProfile, igGate, sidekickScreen, igLoader, igKit, igSent };
 })();
