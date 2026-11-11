@@ -378,7 +378,9 @@
     box.innerHTML = `<div class="b2-mkcol">
         <div class="b2-mkid">${a.profile_picture_url?`<img src="${H(a.profile_picture_url)}" alt="">`:`<span class="b2-ini">${H(String(a.username||"C").charAt(0).toUpperCase())}</span>`}
           <div class="b2-mkn"><b>${H(a.name || a.username)}</b><span>@${H(a.username)}${pro.city_coarse?" · "+H(pro.city_coarse):""}</span>${(pro.categories||[]).length||(pro.languages||[]).length?`<em>${H([].concat((pro.categories||[]).slice(0,3),(pro.languages||[]).slice(0,2)).join(" · "))}</em>`:""}</div>
-          <div class="b2-nums"><div><b>${n(a.followers_count)}</b><span>Followers</span></div><div><b>${eng}</b><span>Engagement</span></div><div><b>${third[0]}</b><span>${third[1]}</span></div></div></div>
+          <div class="b2-nums"><div><b>${n(a.followers_count)}</b><span>Followers</span></div><div><b>${eng}</b><span>Engagement</span></div><div><b>${third[0]}</b><span>${third[1]}</span></div></div>
+          ${(()=>{ const bio = E.bio || a.biography || "", avgL = all.length ? Math.round(all.reduce((t,m)=> t + (+m.like_count||0), 0) / all.length) : 0;
+            return `${bio ? `<p class="b2-mkbio">${H(bio)}</p>` : ""}${a.website ? `<a class="b2-mkweb" href="${H(a.website)}" target="_blank" rel="noopener">🔗 ${H(String(a.website).replace(/^https?:\/\//,""))}</a>` : ""}<div class="b2-mkmini">${n(a.media_count || all.length)} total posts · ${n(avgL)} avg likes</div>`; })()}</div>
         <div class="b2-mkacct"><span>📸</span><b>@${H(a.username)}</b><em class="b2-chip2 ok">✓ Connected</em><a href="#" data-mk="add">+ Add account</a></div>
         <div class="b2-sec ink">— Who follows my story —</div>
         <div class="b2-card b2-aud">${bars || `<p class="b2-p it sm">Audience shows once Instagram shares it (needs 100+ followers and insights access).</p>`}${cities.length?`<p class="b2-cities">Top cities: ${H(cities.join(" · "))}</p>`:""}</div>
