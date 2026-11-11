@@ -381,8 +381,8 @@ a.b2-geek:hover, a.b2-geek:focus-visible{ text-decoration:underline; text-underl
   .b2-pre[data-st="welcome"] .b2-hero-h{ margin-top:clamp(12px,3vh,28px); font-size:clamp(28px,5.4vh,40px); }
   .b2-pre[data-st="welcome"] .b2-hero-h u::after{ bottom:-5px; height:3px; }
   .b2-pre[data-st="welcome"] .b2-hero-p{ margin-top:clamp(10px,2.3vh,22px); font-size:clamp(12.5px,1.9vh,14.5px); }
-  .b2-pre[data-st="welcome"] .b2-kids{ position:relative; top:auto; left:auto; right:auto; width:100%; max-width:430px; margin:auto 0 0; }
-  .b2-pre[data-st="welcome"] .b2-hero-cta{ padding-top:0; margin-top:clamp(14px,3vh,30px); max-width:330px; }
+  .b2-pre[data-st="welcome"] .b2-kids{ position:relative; top:auto; left:auto; right:auto; width:100%; max-width:430px; margin:auto 0 clamp(22px,6.4vh,64px); }
+  .b2-pre[data-st="welcome"] .b2-hero-cta{ padding-top:0; margin-top:0; max-width:330px; }
   .b2-pre[data-st="welcome"] .b2-hero-cta .b2-btn{ min-height:clamp(48px,6.8vh,58px); font-size:clamp(15px,2.1vh,17px); box-shadow:0 8px 22px rgba(0,0,0,.35); }
   .b2-pre[data-st="welcome"] .b2-hero-cta .b2-link{ margin-top:clamp(8px,1.8vh,18px); }
   .b2-pre[data-st="welcome"] .b2-hero-foot{ margin-top:clamp(10px,2.2vh,24px); font-size:clamp(11.5px,1.7vh,13px); }
@@ -1311,3 +1311,32 @@ body.b2app .b2-set .b2-accl .b2-link{ display:none !important; } body.b2app .b2-
    (the logo also carries .b2-logo, whose display:inline-flex above would otherwise show it everywhere) */
 body:not(.bx) .bx-logo, body:not(.bx) .bx-bottom, body:not(.bx) .b2-nav, body:not(.bx) .bx-tools,
 body:not(.bx) .bx-next, body:not(.bx) .bx-trust-links, body:not(.bx) .b2-drx{ display:none !important; }
+
+/* WhatsApp sign-in (V2-02 / 03) in the forest: cream text, gold lines, the cream button like the welcome screen */
+#authRoot #bxw[data-scene="jungle"] .b2-panel{ background:linear-gradient(180deg, rgba(9,30,21,.55), rgba(9,30,21,.8)), var(--b2-jungle) center top/cover, var(--b2-green3); color:var(--b2-cream2); }
+#authRoot #bxw[data-scene="jungle"] .b2-h{ color:var(--b2-cream2); text-shadow:0 2px 12px rgba(0,0,0,.35); }
+#authRoot #bxw[data-scene="jungle"] .b2-p{ color:rgba(251,243,226,.82); }
+#authRoot #bxw[data-scene="jungle"] .b2-lab{ color:var(--b2-gold3); }
+#authRoot #bxw[data-scene="jungle"] .b2-phone{ background:rgba(8,30,21,.72); border:1px solid rgba(232,176,74,.55); }
+#authRoot #bxw[data-scene="jungle"] .b2-phone:focus-within{ border-color:var(--b2-gold); box-shadow:0 0 0 3px rgba(232,176,74,.22); }
+#authRoot #bxw[data-scene="jungle"] .b2-phone b, #authRoot #bxw[data-scene="jungle"] .b2-phone input{ color:var(--b2-cream2); }
+#authRoot #bxw[data-scene="jungle"] .b2-phone input::placeholder{ color:rgba(251,243,226,.5); }
+#authRoot #bxw[data-scene="jungle"] .b2-phone > i{ background:rgba(232,176,74,.45); }
+#authRoot #bxw[data-scene="jungle"] .b2-note{ background:rgba(8,30,21,.6); border:1px solid rgba(232,176,74,.3); color:rgba(251,243,226,.88); }
+#authRoot #bxw[data-scene="jungle"] .b2-note.line span{ border-left-color:rgba(232,176,74,.45); }
+#authRoot #bxw[data-scene="jungle"] .b2-btn.cyan{ background:var(--b2-cream); color:var(--b2-ink2); box-shadow:0 8px 22px rgba(0,0,0,.35); font-size:18px; }
+#authRoot #bxw[data-scene="jungle"] .b2-btn.cyan:disabled{ opacity:.75; }
+#authRoot #bxw[data-scene="jungle"] .b2-link.ink{ color:var(--b2-cream2); text-decoration:underline; text-underline-offset:4px; font-size:15px; }
+#authRoot #bxw[data-scene="jungle"] .b2-back.ink{ color:var(--b2-cream2); }
+#authRoot #bxw[data-scene="jungle"] .b2-check{ color:rgba(251,243,226,.85); }
+#authRoot #bxw[data-scene="jungle"] .b2-check i{ background:transparent; border-color:rgba(251,243,226,.75); }
+#authRoot #bxw[data-scene="jungle"] .b2-check input:checked + i{ background:var(--b2-gold); border-color:var(--b2-gold); }
+#authRoot #bxw[data-scene="jungle"] .b2-check input:checked + i::after{ border-color:#123524; }
+#authRoot #bxw[data-scene="jungle"] .b2-sent, #authRoot #bxw[data-scene="jungle"] .b2-exp, #authRoot #bxw[data-scene="jungle"] .b2-resend{ color:rgba(251,243,226,.78); }
+#authRoot #bxw[data-scene="jungle"] .b2-sent a, #authRoot #bxw[data-scene="jungle"] .b2-resend a{ color:var(--b2-gold3); }
+#authRoot #bxw[data-scene="jungle"] .b2-resend span{ color:rgba(251,243,226,.55); }
+#authRoot #bxw[data-scene="jungle"] .b2-boxes i{ background:rgba(8,30,21,.72); border-color:rgba(232,176,74,.5); color:var(--b2-cream2); }
+#authRoot #bxw[data-scene="jungle"] .b2-boxes i.on{ border-color:var(--b2-gold); }
+#authRoot #bxw[data-scene="jungle"] .b2-boxes i.on:empty::after{ background:var(--b2-gold); }
+#authRoot #bxw[data-scene="jungle"] .b2-form .auth-err{ color:#ffb4a8; }
+#authRoot #bxw[data-scene="jungle"] #cinvBanner{ color:var(--b2-cream2); }

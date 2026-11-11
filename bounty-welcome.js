@@ -109,13 +109,11 @@
       </section>`;
   }
   function welcomeHtml(){
-    return `<div class="b2 b2-pre" id="bxw" data-st="welcome">
+    return `<div class="b2 b2-pre" id="bxw" data-st="welcome" data-scene="jungle">
       ${hero()}
       <section class="b2-panel" id="bxCard">
         <div class="b2-ptop"><div class="b2-plogo m-only">${LOGO}</div><div class="b2-progrow"><span id="bxProg">${prog(1)}</span></div></div>
         <button type="button" class="b2-back ink otp-only" data-bx="back">← Back</button>
-        <div class="b2-say form-only"><div class="b2-say-b"><b>Hi, I'm ${E(K())}!</b> <i>I'll guide you — it takes 2 minutes.</i></div>${kidImg("b2-say-kid")}</div>
-        <div class="b2-otpkid otp-only">${kidImg()}</div>
         <h2 class="b2-h" id="bxCardH">Hey, creator. 👋<br>Let's get you in.</h2>
         <p class="b2-p" id="bxCardP">Enter your WhatsApp number to discover collaborations made for you.</p>
         <div id="cinvBanner"></div>
@@ -137,7 +135,6 @@
         <button type="button" class="b2-link ink form-only" data-bx="explore">I'll explore first</button>
         <label class="b2-check form-only"><input type="checkbox" id="bxWaAlerts"><i></i><span>Send me matching campaign alerts on WhatsApp (optional).</span></label>
         <div class="b2-note line otp-only">🔒<span>We'll only use WhatsApp for secure sign-in and important campaign updates.</span></div>
-        <div class="otp-only">${tip("Code not here yet? Wait for the timer, then tap Resend.")}</div>
         ${FOOT}
       </section>
     </div>`;
