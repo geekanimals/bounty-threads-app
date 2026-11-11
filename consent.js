@@ -43,7 +43,7 @@
         '<span><b>Essential</b> (always on): keeps you signed in, and a security log of sign-ins and key actions ' +
         '(IP address, approximate city, device) to protect your account. ' +
         '<b>Analytics</b> (your choice): which pages you use and time spent, so our team can improve the app and support you — ' +
-        'measured with our own activity log and <b>Google Analytics</b> (no ads, no selling, your name and number are never sent). ' +
+        'measured with our own activity log, <b>Google Analytics</b> and <b>Microsoft Clarity</b> heatmaps/replays (typed details, chats and payments are hidden; no ads, no selling). ' +
         'We never sell your data. See our <a href="privacy.html">Privacy Policy</a>.</span></div>' +
         '<div class="consent-btns">' +
           '<button type="button" class="consent-btn ghost" id="consentEssential">Essential only</button>' +
