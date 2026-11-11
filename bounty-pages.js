@@ -151,7 +151,8 @@
     const tot = rq ? rq.total : 0, dn = rq ? rq.done : 0;   // creatorProfileGate already counts the setup items too
     const pct = Math.round(100 * dn / Math.max(tot, 1));
     const dreams = ((pf && pf.dream_brands) || []).map(x=> x.submitted_brand_name).filter(Boolean);
-    const terms = (pf && pf.commercial_preference && Object.keys(cp).length) ? [cp.accepts_barter?"Barter":"", cp.product_only?"":"Paid"].filter(Boolean).join(", ") : "";
+    const terms = [cp.accepts_barter === true && cp.product_only === true ? "Barter" : cp.accepts_barter === true ? "Barter + paid" : cp.accepts_barter === false ? "Paid" : "",
+      /open to discuss/i.test(cp.notes || "") ? "Open to discuss" : ""].filter(Boolean).join(", ");
     // every part of the old Creator Profile, one row each — a row opens just that section ("#key" = profile.js data-sec)
     const ciRates = ((pf && pf.rate_cards && pf.rate_cards[0] && pf.rate_cards[0].items) || []).slice(0,2).map(i=> `${String(i.deliverable_type).replace(/^IG\s+/,"").replace("Static ","")} ₹${Number(i.amount).toLocaleString("en-IN")}`).join(" · ");
     const L = [["👤","About you", [per.first_name, per.gender ? String(per.gender).replace(/_/g," ") : ""].filter(Boolean).join(" · ") || "Name, gender, birthday, married, pets","#personal"],

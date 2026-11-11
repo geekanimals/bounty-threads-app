@@ -1408,3 +1408,8 @@ body.b2app #content.b2-hub-open > .b2-oneextra:not(#bxHub):not(#bxHubSk){ displa
 body.b2app #content.b2-hub-open[data-one="professional"] > .b2-oneextra:not(#bxHub):not(#bxHubSk){ display:block !important; margin-bottom:12px; }
 .b2-oneextra h4{ margin:0 0 10px; } .b2-cx-row{ display:flex; gap:10px; padding:6px 0; border-bottom:1px solid rgba(0,0,0,.06); font-size:14px; } .b2-cx-row span{ width:90px; color:#7a6a4a; flex:none; }
 .b2-oneextra #bxCxEdit{ margin:10px 0 4px; } .b2-cx-city{ display:block; margin-top:10px; font-size:13px; font-weight:600; } .b2-cx-in{ display:flex; gap:8px; margin-top:6px; } .b2-cx-in input{ flex:1; min-width:0; height:38px; padding:0 12px; border:1px solid #d8c9a3; border-radius:10px; font:inherit; }
+/* campready: what's left — tap one to open that section */
+body.b2app .ops-left{ margin-top:14px; padding-top:12px; border-top:1px solid #e6d6b4; }
+body.b2app .ops-left > b{ display:block; font-size:14px; margin-bottom:8px; color:var(--b2-ink2); }
+body.b2app .ops-left .cp-req-list{ display:flex; flex-direction:column; gap:7px; }
+body.b2app .ops-left .cp-req-it{ display:block; padding:10px 12px; border-radius:12px; font-size:14px; text-decoration:none; font-weight:500; }
