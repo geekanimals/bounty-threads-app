@@ -608,6 +608,7 @@
       </div><div>
       <div class="b2-sec ink">— Your data —</div>
       <button type="button" class="b2-card b2-dl" data-s="download"><b>⤓ Download my data</b><span>Profile, Instagram and campaigns as a file</span></button>
+      <button type="button" class="b2-card b2-dl" data-s="cookies"><b>🍪 Cookie settings</b><span>Essential only or allow analytics — change any time</span></button>
       <div class="b2-del"><b>Delete my account</b><p>Removes your profile and campaign history. Type DELETE to confirm.</p><button type="button" class="b2-mini red" data-s="delete">Delete account</button><div id="bxDel"></div></div>
       ${TIP("Alerts off? You'll still see every update in Inbox.")}</div></div>`;
     box.querySelector('[data-s="kid"]').onclick = ()=> window.bxKid && bxKid.sheet();
@@ -624,6 +625,7 @@
       const l = document.createElement("a"); l.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type:"application/json" })); l.download = "my-bounty-data.json"; l.click();
       b.disabled = false; b.innerHTML = "<b>⤓ Download my data</b><span>Profile, Instagram and campaigns as a file</span>";
     };
+    box.querySelector('[data-s="cookies"]').onclick = ()=>{ if(window.Consent && Consent.reopen) Consent.reopen(); };
     box.querySelector('[data-s="delete"]').onclick = ()=>{
       const d = document.getElementById("bxDel");
       d.innerHTML = `<div class="bx-del"><b>This permanently deletes your login, profile, Instagram connection, campaign history and messages.</b> It can't be undone.

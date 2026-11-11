@@ -4,6 +4,9 @@
 (function(){
   var KEY = "geekos_consent";      // "all" | "essential"
   var DEVICE = "geekos_device_ok"; // set once the user accepts remembering this device
+  // v2 = we added Google Analytics. People who picked "Essential only" before that are asked once more
+  // (with the new wording); their answer is respected either way. "Accept all" choices stay as they are.
+  var VKEY = "geekos_consent_v", CUR = "2";
 
   function get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
   function set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
@@ -12,11 +15,15 @@
   window.Consent = {
     given: function(){ return !!get(KEY); },
     choice: function(){ return get(KEY); },
-    reopen: function(){ try{ localStorage.removeItem(KEY); }catch(e){} show(); },
+    // "Cookie settings": show the choice again; nothing changes until they pick
+    reopen: function(){ show(null, true); },
     // restore a choice already recorded on the server (another device) without logging it again
     set: function(choice){ if(choice==="all"||choice==="essential"){ set(KEY, choice); window.Consent.setRememberDevice(choice==="all"); tell(choice); } },
-    // after sign-in: a blocking choice; resolves with "all" | "essential"
-    require: function(){ return new Promise(function(resolve){ if(get(KEY)) return resolve(get(KEY)); show(resolve); }); },
+    version: CUR,
+    // true when this person should see the choice (never chose, or chose "Essential only" before Google Analytics was added)
+    needsAsk: function(){ var c = get(KEY); return !c || (c === "essential" && get(VKEY) !== CUR); },
+    // after sign-in: a blocking choice when needsAsk(); resolves with "all" | "essential"
+    require: function(){ return new Promise(function(resolve){ if(!window.Consent.needsAsk()) return resolve(get(KEY)); show(resolve, true); }); },
     rememberDevice: function(){ return get(DEVICE) === "1"; },
     setRememberDevice: function(v){ set(DEVICE, v ? "1" : "0"); }
   };
@@ -25,8 +32,8 @@
   function tell(c){ try{ window.dispatchEvent(new CustomEvent("geek:consent", { detail: c })); }catch(e){} }
   function dismiss(banner){ if(banner && banner.parentNode) banner.parentNode.removeChild(banner); }
 
-  function show(done){
-    if(get(KEY)) return; // already chosen
+  function show(done, again){
+    if(get(KEY) && !again) return; // already chosen
     if(document.getElementById("consentModal")) return;
     var bar = document.createElement("div");
     bar.className = "consent-bar consent-modal"; bar.id = "consentModal";
@@ -35,7 +42,8 @@
         '<div class="consent-txt"><b>Cookies &amp; activity on Geek Influencer OS</b>' +
         '<span><b>Essential</b> (always on): keeps you signed in, and a security log of sign-ins and key actions ' +
         '(IP address, approximate city, device) to protect your account. ' +
-        '<b>Analytics</b> (your choice): which pages you use and time spent, so our team can improve the app and support you. ' +
+        '<b>Analytics</b> (your choice): which pages you use and time spent, so our team can improve the app and support you — ' +
+        'measured with our own activity log and <b>Google Analytics</b> (no ads, no selling, your name and number are never sent). ' +
         'We never sell your data. See our <a href="privacy.html">Privacy Policy</a>.</span></div>' +
         '<div class="consent-btns">' +
           '<button type="button" class="consent-btn ghost" id="consentEssential">Essential only</button>' +
@@ -49,7 +57,7 @@
     back.style.cssText = "position:fixed;inset:0;background:rgba(10,10,20,.55);z-index:9998";
     bar.style.zIndex = "9999";
     document.body.appendChild(back);
-    var pick = function(c){ set(KEY,c); tell(c); window.Consent.setRememberDevice(c==="all"); dismiss(bar); dismiss(back); if(window.Tracker) Tracker.consentChanged(c); if(done) done(c); };
+    var pick = function(c){ set(KEY,c); set(VKEY,CUR); tell(c); window.Consent.setRememberDevice(c==="all"); dismiss(bar); dismiss(back); if(window.Tracker) Tracker.consentChanged(c); if(done) done(c); };
     if(all) all.onclick = function(){ pick("all"); };
     if(ess) ess.onclick = function(){ pick("essential"); };
   }
