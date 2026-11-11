@@ -337,7 +337,7 @@
 
   /* ---------- V2-22 / W06 My media kit — the Figma layout on the creator's real data.
      The app's own kit (#mkHeadWrap, refreshed every 60 s) keeps running underneath for its share / edit / sync logic. ---------- */
-  let _mkProf = null, _mkProfLast = null, _mkSig = "";
+  let _mkProf = null, _mkProfLast = null, _mkSig = "", _mkWorkN = 9;
   async function touchMediaKit(){
     const c = document.getElementById("content"); if(!c || currentPage !== "mediakit") return;
     const head = c.querySelector(":scope > .page-head");
@@ -364,7 +364,8 @@
     // the work I'm proud of: pinned first, then best posts
     const pinIds = Array.isArray(E.pinned) ? E.pinned.map(String) : [];
     const engOf = m => (+m.like_count||0) + (+m.comments_count||0);
-    const work = pinIds.map(id=> all.find(m=> String(m.id) === id)).filter(Boolean).concat(all.slice().sort((x,y)=> engOf(y)-engOf(x))).filter((m,i,arr)=> arr.indexOf(m) === i).slice(0,9);
+    // one place for every post: pinned first, then best ones, then the rest — 9 at a time with Load more (no second "showcase" / "top posts")
+    const work = pinIds.map(id=> all.find(m=> String(m.id) === id)).filter(Boolean).concat(all.slice().sort((x,y)=> engOf(y)-engOf(x))).filter((m,i,arr)=> arr.indexOf(m) === i);
     const img = m => m.media_type === "VIDEO" ? (m.thumbnail_url || m.media_url) : m.media_url;
     // let's create together
     // open to = what they picked in Your terms (nothing picked → nothing claimed)
@@ -375,34 +376,41 @@
     const rates = tRates.length ? tRates : (Array.isArray(E.rate_card) ? E.rate_card : []).filter(r=> r && r.item).slice(0,3).map(r=> `${H(r.item)} from ${H(r.price||"—")}`);
     const box = document.getElementById("b2Mk") || document.createElement("div");
     box.id = "b2Mk"; box.className = "b2 b2-mk";
-    box.innerHTML = `<div class="b2-mkcol">
-        <div class="b2-mkid">${a.profile_picture_url?`<img src="${H(a.profile_picture_url)}" alt="">`:`<span class="b2-ini">${H(String(a.username||"C").charAt(0).toUpperCase())}</span>`}
+    const tile = m => `<a href="${H(m.permalink||"#")}" target="_blank" rel="noopener"><img src="${H(img(m))}" alt="" referrerpolicy="no-referrer"></a>`;
+    const workHtml = ()=> `${work.slice(0, _mkWorkN).map(tile).join("")}`;
+    const moreHtml = ()=> work.length > _mkWorkN ? `<button type="button" class="b2-btn light b2-mkmore" data-mk="more">Load more <span>(${work.length - _mkWorkN} more)</span></button>` : "";
+    box.innerHTML = `
+        <div class="b2-mkid"><button type="button" class="b2-mkpen" data-mk="edit" aria-label="Edit media kit" title="Edit media kit">✎</button>${a.profile_picture_url?`<img src="${H(a.profile_picture_url)}" alt="">`:`<span class="b2-ini">${H(String(a.username||"C").charAt(0).toUpperCase())}</span>`}
           <div class="b2-mkn"><b>${H(a.name || a.username)}</b><span>@${H(a.username)}${pro.city_coarse?" · "+H(pro.city_coarse):""}</span>${(pro.categories||[]).length||(pro.languages||[]).length?`<em>${H([].concat((pro.categories||[]).slice(0,3),(pro.languages||[]).slice(0,2)).join(" · "))}</em>`:""}</div>
           <div class="b2-nums"><div><b>${n(a.followers_count)}</b><span>Followers</span></div><div><b>${eng}</b><span>Engagement</span></div><div><b>${third[0]}</b><span>${third[1]}</span></div></div>
           ${(()=>{ const bio = E.bio || a.biography || "", avgL = all.length ? Math.round(all.reduce((t,m)=> t + (+m.like_count||0), 0) / all.length) : 0;
             return `${bio ? `<p class="b2-mkbio">${H(bio)}</p>` : ""}${a.website ? `<a class="b2-mkweb" href="${H(a.website)}" target="_blank" rel="noopener">🔗 ${H(String(a.website).replace(/^https?:\/\//,""))}</a>` : ""}<div class="b2-mkmini">${n(a.media_count || all.length)} total posts · ${n(avgL)} avg likes</div>`; })()}</div>
+        <div class="b2-mkbtns2"><button type="button" class="b2-btn forest" data-mk="share">🔗 Share link</button><button type="button" class="b2-btn light" data-mk="pdf">⤓ Download PDF</button></div>
         <div class="b2-mkacct"><span>📸</span><b>@${H(a.username)}</b><em class="b2-chip2 ok">✓ Connected</em><a href="#" data-mk="add">+ Add account</a></div>
         <div class="b2-sec ink">— Who follows my story —</div>
         <div class="b2-card b2-aud">${bars || `<p class="b2-p it sm">Audience shows once Instagram shares it (needs 100+ followers and insights access).</p>`}${cities.length?`<p class="b2-cities">Top cities: ${H(cities.join(" · "))}</p>`:""}</div>
-      </div><div class="b2-mkcol">
         <div class="b2-sec ink">— The work I'm proud of —</div>
-        ${work.length ? `<div class="b2-mkgrid">${work.map(m=>`<a href="${H(m.permalink||"#")}" target="_blank" rel="noopener"><img src="${H(img(m))}" alt="" referrerpolicy="no-referrer"></a>`).join("")}</div>` : `<div class="b2-card"><p class="b2-p it sm">Your posts show up here once Instagram has synced.</p></div>`}
-        <div class="b2-sec ink">— Let's create together —</div>
-        <div class="b2-card b2-together"><b>${open.length ? "Open to: " + H(open.join(" · ")) : "Set what you're open to"}</b>${rates.length?`<span>${rates.join(" · ")}</span>`:``}${!open.length || !rates.length ? `<a href="#" data-mkterms>${open.length ? "Add your rates" : "Set your terms & rates"} →</a>` : ""}<i>Rates shown only to brands you apply to</i></div>
-        <div class="b2-mkbtns2"><button type="button" class="b2-btn forest" data-mk="share">🔗 Share public link</button><button type="button" class="b2-btn light" data-mk="pdf">⤓ Download PDF</button></div>
-        <button type="button" class="b2-btn light full b2-mkedit" data-mk="edit">✎ Make it yours (edit)</button>
+        ${work.length ? `<div class="b2-mkgrid" id="b2MkWork">${workHtml()}</div><div class="b2-mkmorew">${moreHtml()}</div>` : `<div class="b2-card"><p class="b2-p it sm">Your posts show up here once Instagram has synced.</p></div>`}`;
+    // after the old kit's Work portfolio + Mentions: terms, publish, a closing line
+    let tail = document.getElementById("b2MkTail"); if(!tail){ tail = document.createElement("div"); tail.id = "b2MkTail"; tail.className = "b2 b2-mk b2-mktail"; }
+    tail.innerHTML = `<div class="b2-sec ink">— Let's create together —</div>
+        <div class="b2-card b2-together"><b>${open.length ? "Open to: " + H(open.join(" · ")) : "Set what you're open to"}</b>${rates.length?`<span>${rates.join(" · ")}</span>`:``}${!open.length || !rates.length ? `<a href="#" data-mkterms>${open.length ? "Add your rates" : "Set your terms & rates"} →</a>` : `<a href="#" data-mkterms>Change terms & rates →</a>`}<i>Rates shown only to brands you apply to</i></div>
+        <button type="button" class="b2-btn forest full b2-mkpub" data-mk="publish">📸 Publish to Instagram →</button>
         <p class="b2-quote ink">Get discovered by brands you love.<br>Build the creator career you want.</p>
-        ${TIP("Pin your 6 best posts — brands look there first.")}
-      </div>`;
+        ${TIP("Tap ✎ on your card to pin your 6 best posts — brands look there first.")}`;
     if(!box.isConnected) body.insertBefore(box, hw);
-    box.querySelectorAll("[data-mkterms]").forEach(b=> b.onclick = e=>{ e.preventDefault(); if(!(window.B2 && B2.screens && B2.screens.onbStep)) return;
-      window.__bxOnbReturn = "mediakit"; window.__bxOnbOnly = true; window.__bxManualShown = true; _mkProf = null; B2.screens.onbStep(3, (_mkProfLast || {})); });
-    box.querySelectorAll("[data-mk]").forEach(b=> b.onclick = e=>{ e.preventDefault(); const k = b.dataset.mk;
+    if(tail.previousElementSibling !== hw) hw.after(tail);
+    [box, tail].forEach(root=> root.querySelectorAll("[data-mkterms]").forEach(b=> b.onclick = e=>{ e.preventDefault(); if(!(window.B2 && B2.screens && B2.screens.onbStep)) return;
+      window.__bxOnbReturn = "mediakit"; window.__bxOnbOnly = true; window.__bxManualShown = true; _mkProf = null; B2.screens.onbStep(3, (_mkProfLast || {})); }));
+    const wire = root=> root.querySelectorAll("[data-mk]").forEach(b=> b.onclick = e=>{ e.preventDefault(); const k = b.dataset.mk;
+      if(k === "more"){ _mkWorkN += 9; const g = document.getElementById("b2MkWork"); if(g) g.innerHTML = workHtml(); const mw = box.querySelector(".b2-mkmorew"); if(mw){ mw.innerHTML = moreHtml(); wire(mw); } return; }
+      if(k === "publish"){ const pc = document.getElementById("mkComposeCta"); if(pc) return pc.click(); currentPage = "instagram"; return renderShell(); }
       if(k === "share"){ const s2 = document.getElementById("mkShare"); if(s2) return s2.click(); if(typeof openKitShare === "function") return openKitShare(a); }
       if(k === "edit"){ if(typeof openMkEdit === "function") return openMkEdit("profile", a); }
       if(k === "add"){ if(typeof igAddAnother === "function") return igAddAnother("mediakit"); const t = document.querySelector(".mk-topbar button"); if(t) t.click(); }
       if(k === "pdf"){ const u = (typeof kitPublicUrl === "function") ? kitPublicUrl(a) : "/p.html?u=" + encodeURIComponent(a.username); const w = window.open(u + (u.includes("?")?"&":"?") + "print=1", "_blank", "noopener"); if(!w && typeof gateToast === "function") gateToast("Allow pop-ups to download your media kit PDF."); }
     });
+    wire(box); wire(tail);
   }
 
   /* ---------- V2-24 Analytics header: creator pulse + 4 numbers ---------- */

@@ -5002,7 +5002,7 @@ function mkHead(a){
   const portfolio = Array.isArray(E.portfolio)?E.portfolio:[];
   const portfolioHtml = portfolio.length
     ? `<div class="mk-portfolio">${portfolio.slice(0,_mkShown.port).map(p=>`<div class="mk-brand"><div class="mk-brand-ic">${esc((p.brand||'?').slice(0,2).toUpperCase())}</div><div class="mk-brand-b"><div class="mk-brand-n">${esc(p.brand)}</div>${p.note?`<div class="muted" style="font-size:12px">${esc(p.note)}</div>`:''}</div>${p.url?`<a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener" class="mk-brand-link">↗</a>`:''}</div>`).join("")}</div>`
-    : `<div class="muted" style="padding:8px">No collaborations yet — click <b>Edit</b> to showcase brands you've worked with.</div>`;
+    : `<div class="muted" style="padding:8px">No collaborations yet — tap <b>✎ Edit</b> to add brands you've worked with.</div>`;
   const scanning = !a.archive_synced_at;
 
   return `<div class="mk-kit">
@@ -5047,7 +5047,7 @@ function mkHead(a){
     <div class="card mk-section"><div class="mk-sec-head"><h3>Mentions</h3>${mentions.length?`<span class="muted mk-sec-sub">${fmtNum(mentions.length)} tagged posts</span>`:""}</div>
       ${mentionCards ? `<div class="mk-grid">${mentionCards}</div>${mkMoreBtn("ment", mentions.length)}` : `<div class="muted" style="padding:8px">Posts where brands &amp; others tag you will appear here once they're available from Instagram.</div>`}</div>
 
-    <div class="card mk-section"><div class="mk-sec-head"><h3>Content showcase</h3>${all.length?`<span class="muted mk-sec-sub">${fmtNum(all.length)} posts</span>`:""}</div>
+    <div class="card mk-section mk-show"><div class="mk-sec-head"><h3>Content showcase</h3>${all.length?`<span class="muted mk-sec-sub">${fmtNum(all.length)} posts</span>`:""}</div>
       ${posts?`<div class="mk-grid">${posts}</div>${mkMoreBtn("show", all.length)}`:`<div class="muted" style="padding:8px">No posts yet.</div>`}</div>
 
     <div class="card mk-section mk-collab">
