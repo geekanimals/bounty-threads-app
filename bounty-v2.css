@@ -1431,7 +1431,7 @@ body.b2app #content.b2-hub-open[data-one] .cp-sec{ margin-top:6px; }
 
 /* "What you create": niche, languages & city card shown above the Professional section */
 body.b2app #content.b2-hub-open > .b2-oneextra:not(#bxHub):not(#bxHubSk){ display:none !important; }   /* outweighs the "show the opened part" rule */
-body.b2app #content.b2-hub-open[data-one="professional"] > #bxCreateX, body.b2app #content.b2-hub-open[data-one="terms"] > #bxTermsX{ display:block !important; margin-bottom:12px; }
+body.b2app #content.b2-hub-open[data-one="professional"] > #bxCreateX:not(#bxHub):not(#bxHubSk), body.b2app #content.b2-hub-open[data-one="terms"] > #bxTermsX:not(#bxHub):not(#bxHubSk){ display:block !important; margin-bottom:12px; }
 body.b2app #content.b2-hub-open[data-one="pages"] .cp-sec[data-sec="visibility"]{ display:block !important; }
 .b2-oneextra h4{ margin:0 0 10px; } .b2-cx-row{ display:flex; gap:10px; padding:6px 0; border-bottom:1px solid rgba(0,0,0,.06); font-size:14px; } .b2-cx-row span{ width:90px; color:#7a6a4a; flex:none; }
 .b2-oneextra #bxCxEdit{ margin:10px 0 4px; } .b2-cx-city{ display:block; margin-top:10px; font-size:13px; font-weight:600; } .b2-cx-in{ display:flex; gap:8px; margin-top:6px; } .b2-cx-in input{ flex:1; min-width:0; height:38px; padding:0 12px; border:1px solid #d8c9a3; border-radius:10px; font:inherit; }
@@ -1479,7 +1479,7 @@ body.b2app .b2-oneextra h4{ font:600 18px var(--b2-f-serif) !important; color:va
 .b2-rates{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
 .b2-rates label{ display:flex; flex-direction:column; gap:4px; padding:10px 12px; border:1px solid #d8c9a3; border-radius:12px; background:#fffdf6; }
 .b2-rates span{ font:600 12px var(--b2-f-dm); color:var(--b2-mute); } .b2-rates b{ display:flex; align-items:center; gap:3px; font:700 16px var(--b2-f-dm); color:var(--b2-ink2); }
-.b2-rates input{ width:100%; min-width:0; border:0; outline:none; background:none; font:700 16px var(--b2-f-dm); color:var(--b2-ink2); }
+.b2-rates input, body.b2app .b2-rates input{ width:100%; min-width:0; height:auto !important; padding:0 !important; border:0 !important; box-shadow:none !important; outline:none; background:none !important; font:700 16px var(--b2-f-dm) !important; color:var(--b2-ink2); }
 /* phone: the sidekick's tip pops out of the sidekick in the bottom bar, so the in-page tip card hides */
 @media(max-width:900px){ body.bx-navtips #content .b2-tip{ display:none !important; } }
 .b2-navsay-m{ bottom:calc(84px + env(safe-area-inset-bottom) + 36px); }

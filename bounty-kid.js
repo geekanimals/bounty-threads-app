@@ -34,7 +34,7 @@
   /* ---- apply everywhere ---- */
   function swapImgs(root){
     (root || document).querySelectorAll('img[src*="/assets/bounty/sprout_"],img[src*="/assets/bounty/kid_"],img[data-kid-me]').forEach(i=>{
-      if(i.closest(".b2k-pick,[data-kid]")) return;
+      if(i.closest(".b2k-pick,[data-kid],#bxKidSheet,.b2k-me") || i.id === "b2kImg") return;   // the picker shows the sidekick being chosen, not the saved one
       if(i.getAttribute("src") !== img()) i.setAttribute("src", img());
     });
   }
@@ -108,6 +108,7 @@
     root.querySelectorAll("[data-pick]").forEach(b=> b.onclick = ()=>{
       root.querySelectorAll("[data-pick]").forEach(x=> x.classList.toggle("on", x===b)); st.kid = b.dataset.pick;
       const im = root.querySelector("#b2kImg"); if(im) im.src = KIDS[st.kid].img;
+      root.querySelectorAll(".b2s-head > img").forEach(x=> x.src = KIDS[st.kid].img);
       const nm = root.querySelector("#b2kName"); if(!nm.value.trim() || Object.values(KIDS).some(v=> v.n === nm.value.trim())) nm.value = KIDS[st.kid].n;
       root.querySelectorAll(".b2k-nm").forEach(x=> x.textContent = nm.value.trim() || KIDS[st.kid].n);
       if(onPick) onPick(st.kid);
