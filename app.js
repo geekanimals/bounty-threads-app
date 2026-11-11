@@ -7114,7 +7114,7 @@ function startCampaignCommand(c){
     const a = document.activeElement; if(a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.tagName==="SELECT")) return;
     if(document.querySelector("#bpBody .hub-set") || _bpTab==="terms" || _bpTab==="bulk" || _bpTab==="payments" || _bpTab==="messages" || _bpTab==="tracking") return;   // never wipe a half-filled form
     loadBarterProcess(true);
-  }, 20000);
+  }, 5*60*1000);   // quiet refresh every 5 minutes
 }
 // On a campaign's own page, Barter process / Bulk upload / Invite open right on that page (same screen);
 // anywhere else they open as the side panel.
@@ -7164,7 +7164,7 @@ function openBarterProcess(campaignId, campaignName, focusParticipation, tab){
     if(_bpTab==="terms") return;      // never repaint a form someone is editing
     if(_bpTab==="bulk"){ loadBulkList(); loadBarterProcess(true); return; }   // keep a half-checked upload intact
     loadBarterProcess(true);
-  }, 20000);
+  }, 5*60*1000);   // quiet refresh every 5 minutes
 }
 async function loadBarterProcess(silent){
   const body = document.getElementById("bpBody"); if(!body || !_bpCamp) return;
@@ -7183,8 +7183,27 @@ async function loadBarterProcess(silent){
   _bpData = t.data||{}; _bpData.outreach = o.data||{}; _bpData.progress = (g && g.data) || {}; pollNavCounts();
   if(_bpTab==="analytics") await loadBpAnalytics(true);
   if(silent && (_bpTab==="bulk" || _bpTab==="tracking")) return;
-  paintBarterProcess();
+  // background refresh: nothing changed → touch nothing; something changed → redraw in place (same scroll, same row filter)
+  let sig = ""; try{ sig = JSON.stringify([_bpData, _bpAnalytics, _bpPeople, _bpTab]); }catch(e){}
+  if(silent && sig && sig === _bpSig) return;
+  _bpSig = sig;
+  if(silent) bpQuietPaint(); else paintBarterProcess();
   ccApplyFocus();
+}
+let _bpSig = "";
+// redraw the campaign page without the user noticing: keep every scroll position and typed row filter as it was
+function bpQuietPaint(){
+  const body = document.getElementById("bpBody"); if(!body){ paintBarterProcess(); return; }
+  const scrollers = [document.scrollingElement || document.documentElement];
+  for(let el = body.parentElement; el; el = el.parentElement){ if(el.scrollHeight > el.clientHeight + 2 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) scrollers.push(el); }
+  const pos = scrollers.map(el=> el.scrollTop);
+  const flt = [...body.querySelectorAll(".tbl-flt input")].map(i=> i.value);
+  const h = body.offsetHeight; body.style.minHeight = h + "px";   // no collapse while it redraws
+  paintBarterProcess();
+  if(typeof window.__tblScan === "function") window.__tblScan();   // filter boxes back right away, not 150 ms later
+  [...body.querySelectorAll(".tbl-flt input")].forEach((i, k)=>{ if(flt[k]){ i.value = flt[k]; i.oninput && i.oninput(); } });
+  const put = ()=> scrollers.forEach((el, k)=>{ if(Math.abs(el.scrollTop - pos[k]) > 1) el.scrollTop = pos[k]; });
+  put(); requestAnimationFrame(put); setTimeout(()=>{ put(); body.style.minHeight = ""; }, 250);
 }
 // from the 🔔 to-do list: open the campaign, that creator, and the action they're stuck on
 async function goToCreatorAction(openId, pid, act){
@@ -12446,6 +12465,7 @@ const tblKey = t=> [...t.querySelectorAll("thead th")].map(h=> h.innerText.repla
       cnt.textContent = q ? `${n} of ${table.tBodies[0].rows.length}` : ""; };
   };
   const scan = ()=> document.querySelectorAll("table.tbl").forEach(t=>{ addFilter(t); reapply(t); });
+  window.__tblScan = scan;
   new MutationObserver(()=>{ clearTimeout(scan._t); scan._t = setTimeout(scan, 150); }).observe(document.documentElement, { childList:true, subtree:true });
 })();
 
