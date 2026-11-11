@@ -12125,11 +12125,28 @@ async function claimCreatorInvites(){
 // The creator's only hard gate: Instagram (media kit) + WhatsApp connected. The profile is optional (popup + %).
 async function creatorProfileGate(){
   try{
-    const [rq, js] = await Promise.all([
+    const P0 = (window.Auth && Auth.profile) || {};
+    const [rq, js, mp, sa] = await Promise.all([
       sb.schema("api").rpc("get_profile_requirements").then(r=>r, e=>({error:e})),
-      sb.schema("api").rpc("my_join_status").then(r=>r, e=>({error:e}))]);
+      sb.schema("api").rpc("my_join_status").then(r=>r, e=>({error:e})),
+      sb.schema("api").rpc("get_my_profile").then(r=>r, e=>({error:e})),
+      P0.id ? sb.from("social_accounts").select("username").eq("platform","instagram").eq("member_id", P0.id).limit(1).then(r=>r, e=>({error:e})) : Promise.resolve({data:[]})]);
     if(!rq.error && rq.data){
       const d = rq.data, its = (d.items||[]).filter(it=> !["reel_rate","barter"].includes(it.key) && !["rate","barter"].includes(it.section));
+      // one profile % everywhere (dashboard, sidebar, hub, media kit): the server checklist + what the setup asks
+      if(!mp.error && mp.data){
+        const pf = mp.data, pro = pf.professional || {}, per = pf.personal || {}, cp = pf.commercial_preference || {};
+        const md = (window.__bxMeta && __bxMeta.bx_manual) || {}, igOk = ((sa && sa.data) || []).length > 0;
+        const have = new Set(its.map(it=> it.key));
+        [["s_name","Your name","personal", !!(pro.display_name || per.first_name)],
+         ["s_city","Your city","professional", !!(pro.city_coarse || md.city)],
+         ["s_cats","Content categories","professional", (pro.categories||[]).length > 0],
+         ["s_langs","Content languages","professional", (pro.languages||[]).length > 0],
+         ["s_formats","Content formats","professional", (pro.content_formats||[]).length > 0],
+         ["s_ig","Instagram account","pages", igOk || !!pro.ig_handle_self || !!md.ig_handle],
+         ["s_terms","Your terms","terms", cp.accepts_barter != null || cp.product_only != null || cp.min_product_value != null]]
+          .forEach(([key,label,section,done])=>{ if(!have.has(key)) its.push({ key, label, section, done }); });
+      }
       const dn = its.filter(it=> it.done).length;
       window.__profileReq = Object.assign({}, d, { items:its, total:its.length, done:dn, complete: dn===its.length,
         missing: its.filter(it=> !it.done).map(it=> it.label) });
