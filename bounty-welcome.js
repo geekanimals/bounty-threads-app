@@ -727,7 +727,11 @@
       if(window.Auth && Auth.profile && Auth.profile.role === "creator"){
         let fromApply = null; try{ fromApply = sessionStorage.getItem("bx_ig_from_apply"); sessionStorage.removeItem("bx_ig_from_apply"); }catch(e){}
         if(fromApply){ igSent(); return; }
-        igIdentity();
+        // connected from anywhere → straight onto the Media Kit; a first-time creator then gets the quick setup
+        // (categories → dream brands → terms) on top of it, and no "type your Instagram" step (it's connected)
+        window.__bxNoIg = false; window.__bxManualShown = true; window.__bxOnbAfterIg = true; window.__bxOnbReturn = "mediakit";
+        igClose(); go2("mediakit");
+        setTimeout(()=>{ window.__bxOnbAfterIg = false; if(window.bxMaybeOnboard && !document.getElementById("bxOnb")) bxMaybeOnboard(true, true); }, 2200);
       } else igClose();
     };
     // the app started its own loader before this file loaded (Instagram sent us back) — take it over
@@ -753,16 +757,18 @@
   /* =================== New creator profile setup (V2-06 · 07 · 08 / N06–N08 · W25–W27) — saves to the real profile =================== */
   const onbKey = () => "bx_onb_done_" + ((window.Auth && Auth.profile && Auth.profile.id) || "");
   let _onbChecked = false;
-  window.bxMaybeOnboard = async function(force){
+  window.bxMaybeOnboard = async function(force, afterIg){
+    if(!afterIg && window.__bxOnbAfterIg) return;   // just connected Instagram: let the Media Kit show first
     waOptin();
     if(!force && _onbChecked) return; _onbChecked = true;
     if(!(window.Auth && Auth.profile && Auth.profile.role === "creator") || !window.__ciProfileEnabled) return;
     const ar = document.getElementById("authRoot"); if(ar && ar.classList.contains("open")){ _onbChecked = false; return; }   // sign-in / Instagram step still on screen
     if(document.getElementById("igProg")){ _onbChecked = false; return; }
-    try{ if(!force && localStorage.getItem(onbKey())) return; }catch(e){}
-    const r = await papi("get_my_profile"); if(r.error || !r.data) return;
+    const done = ()=>{ try{ return !!localStorage.getItem(onbKey()); }catch(e){ return false; } };
+    if((!force || afterIg) && done()){ if(afterIg) window.__bxOnbReturn = null; return; }
+    const r = await papi("get_my_profile"); if(r.error || !r.data){ if(afterIg) window.__bxOnbReturn = null; return; }
     const d = r.data, pro = d.professional || {};
-    if(!force && ((pro.categories||[]).length || (pro.content_formats||[]).length)) { try{ localStorage.setItem(onbKey(), "1"); }catch(e){} return; }
+    if((!force || afterIg) && ((pro.categories||[]).length || (pro.content_formats||[]).length)) { try{ localStorage.setItem(onbKey(), "1"); }catch(e){} if(afterIg) window.__bxOnbReturn = null; return; }
     onbStep(1, d);
   };
   // "Send me matching campaign alerts on WhatsApp (optional)" from the sign-in screen → the creator's contact opt-in
@@ -780,7 +786,7 @@
     o.scrollTop = 0;
     return o;
   }
-  const noIg = () => !!(window.__profileGate || window.__bxNoIg);
+  const noIg = () => !!(window.__bxNoIg || (window.__joinNeeds || []).some(x=> /instagram/i.test(x)));
   const top = (n, label) => `<div class="b2-ptop"><div class="b2-plogo m-only">${LOGO}</div><div class="b2-progrow">${prog(n, label)}</div></div>`;
   const manualDone = ()=>{ const m = (window.__bxMeta && __bxMeta.bx_manual) || {}; return !!(m.ig_handle || m.at); };
   function onbFinish(goExplore){
