@@ -958,7 +958,8 @@ body.b2app .b2-mkhost > .mk-topbar{ position:absolute !important; left:-9999px; 
    only the parts the new kit already shows (cover, numbers, audience, pinned / best posts) stay hidden */
 body.b2app .b2-mkhost > #mkHeadWrap{ max-width:1000px; margin:6px auto 0; }
 body.b2app .b2-mkhost #mkHeadWrap .mk-cover, body.b2app .b2-mkhost #mkHeadWrap .mk-tiles, body.b2app .b2-mkhost #mkHeadWrap .mk-aud-card,
-body.b2app .b2-mkhost #mkHeadWrap .mk-pinned, body.b2app .b2-mkhost #mkHeadWrap .mk-top{ display:none !important; }
+body.b2app .b2-mkhost #mkHeadWrap .mk-pinned, body.b2app .b2-mkhost #mkHeadWrap .mk-top,
+body.b2app .b2-mkhost #mkHeadWrap .mk-show, body.b2app .b2-mkhost #mkHeadWrap .mk-collab, body.b2app .b2-mkhost #mkHeadWrap [data-mkedit]{ display:none !important; }
 body.b2app .b2-mkhost #mkHeadWrap .mk-kit{ display:flex; flex-direction:column; gap:12px; background:none !important; padding:0 !important; }
 body.b2app .b2-mkhost #mkHeadWrap .mk-section{ margin:0 !important; padding:14px 14px 16px !important; border-radius:18px !important; background:var(--b2-card) !important; border:1px solid var(--b2-card-bd) !important; box-shadow:0 4px 14px rgba(90,70,30,.08) !important; }
 body.b2app .b2-mkhost #mkHeadWrap .mk-sec-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
@@ -1440,3 +1441,16 @@ body.b2app .ops-left .cp-req-list{ display:flex; flex-direction:column; gap:7px;
 body.b2app .ops-left .cp-req-it{ display:block; padding:10px 12px; border-radius:12px; font-size:14px; text-decoration:none; font-weight:500; }
 @media (max-width:480px){ body.b2app .b2-campchips{ gap:6px; } body.b2app .b2-campchips button, body.b2app .b2-campchips .ci-chip{ padding:0 12px; font-size:14px !important; } }
 .b2-together a{ font:600 13.5px var(--b2-f-dm); color:#b8452b; text-decoration:none; }
+
+/* media kit, one tidy column: card (✎ top-right) → share / PDF → account → audience → work (+ Load more) → portfolio → mentions → terms → publish */
+body.b2app .b2-mkhost > #b2Mk, body.b2app .b2-mkhost > #mkHeadWrap, body.b2app .b2-mkhost > #b2MkTail{ display:block !important; max-width:680px; margin-left:auto; margin-right:auto; }
+body.b2app .b2-mkhost > #mkHeadWrap{ margin-top:14px; }
+body.b2app #b2Mk .b2-mkid{ position:relative; }
+.b2-mkpen{ position:absolute; top:10px; right:10px; width:34px; height:34px; border-radius:50%; border:1px solid rgba(232,176,74,.6); background:rgba(251,243,226,.12); color:var(--b2-cream2); font:600 16px/1 var(--b2-f-dm); display:grid; place-items:center; cursor:pointer; z-index:2; }
+.b2-mkpen:hover{ background:rgba(251,243,226,.22); }
+body.b2app #b2Mk .b2-mkn{ padding-right:30px; }
+body.b2app #b2Mk .b2-mkbtns2{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0 0 12px; }
+body.b2app #b2Mk .b2-mkbtns2 .b2-btn{ min-height:46px; font-size:15px; border-radius:14px; }
+.b2-mkmorew{ display:flex; justify-content:center; margin-top:10px; } .b2-mkmore{ min-height:40px; padding:0 18px; border-radius:14px; font-size:14px; } .b2-mkmore span{ opacity:.7; font-weight:400; }
+body.b2app #b2MkTail .b2-mkpub{ margin-top:12px; min-height:48px; border-radius:14px; font-size:15px; }
+body.b2app #b2MkTail .b2-together a{ font:600 13.5px var(--b2-f-dm); color:#b8452b; text-decoration:none; }
