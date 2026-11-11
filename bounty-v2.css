@@ -1340,3 +1340,41 @@ body:not(.bx) .bx-next, body:not(.bx) .bx-trust-links, body:not(.bx) .b2-drx{ di
 #authRoot #bxw[data-scene="jungle"] .b2-boxes i.on:empty::after{ background:var(--b2-gold); }
 #authRoot #bxw[data-scene="jungle"] .b2-form .auth-err{ color:#ffb4a8; }
 #authRoot #bxw[data-scene="jungle"] #cinvBanner{ color:var(--b2-cream2); }
+
+/* guest explore ("I'll explore first") on parchment — ink text, forest buttons */
+.b2g{ background:var(--b2-parch) center top/cover fixed, #f1e3c4; color:var(--b2-ink2); }
+.b2g .b2g-top{ background:rgba(246,235,211,.9); border-bottom:1px solid rgba(184,154,100,.45); }
+.b2g .b2-logo{ color:var(--b2-ink2); --tg-gap:#f6ebd3; }
+.b2g .b2g-in{ background:var(--b2-forest); color:#fbf3e2; }
+.b2g .b2g-links a{ color:var(--b2-ink2); } .b2g .b2g-links a.on{ color:#b8452f; }
+.b2g .b2-guestban{ background:rgba(255,253,246,.85); border-color:#d8c9a3; color:var(--b2-ink2); }
+.b2g .b2-h1.light{ color:var(--b2-ink2); } .b2g .b2-sub.light{ color:var(--b2-mute); }
+.b2g .b2-chips.dark{ flex-wrap:nowrap; overflow-x:auto; justify-content:flex-start; scrollbar-width:none; padding-bottom:2px; }
+.b2g .b2-chips.dark::-webkit-scrollbar{ display:none; }
+.b2g .b2-chips.dark{ gap:6px; }
+.b2g .b2-chips.dark button{ flex:none; height:34px; padding:0 12px; font-size:13.5px; border-color:#cdb58a; background:rgba(255,253,246,.88); color:var(--b2-ink2); }
+@media(max-width:375px){ .b2g .b2-chips.dark{ gap:5px; } .b2g .b2-chips.dark button{ padding:0 9px; font-size:12.5px; } }
+.b2g .b2-chips.dark button.on{ background:var(--b2-forest); border-color:var(--b2-forest); color:#fbf3e2; box-shadow:none; }
+.b2g .b2-camp{ background:#fffaf0; border:1px solid #e2cf9f; color:var(--b2-ink2); box-shadow:0 6px 18px rgba(80,60,20,.12); }
+.b2g .b2-camp-brand{ color:#7a6a4a; } .b2g .b2-camp h4{ color:var(--b2-ink2); }
+.b2g .b2-camp-comp{ color:#b4621f; } .b2g .b2-camp-l{ color:var(--b2-mute); }
+.b2g .b2-type{ background:#fff3d9; border-color:#c99a3e; color:#8a5d14; }
+.b2g .b2-vb{ background:var(--b2-forest); border-color:var(--b2-forest); color:#fbf3e2; }
+.b2g .b2-match, .b2g .b2-match.chk{ color:var(--b2-teal); }
+.b2g .b2-empty{ background:rgba(255,253,246,.85); border-color:#d8c9a3; color:var(--b2-mute); }
+.b2g .b2-back{ color:var(--b2-ink2); }
+.b2g .b2-lock .b2-btn.cream{ background:var(--b2-forest); color:#fbf3e2; }
+.b2g .b2-lock .b2-link.light{ color:var(--b2-ink2); }
+.b2g .b2-orb{ background:rgba(23,61,44,.1); }
+.b2g .b2-tip p{ background:#fffdf6; border-color:#d8c9a3; color:var(--b2-ink2); } .b2g .b2-tip p b{ color:#b8452f; }
+@media(min-width:901px){ .b2g .b2-chips.dark{ justify-content:center; flex-wrap:wrap; } }
+/* Pip's speech bubble rising from the Pip in the bottom bar */
+.b2-navsay{ position:fixed; left:50%; bottom:calc(78px + env(safe-area-inset-bottom) + 44px); z-index:61; width:min(300px, calc(100vw - 40px)); transform:translateX(-50%); transform-origin:50% 100%; animation:b2say .38s cubic-bezier(.2,1.25,.4,1) both; }
+.b2-navsay p{ margin:0; position:relative; background:#fffdf6; border:1.5px solid var(--b2-gold2); border-radius:18px; padding:11px 34px 11px 15px; font:italic 400 13.5px/1.35 var(--b2-f-serif); color:var(--b2-ink2); text-align:left; box-shadow:0 10px 26px rgba(0,0,0,.28); cursor:pointer; }
+.b2-navsay p b{ font-style:normal; font-weight:700; color:#b8452f; }
+.b2-navsay p::after{ content:""; position:absolute; left:50%; bottom:-9px; width:16px; height:16px; margin-left:-8px; background:#fffdf6; border-right:1.5px solid var(--b2-gold2); border-bottom:1.5px solid var(--b2-gold2); transform:rotate(45deg); }
+.b2-navsay button{ position:absolute; top:5px; right:6px; width:26px; height:26px; border:0; background:none; font:400 20px/1 var(--b2-f-ui); color:#8a7a5a; }
+.b2-navsay.out{ animation:b2sayout .22s ease forwards; }
+@keyframes b2say{ from{ opacity:0; transform:translateX(-50%) translateY(30px) scale(.25); } to{ opacity:1; transform:translateX(-50%) translateY(0) scale(1); } }
+@keyframes b2sayout{ to{ opacity:0; transform:translateX(-50%) translateY(24px) scale(.35); } }
+@media(min-width:901px){ .b2-navsay{ display:none; } }
