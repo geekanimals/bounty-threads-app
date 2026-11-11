@@ -548,7 +548,11 @@
     if(!root) return;
     document.getElementById("gateIg").onclick = ()=>{ if(window.Tracker) Tracker.security("instagram_connect_start"); connectInstagram(); };
     document.getElementById("gateSignout").onclick = ()=> window.Auth && Auth.signOut();
-    document.getElementById("bxIgLater").onclick = ()=> manualProfile();
+    document.getElementById("bxIgLater").onclick = ()=>{
+      try{ localStorage.setItem(igLaterKey(), "1"); }catch(e){}
+      const r2 = document.getElementById("authRoot"); if(r2){ r2.classList.remove("open"); r2.innerHTML = ""; } document.body.classList.remove("bx-pre");
+      window.__bxNoIg = true; window.__bxManualLast = true; bootOS();
+    };
   }
   function manualProfile(){
     const md = (window.__bxMeta && __bxMeta.bx_manual) || {};
@@ -778,7 +782,9 @@
   }
   const noIg = () => !!(window.__profileGate || window.__bxNoIg);
   const top = (n, label) => `<div class="b2-ptop"><div class="b2-plogo m-only">${LOGO}</div><div class="b2-progrow">${prog(n, label)}</div></div>`;
+  const manualDone = ()=>{ const m = (window.__bxMeta && __bxMeta.bx_manual) || {}; return !!(m.ig_handle || m.at); };
   function onbFinish(goExplore){
+    if(noIg() && !manualDone() && !window.__bxManualShown){ window.__bxManualShown = true; return onbManual(goExplore); }
     try{ localStorage.setItem(onbKey(), "1"); localStorage.setItem("ci_ob_commercial_" + ((Auth.profile && (Auth.profile.id||Auth.profile.user_id)) || "me"), "1"); }catch(e){}
     const o = document.getElementById("bxOnb"); if(o) o.remove();
     if(window.__profileReq && typeof creatorProfileGate === "function"){ creatorProfileGate().then(()=>{}).catch(()=>{}); }
@@ -788,39 +794,95 @@
     else { currentPage = "dashboard"; renderShell(); }
   }
   const err = msg => { const e = document.getElementById("bxoErr"); if(e) e.textContent = msg; };
+  // last step for a creator without Instagram connected: their handle, name, city and followers (self-reported)
+  function onbManual(goExplore){
+    const md = (window.__bxMeta && __bxMeta.bx_manual) || {};
+    const P = (window.Auth && Auth.profile) || {};
+    const nm = /^wa_\d+@/.test(P.name||"") ? "" : (P.name || "");
+    onbShell("manual", "parch", `<div class="b2-ptop"><div class="b2-plogo m-only">${LOGO}</div><div class="b2-progrow"><span class="b2-pn wide">Last step</span></div></div>
+      <h2 class="b2-h">Tell us about you.</h2>
+      <p class="b2-p">No Instagram connected? No problem — enter your details manually.</p>
+      <label class="b2-lab">Instagram handle<input class="b2-in" id="bxmHandle" placeholder="@yourhandle" value="${E(md.ig_handle||"")}" autocomplete="off"></label>
+      <label class="b2-lab">Full name<input class="b2-in" id="bxmName" placeholder="Your name" value="${E(nm)}" autocomplete="name"></label>
+      <label class="b2-lab">City<input class="b2-in" id="bxmCity" placeholder="e.g. Bengaluru" value="${E(md.city||"")}" autocomplete="address-level2"></label>
+      <label class="b2-lab">Followers (approx.)<input class="b2-in" id="bxmFol" placeholder="e.g. 12,000" inputmode="numeric" value="${E(md.followers||"")}"></label>
+      <div class="b2-note">Shown to brands as “self-reported” until you connect Instagram. Some campaigns need a verified account.</div>
+      <div class="auth-err" id="bxoErr"></div>
+      <button type="button" class="b2-btn forest full big" id="bxmGo">Finish&nbsp; →</button>
+      <button type="button" class="b2-link cy u" id="bxmIg">Connect Instagram instead</button>
+      <button type="button" class="b2-link mute" id="bxmSkip">Skip for now</button>`);
+    document.getElementById("bxmIg").onclick = ()=>{ if(window.Tracker) Tracker.security("instagram_connect_start"); connectInstagram(); };
+    document.getElementById("bxmSkip").onclick = ()=> onbFinish(goExplore);
+    document.getElementById("bxmGo").onclick = async ()=>{
+      const btn = document.getElementById("bxmGo"); err("");
+      const v = id => document.getElementById(id).value.trim();
+      const handle = v("bxmHandle").replace(/^@+/,""), name = v("bxmName"), city = v("bxmCity"), fol = v("bxmFol").replace(/[^\d]/g,"");
+      if(handle && !/^[A-Za-z0-9._]{1,30}$/.test(handle)){ err("That Instagram handle doesn't look right — letters, numbers, dots and underscores only."); return; }
+      btn.disabled = true; btn.textContent = "Saving…";
+      try{
+        const manual = { ig_handle: handle ? "@" + handle : "", followers: fol ? Number(fol) : null, city, self_reported:true, at: new Date().toISOString() };
+        const u = await sb.auth.updateUser({ data:{ bx_manual: manual } }); if(u && u.error) throw u.error;
+        window.__bxMeta = Object.assign({}, window.__bxMeta||{}, { bx_manual: manual });
+        const parts = name.split(/\s+/).filter(Boolean);
+        if(parts.length){ const r = await papi("save_profile_section", { p_section:"personal", p_patch:{ first_name:parts[0], last_name:parts.slice(1).join(" ") || null }, p_correlation:"ui-manual" }); if(r.error) throw r.error; }
+        const pp = {}; if(name) pp.display_name = name; if(city) pp.city_coarse = city;
+        if(handle) pp.ig_handle_self = handle; if(fol) pp.followers_self = fol;   // self-reported — shown on the creator's page for the Super Admin
+        if(Object.keys(pp).length){ const r = await papi("save_profile_section", { p_section:"professional", p_patch:pp, p_correlation:"ui-manual" }); if(r.error) throw r.error; }
+      }catch(e){ err("Couldn't save: " + (e.message || e)); btn.disabled = false; btn.innerHTML = "Finish&nbsp; →"; return; }
+      onbFinish(goExplore);
+    };
+  }
   function onbStep(n, d){
     const pro = d.professional || {}, cp = d.commercial_preference || {};
     if(n === 1){
-      const CATS = [["Food","ph_food"],["Beauty","ph_beauty"],["Fashion","ph_fashion"],["Fitness","ph_fitness"],["Pets","ph_pets"],["Travel","ph_travel"]];
-      const MORE = ["Lifestyle","Tech","Gaming","Parenting","Home & Decor","Education"];
+      const US = id => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=480&h=340&q=70`;
+      const CATS = [["Food",R+"ph_food.jpg"],["Beauty",R+"ph_beauty.jpg"],["Fashion",R+"ph_fashion.jpg"],["Fitness",R+"ph_fitness.jpg"],["Pets",R+"ph_pets.jpg"],["Travel",R+"ph_travel.jpg"],
+        ["Lifestyle",US("photo-1622049605334-72e1e4432346")],["Tech",US("photo-1614624532983-4ce03382d63d")],["Gaming",US("photo-1636487658616-14850c8f496c")],
+        ["Parenting",US("photo-1589169011402-8b2cbd1ee593")],["Home & Decor",US("photo-1745429523617-0d837856ca35")],["Education",US("photo-1617009762269-c062aaf6b3a0")]];
       const FMT = [["reel","Reels"],["story","Stories"],["carousel","Carousels"],["ugc","UGC videos"]];
-      const LANG = ["Hindi","Hinglish","English"], LMORE = ["Bengali","Tamil","Telugu","Marathi","Gujarati","Kannada","Malayalam","Punjabi"];
+      const LANG = ["Hindi","Hinglish","English","Bengali","Tamil","Telugu","Marathi","Gujarati","Kannada","Malayalam","Punjabi","Odia","Assamese","Urdu"];
       const cats = pro.categories || [], fmts = pro.content_formats || [], langs = pro.languages || [];
-      const extraC = cats.filter(c=> !CATS.some(x=> x[0]===c)), extraL = langs.filter(l=> !LANG.includes(l));
+      const extraC = cats.filter(c=> !CATS.some(x=> x[0].toLowerCase()===String(c).toLowerCase())), extraL = langs.filter(l=> !LANG.some(x=> x.toLowerCase()===String(l).toLowerCase()));
+      const catTile = (c, img, on) => img ? `<button type="button" class="b2-cat${on?" on":""}" data-v="${E(c)}"><img src="${img}" alt="" loading="lazy"><b>${E(c.toUpperCase())}</b><i class="b2-chk"></i></button>`
+        : `<button type="button" class="b2-cat own${on?" on":""}" data-v="${E(c)}"><b>${E(c.toUpperCase())}</b><i class="b2-chk"></i></button>`;
       const o = onbShell("onb1", "parch", `${top(5)}
         <h2 class="b2-h">What's your kind<br>of <span class="b2-hl">content?</span></h2>
         <p class="b2-p">Pick up to 3 categories. We'll find briefs that fit your world.</p>
-        <div class="b2-catgrid" id="bxoCats">${CATS.map(([c,ph])=>`<button type="button" class="b2-cat${cats.includes(c)?" on":""}" data-v="${c}"><img src="${R}${ph}.jpg" alt=""><b>${c.toUpperCase()}</b><i class="b2-chk"></i></button>`).join("")}</div>
-        <div class="b2-chips small" id="bxoCatMore">${MORE.concat(extraC).map(c=>`<button type="button" class="b2-chip${cats.includes(c)?" on":""}" data-v="${E(c)}">${E(c)}</button>`).join("")}</div>
+        <div class="b2-catgrid" id="bxoCats">${CATS.map(([c,img])=> catTile(c, img, cats.some(x=> String(x).toLowerCase()===c.toLowerCase()))).join("")}${extraC.map(c=> catTile(c, null, true)).join("")}</div>
+        <div class="b2-addown" id="bxoCatAddW"><button type="button" class="b2-btn outline" id="bxoCatAdd">+&nbsp; Add your own category</button></div>
         <div class="b2-lab c">How do you create?</div>
         <div class="b2-chips" id="bxoFmt">${FMT.map(([k,l])=>`<button type="button" class="b2-chip${fmts.includes(k)?" on":""}" data-v="${k}">${l}</button>`).join("")}</div>
         <div class="b2-lab c">Your content language</div>
-        <div class="b2-chips" id="bxoLang">${LANG.concat(extraL).map(l=>`<button type="button" class="b2-chip${langs.includes(l)?" on":""}" data-v="${E(l)}">${E(l)}</button>`).join("")}<button type="button" class="b2-more" id="bxoLMore">+ More</button></div>
+        <div class="b2-chips" id="bxoLang">${LANG.concat(extraL).map(l=>`<button type="button" class="b2-chip${langs.some(x=> String(x).toLowerCase()===l.toLowerCase())?" on":""}" data-v="${E(l)}">${E(l)}</button>`).join("")}</div>
+        <div class="b2-addown" id="bxoLangAddW"><button type="button" class="b2-more" id="bxoLangAdd">+ Add another language</button></div>
         ${tip("Pick what you post most — I'll match briefs to it.")}
         <div class="auth-err" id="bxoErr"></div>
         <button type="button" class="b2-btn forest full big" id="bxoSave">Build my creator profile&nbsp; →</button>
         <button type="button" class="b2-link mute" id="bxoSkip">You can change these anytime · Skip</button>`);
-      const catsOn = ()=> [...o.querySelectorAll("#bxoCats .b2-cat.on, #bxoCatMore .b2-chip.on")].length;
-      o.querySelectorAll("#bxoCats .b2-cat, #bxoCatMore .b2-chip").forEach(b=> b.onclick = ()=>{ if(!b.classList.contains("on") && catsOn() >= 3){ err("Pick up to 3 — tap one to swap it."); return; } err(""); b.classList.toggle("on"); });
-      o.querySelectorAll("#bxoFmt .b2-chip, #bxoLang .b2-chip").forEach(b=> b.onclick = ()=> b.classList.toggle("on"));
-      document.getElementById("bxoLMore").onclick = ()=>{ const box = document.getElementById("bxoLang"), btn = document.getElementById("bxoLMore");
-        LMORE.filter(l=> !box.querySelector(`[data-v="${l}"]`)).forEach(l=>{ btn.insertAdjacentHTML("beforebegin", `<button type="button" class="b2-chip" data-v="${l}">${l}</button>`); });
-        box.querySelectorAll(".b2-chip").forEach(b=> b.onclick = ()=> b.classList.toggle("on")); btn.remove(); };
+      const catsOn = ()=> o.querySelectorAll("#bxoCats .b2-cat.on").length;
+      const wireCats = ()=> o.querySelectorAll("#bxoCats .b2-cat").forEach(b=> b.onclick = ()=>{ if(!b.classList.contains("on") && catsOn() >= 3){ err("Pick up to 3 — tap one to swap it."); return; } err(""); b.classList.toggle("on"); });
+      const wireChips = ()=> o.querySelectorAll("#bxoFmt .b2-chip, #bxoLang .b2-chip").forEach(b=> b.onclick = ()=> b.classList.toggle("on"));
+      wireCats(); wireChips();
+      // "+ Add your own …": a small box; what they type is added (selected) and saved with the rest
+      const addOwn = (wrapId, ph, onAdd) => { const wrap = document.getElementById(wrapId); if(wrap.querySelector("input")) return;
+        wrap.innerHTML = `<div class="b2-addin"><input class="b2-in" placeholder="${ph}" maxlength="30"><button type="button" class="b2-btn forest">Add</button></div>`;
+        const i = wrap.querySelector("input"); i.focus();
+        const go = ()=>{ const v = i.value.trim().replace(/\s+/g," "); if(!v) return; onAdd(v.charAt(0).toUpperCase() + v.slice(1)); i.value = ""; i.focus(); };
+        wrap.querySelector("button").onclick = go; i.onkeydown = e=>{ if(e.key === "Enter"){ e.preventDefault(); go(); } }; };
+      document.getElementById("bxoCatAdd").onclick = ()=> addOwn("bxoCatAddW", "Type a category, e.g. Cars", v=>{
+        const box = document.getElementById("bxoCats"), have = [...box.querySelectorAll(".b2-cat")].find(b=> b.dataset.v.toLowerCase() === v.toLowerCase());
+        if(have){ if(!have.classList.contains("on")){ if(catsOn() >= 3){ err("Pick up to 3 — tap one to swap it."); return; } have.classList.add("on"); } return; }
+        if(catsOn() >= 3){ err("Pick up to 3 — tap one to swap it, then add yours."); return; }
+        err(""); box.insertAdjacentHTML("beforeend", catTile(v, null, true)); wireCats(); });
+      document.getElementById("bxoLangAdd").onclick = ()=> addOwn("bxoLangAddW", "Type a language, e.g. Bhojpuri", v=>{
+        const box = document.getElementById("bxoLang"), have = [...box.querySelectorAll(".b2-chip")].find(b=> b.dataset.v.toLowerCase() === v.toLowerCase());
+        if(have){ have.classList.add("on"); return; }
+        box.insertAdjacentHTML("beforeend", `<button type="button" class="b2-chip on" data-v="${E(v)}">${E(v)}</button>`); wireChips(); });
       document.getElementById("bxoSkip").onclick = ()=> onbStep(2, d);
       document.getElementById("bxoSave").onclick = async ()=>{
         const btn = document.getElementById("bxoSave"); err(""); btn.disabled = true; btn.textContent = "Saving…";
         const pick = sel => [...o.querySelectorAll(sel)].map(b=> b.dataset.v);
-        const patch = { categories: pick("#bxoCats .b2-cat.on, #bxoCatMore .b2-chip.on"), content_formats: pick("#bxoFmt .b2-chip.on"), languages: pick("#bxoLang .b2-chip.on") };
+        const patch = { categories: pick("#bxoCats .b2-cat.on"), content_formats: pick("#bxoFmt .b2-chip.on"), languages: pick("#bxoLang .b2-chip.on") };
         const r = await papi("save_profile_section", { p_section:"professional", p_patch:patch, p_correlation:"ui-onboard" });
         if(r.error){ err("Couldn't save: " + (r.error.message || r.error)); btn.disabled = false; btn.innerHTML = "Build my creator profile&nbsp; →"; return; }
         d.professional = Object.assign({}, pro, patch); onbStep(2, d);
@@ -911,5 +973,5 @@
   }
 
   window.bxGuest = { start:startGuest, go, video };
-  B2.screens = { onbStep, manualProfile, igGate, sidekickScreen, igLoader, igKit, igSent };
+  B2.screens = { onbStep, onbManual, manualProfile, igGate, sidekickScreen, igLoader, igKit, igSent };
 })();
