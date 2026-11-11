@@ -263,9 +263,31 @@
     }
     window.scrollTo(0,0);
     if(window.BxHist && !(G.member && (page === "home" || page === "discover"))) BxHist.mark("g", page);
-    if(page === "home" || page === "discover") return pageDiscover(main);
-    if(page.startsWith("brief:")) return pageBrief(main, page.slice(6));
-    if(page.startsWith("lock:")) return pageLock(main, page.slice(5));
+    const old = document.getElementById("b2NavSay"); if(old) old.remove();
+    let p = null;
+    if(page === "home" || page === "discover") p = pageDiscover(main);
+    else if(page.startsWith("brief:")) p = pageBrief(main, page.slice(6));
+    else if(page.startsWith("lock:")) p = pageLock(main, page.slice(5));
+    if(G.on){ liftTip(main); Promise.resolve(p).then(()=>{ if(G.on && G.page === page) liftTip(main); }); }
+    return p;
+  }
+  // guest on a phone: Pip's line comes out of Pip in the middle of the bottom bar (a speech bubble), not at the foot of the page
+  function liftTip(main){
+    if(!window.matchMedia("(max-width:900px)").matches) return;
+    const t = main.querySelector(".b2-tip"); if(!t) return;
+    const p = t.querySelector("p"); const msg = p ? p.innerHTML : ""; t.remove();
+    if(msg) navSay(msg);
+  }
+  function navSay(html){
+    const g = document.getElementById("b2g"); if(!g) return;
+    let s = document.getElementById("b2NavSay"); if(s) s.remove();
+    s = document.createElement("div"); s.id = "b2NavSay"; s.className = "b2-navsay"; s.setAttribute("role","status");
+    s.innerHTML = `<p>${html}</p><button type="button" aria-label="Close">×</button>`;
+    g.appendChild(s);
+    const bye = ()=>{ if(!s.isConnected) return; s.classList.add("out"); setTimeout(()=> s.remove(), 240); };
+    s.querySelector("p").onclick = ()=>{ s.remove(); guestKid(); };
+    s.querySelector("button").onclick = e=>{ e.stopPropagation(); bye(); };
+    clearTimeout(navSay._t); navSay._t = setTimeout(bye, 8000);
   }
 
   // V2-09 card (dark glass on mobile, cream card on desktop)
@@ -286,14 +308,14 @@
     root.querySelectorAll("[data-brief]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); go("brief:" + b.dataset.brief); });
     root.querySelectorAll(".b2-camp").forEach(a=> a.onclick = ()=> go("brief:" + a.dataset.id));
   }
-  const FILTERS = [["foryou","For you"],["paid","Paid"],["barter","Barter"],["barter_paid","Hybrid"]];
+  const FILTERS = [["foryou","For you"],["paid","Paid"],["barter","Barter"],["barter_paid","Paid + Barter"]];
   async function pageDiscover(c){
     const member = G.member;
     c.innerHTML = `<div class="b2-page b2-disc ${member?"b2-member":""}">
       ${member ? "" : `<div class="b2-guestban">You're exploring as a guest — apply with WhatsApp in 30 sec.<span class="d-only"> No Instagram needed to look around.</span></div>`}
       <h1 class="b2-h1 light">Made for your world.</h1><p class="b2-sub light">Campaigns that match your style</p>
-      ${member ? `<div class="b2-chips dark" id="b2Chips">${FILTERS.map(([k,l])=>`<button type="button" data-f="${k}" class="${G.f===k?"on":""}">${l}</button>`).join("")}</div>
-        <div class="b2-igban"><span>📸</span><p>Instagram not connected — explore everything. We'll ask only when you apply.</p><button type="button" data-x="ig">Connect</button></div>` : ""}
+      <div class="b2-chips dark" id="b2Chips">${FILTERS.map(([k,l])=>`<button type="button" data-f="${k}" class="${G.f===k?"on":""}">${l}</button>`).join("")}</div>
+      ${member ? `<div class="b2-igban"><span>📸</span><p>Instagram not connected — explore everything. We'll ask only when you apply.</p><button type="button" data-x="ig">Connect</button></div>` : ""}
       <div class="b2-cgrid" id="b2List"><div class="b2-empty">Loading campaigns…</div></div>
       ${tip(member ? "Explore freely — I'll ask for Instagram only when you apply." : "Look around freely — sign in only when you want to apply.")}</div>`;
     const ig = c.querySelector('[data-x="ig"]'); if(ig) ig.onclick = ()=>{ if(window.Tracker) Tracker.security("instagram_connect_start"); connectInstagram(); };
