@@ -14,13 +14,15 @@
     choice: function(){ return get(KEY); },
     reopen: function(){ try{ localStorage.removeItem(KEY); }catch(e){} show(); },
     // restore a choice already recorded on the server (another device) without logging it again
-    set: function(choice){ if(choice==="all"||choice==="essential"){ set(KEY, choice); window.Consent.setRememberDevice(choice==="all"); } },
+    set: function(choice){ if(choice==="all"||choice==="essential"){ set(KEY, choice); window.Consent.setRememberDevice(choice==="all"); tell(choice); } },
     // after sign-in: a blocking choice; resolves with "all" | "essential"
     require: function(){ return new Promise(function(resolve){ if(get(KEY)) return resolve(get(KEY)); show(resolve); }); },
     rememberDevice: function(){ return get(DEVICE) === "1"; },
     setRememberDevice: function(v){ set(DEVICE, v ? "1" : "0"); }
   };
 
+  // Google Analytics (ga.js) listens for this to switch analytics cookies on/off
+  function tell(c){ try{ window.dispatchEvent(new CustomEvent("geek:consent", { detail: c })); }catch(e){} }
   function dismiss(banner){ if(banner && banner.parentNode) banner.parentNode.removeChild(banner); }
 
   function show(done){
@@ -47,7 +49,7 @@
     back.style.cssText = "position:fixed;inset:0;background:rgba(10,10,20,.55);z-index:9998";
     bar.style.zIndex = "9999";
     document.body.appendChild(back);
-    var pick = function(c){ set(KEY,c); window.Consent.setRememberDevice(c==="all"); dismiss(bar); dismiss(back); if(window.Tracker) Tracker.consentChanged(c); if(done) done(c); };
+    var pick = function(c){ set(KEY,c); tell(c); window.Consent.setRememberDevice(c==="all"); dismiss(bar); dismiss(back); if(window.Tracker) Tracker.consentChanged(c); if(done) done(c); };
     if(all) all.onclick = function(){ pick("all"); };
     if(ess) ess.onclick = function(){ pick("essential"); };
   }
