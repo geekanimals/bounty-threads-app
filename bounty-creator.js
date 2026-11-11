@@ -527,9 +527,9 @@
         <section class="card" id="mky-portfolio"><h3>Brand history <span class="bxg-match">Creator-provided</span></h3>
           <div id="mkyPort">${(port.length?port:[{}]).map(rowP).join("")}</div><button type="button" class="btn sm ghost" id="mkyAddP">+ Add a brand</button>
         </section>
-        <section class="card" id="mky-ratecard"><h3>Rate card <span class="bxg-match">Creator-provided</span></h3>
-          <div id="mkyRate">${(rates.length?rates:[{}]).map(rowR).join("")}</div><button type="button" class="btn sm ghost" id="mkyAddR">+ Add a rate</button>
-          <div class="muted" style="margin-top:8px">These are your starting prices, not fixed quotes.</div>
+        <section class="card" id="mky-ratecard"><h3>Rates</h3>
+          <div class="muted">Your Reel, Story and Post rates are kept in one place — Profile → Your terms &amp; rate card — so brands see the same numbers everywhere.</div>
+          <button type="button" class="btn sm ghost" id="mkyRates" style="margin-top:10px">Set your rates →</button>
         </section>
       </div>
       <div class="bxg-tip"><img src="${A}sprout_point.png" alt=""><div>Tip: Lead with your strongest Reel!</div></div>
@@ -545,7 +545,7 @@
     const wireX = root => root.querySelectorAll(".bx-x").forEach(x=> x.onclick = ()=> x.parentElement.remove());
     wireX(c);
     document.getElementById("mkyAddP").onclick = ()=>{ document.getElementById("mkyPort").insertAdjacentHTML("beforeend", rowP()); wireX(document.getElementById("mkyPort")); };
-    document.getElementById("mkyAddR").onclick = ()=>{ document.getElementById("mkyRate").insertAdjacentHTML("beforeend", rowR()); wireX(document.getElementById("mkyRate")); };
+    document.getElementById("mkyRates").onclick = ()=>{ window.__bxHubOpen = "terms"; currentPage = "profile"; renderShell(); };
     const target = document.getElementById("mky-" + (section==="pins"?"pins":section)); if(target) setTimeout(()=> target.scrollIntoView({ behavior:"smooth", block:"start" }), 60); else window.scrollTo(0,0);
     c.querySelectorAll('[data-mky="save"]').forEach(btn=> btn.onclick = async ()=>{
       const err = document.getElementById("mkyErr"); err.textContent = "";
@@ -556,7 +556,6 @@
       else { delete ne.bio; delete ne.for; delete ne.for_user; }
       ne.pinned = pins.slice(0,6);
       ne.portfolio = [...document.querySelectorAll("#mkyPort .bx-row3")].map(r=>({ brand:r.querySelector('[data-k="brand"]').value.trim(), note:r.querySelector('[data-k="note"]').value.trim(), url:r.querySelector('[data-k="url"]').value.trim() })).filter(p=> p.brand);
-      ne.rate_card = [...document.querySelectorAll("#mkyRate .bx-row2")].map(r=>({ item:r.querySelector('[data-k="item"]').value.trim(), price:r.querySelector('[data-k="price"]').value.trim() })).filter(r=> r.item);
       c.querySelectorAll('[data-mky="save"]').forEach(x=>{ x.disabled = true; x.textContent = "Saving…"; });
       try{
         const { error } = await sb.from("social_accounts").update({ edits:ne, updated_at:new Date().toISOString() }).eq("id", acct.id);
