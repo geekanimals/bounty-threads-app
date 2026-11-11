@@ -299,11 +299,13 @@ async function paintMeCard(){
       ? go("mediakit","Media Kit","🪪")+go("profile","Creator Profile","👤")+go("instagram","Instagram","📸")+go("mycampaigns","My Campaigns","🎯")
       : go("dashboard","Dashboard","🏠")+(window.__isAdmin?go("admin","Super Admin","🛡"):"")}</div>
     <div class="me-prefs" id="mePrefs"></div>
+    <button class="me-mini me-ck" id="meCookies" type="button">🍪 Cookie settings</button>
     <button class="me-out" id="meOut">↪ Sign out</button></div>`;
   c.querySelector("#meX").onclick = closeMeCard;
   paintMePrefs(); if(isCreator && handle) paintMeAccounts();
   c.querySelectorAll("[data-mego]").forEach(b=> b.onclick = ()=>{ const pg = b.dataset.mego; closeMeCard();
     if(window.__profileGate && typeof GATE_OPEN_PAGES!=="undefined" && !GATE_OPEN_PAGES.includes(pg)){ gateToast(joinNeedsText()); currentPage = "mediakit"; } else currentPage = pg; renderShell(); });
+  c.querySelector("#meCookies").onclick = ()=>{ closeMeCard(); if(window.Consent && Consent.reopen) Consent.reopen(); };
   c.querySelector("#meOut").onclick = ()=>{ if(window.Tracker) Tracker.security("sign_out"); setTimeout(()=> window.Auth && Auth.signOut(), 150); };
   const sy = c.querySelector("#meSync");
   if(sy) sy.onclick = async ()=>{ sy.disabled = true; sy.textContent = "Syncing…";
@@ -12132,7 +12134,7 @@ async function ensureConsent(){
   if(!local && window.sb){
     try{ const { data } = await sb.rpc("my_consent"); if(data==="all"||data==="essential"){ Consent.set(data, true); local = data; } }catch(e){}
   }
-  if(!local) await Consent.require();
+  if(!local || (Consent.needsAsk && Consent.needsAsk())) await Consent.require();
 }
 // campaign invites (bulk upload): claim the one from the link + any sent to this number / email / Instagram
 async function claimCreatorInvites(){
