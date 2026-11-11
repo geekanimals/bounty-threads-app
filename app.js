@@ -7229,7 +7229,11 @@ function bpKeepPlace(el, attr, paint){
   fix(); requestAnimationFrame(fix); setTimeout(fix, 120);
 }
 function paintBarterProcess(){
-  if(_wsMode && _wsCampaign && _wsCampaign.id) navSave({ camp: _wsCampaign.id, bpTab: _bpTab });
+  if(_wsMode && _wsCampaign && _wsCampaign.id){
+    navSave({ camp: _wsCampaign.id, bpTab: _bpTab });
+    if(_bpTab && _bpTab !== "tracker") BxHist.mark("t", _wsCampaign.id + "|" + _bpTab, { role: currentRole, page: currentPage, camp: _wsCampaign.id, tab: _bpTab });
+    else BxHist.mark("c", _wsCampaign.id, { role: currentRole, page: currentPage });
+  }
   const body = document.getElementById("bpBody"); if(!body) return;
   if(_wsMode) return paintCampaignCommand(body);
   const d = _bpData||{}, c = d.campaign||{}, list = d.creators||[];
@@ -11606,17 +11610,19 @@ const NAV_KEY = "gk_nav";
 /* ← Back (browser / phone) steps back to the screen you were on — page, Super Admin tab, guest page, sign-in step — instead of
    leaving the site. A popup / sheet that is open closes first. Screens register with BxHist.on(kind, fn) and call BxHist.mark(kind, key). */
 const BxHist = (function(){
-  const H = {}; let popping = false, last = null;
+  const H = {}; let popping = false, last = null, fresh = true, skip = false;
   function mark(k, v, d){
     if(popping) return;
     const s = { bxh:1, k, v:String(v), d:d||null };
     const cur = history.state;
     try{
-      if(cur && cur.bxh && cur.k === s.k && cur.v === s.v){ history.replaceState(s, "", location.href); }
-      else if(cur && cur.bxh) history.pushState(s, "", location.href);
+      if(cur && cur.bxh && cur.k === s.k && cur.v === s.v && !cur.ov){ s.b = cur.b; history.replaceState(s, "", location.href); }
+      else if(cur && cur.bxh && !cur.ov && cur.b === s.k + "|" + s.v){ skip = true; history.back(); }   // an in-app "← Back" to the screen just below: step back, don't stack another copy
+      else if(cur && cur.bxh && fresh){ s.b = cur.b; history.replaceState(s, "", location.href); }      // after a reload: this is the same entry
+      else if(cur && cur.bxh){ s.b = cur.k + "|" + cur.v; history.pushState(s, "", location.href); }
       else history.replaceState(s, "", location.href);
     }catch(e){}
-    last = s;
+    fresh = false; last = s;
   }
   function closeTop(){
     const kid = document.getElementById("b2KidSheet"); if(kid){ if(window.bxCloseKid) bxCloseKid(); else kid.remove(); return true; }
@@ -11630,7 +11636,6 @@ const BxHist = (function(){
   // a popup / sheet opening adds one Back step (so Back closes it, even on the first screen); closing it with its own button removes that step
   const isOv = n => n && n.nodeType === 1 && (n.id === "b2KidSheet" || n.classList.contains("b2-dim") || (n.classList.contains("modal-overlay") && n.classList.contains("open")));
   const anyOv = ()=> !!document.querySelector("#b2KidSheet, .b2-dim, .modal-overlay.open");
-  let skip = false;
   function ovOpened(){ if(popping || !last) return; const cur = history.state; if(cur && cur.ov) return; try{ history.pushState(Object.assign({}, cur && cur.bxh ? cur : last, { ov:1 }), "", location.href); }catch(e){} }
   function ovClosed(){ if(anyOv()) return; const cur = history.state; if(cur && cur.ov){ skip = true; history.back(); } }
   try{
@@ -11657,16 +11662,31 @@ const BxHist = (function(){
   return { on:(k, fn)=>{ H[k] = fn; }, mark, popping:()=> popping };
 })();
 window.BxHist = BxHist;
+const bxRole = d=>{ if(!d || !d.role || d.role === currentRole) return true; if(!window.__isAdmin || !ROLES[d.role]) return false; currentRole = d.role; return true; };
 BxHist.on("a", (v, d)=>{
-  if(!window.__osBooted || !d || (d.role && d.role !== currentRole)) return false;
+  if(!window.__osBooted || !d || !bxRole(d)) return false;
   currentPage = d.page; if(d.admin) _adminTab = d.admin;
   if(typeof _wsMode !== "undefined") _wsMode = false;
   renderShell(); window.scrollTo(0,0); return true;
 });
 BxHist.on("c", (id, d)=>{
-  if(!window.__osBooted || !d || (d.role && d.role !== currentRole)) return false;
+  if(!window.__osBooted || !d || !bxRole(d)) return false;
+  if(_wsMode && _wsCampaign && String(_wsCampaign.id) === String(id) && document.getElementById("bpBody")){ _bpTab = "tracker"; paintBarterProcess(); window.scrollTo(0,0); return true; }
   if(d.page && currentPage !== d.page){ currentPage = d.page; renderShell(); }
   openCampaignWorkspace(id); window.scrollTo(0,0); return true;
+});
+// a section of the campaign page (Analytics, Payments, Bulk sheet, …)
+BxHist.on("t", (v, d)=>{
+  if(!window.__osBooted || !d || !bxRole(d)) return false;
+  const show = ()=>{ _bpTab = d.tab; if(d.tab === "analytics") _bpAnalytics = null; paintBarterProcess(); if(d.tab === "analytics" && typeof loadBpAnalytics === "function") loadBpAnalytics(); };
+  if(_wsMode && _wsCampaign && String(_wsCampaign.id) === String(d.camp) && document.getElementById("bpBody")) show();
+  else { if(d.page && currentPage !== d.page){ currentPage = d.page; renderShell(); } Promise.resolve(openCampaignWorkspace(d.camp)).then(()=> setTimeout(show, 50)); }
+  window.scrollTo(0,0); return true;
+});
+// a sub-screen of a page (e.g. Media kit → Make it yours): Back shows the page itself
+BxHist.on("s", (v, d)=>{
+  if(!window.__osBooted || !d || !bxRole(d)) return false;
+  currentPage = d.page; renderShell(); window.scrollTo(0,0); return true;
 });
 function navUid(){ return (window.Auth && ((Auth.user && Auth.user.id) || (Auth.profile && Auth.profile.id))) || ""; }
 function navSave(extra){

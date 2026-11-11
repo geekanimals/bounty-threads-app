@@ -164,7 +164,12 @@
       if(k === "explore") startGuest();
       if(k === "video") video(()=>{ setSt("form"); });
     }));
-    if(window.BxHist) BxHist.mark("w", w.dataset.st);
+    const hs = history.state;
+    if(hs && hs.bxh && hs.k === "g" && !window.__bxWantForm && !q.get("apply") && !q.get("cinv")){ setTimeout(()=>{ if(!G.on && document.querySelector("#authRoot #bxw")){ startGuest(); if(hs.v !== "home") go(hs.v); } }, 0); }
+    else {
+      if(hs && hs.bxh && hs.k === "w" && w.dataset.st === "welcome" && hs.v !== "welcome") w.dataset.st = "form";
+      if(window.BxHist) BxHist.mark("w", w.dataset.st);
+    }
     try{ const al = document.getElementById("bxWaAlerts"); al.checked = localStorage.getItem("bx_wa_alerts") === "1"; al.onchange = ()=>{ try{ localStorage.setItem("bx_wa_alerts", al.checked ? "1" : "0"); }catch(e){} }; }catch(e){}
     // V2-03 / W12: once the code is sent → "One last step.", masked number, 6 boxes, expiry + resend timers
     const row = document.getElementById("waCodeRow"), h = document.getElementById("bxCardH"), p = document.getElementById("bxCardP");
