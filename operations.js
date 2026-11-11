@@ -534,12 +534,13 @@
     if(CAMP_FILTER==="paid") return t==="paid"||t==="barter_paid";
     if(CAMP_FILTER==="barter") return (t==="barter"||t==="barter_paid") && !isCeleb(c);
     if(CAMP_FILTER==="celebrity") return isCeleb(c);
+    if(CAMP_FILTER==="hybrid") return t==="barter_paid";
     if(CAMP_FILTER==="applied") return !!c.my_stage && PENDING_ST.indexOf(c.my_stage)>=0;
     if(CAMP_FILTER==="approved") return !!c.my_stage && PENDING_ST.indexOf(c.my_stage)<0 && DECL_ST.indexOf(c.my_stage)<0;
     return true; }
   function typeBadge(c){ var t=kindOf(c), L={paid:"💰 Paid",barter:"🎁 Barter",barter_paid:"🎁 Barter + 💰 Paid"};
     return (isCeleb(c)?'<span class="ci-type ci-type-barter_paid">⭐ Story</span> ':'')+(t?'<span class="ci-type ci-type-'+t+'">'+L[t]+'</span>':'<span class="ci-type">—</span>'); }
-  var CHIPS=[["all","All"],["paid","💰 Paid"],["barter","🎁 Barter"],["celebrity","⭐ Story"],["applied","⏳ Applied"],["approved","✅ Approved"]];
+  var CHIPS=[["all","All"],["paid","💰 Paid"],["barter","🎁 Barter"],["celebrity","⭐ Story"],["hybrid","🎁 + 💰 Paid + Barter"],["applied","⏳ Applied"],["approved","✅ Approved"]];
   function chipsHtml(){
     var n=function(f){ var keep=CAMP_FILTER; CAMP_FILTER=f; var k=_openCache.filter(matchFilter).length; CAMP_FILTER=keep; return k; };
     return CHIPS.map(function(x){ return '<button class="ci-chip'+(CAMP_FILTER===x[0]?' on':'')+'" data-campf="'+x[0]+'">'+x[1]+(_openCache.length?' <span>'+n(x[0])+'</span>':'')+'</button>'; }).join("");
