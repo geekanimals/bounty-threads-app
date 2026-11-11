@@ -362,7 +362,7 @@
           <div class="b2-bt">🤝<div><b>Collab post:</b><span>${t.collab_rights?"Required":"Not required"}</span></div></div>
           <div class="b2-bt">🏷<div><b>Exclusivity:</b><span>${t.exclusivity?E(t.exclusivity):"None"}</span></div></div>
         </div>
-        <div class="b2-steps5"><div><i>✎</i><span>Apply</span></div><div><i>✓</i><span>Get selected</span></div><div><i>📦</i><span>Receive kit</span></div><div><i>🎬</i><span>Create</span></div><div><i>💰</i><span>Get paid</span></div></div>
+        <div class="b2-steps5"><div><i>✎</i><span>Apply</span></div><div><i>✓</i><span>Get selected</span></div><div><i>📦</i><span>Receive kit</span></div><div><i>🎬</i><span>Create</span></div><div><i>📊</i><span>Your analytics</span></div></div>
       </div><div class="b2-brief-r">
         <div class="b2-applybox"><button type="button" class="b2-btn cyan full" data-apply="${E(x.campaign_id)}">${o.applyLabel}</button><p>${o.sub}</p></div>
         <details class="b2-fold"><summary>📄 Read full creative brief</summary><div class="b2-fold-b">
