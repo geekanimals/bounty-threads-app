@@ -340,8 +340,8 @@ Deno.serve(async (req) => {
       if (!Array.isArray(j?.data)) {
         const m = String(j?.error?.message || "Instagram couldn't run the Creator Marketplace search.");
         const perm = Number(j?.error?.code) === 10 || /permission|eligib|onboard/i.test(m);
-        const onboard = /onboard|terms|eligib/i.test(m);
-        return json({ error: perm ? (onboard ? `Creator Marketplace: the Geek brand account must accept Instagram's Creator Marketplace terms first (${m}).`
+        const onboard = /onboard|terms|eligib|verif/i.test(m);
+        return json({ error: perm ? (onboard ? `Creator Marketplace: the Geek brand account must be a verified business and onboarded to Instagram's Creator Marketplace first (${m}).`
             : `Creator Marketplace isn't open for this app yet (${m}). It needs Meta's approval for instagram_creator_marketplace_discovery.`) : m, needs_review: perm, needs_onboarding: perm && onboard }, 200);
       }
       const num = (x: any) => { const v = x?.insights?.data?.find?.((d: any) => d?.name === "total_followers"); const n = v?.values?.[0]?.value ?? v?.total_value?.value; return typeof n === "number" ? n : null; };
