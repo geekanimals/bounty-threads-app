@@ -155,10 +155,19 @@
     const pct = Math.round(100 * dn / Math.max(tot, 1));
     const dreams = ((pf && pf.dream_brands) || []).map(x=> x.submitted_brand_name).filter(Boolean);
     const terms = (pf && pf.commercial_preference && Object.keys(cp).length) ? [cp.accepts_barter?"Barter":"", cp.product_only?"":"Paid"].filter(Boolean).join(", ") : "";
-    const L = [["👤","About you","Name, birthday, gender, city","#about"],["🎬","What you create",[(pro.categories||[]).slice(0,2).join(", "),(pro.content_formats||[]).slice(0,2).join(", "),(pro.languages||[]).slice(0,2).join(", ")].filter(Boolean).join(" · ") || "Categories, formats, languages","#create"],
-      ["💙","Dream brands", dreams.slice(0,3).join(", ") || "Brands you'd love to work with","#dream"],["🤝","Your terms", terms || "Barter, paid, rates","#collab"],
-      ["📍","Addresses", ((pf && pf.addresses)||[]).map(a=> a.label).filter(Boolean).join(" · ") || "Where brands send your kit","#addr"],
-      ["📸","Instagram accounts", ig.length ? ig.map(x=>"@"+x.username).join(", ") : "Connect Instagram","#ig"],["🧾","Rate card", rateSub || "Your price for a Reel, Story or post","@rates"]];
+    // every part of the old Creator Profile, one row each — a row opens just that section ("#key" = profile.js data-sec)
+    const cats = [(pro.categories||[]).slice(0,3).join(", "), (pro.languages||[]).slice(0,2).join(", ")].filter(Boolean).join(" · ");
+    const L = [["👤","About you", [per.first_name, per.gender ? String(per.gender).replace(/_/g," ") : ""].filter(Boolean).join(" · ") || "Name, gender, birthday, married, pets","#personal"],
+      ["📞","Contact", "WhatsApp, backup email","#contact"],
+      ["📍","Delivery address", ((pf && pf.addresses)||[]).map(a=> a.label || a.city).filter(Boolean).join(" · ") || "Where brands send your kit","#address"],
+      ["🎬","What you create", (pro.content_formats||[]).slice(0,3).join(", ") || "Display name, content types, availability, travel","#professional"],
+      ["🏷️","Categories & languages", cats || "Your niche and the languages you post in","*cats"],
+      ["🛠️","Skills & resources", "What you're good at and the gear you have","#skills"],
+      ["💙","Dream brands", dreams.slice(0,3).join(", ") || "Brands you'd love to work with","#dreams"],
+      ["🤝","Your terms", terms || "Barter, paid, hybrid","*terms"],
+      ["🧾","Rate card", rateSub || "Your price for a Reel, Story or post","@rates"],
+      ["📸","Instagram accounts", ig.length ? ig.map(x=>"@"+x.username).join(", ") : (handle ? handle + " (self-reported) · connect" : "Connect Instagram"),"#pages"],
+      ["🔒","Visibility & privacy", "What brands can see","#visibility"]];
     const useKid = window.bxKid && bxKid.prefs().avatar;
     c.classList.add("b2-hubpage"); { const sk = document.getElementById("bxHubSk"); if(sk) sk.remove(); }
     const row = ([ic,t,sub,k])=>`<button type="button" class="b2-card b2-row" data-hub="${k}"><span class="ic">${ic}</span><span class="tx"><b>${t}</b><em>${H(sub)}</em></span><i>›</i></button>`;
@@ -166,22 +175,23 @@
       <div class="b2-bigav${useKid || (ig[0] && ig[0].profile_picture_url) ? " pic" : ""}">${useKid?`<img src="${KI()}" data-kid-me alt="">`:(ig[0] && ig[0].profile_picture_url ? `<img src="${H(ig[0].profile_picture_url)}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('${H(nm.charAt(0).toUpperCase())}'))">` : H(nm.charAt(0).toUpperCase()))}</div>
       <h1 class="b2-hubn">${H(nm)}</h1><div class="b2-hubh">${H([handle, pro.city_coarse || md.city].filter(Boolean).join(" · "))}${md.ig_handle && !ig.length ? ` <em class="b2-sr">self-reported</em>` : ""}</div>
       <label class="b2-card b2-tog wide"><span>Use ${H(KN())} as my profile picture</span><input type="checkbox" id="bxHubKid"${useKid?" checked":""}><i></i></label>
-      <button type="button" class="b2-card b2-pct" data-hub="#ready"><b>Profile ${pct}% complete</b><div class="b2-bar2"><i style="width:${pct}%"></i></div>${pct < 100 ? `<em class="b2-pct-sub">${tot - dn} thing${tot - dn === 1 ? "" : "s"} left — tap to finish</em>` : ""}</button>
-      ${L.slice(0,2).map(row).join("")}</div><div class="b2-hubr">${L.slice(2).map(row).join("")}
+      <button type="button" class="b2-card b2-pct" data-hub="#campready"><b>Profile ${pct}% complete</b><div class="b2-bar2"><i style="width:${pct}%"></i></div>${pct < 100 ? `<em class="b2-pct-sub">${tot - dn} thing${tot - dn === 1 ? "" : "s"} left — tap to finish</em>` : ""}</button>
+      ${L.slice(0,5).map(row).join("")}</div><div class="b2-hubr">${L.slice(5).map(row).join("")}
       ${TIP("Add your city — nearby campaigns show up first.")}</div></div>`);
-    document.getElementById("bxHubBack").onclick = ()=>{ const s = history.state; if(s && s.bxh && s.k === "s" && String(s.v).indexOf("hub:") === 0){ history.back(); return; } c.classList.remove("b2-hub-open"); window.scrollTo(0,0); };
+    const closeOne = ()=>{ c.classList.remove("b2-hub-open"); delete c.dataset.one; window.scrollTo(0,0); };
+    document.getElementById("bxHubBack").onclick = ()=>{ const s = history.state; if(s && s.bxh && s.k === "s" && String(s.v).indexOf("hub:") === 0){ history.back(); return; } closeOne(); };
     const kidT = document.getElementById("bxHubKid"); if(kidT) kidT.onchange = async ()=>{ if(window.bxKid){ await bxKid.save({ avatar: kidT.checked }); if(window.bxPaintMeChip) bxPaintMeChip(); const h = document.getElementById("bxHub"); if(h) h.remove(); touchProfile(); } };
+    const onb = n => { if(!(window.B2 && B2.screens && B2.screens.onbStep)) return; window.__bxOnbReturn = "profile"; window.__bxOnbOnly = true; window.__bxManualShown = true; B2.screens.onbStep(n, pf || {}); };
     c.querySelectorAll("[data-hub]").forEach(b=> b.onclick = ()=>{
       const k = b.dataset.hub;
-      if(k.startsWith("#") && k !== "#collab"){ c.classList.add("b2-hub-open"); window.scrollTo(0,0); if(window.BxHist) BxHist.mark("s", "hub:" + k, { role: currentRole, page: "profile" }); }
-      if(k === "#ready") return scrollToSection(/Profile complete/i);
-      if(k === "#ig") return scrollToSection(/Instagram accounts/i);
-      if(k === "#collab"){ c.classList.remove("b2-hub-open"); if(window.B2 && B2.screens && B2.screens.onbStep){ window.__bxOnbReturn = "profile"; B2.screens.onbStep(3, pf || {}); } return; }
+      if(k.startsWith("#")){   // one section of the profile, nothing else
+        c.dataset.one = k.slice(1); c.classList.add("b2-hub-open"); window.scrollTo(0,0);
+        if(window.BxHist) BxHist.mark("s", "hub:" + k, { role: currentRole, page: "profile" });
+        return;
+      }
+      if(k === "*cats") return onb(1);
+      if(k === "*terms") return onb(3);
       if(k === "@rates"){ if(typeof openMkEdit === "function" && acct) return openMkEdit("ratecard", acct); return go("mediakit"); }
-      if(k === "#dream") return scrollToSection(/Favourite brands|Dream/i);
-      if(k === "#about") return scrollToSection(/About you|Personal|Basic/i);
-      if(k === "#create") return scrollToSection(/What you create|Categor|Professional|content/i);
-      if(k === "#addr") return scrollToSection(/Address/i);
       go(k);
     });
   }

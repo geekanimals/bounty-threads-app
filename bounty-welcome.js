@@ -784,6 +784,7 @@
   const top = (n, label) => `<div class="b2-ptop"><div class="b2-plogo m-only">${LOGO}</div><div class="b2-progrow">${prog(n, label)}</div></div>`;
   const manualDone = ()=>{ const m = (window.__bxMeta && __bxMeta.bx_manual) || {}; return !!(m.ig_handle || m.at); };
   function onbFinish(goExplore){
+    window.__bxOnbOnly = false;
     if(noIg() && !manualDone() && !window.__bxManualShown){ window.__bxManualShown = true; return onbManual(goExplore); }
     try{ localStorage.setItem(onbKey(), "1"); localStorage.setItem("ci_ob_commercial_" + ((Auth.profile && (Auth.profile.id||Auth.profile.user_id)) || "me"), "1"); }catch(e){}
     const o = document.getElementById("bxOnb"); if(o) o.remove();
@@ -878,14 +879,16 @@
         const box = document.getElementById("bxoLang"), have = [...box.querySelectorAll(".b2-chip")].find(b=> b.dataset.v.toLowerCase() === v.toLowerCase());
         if(have){ have.classList.add("on"); return; }
         box.insertAdjacentHTML("beforeend", `<button type="button" class="b2-chip on" data-v="${E(v)}">${E(v)}</button>`); wireChips(); });
-      document.getElementById("bxoSkip").onclick = ()=> onbStep(2, d);
+      document.getElementById("bxoSkip").onclick = ()=>{ if(window.__bxOnbOnly){ window.__bxOnbOnly = false; window.__bxManualShown = true; return onbFinish(false); } onbStep(2, d); };
       document.getElementById("bxoSave").onclick = async ()=>{
         const btn = document.getElementById("bxoSave"); err(""); btn.disabled = true; btn.textContent = "Saving…";
         const pick = sel => [...o.querySelectorAll(sel)].map(b=> b.dataset.v);
         const patch = { categories: pick("#bxoCats .b2-cat.on"), content_formats: pick("#bxoFmt .b2-chip.on"), languages: pick("#bxoLang .b2-chip.on") };
         const r = await papi("save_profile_section", { p_section:"professional", p_patch:patch, p_correlation:"ui-onboard" });
         if(r.error){ err("Couldn't save: " + (r.error.message || r.error)); btn.disabled = false; btn.innerHTML = "Build my creator profile&nbsp; →"; return; }
-        d.professional = Object.assign({}, pro, patch); onbStep(2, d);
+        d.professional = Object.assign({}, pro, patch);
+        if(window.__bxOnbOnly){ window.__bxOnbOnly = false; window.__bxManualShown = true; return onbFinish(false); }
+        onbStep(2, d);
       };
     }
     if(n === 2){
