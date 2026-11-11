@@ -833,15 +833,16 @@
       onbFinish(goExplore);
     };
   }
+  // the setup's category tiles + languages — shared with the profile hub (bounty-pages.js) so both show the same picks
+  const US = id => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=480&h=340&q=70`;
+  const CATS = [["Food",R+"ph_food.jpg"],["Beauty",R+"ph_beauty.jpg"],["Fashion",R+"ph_fashion.jpg"],["Fitness",R+"ph_fitness.jpg"],["Pets",R+"ph_pets.jpg"],["Travel",R+"ph_travel.jpg"],
+    ["Lifestyle",US("photo-1622049605334-72e1e4432346")],["Tech",US("photo-1614624532983-4ce03382d63d")],["Gaming",US("photo-1636487658616-14850c8f496c")],
+    ["Parenting",US("photo-1589169011402-8b2cbd1ee593")],["Home & Decor",US("photo-1745429523617-0d837856ca35")],["Education",US("photo-1617009762269-c062aaf6b3a0")]];
+  const LANG = ["Hindi","Hinglish","English","Bengali","Tamil","Telugu","Marathi","Gujarati","Kannada","Malayalam","Punjabi","Odia","Assamese","Urdu"];
   function onbStep(n, d){
     const pro = d.professional || {}, cp = d.commercial_preference || {};
     if(n === 1){
-      const US = id => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=480&h=340&q=70`;
-      const CATS = [["Food",R+"ph_food.jpg"],["Beauty",R+"ph_beauty.jpg"],["Fashion",R+"ph_fashion.jpg"],["Fitness",R+"ph_fitness.jpg"],["Pets",R+"ph_pets.jpg"],["Travel",R+"ph_travel.jpg"],
-        ["Lifestyle",US("photo-1622049605334-72e1e4432346")],["Tech",US("photo-1614624532983-4ce03382d63d")],["Gaming",US("photo-1636487658616-14850c8f496c")],
-        ["Parenting",US("photo-1589169011402-8b2cbd1ee593")],["Home & Decor",US("photo-1745429523617-0d837856ca35")],["Education",US("photo-1617009762269-c062aaf6b3a0")]];
       const FMT = [["reel","Reels"],["story","Stories"],["carousel","Carousels"],["ugc","UGC videos"]];
-      const LANG = ["Hindi","Hinglish","English","Bengali","Tamil","Telugu","Marathi","Gujarati","Kannada","Malayalam","Punjabi","Odia","Assamese","Urdu"];
       const cats = pro.categories || [], fmts = pro.content_formats || [], langs = pro.languages || [];
       const extraC = cats.filter(c=> !CATS.some(x=> x[0].toLowerCase()===String(c).toLowerCase())), extraL = langs.filter(l=> !LANG.some(x=> x.toLowerCase()===String(l).toLowerCase()));
       const catTile = (c, img, on) => img ? `<button type="button" class="b2-cat${on?" on":""}" data-v="${E(c)}"><img src="${img}" alt="" loading="lazy"><b>${E(c.toUpperCase())}</b><i class="b2-chk"></i></button>`
@@ -986,5 +987,6 @@
   }
 
   window.bxGuest = { start:startGuest, go, video };
+  B2.onbKit = { CATS, LANG };
   B2.screens = { onbStep, onbManual, manualProfile, igGate, sidekickScreen, igLoader, igKit, igSent };
 })();

@@ -247,6 +247,7 @@
     const h3 = !h1 && c.querySelector(":scope > div > .card:first-child > h3, :scope > .card:first-child > h3");
     if(h3 && h3.childNodes.length === 1 && TITLE[h3.textContent.trim()]) h3.textContent = TITLE[h3.textContent.trim()];
     if(currentPage === "opencampaigns") touchDiscover();
+    liftTip();
     if(currentPage === "dashboard"){
       const head = c.querySelector(".page-head");
       if(head) head.classList.add("b2-hide");
@@ -359,6 +360,31 @@
     box.querySelectorAll("[data-hgo]").forEach(b=> b.onclick = e=>{ e.preventDefault(); const k = b.dataset.hgo; if(k==="__sprout") return openKid(); if(b.dataset.hub1) window.__bxHubOpen = b.dataset.hub1; go(k); });
     box.querySelectorAll("[data-hbrief]").forEach(b=> b.onclick = e=>{ e.stopPropagation(); try{ localStorage.setItem("geek_apply", b.dataset.hbrief); }catch(x){} go("opencampaigns"); });
   }
+  // on a phone the sidekick's line comes out of the sidekick in the middle of the bottom bar (a speech bubble),
+  // not as a card at the foot of the page; pages without that bar (desktop) keep the card
+  let _tipKey = "", _tipPage = "";
+  function liftTip(){
+    const bar = document.getElementById("bxBottom"), kid = bar && bar.querySelector(".b2-nav-kid");
+    const phone = window.matchMedia("(max-width:900px)").matches && kid && kid.offsetParent !== null;
+    document.body.classList.toggle("bx-navtips", !!phone);
+    if(!phone) return;
+    if(_tipPage !== currentPage){ _tipPage = currentPage; _tipKey = ""; const o = document.getElementById("b2NavSay"); if(o) o.remove(); }
+    const t = [...document.querySelectorAll("#content .b2-tip")].filter(x=> !x.closest(".b2-hub-open #bxHub")).pop(); if(!t) return;
+    const p = t.querySelector("p"); const html = p ? p.innerHTML : ""; if(!html) return;
+    const key = currentPage + "|" + p.textContent.trim(); if(key === _tipKey) return; _tipKey = key;
+    navSay(html);
+  }
+  function navSay(html){
+    let s = document.getElementById("b2NavSay"); if(s) s.remove();
+    s = document.createElement("div"); s.id = "b2NavSay"; s.className = "b2-navsay b2-navsay-m"; s.setAttribute("role","status");
+    s.innerHTML = `<p>${html}</p><button type="button" aria-label="Close">×</button>`;
+    document.body.appendChild(s);
+    const bye = ()=>{ if(!s.isConnected) return; s.classList.add("out"); setTimeout(()=> s.remove(), 240); };
+    s.querySelector("p").onclick = ()=>{ s.remove(); openKid(); };
+    s.querySelector("button").onclick = e=>{ e.stopPropagation(); bye(); };
+    clearTimeout(navSay._t); navSay._t = setTimeout(bye, 9000);
+  }
+  window.bxNavSay = navSay;
   let _mo = null;
   function watch(){
     if(_mo) return;

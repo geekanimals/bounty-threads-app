@@ -158,12 +158,11 @@
     const L = [["👤","About you", [per.first_name, per.gender ? String(per.gender).replace(/_/g," ") : ""].filter(Boolean).join(" · ") || "Name, gender, birthday, married, pets","#personal"],
       ["📞","Contact", "WhatsApp, backup email","#contact"],
       ["📍","Delivery address", ((pf && pf.addresses)||[]).map(a=> a.label || a.city).filter(Boolean).join(" · ") || "Where brands send your kit","#address"],
-      ["🎬","What you create", (pro.content_formats||[]).slice(0,3).join(", ") || "Display name, content types, availability, travel","#professional"],
+      ["🎬","What you create", [].concat((pro.categories||[]).slice(0,3), (pro.languages||[]).slice(0,2)).join(", ") || "Categories, languages, city, content types","#professional"],
       ["🛠️","Skills & resources", "What you're good at and the gear you have","#skills"],
       ["💙","Dream brands", dreams.slice(0,3).join(", ") || "Brands you'd love to work with","#dreams"],
-      ["🤝","Your terms & rate card", [terms, ciRates].filter(Boolean).join(" · ") || "Barter, paid, hybrid · Reel, Story, Post rates","*terms"],
-      ["📸","Instagram accounts", ig.length ? ig.map(x=>"@"+x.username).join(", ") : (handle ? handle + " (self-reported) · connect" : "Connect Instagram"),"#pages"],
-      ["🔒","Visibility & privacy", "What brands can see","#visibility"]];
+      ["🤝","Your terms & rate card", [terms, ciRates].filter(Boolean).join(" · ") || "Barter, paid, hybrid · Reel, Story, Post rates","#terms"],
+      ["📸","Instagram & privacy", (ig.length ? ig.map(x=>"@"+x.username).join(", ") : (handle ? handle + " (self-reported) · connect" : "Connect Instagram")) + " · what brands see","#pages"]];
     const useKid = window.bxKid && bxKid.prefs().avatar;
     const onb = n => { if(!(window.B2 && B2.screens && B2.screens.onbStep)) return; window.__bxOnbReturn = "profile"; window.__bxOnbOnly = true; window.__bxManualShown = true; B2.screens.onbStep(n, pf || {}); };
     c.classList.add("b2-hubpage"); { const sk = document.getElementById("bxHubSk"); if(sk) sk.remove(); }
@@ -175,20 +174,88 @@
       <button type="button" class="b2-card b2-pct" data-hub="#campready"><b>Profile ${pct}% complete</b><div class="b2-bar2"><i style="width:${pct}%"></i></div>${pct < 100 ? `<em class="b2-pct-sub">${tot - dn} thing${tot - dn === 1 ? "" : "s"} left — tap to finish</em>` : ""}</button>
       ${L.slice(0,4).map(row).join("")}</div><div class="b2-hubr">${L.slice(4).map(row).join("")}
       ${TIP("Add your city — nearby campaigns show up first.")}</div></div>
-      <div class="b2-oneextra card" id="bxCreateX"><h4>Your niche, languages &amp; city</h4>
-        <div class="b2-cx-row"><span>Categories</span><b>${H((pro.categories||[]).join(", ") || "—")}</b></div>
-        <div class="b2-cx-row"><span>Languages</span><b>${H((pro.languages||[]).join(", ") || "—")}</b></div>
-        <button type="button" class="btn sm ghost" id="bxCxEdit">Edit categories &amp; languages →</button>
-        <label class="b2-cx-city"><span>City</span><span class="b2-cx-in"><input id="bxCxCity" placeholder="e.g. Jaipur" value="${H(pro.city_coarse || md.city || "")}" maxlength="60"><button type="button" class="btn sm" id="bxCxSave">Save</button></span></label>
-        <div class="muted" id="bxCxMsg"></div></div>`);
-    // "What you create" = the Professional section + categories, languages and city (asked in the profile setup)
-    const cxE = document.getElementById("bxCxEdit"); if(cxE) cxE.onclick = ()=> onb(1);
-    const cxS = document.getElementById("bxCxSave"); if(cxS) cxS.onclick = async ()=>{
-      const v = document.getElementById("bxCxCity").value.trim(), m = document.getElementById("bxCxMsg");
-      cxS.disabled = true; m.textContent = "Saving…";
-      const r = await api("save_profile_section", { p_section:"professional", p_patch:{ city_coarse: v || null }, p_correlation:"ui-hub" });
-      cxS.disabled = false; m.textContent = r.error ? "Couldn't save: " + (r.error.message || r.error) : "✓ Saved";
-    };
+      <div class="b2-oneextra card" id="bxCreateX"></div><div class="b2-oneextra card" id="bxTermsX"></div>`);
+    // ---- the same picks as the setup screens, edited right here (no jumping back to the setup) ----
+    const K = (window.B2 && B2.onbKit) || { CATS:[], LANG:[] };
+    const low = v => String(v||"").toLowerCase();
+    const rebuild = key => { ["bxHub","bxCreateX","bxTermsX","bxHubBack"].forEach(id=>{ const x = document.getElementById(id); if(x) x.remove(); }); window.__bxHubOpen = key; touchProfile(); };
+    const addOwn = (wrap, ph, onAdd) => { if(wrap.querySelector("input")) return;
+      wrap.innerHTML = `<div class="b2-addin"><input class="b2-in" placeholder="${ph}" maxlength="30"><button type="button" class="b2-btn forest">Add</button></div>`;
+      const i = wrap.querySelector("input"); i.focus();
+      const go2 = ()=>{ const v = i.value.trim().replace(/\s+/g," "); if(!v) return; onAdd(v.charAt(0).toUpperCase() + v.slice(1)); i.value = ""; i.focus(); };
+      wrap.querySelector("button").onclick = go2; i.onkeydown = e=>{ if(e.key === "Enter"){ e.preventDefault(); go2(); } }; };
+    { // What you create: categories (photo tiles, up to 3) + languages + city — one Save
+      const box = document.getElementById("bxCreateX"), cats = pro.categories || [], langs = pro.languages || [];
+      const tileH = (cn, img, on)=> img ? `<button type="button" class="b2-cat${on?" on":""}" data-v="${H(cn)}"><img src="${img}" alt="" loading="lazy"><b>${H(cn.toUpperCase())}</b><i class="b2-chk"></i></button>`
+        : `<button type="button" class="b2-cat own${on?" on":""}" data-v="${H(cn)}"><b>${H(cn.toUpperCase())}</b><i class="b2-chk"></i></button>`;
+      const exC = cats.filter(x=> !K.CATS.some(k=> low(k[0]) === low(x))), exL = langs.filter(x=> !K.LANG.some(k=> low(k) === low(x)));
+      box.innerHTML = `<h4>Your content</h4>
+        <div class="b2-cx-lab">Categories <em>pick up to 3</em></div>
+        <div class="b2-catgrid" id="bxCxCats">${K.CATS.map(([cn,img])=> tileH(cn, img, cats.some(x=> low(x) === low(cn)))).join("")}${exC.map(x=> tileH(x, null, true)).join("")}</div>
+        <div class="b2-addown" id="bxCxCatAdd"><button type="button" class="b2-more">+ Add your own category</button></div>
+        <div class="b2-cx-lab">Content languages</div>
+        <div class="b2-chips" id="bxCxLang">${K.LANG.concat(exL).map(l=> `<button type="button" class="b2-chip${langs.some(x=> low(x) === low(l))?" on":""}" data-v="${H(l)}">${H(l)}</button>`).join("")}</div>
+        <div class="b2-addown" id="bxCxLangAdd"><button type="button" class="b2-more">+ Add another language</button></div>
+        <label class="b2-cx-city"><span>City</span><input id="bxCxCity" placeholder="e.g. Jaipur" value="${H(pro.city_coarse || md.city || "")}" maxlength="60"></label>
+        <div class="auth-err" id="bxCxMsg"></div>
+        <button type="button" class="b2-btn forest full" id="bxCxSave">Save</button>`;
+      const on = ()=> box.querySelectorAll("#bxCxCats .b2-cat.on").length, msg = t=> document.getElementById("bxCxMsg").textContent = t;
+      const wireC = ()=> box.querySelectorAll("#bxCxCats .b2-cat").forEach(b=> b.onclick = ()=>{ if(!b.classList.contains("on") && on() >= 3) return msg("Pick up to 3 — tap one to swap it."); msg(""); b.classList.toggle("on"); });
+      const wireL = ()=> box.querySelectorAll("#bxCxLang .b2-chip").forEach(b=> b.onclick = ()=> b.classList.toggle("on"));
+      wireC(); wireL();
+      box.querySelector("#bxCxCatAdd button").onclick = ()=> addOwn(document.getElementById("bxCxCatAdd"), "Type a category, e.g. Cars", v=>{
+        const g = document.getElementById("bxCxCats"), have = [...g.querySelectorAll(".b2-cat")].find(b=> low(b.dataset.v) === low(v));
+        if(have){ if(!have.classList.contains("on") && on() < 3) have.classList.add("on"); return; }
+        if(on() >= 3) return msg("Pick up to 3 — tap one to swap it, then add yours.");
+        g.insertAdjacentHTML("beforeend", tileH(v, null, true)); wireC(); });
+      box.querySelector("#bxCxLangAdd button").onclick = ()=> addOwn(document.getElementById("bxCxLangAdd"), "Type a language, e.g. Bhojpuri", v=>{
+        const g = document.getElementById("bxCxLang"), have = [...g.querySelectorAll(".b2-chip")].find(b=> low(b.dataset.v) === low(v));
+        if(have){ have.classList.add("on"); return; }
+        g.insertAdjacentHTML("beforeend", `<button type="button" class="b2-chip on" data-v="${H(v)}">${H(v)}</button>`); wireL(); });
+      document.getElementById("bxCxSave").onclick = async ()=>{
+        const b = document.getElementById("bxCxSave"), pick = sel=> [...box.querySelectorAll(sel)].map(x=> x.dataset.v);
+        const city = document.getElementById("bxCxCity").value.trim();
+        b.disabled = true; b.textContent = "Saving…"; msg("");
+        const r = await api("save_profile_section", { p_section:"professional", p_patch:{ categories: pick("#bxCxCats .b2-cat.on"), languages: pick("#bxCxLang .b2-chip.on"), city_coarse: city || null }, p_correlation:"ui-hub" });
+        if(r.error){ b.disabled = false; b.textContent = "Save"; return msg("Couldn't save: " + (r.error.message || r.error)); }
+        b.textContent = "✓ Saved"; setTimeout(()=> rebuild("professional"), 700);
+      };
+    }
+    { // Your terms & rate card — same choices as the setup's last screen, saved to the same place
+      const box = document.getElementById("bxTermsX");
+      const RATES = [["IG Reel","Reel"],["IG Story","Story"],["IG Static Post","Post"]];
+      const rItems = ((pf && pf.rate_cards && pf.rate_cards[0] && pf.rate_cards[0].items) || []);
+      const rateOf = t=> { const x = rItems.find(i=> i.deliverable_type === t); return x ? Math.round(Number(x.amount)) : null; };
+      const was = new Set(); if(cp.accepts_barter === true && cp.product_only === true) was.add("barter"); else if(cp.accepts_barter === true) was.add("hybrid"); else if(cp.accepts_barter === false) was.add("paid");
+      if(/open to discuss/i.test(cp.notes || "")) was.add("discuss");
+      const T = [["barter","🎁","Barter","Products or experiences for content"],["paid","₹","Paid","A cash fee for your work"],["hybrid","🎁+₹","Hybrid","Product + payment"],["discuss","💬","Open to discuss",""]];
+      box.innerHTML = `<h4>Your terms &amp; rate card</h4>
+        <div class="b2-cx-lab">What are you open to? <em>pick all that fit</em></div>
+        <div class="b2-terms lite" id="bxTxTerms">${T.map(([k,ic,t,sub])=> `<button type="button" class="b2-term${was.has(k)?" on":""}" data-v="${k}"><span class="ic${ic.length>2?" sm":""}">${ic}</span><div><b>${t}</b>${sub?`<em>${sub}</em>`:""}</div><i class="b2-tick"></i></button>`).join("")}</div>
+        <div class="b2-cx-lab" id="bxTxRateH">Your rates <em>optional · shown only to brands you apply to</em></div>
+        <div class="b2-rates" id="bxTxRates">${RATES.map(([t,l],i)=> `<label><span>${l}</span><b>₹<input id="bxTxR${i}" data-t="${t}" inputmode="numeric" placeholder="—" value="${rateOf(t)!=null?rateOf(t):""}"></b></label>`).join("")}</div>
+        <label class="b2-cx-city" id="bxTxMinL"><span>Product value you prefer (optional)</span><input id="bxTxMin" inputmode="numeric" placeholder="Any" value="${cp.min_product_value!=null?H(cp.min_product_value):""}"></label>
+        <div class="auth-err" id="bxTxMsg"></div>
+        <button type="button" class="b2-btn forest full" id="bxTxSave">Save</button>`;
+      const terms = document.getElementById("bxTxTerms"), msg = t=> document.getElementById("bxTxMsg").textContent = t;
+      const sync = ()=>{ const o = [...terms.querySelectorAll(".b2-term.on")].map(b=> b.dataset.v), barterOnly = o.includes("barter") && !o.includes("paid") && !o.includes("hybrid");
+        document.getElementById("bxTxRates").style.display = document.getElementById("bxTxRateH").style.display = barterOnly ? "none" : "";
+        document.getElementById("bxTxMinL").style.display = o.includes("paid") && !o.includes("barter") && !o.includes("hybrid") ? "none" : ""; };
+      terms.querySelectorAll(".b2-term").forEach(b=> b.onclick = ()=>{ b.classList.toggle("on"); sync(); }); sync();
+      document.getElementById("bxTxSave").onclick = async ()=>{
+        const b = document.getElementById("bxTxSave"), o = [...terms.querySelectorAll(".b2-term.on")].map(x=> x.dataset.v);
+        const num = id=> { const v = String(document.getElementById(id).value||"").replace(/[^\d.]/g,""); return v === "" ? null : Number(v); };
+        const patch = {}, min = num("bxTxMin");
+        if(o.length){ patch.accepts_barter = o.includes("barter") || o.includes("hybrid"); patch.product_only = o.includes("barter") && !o.includes("paid") && !o.includes("hybrid"); patch.notes = o.includes("discuss") ? "Open to discuss" : null; }
+        patch.min_product_value = min;
+        const rates = RATES.map(([t],i)=> [t, num("bxTxR" + i)]).filter(([t,v])=> v != null && v > 0 && v !== rateOf(t));
+        b.disabled = true; b.textContent = "Saving…"; msg("");
+        let r = await api("save_profile_section", { p_section:"commercial_preference", p_patch:patch, p_correlation:"ui-hub" });
+        for(const [t,v] of rates){ if(r.error) break; r = await api("save_rate_card_item", { p_payload:{ deliverable_type:t, amount:v }, p_correlation:"ui-hub" }); }
+        if(r.error){ b.disabled = false; b.textContent = "Save"; return msg("Couldn't save: " + (r.error.message || r.error)); }
+        b.textContent = "✓ Saved"; setTimeout(()=> rebuild("terms"), 700);
+      };
+    }
     const closeOne = ()=>{ c.classList.remove("b2-hub-open"); delete c.dataset.one; window.scrollTo(0,0); };
     document.getElementById("bxHubBack").onclick = ()=>{ const s = history.state; if(s && s.bxh && s.k === "s" && String(s.v).indexOf("hub:") === 0){ history.back(); return; } closeOne(); };
     const kidT = document.getElementById("bxHubKid"); if(kidT) kidT.onchange = async ()=>{ if(window.bxKid){ await bxKid.save({ avatar: kidT.checked }); if(window.bxPaintMeChip) bxPaintMeChip(); const h = document.getElementById("bxHub"); if(h) h.remove(); touchProfile(); } };
@@ -200,7 +267,6 @@
         return;
       }
       if(k === "*cats") return onb(1);
-      if(k === "*terms") return onb(3);
       if(k === "@rates"){ if(typeof openMkEdit === "function" && acct) return openMkEdit("ratecard", acct); return go("mediakit"); }
       go(k);
     });
