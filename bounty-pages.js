@@ -156,16 +156,14 @@
     const dreams = ((pf && pf.dream_brands) || []).map(x=> x.submitted_brand_name).filter(Boolean);
     const terms = (pf && pf.commercial_preference && Object.keys(cp).length) ? [cp.accepts_barter?"Barter":"", cp.product_only?"":"Paid"].filter(Boolean).join(", ") : "";
     // every part of the old Creator Profile, one row each — a row opens just that section ("#key" = profile.js data-sec)
-    const cats = [(pro.categories||[]).slice(0,3).join(", "), (pro.languages||[]).slice(0,2).join(", ")].filter(Boolean).join(" · ");
+    const ciRates = ((pf && pf.rate_cards && pf.rate_cards[0] && pf.rate_cards[0].items) || []).slice(0,2).map(i=> `${String(i.deliverable_type).replace(/^IG\s+/,"").replace("Static ","")} ₹${Number(i.amount).toLocaleString("en-IN")}`).join(" · ");
     const L = [["👤","About you", [per.first_name, per.gender ? String(per.gender).replace(/_/g," ") : ""].filter(Boolean).join(" · ") || "Name, gender, birthday, married, pets","#personal"],
       ["📞","Contact", "WhatsApp, backup email","#contact"],
       ["📍","Delivery address", ((pf && pf.addresses)||[]).map(a=> a.label || a.city).filter(Boolean).join(" · ") || "Where brands send your kit","#address"],
       ["🎬","What you create", (pro.content_formats||[]).slice(0,3).join(", ") || "Display name, content types, availability, travel","#professional"],
-      ["🏷️","Categories & languages", cats || "Your niche and the languages you post in","*cats"],
       ["🛠️","Skills & resources", "What you're good at and the gear you have","#skills"],
       ["💙","Dream brands", dreams.slice(0,3).join(", ") || "Brands you'd love to work with","#dreams"],
-      ["🤝","Your terms", terms || "Barter, paid, hybrid","*terms"],
-      ["🧾","Rate card", rateSub || "Your price for a Reel, Story or post","@rates"],
+      ["🤝","Your terms & rate card", [terms, ciRates].filter(Boolean).join(" · ") || "Barter, paid, hybrid · Reel, Story, Post rates","*terms"],
       ["📸","Instagram accounts", ig.length ? ig.map(x=>"@"+x.username).join(", ") : (handle ? handle + " (self-reported) · connect" : "Connect Instagram"),"#pages"],
       ["🔒","Visibility & privacy", "What brands can see","#visibility"]];
     const useKid = window.bxKid && bxKid.prefs().avatar;
@@ -177,7 +175,7 @@
       <h1 class="b2-hubn">${H(nm)}</h1><div class="b2-hubh">${H([handle, pro.city_coarse || md.city].filter(Boolean).join(" · "))}${md.ig_handle && !ig.length ? ` <em class="b2-sr">self-reported</em>` : ""}</div>
       <label class="b2-card b2-tog wide"><span>Use ${H(KN())} as my profile picture</span><input type="checkbox" id="bxHubKid"${useKid?" checked":""}><i></i></label>
       <button type="button" class="b2-card b2-pct" data-hub="#campready"><b>Profile ${pct}% complete</b><div class="b2-bar2"><i style="width:${pct}%"></i></div>${pct < 100 ? `<em class="b2-pct-sub">${tot - dn} thing${tot - dn === 1 ? "" : "s"} left — tap to finish</em>` : ""}</button>
-      ${L.slice(0,5).map(row).join("")}</div><div class="b2-hubr">${L.slice(5).map(row).join("")}
+      ${L.slice(0,4).map(row).join("")}</div><div class="b2-hubr">${L.slice(4).map(row).join("")}
       ${TIP("Add your city — nearby campaigns show up first.")}</div></div>
       <div class="b2-oneextra card" id="bxCreateX"><h4>Your niche, languages &amp; city</h4>
         <div class="b2-cx-row"><span>Categories</span><b>${H((pro.categories||[]).join(", ") || "—")}</b></div>
