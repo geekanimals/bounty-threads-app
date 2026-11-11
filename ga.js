@@ -1,7 +1,7 @@
 // Google Analytics 4 (G-Z5QVGWQ0XJ) — live site only (bountythreads.geekcreativeagency.com).
 // Follows our cookie choice (Consent Mode): no analytics cookies until the person picks "Accept all";
 // before that Google only gets cookieless, anonymous pings. Ads storage/personalisation always off.
-// The app is one page (app.html), so every screen change is sent as its own page view: /app/<role>/<page>.
+// The app is one page (app.html), so every later screen change is sent as its own page view: /app/<role>/<page>.
 (function(){
   var ID = "G-Z5QVGWQ0XJ";
   if(!/(^|\.)geekcreativeagency\.com$/i.test(location.hostname)) return;
@@ -22,8 +22,10 @@
   function view(path, title){
     gtag("event", "page_view", { page_location: location.origin + path, page_path: path, page_title: title || document.title });
   }
+  // Google's tag already sends one page view on every page load (it can't be switched off in GA),
+  // so plain pages need nothing more, and the app only adds a view when the screen changes after that.
   var isApp = /\/app(\.html)?$/i.test(location.pathname);
-  if(!isApp){ view(location.pathname + location.search, document.title); return; }
+  if(!isApp) return;
 
   // app.html: watch the screen the person is on (top-level app.js variables) and send a view when it changes
   var last = "", uid = "";
@@ -34,7 +36,7 @@
     var path = "/app/" + (role ? role + "/" : "") + page;
     var id = booted && window.Auth && Auth.user && Auth.user.id ? String(Auth.user.id) : "";
     if(id && id !== uid){ uid = id; gtag("config", ID, { send_page_view: false, user_id: id }); gtag("set", "user_properties", { user_role: role || "" }); }
-    if(path !== last){ last = path; view(path, "Geek OS · " + page.replace(/[-_/]/g, " ")); }
+    if(path !== last){ var first = !last; last = path; if(!first) view(path, "Geek OS · " + page.replace(/[-_/]/g, " ")); }
   }
   setInterval(tick, 1000);
   if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", tick); else tick();
