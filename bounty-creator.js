@@ -148,8 +148,9 @@
       const dm = prof.cloneNode(true); dm.classList.remove("active"); dm.classList.add("b2-m-only","b2-dream-m"); dm.dataset.page = "dreamboard";
       const ic = dm.querySelector(".ic"); if(ic) ic.innerHTML = `<span class="b2-emo">💙</span>`;
       const lb = dm.querySelector(":scope > span:last-child"); if(lb) lb.textContent = "Dream brand board";
-      dm.onclick = e=>{ e.preventDefault(); if(window.innerWidth<=760) document.getElementById("sidebar").classList.remove("open"); go("profile");
-        let n = 0; const t = setInterval(()=>{ n++; const r = document.querySelector('#bxHub [data-hub="#dream"]'); if(r){ clearInterval(t); r.click(); } else if(n > 40) clearInterval(t); }, 150); };
+      dm.onclick = e=>{ e.preventDefault(); if(window.innerWidth<=760) document.getElementById("sidebar").classList.remove("open"); const r0 = document.querySelector('#bxHub [data-hub="#dreams"]');
+        if(r0 && currentPage === "profile"){ const c0 = document.getElementById("content"); if(c0 && c0.classList.contains("b2-hub-open")) history.back(); setTimeout(()=>{ const r1 = document.querySelector('#bxHub [data-hub="#dreams"]'); if(r1) r1.click(); }, c0 && c0.classList.contains("b2-hub-open") ? 400 : 0); return; }
+        window.__bxHubOpen = "dreams"; go("profile"); };   // opens the profile straight on Dream brands
       ana.after(dm);
     }
     // a heading whose items all live in the phone's bottom bar hides with them
@@ -271,7 +272,7 @@
     const intro = c.querySelector(".ci-intro");
     if(intro && !intro.dataset.b2){ intro.dataset.b2 = 1; intro.innerHTML = `<h1 class="b2-h1">Made for your world.</h1><p class="b2-sub plain">Campaigns that match your style</p>`; intro.classList.add("b2-intro"); }
     const chips = c.querySelector("#campChips"); if(chips){ chips.classList.add("b2-campchips");
-      const CL = { all:"For you", paid:"Paid", barter:"Barter", celebrity:"Story" };
+      const CL = { all:"For you", paid:"Paid", barter:"Barter", hybrid:"Paid + Barter" };   // same four as the guest Discover
       chips.querySelectorAll("[data-campf]").forEach(b=>{ const l = CL[b.dataset.campf]; if(l && b.firstChild && b.firstChild.nodeType === 3 && b.firstChild.nodeValue.trim() !== l) b.firstChild.nodeValue = l + " "; if(!l) b.classList.add("b2-hide"); }); }
     const cards = [...c.querySelectorAll(".ci-ccard[data-cdetail]")].filter(x=> !x.dataset.b2);
     if(!cards.length) return;

@@ -1413,3 +1413,5 @@ body.b2app .ops-left{ margin-top:14px; padding-top:12px; border-top:1px solid #e
 body.b2app .ops-left > b{ display:block; font-size:14px; margin-bottom:8px; color:var(--b2-ink2); }
 body.b2app .ops-left .cp-req-list{ display:flex; flex-direction:column; gap:7px; }
 body.b2app .ops-left .cp-req-it{ display:block; padding:10px 12px; border-radius:12px; font-size:14px; text-decoration:none; font-weight:500; }
+@media (max-width:480px){ body.b2app .b2-campchips{ gap:6px; } body.b2app .b2-campchips button, body.b2app .b2-campchips .ci-chip{ padding:0 12px; font-size:14px !important; } }
+.b2-together a{ font:600 13.5px var(--b2-f-dm); color:#b8452b; text-decoration:none; }

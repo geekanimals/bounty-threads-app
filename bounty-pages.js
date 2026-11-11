@@ -337,7 +337,7 @@
 
   /* ---------- V2-22 / W06 My media kit — the Figma layout on the creator's real data.
      The app's own kit (#mkHeadWrap, refreshed every 60 s) keeps running underneath for its share / edit / sync logic. ---------- */
-  let _mkProf = null, _mkSig = "";
+  let _mkProf = null, _mkProfLast = null, _mkSig = "";
   async function touchMediaKit(){
     const c = document.getElementById("content"); if(!c || currentPage !== "mediakit") return;
     const head = c.querySelector(":scope > .page-head");
@@ -346,6 +346,7 @@
     body.classList.add("b2-mkhost");
     const a = (window._mkLastAcct) || ((typeof mkFetchAcct === "function") ? await mkFetchAcct().catch(()=> null) : null); if(!a || !body.isConnected) return;
     if(!_mkProf && window.__ciProfileEnabled){ const r = await api("get_my_profile"); if(!r.error) _mkProf = r.data || {}; }
+    _mkProfLast = _mkProf || _mkProfLast;
     const sig = [a.id, a.updated_at, a.followers_count, JSON.stringify(a.edits||{}).length, !!_mkProf].join("|");
     if(document.getElementById("b2Mk") && sig === _mkSig) return; _mkSig = sig;
     const pro = (_mkProf && _mkProf.professional) || {}, cp = (_mkProf && _mkProf.commercial_preference) || {};
@@ -366,8 +367,12 @@
     const work = pinIds.map(id=> all.find(m=> String(m.id) === id)).filter(Boolean).concat(all.slice().sort((x,y)=> engOf(y)-engOf(x))).filter((m,i,arr)=> arr.indexOf(m) === i).slice(0,9);
     const img = m => m.media_type === "VIDEO" ? (m.thumbnail_url || m.media_url) : m.media_url;
     // let's create together
-    const open = [cp.accepts_barter ? "Barter" : "", cp.product_only ? "" : "Paid", cp.accepts_barter && !cp.product_only ? "Hybrid" : ""].filter(Boolean);
-    const rates = (Array.isArray(E.rate_card) ? E.rate_card : []).filter(r=> r && r.item).slice(0,3).map(r=> `${H(r.item)} from ${H(r.price||"—")}`);
+    // open to = what they picked in Your terms (nothing picked → nothing claimed)
+    const open = cp.accepts_barter === true && cp.product_only === true ? ["Barter"] : cp.accepts_barter === true ? ["Barter", "Paid", "Hybrid"] : cp.accepts_barter === false ? ["Paid"] : [];
+    // rates = the one rate card from Your terms (Reel / Story / Post); the old media-kit list only if that is empty
+    const tRates = ((_mkProf && _mkProf.rate_cards && _mkProf.rate_cards[0] && _mkProf.rate_cards[0].items) || []).filter(i=> i && Number(i.amount) > 0)
+      .slice(0,3).map(i=> `${H(String(i.deliverable_type).replace(/^IG\s+/,"").replace("Static ",""))} ₹${Number(i.amount).toLocaleString("en-IN")}`);
+    const rates = tRates.length ? tRates : (Array.isArray(E.rate_card) ? E.rate_card : []).filter(r=> r && r.item).slice(0,3).map(r=> `${H(r.item)} from ${H(r.price||"—")}`);
     const box = document.getElementById("b2Mk") || document.createElement("div");
     box.id = "b2Mk"; box.className = "b2 b2-mk";
     box.innerHTML = `<div class="b2-mkcol">
@@ -381,13 +386,15 @@
         <div class="b2-sec ink">— The work I'm proud of —</div>
         ${work.length ? `<div class="b2-mkgrid">${work.map(m=>`<a href="${H(m.permalink||"#")}" target="_blank" rel="noopener"><img src="${H(img(m))}" alt="" referrerpolicy="no-referrer"></a>`).join("")}</div>` : `<div class="b2-card"><p class="b2-p it sm">Your posts show up here once Instagram has synced.</p></div>`}
         <div class="b2-sec ink">— Let's create together —</div>
-        <div class="b2-card b2-together"><b>Open to: ${H(open.length ? open.join(" · ") : "Barter · Paid · Hybrid")}</b>${rates.length?`<span>${rates.join(" · ")}</span>`:`<span>Add your rates in Make it yours</span>`}<i>Rates shown only to brands you apply to</i></div>
+        <div class="b2-card b2-together"><b>${open.length ? "Open to: " + H(open.join(" · ")) : "Set what you're open to"}</b>${rates.length?`<span>${rates.join(" · ")}</span>`:``}${!open.length || !rates.length ? `<a href="#" data-mkterms>${open.length ? "Add your rates" : "Set your terms & rates"} →</a>` : ""}<i>Rates shown only to brands you apply to</i></div>
         <div class="b2-mkbtns2"><button type="button" class="b2-btn forest" data-mk="share">🔗 Share public link</button><button type="button" class="b2-btn light" data-mk="pdf">⤓ Download PDF</button></div>
         <button type="button" class="b2-btn light full b2-mkedit" data-mk="edit">✎ Make it yours (edit)</button>
         <p class="b2-quote ink">Get discovered by brands you love.<br>Build the creator career you want.</p>
         ${TIP("Pin your 6 best posts — brands look there first.")}
       </div>`;
     if(!box.isConnected) body.insertBefore(box, hw);
+    box.querySelectorAll("[data-mkterms]").forEach(b=> b.onclick = e=>{ e.preventDefault(); if(!(window.B2 && B2.screens && B2.screens.onbStep)) return;
+      window.__bxOnbReturn = "mediakit"; window.__bxOnbOnly = true; window.__bxManualShown = true; _mkProf = null; B2.screens.onbStep(3, (_mkProfLast || {})); });
     box.querySelectorAll("[data-mk]").forEach(b=> b.onclick = e=>{ e.preventDefault(); const k = b.dataset.mk;
       if(k === "share"){ const s2 = document.getElementById("mkShare"); if(s2) return s2.click(); if(typeof openKitShare === "function") return openKitShare(a); }
       if(k === "edit"){ if(typeof openMkEdit === "function") return openMkEdit("profile", a); }
