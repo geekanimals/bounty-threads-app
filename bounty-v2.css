@@ -1279,10 +1279,10 @@ body.b2app[data-pg="messages"] #content > :not(#bxInbox):not(#msgIg):not(#waChat
 body.b2app[data-pg="messages"]:not([data-ibp="ig"]) #content > #msgIg, body.b2app[data-pg="messages"]:not([data-ibp="wa"]) #content > #waChat,
 body.b2app[data-pg="messages"]:not([data-ibp="wa"]) #content > #waStatus{ display:none !important; }
 body.b2app[data-pg="messages"][data-ibp="ig"] #bxIbUp, body.b2app[data-pg="messages"][data-ibp="wa"] #bxIbUp{ display:none !important; }
-.b2-ibpanes{ display:flex; gap:6px; justify-content:center; margin:14px 0 10px; flex-wrap:wrap; }
+.b2-ibpanes{ display:flex; gap:6px; justify-content:center; margin:14px 0 10px; flex-wrap:nowrap; }
 .b2-ibpanes button{ height:38px; padding:0 14px; border-radius:19px; border:1.5px solid #cdb58a; background:#fffdf6; font:700 13.5px var(--b2-f-dm); color:var(--b2-ink2); }
 .b2-ibpanes button.on{ background:var(--b2-forest); border-color:var(--b2-forest); color:#fbf3e2; }
-@media(max-width:380px){ .b2-ibpanes button{ padding:0 10px; font-size:12.5px; } }
+@media(max-width:480px){ .b2-ibpanes button{ flex:0 1 auto; padding:0 10px; font-size:12.5px; white-space:nowrap; } }
 body.b2app[data-pg="messages"] #content > #msgIg, body.b2app[data-pg="messages"] #content > #waChat, body.b2app[data-pg="messages"] #content > #waStatus{ max-width:720px; margin-left:auto; margin-right:auto; text-align:left; }
 body.b2app[data-pg="messages"] #msgIg .card, body.b2app[data-pg="messages"] #waChat{ background:var(--b2-card) !important; border:1px solid var(--b2-card-bd) !important; border-radius:18px !important; }
 .b2-inbox{ max-width:720px; margin:0 auto; padding:2px 0 24px; text-align:center; }
