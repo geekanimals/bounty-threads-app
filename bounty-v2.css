@@ -314,6 +314,13 @@ html:not(.bx-still) .b2-ls li.on i{ animation:b2pulse 1.2s ease-in-out infinite;
 .b2-cat::after{ content:""; position:absolute; inset:0; background:linear-gradient(transparent 45%, rgba(0,0,0,.55)); }
 .b2-cat b{ position:absolute; left:10px; bottom:8px; z-index:1; font:800 20px var(--b2-f-ui); color:#fff; letter-spacing:.01em; }
 .b2-cat .b2-chk{ z-index:1; } .b2-cat.on{ border-color:#32a8cf; }
+.b2-cat.own{ background:linear-gradient(135deg,#1d4a34,#2e5a3e); } .b2-cat.own b{ left:10px; right:10px; bottom:10px; font-size:17px; line-height:1.15; text-align:left; word-break:break-word; }
+#bxOnb .b2-catgrid{ grid-template-columns:repeat(3,1fr); gap:6px; }
+#bxOnb .b2-catgrid .b2-cat{ height:96px; border-radius:12px; }
+#bxOnb .b2-catgrid .b2-cat b{ left:7px; bottom:6px; font-size:12.5px; letter-spacing:.02em; text-shadow:0 1px 6px rgba(0,0,0,.6); }
+#bxOnb .b2-catgrid .b2-cat.own b{ font-size:12.5px; }
+.b2-addown{ margin:10px auto 0; display:flex; justify-content:center; } .b2-addown .b2-addin{ width:100%; max-width:360px; }
+.b2-addown .b2-btn.outline{ min-height:38px; font-size:14px; }
 .b2-dreamtop{ display:flex; align-items:center; gap:6px; margin-top:12px; }
 .b2-tape{ flex:1; background:#d9eef4; padding:8px; font:italic 400 11.5px/1.3 var(--b2-f-serif); color:var(--b2-ink2); transform:rotate(-1deg); box-shadow:0 2px 4px rgba(0,0,0,.08); }
 .b2-nice{ display:flex; align-items:center; } .b2-nice span{ background:#fff; border:1px solid #d8c9a3; border-radius:12px; padding:6px 10px; font:600 13px var(--b2-f-serif); color:#b8452f; } .b2-nice img{ width:60px; }

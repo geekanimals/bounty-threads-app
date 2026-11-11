@@ -9681,6 +9681,7 @@ async function adminCreatorProfile(member, row){
           ${r("Travelling to", D.travel&&D.travel.city?esc([D.travel.city,D.travel.state,D.travel.country].filter(Boolean).join(", "))+(D.travel.until_date?` · till ${esc(fmtDate(D.travel.until_date))}`:""):"")}</div>
         <div class="card"><h4>Professional</h4>
           ${r("Display name", esc(pro.display_name||""))}
+          ${r("Instagram (self-reported)", pro.ig_handle_self?`<a href="https://instagram.com/${encodeURIComponent(pro.ig_handle_self)}" target="_blank" rel="noopener">@${esc(pro.ig_handle_self)}</a>${pro.followers_self!=null?` · ~${kNum(pro.followers_self)} followers`:""} <span class="tag warn">not verified</span>`:"")}
           ${r("Primary city", esc([pro.city_coarse,pro.state_coarse].filter(Boolean).join(", ")))}
           ${r("Niche", (pro.categories||[]).map(esc).join(", "))}
           ${r("Languages", (pro.languages||[]).map(esc).join(", "))}
