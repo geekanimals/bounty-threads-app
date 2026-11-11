@@ -59,6 +59,10 @@
     if(id && id !== uid){ uid = id; gtag("config", ID, { send_page_view: false, user_id: id }); gtag("set", "user_properties", { user_role: role || "" });
       if(clOn && window.clarity){ try{ window.clarity("identify", id); window.clarity("set", "role", role || "unknown"); }catch(e){} } }
     if(path !== last && clOn && window.clarity){ try{ window.clarity("set", "screen", path); }catch(e){} }
+    // Clarity builds heatmaps per URL and the app never changes its URL, so (after sign-in, only when Clarity runs)
+    // the screen goes into the hash: app.html#/creator/mediakit → one heatmap per screen. Never touches a login
+    // callback hash (#access_token…) — only an empty hash or one we wrote ourselves (#/…).
+    if(clOn && booted){ try{ var h = location.hash || ""; if(!h || h.indexOf("#/") === 0){ var want = "#" + path.replace(/^\/app/, ""); if(h !== want) history.replaceState(history.state, "", location.pathname + location.search + want); } }catch(e){} }
     if(path !== last){ var first = !last; last = path; if(!first) view(path, "Geek OS · " + page.replace(/[-_/]/g, " ")); }
   }
   setInterval(tick, 1000);
