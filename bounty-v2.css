@@ -1275,7 +1275,16 @@ body.b2app{ --b2sk-a:rgba(120,92,40,.10); --b2sk-b:rgba(120,92,40,.22); }
 .b2sk-ana{ max-width:900px; margin:0 auto 6px; } body.b2app[data-pg="reports"] #crBody > .b2sk-angrid{ display:grid; }
 .b2sk-mk .b2-mkgrid{ gap:6px !important; border-radius:0 !important; } .b2sk-mk .b2-mkgrid a{ border-radius:12px; overflow:hidden; background:none; }
 /* ===== V2-21 Inbox (Figma) ===== */
-body.b2app[data-pg="messages"] #content > :not(#bxInbox){ display:none !important; }
+body.b2app[data-pg="messages"] #content > :not(#bxInbox):not(#msgIg):not(#waChat):not(#waStatus){ display:none !important; }
+body.b2app[data-pg="messages"]:not([data-ibp="ig"]) #content > #msgIg, body.b2app[data-pg="messages"]:not([data-ibp="wa"]) #content > #waChat,
+body.b2app[data-pg="messages"]:not([data-ibp="wa"]) #content > #waStatus{ display:none !important; }
+body.b2app[data-pg="messages"][data-ibp="ig"] #bxIbUp, body.b2app[data-pg="messages"][data-ibp="wa"] #bxIbUp{ display:none !important; }
+.b2-ibpanes{ display:flex; gap:6px; justify-content:center; margin:14px 0 10px; flex-wrap:wrap; }
+.b2-ibpanes button{ height:38px; padding:0 14px; border-radius:19px; border:1.5px solid #cdb58a; background:#fffdf6; font:700 13.5px var(--b2-f-dm); color:var(--b2-ink2); }
+.b2-ibpanes button.on{ background:var(--b2-forest); border-color:var(--b2-forest); color:#fbf3e2; }
+@media(max-width:380px){ .b2-ibpanes button{ padding:0 10px; font-size:12.5px; } }
+body.b2app[data-pg="messages"] #content > #msgIg, body.b2app[data-pg="messages"] #content > #waChat, body.b2app[data-pg="messages"] #content > #waStatus{ max-width:720px; margin-left:auto; margin-right:auto; text-align:left; }
+body.b2app[data-pg="messages"] #msgIg .card, body.b2app[data-pg="messages"] #waChat{ background:var(--b2-card) !important; border:1px solid var(--b2-card-bd) !important; border-radius:18px !important; }
 .b2-inbox{ max-width:720px; margin:0 auto; padding:2px 0 24px; text-align:center; }
 .b2-ibtabs{ display:flex; justify-content:center; gap:6px; margin:14px 0 4px; }
 .b2-ibtabs button{ height:32px; padding:0 18px; border-radius:16px; border:1px solid #cdb58a; background:#fffdf6; color:var(--b2-ink2); font:600 13px var(--b2-f-dm); cursor:pointer; }
@@ -1446,10 +1455,10 @@ body.b2app .ops-left .cp-req-it{ display:block; padding:10px 12px; border-radius
 /* media kit, one tidy column: card (✎ top-right) → share / PDF → account → audience → work (+ Load more) → portfolio → mentions → terms → publish */
 body.b2app .b2-mkhost > #b2Mk, body.b2app .b2-mkhost > #mkHeadWrap, body.b2app .b2-mkhost > #b2MkTail{ display:block !important; max-width:680px; margin-left:auto; margin-right:auto; }
 body.b2app .b2-mkhost > #mkHeadWrap{ margin-top:14px; }
-body.b2app #b2Mk .b2-mkid{ position:relative; }
-.b2-mkpen{ position:absolute; top:10px; right:10px; width:34px; height:34px; border-radius:50%; border:1px solid rgba(232,176,74,.6); background:rgba(251,243,226,.12); color:var(--b2-cream2); font:600 16px/1 var(--b2-f-dm); display:grid; place-items:center; cursor:pointer; z-index:2; }
-.b2-mkpen:hover{ background:rgba(251,243,226,.22); }
-body.b2app #b2Mk .b2-mkn{ padding-right:40px; min-width:0; }
+body.b2app #b2Mk .b2-mkid{ position:relative; margin-top:18px !important; }
+.b2-mkpen{ position:absolute; top:-14px; right:14px; height:30px; padding:0 13px 0 11px; border-radius:15px; border:1.5px solid var(--b2-gold2); background:#fbf1dc; color:var(--b2-ink2); font:700 13px/1 var(--b2-f-dm); display:inline-flex; align-items:center; gap:5px; cursor:pointer; z-index:2; box-shadow:0 4px 10px rgba(20,40,30,.25); }
+.b2-mkpen:hover{ background:#fff7e6; }
+body.b2app #b2Mk .b2-mkn{ min-width:0; }
 body.b2app #b2Mk .b2-mkbtns2{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0 0 12px; }
 body.b2app #b2Mk .b2-mkbtns2 .b2-btn{ min-height:46px; font-size:15px; border-radius:14px; }
 .b2-mkmorew{ display:flex; justify-content:center; margin-top:10px; } .b2-mkmore{ min-height:40px; padding:0 18px; border-radius:14px; font-size:14px; } .b2-mkmore span{ opacity:.7; font-weight:400; }
@@ -1492,3 +1501,4 @@ body.b2app .b2-oneextra h4{ font:600 18px var(--b2-f-serif) !important; color:va
 html.bx-still .b2-tip > img, html.bx-still .b2-nav-kid .ring img, html.bx-still .b2-bigav img[data-kid-me], html.bx-still .b2k-h > img, html.bx-still .b2-skid > img,
 html.bx-still .b2-elig-kid, html.bx-still .b2k-b > img, html.bx-still #b2kImg, html.bx-still .b2s-head > img, html.bx-still .b2-nav-kid .ring{ animation:none; }
 @media (prefers-reduced-motion:reduce){ .b2-tip > img, .b2-nav-kid .ring img, .b2-bigav img[data-kid-me], .b2k-h > img, .b2-skid > img, .b2-elig-kid, .b2k-b > img, #b2kImg, .b2s-head > img, .b2-nav-kid .ring{ animation:none; } }
+body.b2app #b2Mk .b2-mkn b{ white-space:normal !important; overflow-wrap:anywhere; line-height:1.15; }

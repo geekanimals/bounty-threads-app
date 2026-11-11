@@ -444,7 +444,7 @@
     const workHtml = ()=> `${work.slice(0, _mkWorkN).map(tile).join("")}`;
     const moreHtml = ()=> work.length > _mkWorkN ? `<button type="button" class="b2-btn light b2-mkmore" data-mk="more">Load more <span>(${work.length - _mkWorkN} more)</span></button>` : "";
     box.innerHTML = `
-        <div class="b2-mkid"><button type="button" class="b2-mkpen" data-mk="edit" aria-label="Edit media kit" title="Edit media kit">✎</button>${a.profile_picture_url?`<img src="${H(a.profile_picture_url)}" alt="">`:`<span class="b2-ini">${H(String(a.username||"C").charAt(0).toUpperCase())}</span>`}
+        <div class="b2-mkid"><button type="button" class="b2-mkpen" data-mk="edit" aria-label="Edit media kit">✎ Edit</button>${a.profile_picture_url?`<img src="${H(a.profile_picture_url)}" alt="">`:`<span class="b2-ini">${H(String(a.username||"C").charAt(0).toUpperCase())}</span>`}
           <div class="b2-mkn"><b>${H(a.name || a.username)}</b><span>@${H(a.username)}${pro.city_coarse?" · "+H(pro.city_coarse):""}</span>${(pro.categories||[]).length||(pro.languages||[]).length?`<em>${H([].concat((pro.categories||[]).slice(0,3),(pro.languages||[]).slice(0,2)).join(" · "))}</em>`:""}</div>
           <div class="b2-nums"><div><b>${n(a.followers_count)}</b><span>Followers</span></div><div><b>${eng}</b><span>Engagement</span></div><div><b>${third[0]}</b><span>${third[1]}</span></div></div>
           ${(()=>{ const bio = E.bio || a.biography || "", avgL = all.length ? Math.round(all.reduce((t,m)=> t + (+m.like_count||0), 0) / all.length) : 0;
@@ -461,7 +461,7 @@
         <div class="b2-card b2-together"><b>${open.length ? "Open to: " + H(open.join(" · ")) : "Set what you're open to"}</b>${rates.length?`<span>${rates.join(" · ")}</span>`:``}${!open.length || !rates.length ? `<a href="#" data-mkterms>${open.length ? "Add your rates" : "Set your terms & rates"} →</a>` : `<a href="#" data-mkterms>Change terms & rates →</a>`}<i>Rates shown only to brands you apply to</i></div>
         <button type="button" class="b2-btn forest full b2-mkpub" data-mk="publish">📸 Publish to Instagram →</button>
         <p class="b2-quote ink">Get discovered by brands you love.<br>Build the creator career you want.</p>
-        ${TIP("Tap ✎ on your card to pin your 6 best posts — brands look there first.")}`;
+        ${TIP("Tap ✎ Edit on your card to pin your 6 best posts — brands look there first.")}`;
     if(!box.isConnected) body.insertBefore(box, hw);
     if(tail.previousElementSibling !== hw) hw.after(tail);
     [box, tail].forEach(root=> root.querySelectorAll("[data-mkterms]").forEach(b=> b.onclick = e=>{ e.preventDefault(); if(!(window.B2 && B2.screens && B2.screens.onbStep)) return;
@@ -498,11 +498,20 @@
   /* ---------- M22 Inbox: campaign updates at the top of Messages (same alerts, actions and "Mark all read") ---------- */
   function touchInbox(){
     const c = document.getElementById("content"); if(!c || c.querySelector("#bxInbox")) return;
-    c.insertAdjacentHTML("afterbegin", `<div class="b2 b2-inbox" id="bxInbox"><h1 class="b2-h1">Inbox</h1><p class="b2-sub">Campaign updates and messages from Geek.</p>
-      <div class="b2-ibcols"><div class="b2-ibtabs" role="tablist"><button type="button" class="on" data-ib="all">All</button><button type="button" data-ib="act">Action needed</button><button type="button" data-ib="upd">Updates</button></div>
+    c.insertAdjacentHTML("afterbegin", `<div class="b2 b2-inbox" id="bxInbox"><h1 class="b2-h1">Inbox</h1><p class="b2-sub">Campaign alerts, Instagram DMs and WhatsApp — all in one place.</p>
+      <div class="b2-ibpanes" role="tablist"><button type="button" class="on" data-ibp="up">🔔 Alerts</button><button type="button" data-ibp="ig">📸 Instagram DMs</button><button type="button" data-ibp="wa">💬 WhatsApp</button></div>
+      <div class="b2-ibcols" id="bxIbUp"><div class="b2-ibtabs" role="tablist"><button type="button" class="on" data-ib="all">All</button><button type="button" data-ib="act">Action needed</button><button type="button" data-ib="upd">Updates</button></div>
       <div class="b2-ibmark"><button type="button" id="bxIbMark">Mark all read</button></div>
       <div id="bxIbList">${SK.alerts(3)}</div><div class="b2-ibtip">${TIP("Red dot = something only you can do.")}</div></div></div>`);
     const box = document.getElementById("bxInbox");
+    // the old Messages page's Instagram DMs + WhatsApp chats, as tabs of the Inbox (same panes, same loading)
+    document.body.dataset.ibp = "up";
+    const pane = k=>{ document.body.dataset.ibp = k; box.querySelectorAll("[data-ibp]").forEach(x=> x.classList.toggle("on", x.dataset.ibp === k));
+      if(k === "up") return;
+      let n = 0; const t = setInterval(()=>{ n++; const b = document.querySelector(`#msgTabs [data-msgtab="${k}"]`); if(b){ clearInterval(t); b.click(); }
+        else if(n > 40){ clearInterval(t); if(typeof mountMessagesTabs === "function") mountMessagesTabs(); } }, 150); };
+    box.querySelectorAll("[data-ibp]").forEach(b=> b.onclick = ()=> pane(b.dataset.ibp));
+    if(window.__ibOpen){ const k0 = window.__ibOpen; window.__ibOpen = null; pane(k0); }
     box.querySelectorAll("[data-ib]").forEach(b=> b.onclick = ()=>{ IB.tab = b.dataset.ib; box.querySelectorAll("[data-ib]").forEach(x=> x.classList.toggle("on", x === b)); paintInbox(); });
     document.getElementById("bxIbMark").onclick = async ()=>{
       const unread = IB.items.filter(n=> !n.read); if(!unread.length) return;
