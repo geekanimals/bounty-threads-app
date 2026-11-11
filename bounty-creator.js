@@ -367,6 +367,7 @@
 
   /* ---------- wrap the shell ---------- */
   const _renderShell = window.renderShell;
+  const HS0 = history.state;   // where this tab was before a reload (read before the first paint overwrites it)
   /* ---------- the v2 loader between sign-in and the first screen (instead of the old Geek OS "Media Kit" early shell) ---------- */
   function bootLoader(){
     if(!document.documentElement.classList.contains("bx-door") || document.getElementById("bootSplash")) return;
@@ -389,7 +390,9 @@
   openGate();
   window.renderShell = function(){
     document.body.classList.remove("bx-pre");
-    if(isCreator() && !_landed && currentPage === "mediakit" && !window.__bxWantKit && !new URLSearchParams(location.search).get("go")){ currentPage = "dashboard"; }
+    if(isCreator() && !_landed && currentPage === "mediakit" && !window.__bxWantKit && !window.__adminLanded && !new URLSearchParams(location.search).get("go")){ currentPage = "dashboard"; }
+    // ↻ refresh on an explore brief (profile not finished yet) comes back to that brief
+    if(isCreator() && !_landed && HS0 && HS0.bxh && HS0.k === "g" && HS0.v && HS0.v !== "home" && window.__profileGate && window.bxMemberExplore){ const pg = HS0.v; currentPage = "opencampaigns"; setTimeout(()=> bxMemberExplore(pg), 120); }
     if(isCreator()) _landed = true;
     if(window.bxMemberExploreOff) bxMemberExploreOff();
     if(window.__bxIg && window.__bxIgStage) __bxIgStage(2);
@@ -502,6 +505,7 @@
       </div>
       <div class="bxg-tip"><img src="${A}sprout_point.png" alt=""><div>Tip: Lead with your strongest Reel!</div></div>
       <div class="mky-foot"><div class="auth-err" id="mkyErr"></div><button type="button" class="btn ghost" id="mkyCancel">Cancel</button><button type="button" class="btn gold" data-mky="save">Save &amp; preview</button></div>`;
+    if(window.BxHist) BxHist.mark("s", "mky", { role: currentRole, page: "mediakit" });
     const back = ()=>{ currentPage = "mediakit"; renderShell(); };
     document.getElementById("mkyBack").onclick = back; document.getElementById("mkyCancel").onclick = back;
     const paintPins = ()=>{ c.querySelectorAll(".mky-post").forEach(b=>{ const i = pins.indexOf(b.dataset.id); b.classList.toggle("on", i>=0); b.querySelector(".mky-n").textContent = i>=0 ? i+1 : ""; });
