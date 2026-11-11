@@ -11687,7 +11687,11 @@ BxHist.on("t", (v, d)=>{
 // a sub-screen of a page (e.g. Media kit → Make it yours): Back shows the page itself
 BxHist.on("s", (v, d)=>{
   if(!window.__osBooted || !d || !bxRole(d)) return false;
-  currentPage = d.page; renderShell(); window.scrollTo(0,0); return true;
+  if(String(v).indexOf("hub:#") === 0) window.__bxHubOpen = String(v).slice(5);   // a profile section: open that same section again
+  currentPage = d.page; renderShell(); window.scrollTo(0,0);
+  if(window.__bxHubOpen){ let n = 0; const t = setInterval(()=>{ n++; const k = window.__bxHubOpen; if(!k || n > 30){ clearInterval(t); return; }
+    const r = document.querySelector(`#bxHub [data-hub="#${k}"]`); if(r){ clearInterval(t); window.__bxHubOpen = null; r.click(); } }, 150); }
+  return true;
 });
 function navUid(){ return (window.Auth && ((Auth.user && Auth.user.id) || (Auth.profile && Auth.profile.id))) || ""; }
 function navSave(extra){
