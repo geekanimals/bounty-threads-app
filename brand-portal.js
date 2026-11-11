@@ -578,7 +578,8 @@
         +'<button class="btn sm ghost" id="dxFbGo">🔄 Reconnect Facebook</button></div>';
     } else {
       el.innerHTML = '<div class="card bpx-dxfb"><div><b>📘 Connect Facebook to search Instagram live</b><div class="muted" style="font-size:12.5px">Log in with the Facebook account that manages your brand\'s Page and its linked Instagram professional account. '
-        +'Then look up any public creator\'s followers and posts, and search Meta\'s Creator Marketplace by category, followers and audience.</div></div>'
+        +'Then look up any public creator\'s followers and posts, and search Meta\'s Creator Marketplace by category, followers and audience.</div>'
+        +(function(){ var e = ""; try{ e = localStorage.getItem("geekos_fb_last_error")||""; }catch(x){} return e ? '<div class="ci-err-inline" style="margin-top:8px">Last try: '+esc(e)+'</div>' : ""; })()+'</div>'
         +'<button class="btn" id="dxFbGo">📘 Connect Facebook</button></div>';
     }
     var b = el.querySelector("#dxFbGo"); if(b) b.onclick = function(){ try{ localStorage.setItem("geekos_after_ig","discover"); }catch(e){} if(typeof connectFacebookSearch==="function") connectFacebookSearch(); };
