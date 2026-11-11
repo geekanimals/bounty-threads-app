@@ -1388,3 +1388,17 @@ body:not(.bx) .bx-next, body:not(.bx) .bx-trust-links, body:not(.bx) .b2-drx{ di
 /* "Profile x% complete" is tappable — opens the profile at what's left */
 body.b2app #bxHub button.b2-pct{ display:block; width:100%; text-align:left; cursor:pointer; font:inherit; }
 .b2-pct-sub{ display:block; margin-top:8px; font:italic 400 12.5px var(--b2-f-serif); color:#7a6a4a; }
+
+/* profile hub: a row opens ONE section of the creator profile (section by section, like the old page) */
+body.b2app #content.b2-hub-open[data-one] #cpHead, body.b2app #content.b2-hub-open[data-one] .cp-sec, body.b2app #content.b2-hub-open[data-one] .cp-conn{ display:none !important; }
+body.b2app #content.b2-hub-open[data-one="campready"] .cp-sec[data-sec="campready"],
+body.b2app #content.b2-hub-open[data-one="pages"] .cp-sec[data-sec="pages"],
+body.b2app #content.b2-hub-open[data-one="personal"] .cp-sec[data-sec="personal"],
+body.b2app #content.b2-hub-open[data-one="contact"] .cp-sec[data-sec="contact"],
+body.b2app #content.b2-hub-open[data-one="address"] .cp-sec[data-sec="address"],
+body.b2app #content.b2-hub-open[data-one="professional"] .cp-sec[data-sec="professional"],
+body.b2app #content.b2-hub-open[data-one="skills"] .cp-sec[data-sec="skills"],
+body.b2app #content.b2-hub-open[data-one="dreams"] .cp-sec[data-sec="dreams"],
+body.b2app #content.b2-hub-open[data-one="visibility"] .cp-sec[data-sec="visibility"]{ display:block !important; }
+body.b2app #content.b2-hub-open[data-one="pages"] .cp-conn{ display:block !important; }
+body.b2app #content.b2-hub-open[data-one] .cp-sec{ margin-top:6px; }
