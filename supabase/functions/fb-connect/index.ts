@@ -38,8 +38,15 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: "Not authenticated" }, 401);
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
     // one connection for the whole platform, made once by the Super Admin; agencies / brands only connect Instagram
+    // the Super Admin (powers search for everyone) or a brand login (connects its own Page + Instagram for its own search)
     const { data: isAdmin } = await admin.from("platform_admins").select("user_id").eq("user_id", user.id).maybeSingle();
-    if (!isAdmin) return json({ error: "Only the Geek Super Admin connects Facebook for Instagram search." }, 403);
+    let allowed = !!isAdmin;
+    if (!allowed) {
+      const { data: isBrand } = await admin.schema("api").rpc("ops_is_brand_login", { p_member: user.id }).then((r: any) => r, () => ({ data: false }));
+      const { data: m } = await admin.from("members").select("role, status").eq("id", user.id).maybeSingle();
+      allowed = isBrand === true || !!(m && ["owner", "brand", "manager", "corporate"].includes(m.role) && (m.status ?? "active") === "active");
+    }
+    if (!allowed) return json({ error: "Connect Facebook from a brand or Super Admin login." }, 403);
 
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action || "");

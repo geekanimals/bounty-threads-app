@@ -560,9 +560,28 @@
     var box = body.querySelector("#dxPane");
     if(DX.tab==="brief") return dxBrief(box, body);
     if(DX.tab==="picks") return dxPicks(box);
+    // Facebook Login → this brand's own Page + Instagram professional account powers live Instagram search
+    // (Instagram profile lookup + Meta's Creator Marketplace). Tokens stay on the server.
+    var fbBox = document.createElement("div"); fbBox.id = "dxFbBrand"; box.before(fbBox); dxFbStrip(fbBox);
     box.innerHTML = (DX.camp?'<div class="card bpx-dxcamp">🎯 Finding creators for <b>'+esc(DX.campName)+'</b> — ⭐ Shortlist adds them to this campaign. <a href="#" id="dxCampX">Not for this campaign</a></div>':'')+'<div id="dxRoot"></div>';
     var x = box.querySelector("#dxCampX"); if(x) x.onclick = function(e){ e.preventDefault(); DX.camp = ""; DX.campName = ""; paintDiscover(body); };
     DX.state = mountCreatorSearch(box.querySelector("#dxRoot"), { state: DX.state || undefined });
+  }
+  async function dxFbStrip(el){
+    var r = await sb.rpc("my_discovery_connection").then(function(x){ return x; }, function(){ return { data:null }; });
+    if(!el.isConnected) return;
+    var fb = r && r.data && r.data.facebook;
+    if(fb && fb.ig_username){
+      el.innerHTML = '<div class="card bpx-dxfb ok"><div class="bpx-dxfb-id">'+(fb.ig_picture?'<img src="'+esc(fb.ig_picture)+'" alt="" referrerpolicy="no-referrer">':'<span class="bpx-av bpx-av-t" style="position:static">📷</span>')
+        +'<div><b>Instagram search is on — via @'+esc(fb.ig_username)+'</b><div class="muted" style="font-size:12.5px">Facebook Page: '+esc(fb.page_name||"")+(fb.ig_followers!=null?' · '+short(fb.ig_followers)+' followers':'')
+        +' · '+(fb.discovery_ok?'✓ live lookups working':'⚠️ '+esc(fb.discovery_error||"Meta hasn't allowed lookups yet"))+'</div></div></div>'
+        +'<button class="btn sm ghost" id="dxFbGo">🔄 Reconnect Facebook</button></div>';
+    } else {
+      el.innerHTML = '<div class="card bpx-dxfb"><div><b>📘 Connect Facebook to search Instagram live</b><div class="muted" style="font-size:12.5px">Log in with the Facebook account that manages your brand\'s Page and its linked Instagram professional account. '
+        +'Then look up any public creator\'s followers and posts, and search Meta\'s Creator Marketplace by category, followers and audience.</div></div>'
+        +'<button class="btn" id="dxFbGo">📘 Connect Facebook</button></div>';
+    }
+    var b = el.querySelector("#dxFbGo"); if(b) b.onclick = function(){ try{ localStorage.setItem("geekos_after_ig","discover"); }catch(e){} if(typeof connectFacebookSearch==="function") connectFacebookSearch(); };
   }
   async function dxBrief(box, body){
     var C = (BP.data.campaigns||[]).filter(function(c){ return !/completed|cancel/i.test(c.status||""); });
