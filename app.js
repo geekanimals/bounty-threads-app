@@ -5037,7 +5037,7 @@ function mkHead(a){
     ${(()=>{ const ids = Array.isArray(E.pinned) ? E.pinned.map(String) : []; const pins = ids.map(id=> all.find(m=> String(m.id)===id)).filter(Boolean).slice(0,6);
       return pins.length ? `<div class="card mk-section mk-pinned"><div class="mk-sec-head"><h3>📌 Pinned work</h3>${editBtn("pins")}</div><div class="mk-grid">${pins.map(m=>postCard(m)).join("")}</div></div>` : ""; })()}
 
-    <div class="card mk-section"><div class="mk-sec-head"><h3>Top performing posts</h3><span class="muted mk-sec-sub">${scanning?"⏳ checking your whole account…":`best of ${fmtNum(all.length)} posts · likes + comments`}</span></div>
+    <div class="card mk-section mk-top"><div class="mk-sec-head"><h3>Top performing posts</h3><span class="muted mk-sec-sub">${scanning?"⏳ checking your whole account…":`best of ${fmtNum(all.length)} posts · likes + comments`}</span></div>
       ${tops?`<div class="mk-grid">${tops}</div>${mkMoreBtn("top", sorted.length)}`:`<div class="muted" style="padding:8px">${scanning?"Finding your best posts…":"No posts yet."}</div>`}</div>
 
     <div class="card mk-section"><div class="mk-sec-head"><h3>Work portfolio</h3>${editBtn("portfolio")}</div><div id="mkCampWork"></div>
