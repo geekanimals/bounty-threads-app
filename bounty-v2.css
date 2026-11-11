@@ -1448,7 +1448,7 @@ body.b2app .b2-mkhost > #mkHeadWrap{ margin-top:14px; }
 body.b2app #b2Mk .b2-mkid{ position:relative; }
 .b2-mkpen{ position:absolute; top:10px; right:10px; width:34px; height:34px; border-radius:50%; border:1px solid rgba(232,176,74,.6); background:rgba(251,243,226,.12); color:var(--b2-cream2); font:600 16px/1 var(--b2-f-dm); display:grid; place-items:center; cursor:pointer; z-index:2; }
 .b2-mkpen:hover{ background:rgba(251,243,226,.22); }
-body.b2app #b2Mk .b2-mkn{ padding-right:30px; }
+body.b2app #b2Mk .b2-mkn{ padding-right:40px; min-width:0; }
 body.b2app #b2Mk .b2-mkbtns2{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0 0 12px; }
 body.b2app #b2Mk .b2-mkbtns2 .b2-btn{ min-height:46px; font-size:15px; border-radius:14px; }
 .b2-mkmorew{ display:flex; justify-content:center; margin-top:10px; } .b2-mkmore{ min-height:40px; padding:0 18px; border-radius:14px; font-size:14px; } .b2-mkmore span{ opacity:.7; font-weight:400; }
