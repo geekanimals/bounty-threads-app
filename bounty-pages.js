@@ -169,6 +169,7 @@
       ["📸","Instagram accounts", ig.length ? ig.map(x=>"@"+x.username).join(", ") : (handle ? handle + " (self-reported) · connect" : "Connect Instagram"),"#pages"],
       ["🔒","Visibility & privacy", "What brands can see","#visibility"]];
     const useKid = window.bxKid && bxKid.prefs().avatar;
+    const onb = n => { if(!(window.B2 && B2.screens && B2.screens.onbStep)) return; window.__bxOnbReturn = "profile"; window.__bxOnbOnly = true; window.__bxManualShown = true; B2.screens.onbStep(n, pf || {}); };
     c.classList.add("b2-hubpage"); { const sk = document.getElementById("bxHubSk"); if(sk) sk.remove(); }
     const row = ([ic,t,sub,k])=>`<button type="button" class="b2-card b2-row" data-hub="${k}"><span class="ic">${ic}</span><span class="tx"><b>${t}</b><em>${H(sub)}</em></span><i>›</i></button>`;
     first.insertAdjacentHTML("beforebegin", `<button type="button" class="b2-back b2-hubback" id="bxHubBack">← My profile</button><div class="b2 b2-hub" id="bxHub"><div class="b2-hubl">
@@ -177,11 +178,24 @@
       <label class="b2-card b2-tog wide"><span>Use ${H(KN())} as my profile picture</span><input type="checkbox" id="bxHubKid"${useKid?" checked":""}><i></i></label>
       <button type="button" class="b2-card b2-pct" data-hub="#campready"><b>Profile ${pct}% complete</b><div class="b2-bar2"><i style="width:${pct}%"></i></div>${pct < 100 ? `<em class="b2-pct-sub">${tot - dn} thing${tot - dn === 1 ? "" : "s"} left — tap to finish</em>` : ""}</button>
       ${L.slice(0,5).map(row).join("")}</div><div class="b2-hubr">${L.slice(5).map(row).join("")}
-      ${TIP("Add your city — nearby campaigns show up first.")}</div></div>`);
+      ${TIP("Add your city — nearby campaigns show up first.")}</div></div>
+      <div class="b2-oneextra card" id="bxCreateX"><h4>Your niche, languages &amp; city</h4>
+        <div class="b2-cx-row"><span>Categories</span><b>${H((pro.categories||[]).join(", ") || "—")}</b></div>
+        <div class="b2-cx-row"><span>Languages</span><b>${H((pro.languages||[]).join(", ") || "—")}</b></div>
+        <button type="button" class="btn sm ghost" id="bxCxEdit">Edit categories &amp; languages →</button>
+        <label class="b2-cx-city"><span>City</span><span class="b2-cx-in"><input id="bxCxCity" placeholder="e.g. Jaipur" value="${H(pro.city_coarse || md.city || "")}" maxlength="60"><button type="button" class="btn sm" id="bxCxSave">Save</button></span></label>
+        <div class="muted" id="bxCxMsg"></div></div>`);
+    // "What you create" = the Professional section + categories, languages and city (asked in the profile setup)
+    const cxE = document.getElementById("bxCxEdit"); if(cxE) cxE.onclick = ()=> onb(1);
+    const cxS = document.getElementById("bxCxSave"); if(cxS) cxS.onclick = async ()=>{
+      const v = document.getElementById("bxCxCity").value.trim(), m = document.getElementById("bxCxMsg");
+      cxS.disabled = true; m.textContent = "Saving…";
+      const r = await api("save_profile_section", { p_section:"professional", p_patch:{ city_coarse: v || null }, p_correlation:"ui-hub" });
+      cxS.disabled = false; m.textContent = r.error ? "Couldn't save: " + (r.error.message || r.error) : "✓ Saved";
+    };
     const closeOne = ()=>{ c.classList.remove("b2-hub-open"); delete c.dataset.one; window.scrollTo(0,0); };
     document.getElementById("bxHubBack").onclick = ()=>{ const s = history.state; if(s && s.bxh && s.k === "s" && String(s.v).indexOf("hub:") === 0){ history.back(); return; } closeOne(); };
     const kidT = document.getElementById("bxHubKid"); if(kidT) kidT.onchange = async ()=>{ if(window.bxKid){ await bxKid.save({ avatar: kidT.checked }); if(window.bxPaintMeChip) bxPaintMeChip(); const h = document.getElementById("bxHub"); if(h) h.remove(); touchProfile(); } };
-    const onb = n => { if(!(window.B2 && B2.screens && B2.screens.onbStep)) return; window.__bxOnbReturn = "profile"; window.__bxOnbOnly = true; window.__bxManualShown = true; B2.screens.onbStep(n, pf || {}); };
     c.querySelectorAll("[data-hub]").forEach(b=> b.onclick = ()=>{
       const k = b.dataset.hub;
       if(k.startsWith("#")){   // one section of the profile, nothing else
