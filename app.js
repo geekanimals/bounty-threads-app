@@ -2960,8 +2960,8 @@ async function finishFacebookSearch(code){
   currentPage = "discover";
   if(window.__osBooted && typeof renderShell==="function") renderShell();
   setTimeout(()=>{
-    if(msg) alert("Instagram search: " + msg);
-    else gateToast(d.discovery_ok ? `✅ Instagram search is on — via @${d.ig_username}. Any public creator can be looked up now.` : `Connected @${d.ig_username}, but Meta refused the lookup: ${d.discovery_error||""}`);
+    if(msg){ try{ localStorage.setItem("geekos_fb_last_error", String(msg)); }catch(e){} gateToast("⚠️ Instagram search: " + msg); }
+    else { try{ localStorage.removeItem("geekos_fb_last_error"); }catch(e){} } if(!msg) gateToast(d.discovery_ok ? `✅ Instagram search is on — via @${d.ig_username}. Any public creator can be looked up now.` : `Connected @${d.ig_username}, but Meta refused the lookup: ${d.discovery_error||""}`);
   }, 600);
 }
 
