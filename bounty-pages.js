@@ -233,6 +233,7 @@
         <div class="b2-cx-lab" id="bxTxRateH">Your rates <em>optional · shown only to brands you apply to</em></div>
         <div class="b2-rates" id="bxTxRates">${RATES.map(([t,l],i)=> `<label><span>${l}</span><b>₹<input id="bxTxR${i}" data-t="${t}" inputmode="numeric" placeholder="—" value="${rateOf(t)!=null?rateOf(t):""}"></b></label>`).join("")}</div>
         <label class="b2-cx-city" id="bxTxMinL"><span>Product value you prefer (optional)</span><input id="bxTxMin" inputmode="numeric" placeholder="Any" value="${cp.min_product_value!=null?H(cp.min_product_value):""}"></label>
+        <label class="b2-agree"><input type="checkbox" id="bxTxAgree"${(window.__bxMeta && __bxMeta.bx_terms_ack) ? " checked" : ""}><i></i><span>You decide on each offer. Ad rights, exclusivity and deadlines are always shown before you accept.</span></label>
         <div class="auth-err" id="bxTxMsg"></div>
         <button type="button" class="b2-btn forest full" id="bxTxSave">Save</button>`;
       const terms = document.getElementById("bxTxTerms"), msg = t=> document.getElementById("bxTxMsg").textContent = t;
@@ -242,6 +243,8 @@
       terms.querySelectorAll(".b2-term").forEach(b=> b.onclick = ()=>{ b.classList.toggle("on"); sync(); }); sync();
       document.getElementById("bxTxSave").onclick = async ()=>{
         const b = document.getElementById("bxTxSave"), o = [...terms.querySelectorAll(".b2-term.on")].map(x=> x.dataset.v);
+        if(!document.getElementById("bxTxAgree").checked) return msg("Tick the box to confirm you've read this.");
+        if(window.B2 && B2.ackTerms) B2.ackTerms();
         const num = id=> { const v = String(document.getElementById(id).value||"").replace(/[^\d.]/g,""); return v === "" ? null : Number(v); };
         const patch = {}, min = num("bxTxMin");
         if(o.length && K.termsPatch) Object.assign(patch, K.termsPatch(o));
@@ -406,8 +409,11 @@
     const c = document.getElementById("content"); if(!c || currentPage !== "mediakit") return;
     const head = c.querySelector(":scope > .page-head");
     if(head && !head.dataset.b2){ head.dataset.b2 = 1; head.innerHTML = `<div><div class="b2-eyebrow">Your creator portfolio</div><h1>My media kit</h1><p>Your story, your work, your impact.</p></div>`; }
-    const body = document.getElementById("mkBody"), hw = document.getElementById("mkHeadWrap"); if(!body || !hw || !hw.querySelector(".mk-kit")) return;
+    const body = document.getElementById("mkBody"), hw = document.getElementById("mkHeadWrap"); if(!body || !hw) return;
+    // the old kit never flashes while the new one loads: it stays hidden (b2-mkready not set yet) behind the v2 skeleton
     body.classList.add("b2-mkhost");
+    if(!body.classList.contains("b2-mkready") && !document.getElementById("b2MkSk")) hw.insertAdjacentHTML("beforebegin", `<div id="b2MkSk">${SK.kit()}</div>`);
+    if(!hw.querySelector(".mk-kit")) return;
     const a = (window._mkLastAcct) || ((typeof mkFetchAcct === "function") ? await mkFetchAcct().catch(()=> null) : null); if(!a || !body.isConnected) return;
     if(!_mkProf && window.__ciProfileEnabled){ const r = await api("get_my_profile"); if(!r.error) _mkProf = r.data || {}; }
     _mkProfLast = _mkProf || _mkProfLast;
@@ -463,9 +469,9 @@
         <p class="b2-quote ink">Get discovered by brands you love.<br>Build the creator career you want.</p>
         ${TIP("Tap ✎ Edit on your card to pin your 6 best posts — brands look there first.")}`;
     if(!box.isConnected) body.insertBefore(box, hw);
+    { const sk = document.getElementById("b2MkSk"); if(sk) sk.remove(); } body.classList.add("b2-mkready");
     if(tail.previousElementSibling !== hw) hw.after(tail);
-    [box, tail].forEach(root=> root.querySelectorAll("[data-mkterms]").forEach(b=> b.onclick = e=>{ e.preventDefault(); if(!(window.B2 && B2.screens && B2.screens.onbStep)) return;
-      window.__bxOnbReturn = "mediakit"; window.__bxOnbOnly = true; window.__bxManualShown = true; _mkProf = null; B2.screens.onbStep(3, (_mkProfLast || {})); }));
+    [box, tail].forEach(root=> root.querySelectorAll("[data-mkterms]").forEach(b=> b.onclick = e=>{ e.preventDefault(); _mkProf = null; window.__bxHubOpen = "terms"; go("profile"); }));
     const wire = root=> root.querySelectorAll("[data-mk]").forEach(b=> b.onclick = e=>{ e.preventDefault(); const k = b.dataset.mk;
       if(k === "more"){ _mkWorkN += 9; const g = document.getElementById("b2MkWork"); if(g) g.innerHTML = workHtml(); const mw = box.querySelector(".b2-mkmorew"); if(mw){ mw.innerHTML = moreHtml(); wire(mw); } return; }
       if(k === "publish"){ const pc = document.getElementById("mkComposeCta"); if(pc) return pc.click(); currentPage = "instagram"; return renderShell(); }
