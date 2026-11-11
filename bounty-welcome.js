@@ -851,14 +851,14 @@
         <p class="b2-p">Pick up to 3 categories. We'll find briefs that fit your world.</p>
         <div class="b2-catgrid" id="bxoCats">${CATS.map(([c,img])=> catTile(c, img, cats.some(x=> String(x).toLowerCase()===c.toLowerCase()))).join("")}${extraC.map(c=> catTile(c, null, true)).join("")}</div>
         <div class="b2-addown" id="bxoCatAddW"><button type="button" class="b2-btn outline" id="bxoCatAdd">+&nbsp; Add your own category</button></div>
-        <div class="b2-lab c">How do you create?</div>
-        <div class="b2-chips" id="bxoFmt">${FMT.map(([k,l])=>`<button type="button" class="b2-chip${fmts.includes(k)?" on":""}" data-v="${k}">${l}</button>`).join("")}</div>
+        <div class="b2-lab c"${window.__bxOnbOnly?' style="display:none"':''}>How do you create?</div>
+        <div class="b2-chips" id="bxoFmt"${window.__bxOnbOnly?' style="display:none"':''}>${FMT.map(([k,l])=>`<button type="button" class="b2-chip${fmts.includes(k)?" on":""}" data-v="${k}">${l}</button>`).join("")}</div>
         <div class="b2-lab c">Your content language</div>
         <div class="b2-chips" id="bxoLang">${LANG.concat(extraL).map(l=>`<button type="button" class="b2-chip${langs.some(x=> String(x).toLowerCase()===l.toLowerCase())?" on":""}" data-v="${E(l)}">${E(l)}</button>`).join("")}</div>
         <div class="b2-addown" id="bxoLangAddW"><button type="button" class="b2-more" id="bxoLangAdd">+ Add another language</button></div>
         ${tip("Pick what you post most — I'll match briefs to it.")}
         <div class="auth-err" id="bxoErr"></div>
-        <button type="button" class="b2-btn forest full big" id="bxoSave">Build my creator profile&nbsp; →</button>
+        <button type="button" class="b2-btn forest full big" id="bxoSave">${window.__bxOnbOnly ? "Save&nbsp; →" : "Build my creator profile&nbsp; →"}</button>
         <button type="button" class="b2-link mute" id="bxoSkip">You can change these anytime · Skip</button>`);
       const catsOn = ()=> o.querySelectorAll("#bxoCats .b2-cat.on").length;
       const wireCats = ()=> o.querySelectorAll("#bxoCats .b2-cat").forEach(b=> b.onclick = ()=>{ if(!b.classList.contains("on") && catsOn() >= 3){ err("Pick up to 3 — tap one to swap it."); return; } err(""); b.classList.toggle("on"); });
@@ -883,7 +883,8 @@
       document.getElementById("bxoSave").onclick = async ()=>{
         const btn = document.getElementById("bxoSave"); err(""); btn.disabled = true; btn.textContent = "Saving…";
         const pick = sel => [...o.querySelectorAll(sel)].map(b=> b.dataset.v);
-        const patch = { categories: pick("#bxoCats .b2-cat.on"), content_formats: pick("#bxoFmt .b2-chip.on"), languages: pick("#bxoLang .b2-chip.on") };
+        const patch = { categories: pick("#bxoCats .b2-cat.on"), languages: pick("#bxoLang .b2-chip.on") };
+        if(!window.__bxOnbOnly) patch.content_formats = pick("#bxoFmt .b2-chip.on");
         const r = await papi("save_profile_section", { p_section:"professional", p_patch:patch, p_correlation:"ui-onboard" });
         if(r.error){ err("Couldn't save: " + (r.error.message || r.error)); btn.disabled = false; btn.innerHTML = "Build my creator profile&nbsp; →"; return; }
         d.professional = Object.assign({}, pro, patch);
@@ -934,6 +935,9 @@
       };
     }
     if(n === 3){
+      const RATES = [["IG Reel","Reel rate"],["IG Story","Story rate"],["IG Static Post","Post rate"]];
+      const rItems = ((d.rate_cards && d.rate_cards[0] && d.rate_cards[0].items) || []);
+      const rateOf = t => { const x = rItems.find(i=> i.deliverable_type === t); return x ? Math.round(Number(x.amount)) : null; };
       const o = onbShell("onb3", "jungle", `${top(6, "06/06")}
         <h2 class="b2-h light fit">Your work. Your <u class="or">terms.</u></h2>
         <p class="b2-p light">What kind of collaborations are you open to?</p>
@@ -943,12 +947,12 @@
           <button type="button" class="b2-term" data-v="hybrid"><span class="ic sm">🎁+₹</span><div><b>Hybrid</b><em>A mix of product and payment</em></div><i class="b2-tick"></i></button>
           <button type="button" class="b2-term" data-v="discuss"><span class="ic">💬</span><div><b>Open to discuss</b></div><i class="b2-tick"></i></button></div>
         <div class="b2-exph"><i></i>Your expectations</div>
-        <label class="b2-exprow" id="bxoRateL"><span>Starting Reel rate (optional)</span><b>₹ <input id="bxoRate" inputmode="numeric" placeholder="—"> →</b></label>
+        <div id="bxoRateL">${RATES.map(([t,l],i)=>`<label class="b2-exprow"><span>${l} (optional)</span><b>₹ <input id="bxoRate${i}" data-t="${t}" inputmode="numeric" placeholder="—" value="${rateOf(t)!=null?E(rateOf(t)):""}"> →</b></label>`).join("")}</div>
         <label class="b2-exprow" id="bxoMinL"><span>Product value you prefer (optional)</span><b><input id="bxoMin" inputmode="numeric" placeholder="Any" value="${cp.min_product_value!=null?E(cp.min_product_value):""}"> →</b></label>
         <div class="b2-note dark">📄<span>You decide on each offer. Ad rights, exclusivity and deadlines are always shown before you accept.</span></div>
         ${tip("Pick all that fit — you can still say no to any offer.")}
         <div class="auth-err" id="bxoErr"></div>
-        <button type="button" class="b2-btn cream full" id="bxoSave">Find collaborations for me&nbsp; →</button>
+        <button type="button" class="b2-btn cream full" id="bxoSave">${window.__bxOnbOnly ? "Save&nbsp; →" : "Find collaborations for me&nbsp; →"}</button>
         <button type="button" class="b2-link light" id="bxoSkip">Skip for now</button>`);
       const terms = document.getElementById("bxoTerms");
       const sync = ()=>{ const on = [...terms.querySelectorAll(".b2-term.on")].map(b=> b.dataset.v);
@@ -960,7 +964,8 @@
         const btn = document.getElementById("bxoSave"); err("");
         const on = [...terms.querySelectorAll(".b2-term.on")].map(b=> b.dataset.v);
         const num = id => { const v = String(document.getElementById(id).value||"").replace(/[^\d.]/g,""); return v === "" ? null : Number(v); };
-        const rate = num("bxoRate"), min = num("bxoMin");
+        const min = num("bxoMin");
+        const rates = RATES.map(([t],i)=> [t, num("bxoRate" + i)]).filter(([t,v])=> v != null && v > 0 && v !== rateOf(t));
         btn.disabled = true; btn.textContent = "Saving…";
         const patch = {};
         if(on.length) patch.accepts_barter = on.includes("barter") || on.includes("hybrid");
@@ -968,7 +973,7 @@
         if(min != null) patch.min_product_value = min;
         if(on.includes("discuss")) patch.notes = "Open to discuss";
         let r = Object.keys(patch).length ? await papi("save_profile_section", { p_section:"commercial_preference", p_patch:patch, p_correlation:"ui-onboard" }) : {};
-        if(!r.error && rate && rate > 0) r = await papi("save_rate_card_item", { p_payload:{ deliverable_type:"IG Reel", amount:rate }, p_correlation:"ui-onboard" });
+        for(const [t,v] of rates){ if(r.error) break; r = await papi("save_rate_card_item", { p_payload:{ deliverable_type:t, amount:v }, p_correlation:"ui-onboard" }); }
         if(r.error){ err("Couldn't save: " + (r.error.message || r.error)); btn.disabled = false; btn.innerHTML = "Find collaborations for me&nbsp; →"; return; }
         onbFinish(true);
       };
