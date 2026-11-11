@@ -143,8 +143,16 @@
     let acct = null; try{ acct = window._mkLastAcct || (typeof mkFetchAcct === "function" ? await mkFetchAcct() : null); }catch(e){}
     const rc = acct ? (((typeof mkEdits === "function" ? mkEdits(acct) : acct.edits) || {}).rate_card || []).filter(r=> r && r.item) : [];
     const rateSub = rc.slice(0,2).map(r=> `${String(r.item).replace(/^Instagram\s+/i,"")} ${r.price||""}`.trim()).join(" · ");
-    const handle = ig[0] ? "@" + ig[0].username : (md.ig_handle || "");
-    const pct = req ? Math.round(100*req.done/Math.max(req.total,1)) : null;
+    const handle = ig[0] ? "@" + ig[0].username : (md.ig_handle || (pro.ig_handle_self ? "@" + pro.ig_handle_self : ""));
+    // profile % = the server checklist (address, birthday, gender, pets, skills, backup email, favourite brands …, fresh each time)
+    //           + what the setup asks (name, city, categories, languages, formats, Instagram, terms)
+    let rq = req; try{ if(typeof creatorProfileGate === "function"){ await creatorProfileGate(); rq = window.__profileReq || req; } }catch(e){}
+    if(c.querySelector("#bxHub") || !first.isConnected) return;
+    const extra = [!!(pro.display_name || per.first_name), !!(pro.city_coarse || md.city), (pro.categories||[]).length > 0, (pro.languages||[]).length > 0,
+      (pro.content_formats||[]).length > 0, ig.length > 0 || !!pro.ig_handle_self || !!md.ig_handle,
+      cp.accepts_barter != null || cp.product_only != null || cp.min_product_value != null];
+    const tot = (rq ? rq.total : 0) + extra.length, dn = (rq ? rq.done : 0) + extra.filter(Boolean).length;
+    const pct = Math.round(100 * dn / Math.max(tot, 1));
     const dreams = ((pf && pf.dream_brands) || []).map(x=> x.submitted_brand_name).filter(Boolean);
     const terms = (pf && pf.commercial_preference && Object.keys(cp).length) ? [cp.accepts_barter?"Barter":"", cp.product_only?"":"Paid"].filter(Boolean).join(", ") : "";
     const L = [["👤","About you","Name, birthday, gender, city","#about"],["🎬","What you create",[(pro.categories||[]).slice(0,2).join(", "),(pro.content_formats||[]).slice(0,2).join(", "),(pro.languages||[]).slice(0,2).join(", ")].filter(Boolean).join(" · ") || "Categories, formats, languages","#create"],
@@ -158,14 +166,15 @@
       <div class="b2-bigav${useKid || (ig[0] && ig[0].profile_picture_url) ? " pic" : ""}">${useKid?`<img src="${KI()}" data-kid-me alt="">`:(ig[0] && ig[0].profile_picture_url ? `<img src="${H(ig[0].profile_picture_url)}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('${H(nm.charAt(0).toUpperCase())}'))">` : H(nm.charAt(0).toUpperCase()))}</div>
       <h1 class="b2-hubn">${H(nm)}</h1><div class="b2-hubh">${H([handle, pro.city_coarse || md.city].filter(Boolean).join(" · "))}${md.ig_handle && !ig.length ? ` <em class="b2-sr">self-reported</em>` : ""}</div>
       <label class="b2-card b2-tog wide"><span>Use ${H(KN())} as my profile picture</span><input type="checkbox" id="bxHubKid"${useKid?" checked":""}><i></i></label>
-      ${pct!=null?`<div class="b2-card b2-pct"><b>Profile ${pct}% complete</b><div class="b2-bar2"><i style="width:${pct}%"></i></div></div>`:""}
+      <button type="button" class="b2-card b2-pct" data-hub="#ready"><b>Profile ${pct}% complete</b><div class="b2-bar2"><i style="width:${pct}%"></i></div>${pct < 100 ? `<em class="b2-pct-sub">${tot - dn} thing${tot - dn === 1 ? "" : "s"} left — tap to finish</em>` : ""}</button>
       ${L.slice(0,2).map(row).join("")}</div><div class="b2-hubr">${L.slice(2).map(row).join("")}
       ${TIP("Add your city — nearby campaigns show up first.")}</div></div>`);
-    document.getElementById("bxHubBack").onclick = ()=>{ c.classList.remove("b2-hub-open"); window.scrollTo(0,0); };
+    document.getElementById("bxHubBack").onclick = ()=>{ const s = history.state; if(s && s.bxh && s.k === "s" && String(s.v).indexOf("hub:") === 0){ history.back(); return; } c.classList.remove("b2-hub-open"); window.scrollTo(0,0); };
     const kidT = document.getElementById("bxHubKid"); if(kidT) kidT.onchange = async ()=>{ if(window.bxKid){ await bxKid.save({ avatar: kidT.checked }); if(window.bxPaintMeChip) bxPaintMeChip(); const h = document.getElementById("bxHub"); if(h) h.remove(); touchProfile(); } };
     c.querySelectorAll("[data-hub]").forEach(b=> b.onclick = ()=>{
       const k = b.dataset.hub;
-      if(k.startsWith("#")){ c.classList.add("b2-hub-open"); window.scrollTo(0,0); }
+      if(k.startsWith("#") && k !== "#collab"){ c.classList.add("b2-hub-open"); window.scrollTo(0,0); if(window.BxHist) BxHist.mark("s", "hub:" + k, { role: currentRole, page: "profile" }); }
+      if(k === "#ready") return scrollToSection(/Profile complete/i);
       if(k === "#ig") return scrollToSection(/Instagram accounts/i);
       if(k === "#collab"){ c.classList.remove("b2-hub-open"); if(window.B2 && B2.screens && B2.screens.onbStep){ window.__bxOnbReturn = "profile"; B2.screens.onbStep(3, pf || {}); } return; }
       if(k === "@rates"){ if(typeof openMkEdit === "function" && acct) return openMkEdit("ratecard", acct); return go("mediakit"); }
