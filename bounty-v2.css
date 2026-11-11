@@ -1502,3 +1502,20 @@ html.bx-still .b2-tip > img, html.bx-still .b2-nav-kid .ring img, html.bx-still 
 html.bx-still .b2-elig-kid, html.bx-still .b2k-b > img, html.bx-still #b2kImg, html.bx-still .b2s-head > img, html.bx-still .b2-nav-kid .ring{ animation:none; }
 @media (prefers-reduced-motion:reduce){ .b2-tip > img, .b2-nav-kid .ring img, .b2-bigav img[data-kid-me], .b2k-h > img, .b2-skid > img, .b2-elig-kid, .b2k-b > img, #b2kImg, .b2s-head > img, .b2-nav-kid .ring{ animation:none; } }
 body.b2app #b2Mk .b2-mkn b{ white-space:normal !important; overflow-wrap:anywhere; line-height:1.15; }
+
+/* media kit: the old kit stays hidden until the new one is drawn (no flash of the old screen while loading) */
+body.b2app .b2-mkhost:not(.b2-mkready) > #mkHeadWrap{ display:none !important; }
+body.b2app .b2-mkhost > #b2MkSk{ max-width:680px; margin:0 auto; }
+
+/* "You decide on each offer…" with a tick box (needed before saving terms) */
+.b2-agree{ display:flex; gap:12px; align-items:flex-start; margin:16px 0 4px; padding:12px 14px; border-radius:14px; border:1.5px solid #d8c9a3; background:#fffdf6; text-align:left; cursor:pointer; font:500 13.5px/1.4 var(--b2-f-ui); color:var(--b2-ink2); }
+.b2-agree input{ position:absolute; opacity:0; width:1px; height:1px; }
+.b2-agree i{ flex:none; width:22px; height:22px; margin-top:1px; border-radius:6px; border:2px solid #b89a5e; background:#fff; position:relative; }
+.b2-agree input:checked + i{ background:var(--b2-forest); border-color:var(--b2-forest); }
+.b2-agree input:checked + i::after{ content:""; position:absolute; left:6px; top:2px; width:6px; height:11px; border:solid #fff; border-width:0 2.5px 2.5px 0; transform:rotate(45deg); }
+.b2-agree input:focus-visible + i{ outline:2px solid var(--b2-cyan2); outline-offset:2px; }
+.b2-agree.dark{ background:rgba(10,34,25,.6); border-color:rgba(251,243,226,.35); color:var(--b2-cream2); }
+.b2-agree.dark i{ background:transparent; border-color:rgba(251,243,226,.75); }
+.b2-agree.dark input:checked + i{ background:var(--b2-cyan2); border-color:var(--b2-cyan2); } .b2-agree.dark input:checked + i::after{ border-color:var(--b2-ink); }
+.b2-agree.shake{ animation:b2shake .4s; border-color:#e0392f; }
+@keyframes b2shake{ 20%,60%{ transform:translateX(-5px); } 40%,80%{ transform:translateX(5px); } }

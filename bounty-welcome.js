@@ -964,7 +964,7 @@
         <div class="b2-exph"><i></i>Your expectations</div>
         <div id="bxoRateL">${RATES.map(([t,l],i)=>`<label class="b2-exprow"><span>${l} (optional)</span><b>₹ <input id="bxoRate${i}" data-t="${t}" inputmode="numeric" placeholder="—" value="${rateOf(t)!=null?E(rateOf(t)):""}"> →</b></label>`).join("")}</div>
         <label class="b2-exprow" id="bxoMinL"><span>Product value you prefer (optional)</span><b><input id="bxoMin" inputmode="numeric" placeholder="Any" value="${cp.min_product_value!=null?E(cp.min_product_value):""}"> →</b></label>
-        <div class="b2-note dark">📄<span>You decide on each offer. Ad rights, exclusivity and deadlines are always shown before you accept.</span></div>
+        <label class="b2-agree dark"><input type="checkbox" id="bxoAgree"${(window.__bxMeta && __bxMeta.bx_terms_ack) ? " checked" : ""}><i></i><span>You decide on each offer. Ad rights, exclusivity and deadlines are always shown before you accept.</span></label>
         ${tip("Pick all that fit — you can still say no to any offer.")}
         <div class="auth-err" id="bxoErr"></div>
         <button type="button" class="b2-btn cream full" id="bxoSave">${window.__bxOnbOnly ? "Save&nbsp; →" : "Find collaborations for me&nbsp; →"}</button>
@@ -977,6 +977,8 @@
       document.getElementById("bxoSkip").onclick = ()=> onbFinish(false);
       document.getElementById("bxoSave").onclick = async ()=>{
         const btn = document.getElementById("bxoSave"); err("");
+        if(!document.getElementById("bxoAgree").checked){ err("Tick the box to confirm you've read this."); document.getElementById("bxoAgree").closest("label").classList.add("shake"); setTimeout(()=>{ const l = document.querySelector(".b2-agree.shake"); if(l) l.classList.remove("shake"); }, 500); return; }
+        B2.ackTerms();
         const on = [...terms.querySelectorAll(".b2-term.on")].map(b=> b.dataset.v);
         const num = id => { const v = String(document.getElementById(id).value||"").replace(/[^\d.]/g,""); return v === "" ? null : Number(v); };
         const min = num("bxoMin");
@@ -995,5 +997,8 @@
 
   window.bxGuest = { start:startGuest, go, video };
   B2.onbKit = { CATS, LANG, termsOf, termsPatch, termsLabel };
+  // "You decide on each offer…" — the tick is saved on the creator's login (once), so it stays ticked everywhere
+  B2.ackTerms = async ()=>{ if(window.__bxMeta && __bxMeta.bx_terms_ack) return; const at = new Date().toISOString();
+    window.__bxMeta = Object.assign({}, window.__bxMeta||{}, { bx_terms_ack: at }); try{ await sb.auth.updateUser({ data:{ bx_terms_ack: at } }); }catch(e){} };
   B2.screens = { onbStep, onbManual, manualProfile, igGate, sidekickScreen, igLoader, igKit, igSent };
 })();
