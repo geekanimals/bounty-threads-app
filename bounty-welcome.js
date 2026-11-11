@@ -33,7 +33,7 @@
   const KIDS6 = ["pip","rumi","mochi","sprout","dot","pebble"];
   const kidsRow = cls => `<div class="${cls||"b2-kids"}" data-kid>${KIDS6.map(k=>`<img src="${R}kid_${k}.png" alt="" class="k-${k}">`).join("")}</div>`;
   const tip = (t, who) => `<div class="b2-tip">${kidImg()}<p><b>${who || K()}:</b> <i>${t}</i></p></div>`;
-  const FOOT = `<footer class="b2-foot">by Geek Creative Agency</footer>`;
+  const FOOT = `<footer class="b2-foot"><a class="b2-geek" href="https://geekcreativeagency.com/" target="_blank" rel="noopener">by Geek Creative Agency</a></footer>`;
   const prog = (n, label) => `<div class="b2-prog"><span class="b2-bars">${[1,2,3,4,5,6].map(i=>`<i class="${i<=n?"on":""}"></i>`).join("")}</span><span class="b2-pn">${label || ("0"+n+" / 06")}</span></div>`;
   B2.tip = tip; B2.kidImg = kidImg; B2.svg = svg; B2.E = E; B2.FOOT = FOOT; B2.prog = prog;
 
@@ -97,7 +97,7 @@
   /* =================== Welcome + WhatsApp sign-in (V2-01 · 02 · 03 / W01 · W12) — same ids as login.js =================== */
   function hero(){
     return `<section class="b2-hero">
-        <div class="b2-hero-top">${LOGO}<div class="b2-by">by geek</div><div class="b2-uni"><i></i><span>Creator universe</span><i></i></div></div>
+        <div class="b2-hero-top">${LOGO}<div class="b2-uni"><i></i><span>Creator universe</span><i></i></div></div>
         <h1 class="b2-hero-h">Your next dream brand starts <u>here.</u></h1>
         <p class="b2-hero-p">Discover collaborations. Create your story. <br class="m">Grow on your terms.</p>
         <button type="button" class="b2-pill d-only" data-bx="video">${svg("play")}See how it works</button>
@@ -105,6 +105,7 @@
         <div class="b2-hero-cta m-only"><button type="button" class="b2-btn cream" data-bx="signin">Find my collaborations&nbsp; →</button>
           <button type="button" class="b2-link light" data-bx="video">See how it works</button></div>
         <div class="b2-hero-foot"><div class="b2-orn m-only"><i></i><b></b><i></i></div>Real brands &nbsp;•&nbsp; Clear briefs &nbsp;•&nbsp; Your choice</div>
+        <footer class="b2-foot m-only"><a class="b2-geek" href="https://geekcreativeagency.com/" target="_blank" rel="noopener">by Geek Creative Agency</a></footer>
       </section>`;
   }
   function welcomeHtml(){
@@ -155,7 +156,7 @@
     document.body.classList.toggle("bx-pre", !!w);
     if(!w) return r;
     leaveGuest(true);
-    const setSt = s => { w.dataset.st = s; root.scrollTop = 0; window.scrollTo(0,0); };
+    const setSt = s => { w.dataset.st = s; root.scrollTop = 0; window.scrollTo(0,0); if(window.BxHist) BxHist.mark("w", s); };
     // straight to the form when the creator came to apply / from an invite / asked to sign in
     const q = new URLSearchParams(location.search);
     if(q.get("apply") || q.get("cinv") || q.get("from") || window.__bxWantForm){ setSt("form"); window.__bxWantForm = false; }
@@ -166,6 +167,7 @@
       if(k === "explore") startGuest();
       if(k === "video") video(()=>{ setSt("form"); });
     }));
+    if(window.BxHist) BxHist.mark("w", w.dataset.st);
     try{ const al = document.getElementById("bxWaAlerts"); al.checked = localStorage.getItem("bx_wa_alerts") === "1"; al.onchange = ()=>{ try{ localStorage.setItem("bx_wa_alerts", al.checked ? "1" : "0"); }catch(e){} }; }catch(e){}
     // V2-03 / W12: once the code is sent → "One last step.", masked number, 6 boxes, expiry + resend timers
     const row = document.getElementById("waCodeRow"), h = document.getElementById("bxCardH"), p = document.getElementById("bxCardP");
@@ -263,6 +265,7 @@
       g.querySelectorAll(".b2g-links [data-g]").forEach(a=> a.classList.toggle("on", a.dataset.g === "home" && !page.startsWith("lock:")));
     }
     window.scrollTo(0,0);
+    if(window.BxHist && !(G.member && (page === "home" || page === "discover"))) BxHist.mark("g", page);
     if(page === "home" || page === "discover") return pageDiscover(main);
     if(page.startsWith("brief:")) return pageBrief(main, page.slice(6));
     if(page.startsWith("lock:")) return pageLock(main, page.slice(5));
@@ -449,6 +452,29 @@
   // Discover for a signed-in creator who hasn't connected Instagram yet (the app's own Campaigns page is locked until then)
   window.bxMemberExplore = function(page){ G.member = true; G.list = null; go(page === "discover" ? "home" : (page || "home")); };
   window.bxMemberExploreOff = function(){ G.member = false; };
+  /* ← Back: sign-in steps and guest / explore pages */
+  const signedIn = ()=> !!(window.__osBooted && window.Auth && Auth.user);
+  if(window.BxHist){
+    BxHist.on("w", st=>{
+      if(signedIn()) return false;
+      let w = document.querySelector("#authRoot #bxw");
+      if(!w){ if(st !== "welcome") window.__bxWantForm = true; mountLogin("login"); w = document.querySelector("#authRoot #bxw"); }
+      if(!w) return false;
+      const row = document.getElementById("waCodeRow");
+      if(st !== "otp" && row && row.style.display !== "none"){ const c = document.getElementById("waChange"); if(c) c.click(); }
+      if(st === "otp" && !(row && row.style.display !== "none")) st = "form";
+      w.dataset.st = st; window.scrollTo(0,0);
+      return true;
+    });
+    BxHist.on("g", page=>{
+      if(G.on || G.member){ go(page); return true; }
+      if(signedIn()){
+        if(typeof currentPage === "undefined" || !window.__profileGate) return false;
+        currentPage = "opencampaigns"; renderShell(); setTimeout(()=> window.bxMemberExplore && bxMemberExplore(page), 60); return true;
+      }
+      startGuest(); if(page !== "home") go(page); return true;
+    });
+  }
 
   /* =================== Pick your sidekick (V2-04 / W13) =================== */
   const kidKey = () => "bx_sidekick_" + ((window.Auth && Auth.profile && Auth.profile.id) || "");

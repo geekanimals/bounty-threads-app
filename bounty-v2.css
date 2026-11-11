@@ -369,6 +369,26 @@ html:not(.bx-still) .b2-ls li.on i{ animation:b2pulse 1.2s ease-in-out infinite;
   .b2-panel{ min-height:100vh; min-height:100dvh; padding:40px 24px 0; }
   .b2-say{ margin-top:0; justify-content:space-between; } .b2-say-kid{ margin-top:-10px; }
 }
+/* "by Geek Creative Agency" opens the agency site */
+a.b2-geek{ color:inherit; text-decoration:none; }
+a.b2-geek:hover, a.b2-geek:focus-visible{ text-decoration:underline; text-underline-offset:3px; }
+/* phone welcome (V2-01): the whole screen fits — no scroll; sizes follow the screen height */
+@media(max-width:900px){
+  .b2-pre[data-st="welcome"]{ height:100vh; height:100dvh; min-height:0 !important; overflow:hidden; }
+  .b2-pre[data-st="welcome"] .b2-hero{ height:100vh; height:100dvh; min-height:0 !important; padding:clamp(16px,4.6vh,44px) 20px max(4px, env(safe-area-inset-bottom)); }
+  .b2-pre[data-st="welcome"] .b2-hero .b2-logo{ font-size:clamp(21px,3.4vh,26px); }
+  .b2-pre[data-st="welcome"] .b2-uni{ margin-top:clamp(6px,1.3vh,12px); }
+  .b2-pre[data-st="welcome"] .b2-hero-h{ margin-top:clamp(12px,3vh,28px); font-size:clamp(28px,5.4vh,40px); }
+  .b2-pre[data-st="welcome"] .b2-hero-h u::after{ bottom:-5px; height:3px; }
+  .b2-pre[data-st="welcome"] .b2-hero-p{ margin-top:clamp(10px,2.3vh,22px); font-size:clamp(12.5px,1.9vh,14.5px); }
+  .b2-pre[data-st="welcome"] .b2-kids{ position:relative; top:auto; left:auto; right:auto; width:100%; max-width:430px; margin:auto 0 0; }
+  .b2-pre[data-st="welcome"] .b2-hero-cta{ padding-top:0; margin-top:clamp(14px,3vh,30px); max-width:330px; }
+  .b2-pre[data-st="welcome"] .b2-hero-cta .b2-btn{ min-height:clamp(48px,6.8vh,58px); font-size:clamp(15px,2.1vh,17px); box-shadow:0 8px 22px rgba(0,0,0,.35); }
+  .b2-pre[data-st="welcome"] .b2-hero-cta .b2-link{ margin-top:clamp(8px,1.8vh,18px); }
+  .b2-pre[data-st="welcome"] .b2-hero-foot{ margin-top:clamp(10px,2.2vh,24px); font-size:clamp(11.5px,1.7vh,13px); }
+  .b2-pre[data-st="welcome"] .b2-orn{ margin-bottom:clamp(6px,1.2vh,14px); }
+  .b2-hero > .b2-foot{ z-index:1; margin:clamp(6px,1.4vh,16px) auto 0; padding:clamp(6px,1.3vh,12px) 0 clamp(2px,.8vh,8px); font-size:11.5px; color:rgba(251,243,226,.62); }
+}
 @media(max-width:380px){ .b2-h{ font-size:31px; } .b2-hero-h{ font-size:34px; } .b2-boxes i{ height:54px; font-size:24px; } }
 
 /* =====================================================================================
