@@ -1527,3 +1527,15 @@ body.b2app .b2-mkhost > #b2MkSk{ max-width:680px; margin:0 auto; }
 .b2-igsay{ position:absolute; left:0; top:0; z-index:3; max-width:74%; padding:8px 12px; border-radius:14px; background:#fffdf6; border:1.5px solid var(--b2-gold2); font:italic 400 12.5px/1.35 var(--b2-f-serif); color:var(--b2-ink2); text-align:left; box-shadow:0 6px 14px rgba(60,40,10,.14); }
 .b2-igsay b{ font-style:normal; font-weight:700; color:#b8452f; }
 .b2-igsay::after{ content:""; position:absolute; left:46px; bottom:-8px; width:14px; height:14px; background:#fffdf6; border-right:1.5px solid var(--b2-gold2); border-bottom:1.5px solid var(--b2-gold2); transform:rotate(45deg); }
+
+/* Analytics with no Instagram connected: an empty state instead of a blank page */
+.b2-anempty{ max-width:640px; margin:8px auto 0; }
+.b2-ana-empty{ text-align:center; padding:32px 24px !important; }
+.b2-ana-empty-ic{ font-size:40px; line-height:1; margin-bottom:10px; }
+.b2-ana-empty h3{ margin:0 0 8px; font-size:22px; }
+.b2-ana-empty p{ margin:0 auto 14px; max-width:460px; color:var(--b2-muted, #6b6457); font-size:14px; line-height:1.5; }
+.b2-ana-empty ul{ list-style:none; padding:0; margin:0 0 18px; display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+.b2-ana-empty li{ font-size:13px; padding:6px 12px; border-radius:999px; background:rgba(31,61,43,.07); }
+.b2-ana-empty .b2-btn{ min-width:220px; }
+.b2-ana-empty-note{ margin-top:12px; font-size:12px; color:var(--b2-muted, #6b6457); }
+@media(max-width:760px){ .b2-anempty{ margin:4px 0 0; } .b2-ana-empty{ padding:24px 16px !important; } .b2-ana-empty .b2-btn{ width:100%; } }

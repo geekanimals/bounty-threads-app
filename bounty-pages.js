@@ -364,7 +364,19 @@
   /* ---------- M25 Analytics · creator pulse: trend chart + top content you can pin to your media kit ---------- */
   async function touchAnalytics(){
     const box = document.getElementById("crBody"); if(!box || box.querySelector("#bxPulse") || !box.querySelector(".rp-kpis")) return;
-    const a = (typeof mkFetchAcct === "function") ? await mkFetchAcct() : null; if(!a || box.querySelector("#bxPulse")) return;
+    const a = (typeof mkFetchAcct === "function") ? await mkFetchAcct() : null; if(box.querySelector("#bxPulse")) return;
+    if(!a){ // no Instagram yet: say what this page will show and how to unlock it (instead of a blank page)
+      box.insertAdjacentHTML("afterbegin", `<div id="bxPulse" class="b2-anempty"><div class="card b2-perf b2-ana-empty">
+        <div class="b2-ana-empty-ic" aria-hidden="true">📊</div>
+        <h3 class="serif">Connect Instagram to see your analytics</h3>
+        <p>Followers, reach, engagement and your best posts appear here once your Instagram is connected. Your campaign history shows here too.</p>
+        <ul><li>📈 Performance over time</li><li>💡 Insights on what works for you</li><li>📌 Pin your top posts to your media kit</li></ul>
+        <button type="button" class="b2-btn forest" id="bxAnaConnect">Connect Instagram →</button>
+        <div class="b2-ana-empty-note">🛡 Official Meta connection. No password shared. Disconnect anytime.</div></div></div>`);
+      const cb = document.getElementById("bxAnaConnect");
+      if(cb) cb.onclick = ()=>{ if(typeof connectInstagram === "function") connectInstagram(); else go("mediakit"); };
+      return;
+    }
     const media = (typeof mkAllMedia === "function" ? mkAllMedia(a) : (a.recent_media||[])).filter(m=> m.timestamp);
     const E = (typeof mkEdits === "function") ? mkEdits(a) : (a.edits || {});
     let pins = Array.isArray(E.pinned) ? E.pinned.map(String) : [];
