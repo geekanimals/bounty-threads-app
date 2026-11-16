@@ -46,6 +46,10 @@ export function renderEmailHtml(title: string, body: string, actionUrl?: string,
     </table></td></tr></table></body></html>`;
 }
 
+// Replies to every email (and "reply to this email" in the text) go to the team's contact address.
+// EMAIL_REPLY_TO secret overrides it.
+const REPLY_TO = (Deno.env.get("EMAIL_REPLY_TO") || "mayank@geekcreativeagency.com").trim();
+
 class ResendProvider implements EmailProvider {
   constructor(private apiKey: string, private from: string) {}
   async send(msg: EmailOut): Promise<EmailResult> {
@@ -55,6 +59,7 @@ class ResendProvider implements EmailProvider {
       method: "POST",
       headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ from: this.from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text,
+                             ...(REPLY_TO ? { reply_to: REPLY_TO } : {}),
                              ...(msg.headers ? { headers: msg.headers } : {}) }),
     });
     const raw = await r.json().catch(() => ({}));
@@ -72,7 +77,8 @@ class SmtpProvider implements EmailProvider {
     if (!host || !user || !pass) throw new Error("email not configured (SMTP_HOST / SMTP_USER / SMTP_PASS).");
     const nodemailer = (await import("npm:nodemailer@6.9.16")).default;
     const t = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
-    const info = await t.sendMail({ from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text, headers: msg.headers });
+    const info = await t.sendMail({ from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text, headers: msg.headers,
+                                    ...(REPLY_TO ? { replyTo: REPLY_TO } : {}) });
     return { id: info?.messageId ?? null, raw: { accepted: info?.accepted ?? [] } };
   }
 }
