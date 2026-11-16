@@ -225,7 +225,17 @@ Deno.serve(async (req) => {
         try {
           await refreshOne(admin, tok);
           count++;
-        } catch (_) {
+        } catch (e) {
+          // Snapto drip: expired / revoked login → 06 reconnect, anything else → 05 sync failed (each once per token)
+          try {
+            const msg = String((e as Error)?.message || "");
+            const expired = (tok.expires_at && new Date(tok.expires_at) < new Date()) ||
+              /expired|session|validating access token|invalid oauth|#190|code\s*190|permission|revoked/i.test(msg);
+            const { data: acct } = await admin.from("social_accounts").select("username")
+              .eq("member_id", tok.member_id).eq("platform", "instagram").maybeSingle();
+            await admin.schema("api").rpc("snapto_ig_problem", { p_member: tok.member_id, p_kind: expired ? "reconnect" : "sync_failed",
+              p_username: acct?.username ?? null, p_ref: String(tok.expires_at || "") });
+          } catch (_e) { /* reminders never block the refresh */ }
           // Continue with next creator.
         }
       }

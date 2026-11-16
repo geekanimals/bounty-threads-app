@@ -49,6 +49,11 @@ Deno.serve(async (req) => {
           const kw = String(m?.text?.body || "").trim().toUpperCase();
           if (contact && /^(STOP|UNSUBSCRIBE)$/.test(kw)) await admin.from("wa_contacts").update({ opt_out_at: new Date().toISOString() }).eq("user_id", contact.user_id);
           if (contact && /^(START|SUBSCRIBE)$/.test(kw)) await admin.from("wa_contacts").update({ opt_out_at: null, opt_in_at: new Date().toISOString() }).eq("user_id", contact.user_id);
+          // Snapto drip 12: the "Confirm address" button confirms the saved address for the campaign waiting for it
+          const btn = String(m?.button?.text ?? m?.interactive?.button_reply?.title ?? "").trim().toLowerCase();
+          if (contact && btn === "confirm address") {
+            try { await admin.schema("api").rpc("snapto_confirm_address", { p_phone: fromE164 }); } catch (_e) { /* never blocks the webhook */ }
+          }
           // match the latest conversation for this number; else open the creator's system thread (visible to
           // the creator + agency operators) — never an orphan row nobody can read
           let { data: conv } = await admin.from("wa_conversations").select("id,contact_user_id").eq("contact_phone_e164", fromE164)

@@ -42,6 +42,54 @@ function unsubLink(token: string | undefined, channel: "email" | "whatsapp"): st
   return `${APP_URL}/unsubscribe.html?t=${encodeURIComponent(token)}&c=${channel}`;
 }
 
+// ---------- Snapto drips (reminder sequences live in Snapto) ----------
+// private.snapto_drip_queue → for "start": save the creator's details on the Snapto contact, then call that drip's
+// chatbot webhook (Webhook → Set receiver number → Start drip). For "done": set done_<task> (the drip's stop condition).
+// Each queue row is one event (unique dedupe key), so a creator never gets the same drip twice.
+// SNAPTO_DRIP_CONFIG secret: {"hooks":{"02":"<webhook id>",…},"attrs":{"creator_name":"<attribute id>",…}}
+async function runSnaptoDrips(api: any): Promise<{ sent: number; failed: number }> {
+  let cfg: any = null;
+  try { cfg = JSON.parse(Deno.env.get("SNAPTO_DRIP_CONFIG") || "null"); } catch (_e) { cfg = null; }
+  const key = Deno.env.get("SNAPTO_API_KEY") || "";
+  if (!cfg?.hooks || !cfg?.attrs || !key) return { sent: 0, failed: 0 };
+  const { data: rows } = await api.rpc("ops_snapto_claim", { p_limit: 30 });
+  let sent = 0, failed = 0;
+  const headers: Record<string, string> = { "x-api-key": key, "Content-Type": "application/json" };
+  const phoneId = Deno.env.get("SNAPTO_PHONE_ID") || "";
+  if (phoneId) headers["x-phone-id"] = phoneId;
+  for (const r of (rows ?? []) as any[]) {
+    try {
+      const digits = String(r.phone || "").replace(/\D/g, "");
+      if (!digits) throw new Error("no phone");
+      const attributes: Record<string, string> = {};
+      const put = (name: string, value: unknown) => { if (cfg.attrs[name] && value != null && value !== "") attributes[cfg.attrs[name]] = String(value).slice(0, 500); };
+      if (r.kind === "done") {
+        put("done_" + r.drip, new Date().toISOString());
+      } else {
+        for (const [k, v] of Object.entries(r.attrs || {})) put(k, v);
+        if (r.attrs?.creator_name) attributes.name = String(r.attrs.creator_name);
+      }
+      const save = await fetch("https://app.snapto.ai/api/v1/contact/save", { method: "POST", headers,
+        body: JSON.stringify({ receiverNumber: Number(digits), attributes }) });
+      if (!save.ok) throw new Error(`contact save ${save.status}: ${(await save.text()).slice(0, 200)}`);
+      if (r.kind === "start") {
+        const hook = cfg.hooks[r.drip];
+        if (!hook) throw new Error("no webhook for drip " + r.drip);
+        const w = await fetch(`https://app.snapto.ai/api/v1/chatbot/webhook/${hook}`, { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify({ receiverNumber: digits }) });
+        const wt = await w.text();
+        if (!w.ok || /"result"\s*:\s*"error"/.test(wt)) throw new Error(`webhook ${w.status}: ${wt.slice(0, 200)}`);
+      }
+      await api.rpc("ops_snapto_result", { p_id: r.id, p_ok: true });
+      sent++;
+    } catch (e) {
+      await api.rpc("ops_snapto_result", { p_id: r.id, p_ok: false, p_error: (e as Error).message || "failed" });
+      failed++;
+    }
+  }
+  return { sent, failed };
+}
+
 Deno.serve(async (req) => {
   const deny = workerGuard(req); if (deny) return deny;
 
@@ -49,6 +97,8 @@ Deno.serve(async (req) => {
   const api = admin.schema("api");
   try { await api.rpc("ops_register_worker", { p_secret: Deno.env.get("CI_WORKER_SECRET") || "", p_url: SUPABASE_URL }); } catch (_e) { /* ignore */ }
   try { await api.rpc("ops_outbox_requeue_waiting"); } catch (_e) { /* ignore */ }
+  let drips = { sent: 0, failed: 0 };
+  try { drips = await runSnaptoDrips(api); } catch (_e) { /* drips never block the outbox */ }
   const { data: rows, error } = await api.rpc("ops_outbox_claim", { p_limit: 50 });
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
 
@@ -206,5 +256,5 @@ Deno.serve(async (req) => {
       }
     }
   }
-  return new Response(JSON.stringify({ ok: true, processed: (rows ?? []).length, sent, failed, skipped }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ ok: true, processed: (rows ?? []).length, sent, failed, skipped, drips }), { headers: { "Content-Type": "application/json" } });
 });
