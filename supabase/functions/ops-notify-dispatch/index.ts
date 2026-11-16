@@ -43,43 +43,32 @@ function unsubLink(token: string | undefined, channel: "email" | "whatsapp"): st
 }
 
 // ---------- Snapto drips (reminder sequences live in Snapto) ----------
-// private.snapto_drip_queue → for "start": save the creator's details on the Snapto contact, then call that drip's
-// chatbot webhook (Webhook → Set receiver number → Start drip). For "done": set done_<task> (the drip's stop condition).
+// private.snapto_drip_queue → one chatbot webhook call per row. Each Snapto chatbot does:
+// Webhook → Set receiver number → Set contact attributes (from the webhook body) → Start drip (start bots only).
+//   start: hooks["02".."12"]          body {receiverNumber, creator_name, campaign_name, …}
+//   done:  hooks["done_<task>"]       body {receiverNumber, at}  → sets done_<task> = the drip's stop condition
 // Each queue row is one event (unique dedupe key), so a creator never gets the same drip twice.
-// SNAPTO_DRIP_CONFIG secret: {"hooks":{"02":"<webhook id>",…},"attrs":{"creator_name":"<attribute id>",…}}
+// SNAPTO_DRIP_CONFIG secret: {"hooks":{"02":"<webhook id>",…,"done_profile":"<webhook id>",…}}
 async function runSnaptoDrips(api: any): Promise<{ sent: number; failed: number }> {
   let cfg: any = null;
   try { cfg = JSON.parse(Deno.env.get("SNAPTO_DRIP_CONFIG") || "null"); } catch (_e) { cfg = null; }
-  const key = Deno.env.get("SNAPTO_API_KEY") || "";
-  if (!cfg?.hooks || !cfg?.attrs || !key) return { sent: 0, failed: 0 };
+  if (!cfg?.hooks) return { sent: 0, failed: 0 };
   const { data: rows } = await api.rpc("ops_snapto_claim", { p_limit: 30 });
   let sent = 0, failed = 0;
-  const headers: Record<string, string> = { "x-api-key": key, "Content-Type": "application/json" };
-  const phoneId = Deno.env.get("SNAPTO_PHONE_ID") || "";
-  if (phoneId) headers["x-phone-id"] = phoneId;
   for (const r of (rows ?? []) as any[]) {
     try {
       const digits = String(r.phone || "").replace(/\D/g, "");
       if (!digits) throw new Error("no phone");
-      const attributes: Record<string, string> = {};
-      const put = (name: string, value: unknown) => { if (cfg.attrs[name] && value != null && value !== "") attributes[cfg.attrs[name]] = String(value).slice(0, 500); };
-      if (r.kind === "done") {
-        put("done_" + r.drip, new Date().toISOString());
-      } else {
-        for (const [k, v] of Object.entries(r.attrs || {})) put(k, v);
-        if (r.attrs?.creator_name) attributes.name = String(r.attrs.creator_name);
-      }
-      const save = await fetch("https://app.snapto.ai/api/v1/contact/save", { method: "POST", headers,
-        body: JSON.stringify({ receiverNumber: Number(digits), attributes }) });
-      if (!save.ok) throw new Error(`contact save ${save.status}: ${(await save.text()).slice(0, 200)}`);
-      if (r.kind === "start") {
-        const hook = cfg.hooks[r.drip];
-        if (!hook) throw new Error("no webhook for drip " + r.drip);
-        const w = await fetch(`https://app.snapto.ai/api/v1/chatbot/webhook/${hook}`, { method: "POST",
-          headers: { "Content-Type": "application/json" }, body: JSON.stringify({ receiverNumber: digits }) });
-        const wt = await w.text();
-        if (!w.ok || /"result"\s*:\s*"error"/.test(wt)) throw new Error(`webhook ${w.status}: ${wt.slice(0, 200)}`);
-      }
+      const key = r.kind === "done" ? "done_" + r.drip : r.drip;
+      const hook = cfg.hooks[key];
+      if (!hook) throw new Error("no webhook for " + key);
+      const body: Record<string, string> = { receiverNumber: digits };
+      if (r.kind === "done") body.at = new Date().toISOString();
+      else for (const [k, v] of Object.entries(r.attrs || {})) if (v != null && v !== "") body[k] = String(v).slice(0, 500);
+      const w = await fetch(`https://app.snapto.ai/api/v1/chatbot/webhook/${hook}`, { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const wt = await w.text();
+      if (!w.ok || /"result"\s*:\s*"error"/.test(wt)) throw new Error(`webhook ${w.status}: ${wt.slice(0, 200)}`);
       await api.rpc("ops_snapto_result", { p_id: r.id, p_ok: true });
       sent++;
     } catch (e) {
