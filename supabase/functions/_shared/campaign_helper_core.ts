@@ -74,8 +74,8 @@ export function detectIntents(question: string): string[] {
   return out;
 }
 
-export function campaignHelperAnswer(question: string, c: Any, k: Any | null): HelperReply {
-  const hi = isHinglish(question);
+export function campaignHelperAnswer(question: string, c: Any, k: Any | null, opts?: { lang?: "en" }): HelperReply {
+  const hi = opts?.lang === "en" ? false : isHinglish(question);
   const T = (h: string, e: string) => (hi ? h : e);
   let intents = detectIntents(question);
   if (!intents.length) {

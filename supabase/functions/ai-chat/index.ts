@@ -32,7 +32,9 @@ Deno.serve(async (req) => {
     const ctx = body.context || {};
     const partId = String(body.participation_id || "").trim();
     const q = lastUserText(body.messages);
-    const hi = isHinglish(q);
+    // lang "en" (creator sidekick) → hamesha English, sawal Hinglish mein ho tab bhi
+    const en = body.lang === "en";
+    const hi = !en && isHinglish(q);
 
     const { data } = await userClient.schema("api").rpc("get_my_campaigns");
     const mine: any[] = Array.isArray(data) ? data : [];
@@ -57,7 +59,7 @@ Deno.serve(async (req) => {
     }
 
     const { data: k } = await userClient.schema("api").rpc("get_my_contract", { p_participation: c.participation_id });
-    const ans = campaignHelperAnswer(q, c, k ?? null);
+    const ans = campaignHelperAnswer(q, c, k ?? null, en ? { lang: "en" } : undefined);
     const head = !partId && mine.length > 1 ? `📌 **${c.campaign}${c.brand ? " · " + c.brand : ""}**\n\n` : "";
     return json({ ok: true, reply: head + ans.reply, intents: ans.intents, suggestions: ans.suggestions, source: "backend" });
   } catch (e) {
