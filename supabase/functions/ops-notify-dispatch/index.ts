@@ -53,6 +53,8 @@ async function runSnaptoDrips(api: any): Promise<{ sent: number; failed: number 
   let cfg: any = null;
   try { cfg = JSON.parse(Deno.env.get("SNAPTO_DRIP_CONFIG") || "null"); } catch (_e) { cfg = null; }
   if (!cfg?.hooks) return { sent: 0, failed: 0 };
+  // photo invite chatbots ("01i" / "01i2" / "01i3" timed steps, "01ix" one message) — secret SNAPTO_IMG_HOOKS
+  try { Object.assign(cfg.hooks, JSON.parse(Deno.env.get("SNAPTO_IMG_HOOKS") || "{}")); } catch (_e) { /* ignore */ }
   const { data: rows } = await api.rpc("ops_snapto_claim", { p_limit: 30 });
   let sent = 0, failed = 0;
   for (const r of (rows ?? []) as any[]) {
@@ -60,7 +62,8 @@ async function runSnaptoDrips(api: any): Promise<{ sent: number; failed: number 
       const digits = String(r.phone || "").replace(/\D/g, "");
       if (!digits) throw new Error("no phone");
       const key = r.kind === "done" ? "done_" + r.drip : r.drip;
-      const hook = cfg.hooks[key];
+      // image drip not set up in Snapto yet → the normal invite drip (no photo)
+      const hook = cfg.hooks[key] || (key === "01i" ? cfg.hooks["01"] : undefined);
       if (!hook) throw new Error("no webhook for " + key);
       const body: Record<string, string> = { receiverNumber: digits };
       if (r.kind === "done") body.at = new Date().toISOString();
