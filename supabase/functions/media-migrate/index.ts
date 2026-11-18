@@ -1,7 +1,8 @@
 // Edge Function: media-migrate (verify_jwt = true, Super Admin only) — one-off copy of old Supabase storage files to Cloudflare R2.
 // Same key on R2: "<bucket>/<path>". Nothing is deleted from Supabase. Payment proofs are NOT copied (they stay private).
 //   POST { action: "copy", bucket, offset = 0, limit = 10 }  → copies a batch (skips files already on R2 with the same size)
-// File list: api.media_migrate_items() (service role only). Run on 2026-11-18: 102 files copied, 0 failed.
+// File list: api.media_migrate_items() (service role only). Run on 2026-11-18: 102 files copied, 0 failed;
+// then { action: "delete", bucket } removed them from Supabase (only after checking each R2 copy) — Supabase storage is empty.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AwsClient } from "https://esm.sh/aws4fetch@1.0.20";
 
@@ -26,6 +27,20 @@ Deno.serve(async (req) => {
     const b = await req.json().catch(() => ({}));
     const all = ((await admin.schema("api").rpc("media_migrate_items")).data || []) as { bucket: string; name: string; size: number; type: string }[];
     const head = async (key: string) => { const r = await aws.fetch(url(key), { method: "HEAD" }); return r.ok ? Number(r.headers.get("content-length") || 0) : -1; };
+    if (b.action === "delete") {
+      // delete from Supabase ONLY files whose R2 copy exists with the same size (payment-proofs: only the listed unlinked files)
+      const bk = String(b.bucket || "");
+      if (bk === "payment-proofs") {
+        const names = (Array.isArray(b.names) ? b.names : []).map(String);
+        if (names.length) { const { error } = await admin.storage.from(bk).remove(names); if (error) return json({ error: error.message }, 500); }
+        return json({ ok: true, bucket: bk, deleted: names });
+      }
+      if (!BUCKETS.includes(bk)) return json({ error: "bucket?" }, 400);
+      const ok: string[] = [], kept: string[] = [];
+      for (const o of all.filter((x) => x.bucket === bk)) { const h = await head(`${bk}/${o.name}`); if (h === Number(o.size) && h >= 0) ok.push(o.name); else kept.push(`${o.name} (R2 ${h} vs ${o.size})`); }
+      for (let i = 0; i < ok.length; i += 50) { const { error } = await admin.storage.from(bk).remove(ok.slice(i, i + 50)); if (error) return json({ error: error.message }, 500); }
+      return json({ ok: true, bucket: bk, deleted: ok.length, kept });
+    }
     if (b.action !== "copy") return json({ error: "action?" }, 400);
     const bk = String(b.bucket || "");
     if (!BUCKETS.includes(bk)) return json({ error: "bucket?" }, 400);
