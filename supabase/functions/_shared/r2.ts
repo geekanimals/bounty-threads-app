@@ -6,8 +6,9 @@ const ACCOUNT = (Deno.env.get("R2_ACCOUNT_ID") || "").trim();
 const KEY_ID = (Deno.env.get("R2_ACCESS_KEY_ID") || "").trim();
 const SECRET = (Deno.env.get("R2_SECRET_ACCESS_KEY") || "").trim();
 export const R2_BUCKET = (Deno.env.get("R2_BUCKET") || "geek-media").trim();
-// a bucket with NO public access — payment proofs; unset = private files stay in Supabase private storage
-export const R2_PRIVATE_BUCKET = (Deno.env.get("R2_PRIVATE_BUCKET") || "").trim();
+// private files (payment proofs): own bucket if R2_PRIVATE_BUCKET is set, else the same bucket under private/ with an
+// unguessable name — the public link is never shown; they open only through 10-minute signed links
+export const R2_PRIVATE_BUCKET = (Deno.env.get("R2_PRIVATE_BUCKET") || Deno.env.get("R2_BUCKET") || "geek-media").trim();
 export const R2_PUBLIC = (Deno.env.get("R2_PUBLIC_URL") || "").trim().replace(/\/+$/, "");
 export const r2Ready = () => !!(ACCOUNT && KEY_ID && SECRET);
 

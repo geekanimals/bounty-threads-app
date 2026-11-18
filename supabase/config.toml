@@ -136,3 +136,6 @@ verify_jwt = false
 
 [functions.media-upload]
 verify_jwt = true
+
+[functions.media-migrate]
+verify_jwt = true

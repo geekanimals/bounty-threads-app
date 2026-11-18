@@ -11,6 +11,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { openRow } from "../_shared/token_crypto.ts";
+import { r2Put, r2Ready } from "../_shared/r2.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -97,9 +98,16 @@ Deno.serve(async (req) => {
         const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : "jpg";
         const bytes = new Uint8Array(await img.arrayBuffer());
         const path = `${job.code}.${ext}`;
-        const up = await admin.storage.from("post-thumbs").upload(path, bytes, { contentType: type, upsert: true, cacheControl: "31536000" });
-        if (up.error) throw new Error(up.error.message);
-        const url = admin.storage.from("post-thumbs").getPublicUrl(path).data.publicUrl;
+        // Cloudflare R2 (post-thumbs/<code>.jpg); Supabase storage only when R2 isn't set up
+        let url: string | null = null;
+        if (r2Ready()) {
+          try { url = (await r2Put(`post-thumbs/${path}`, bytes, type)).url; } catch (_e) { url = null; }
+        }
+        if (!url) {
+          const up = await admin.storage.from("post-thumbs").upload(path, bytes, { contentType: type, upsert: true, cacheControl: "31536000" });
+          if (up.error) throw new Error(up.error.message);
+          url = admin.storage.from("post-thumbs").getPublicUrl(path).data.publicUrl;
+        }
         await api.rpc("ops_post_thumb_save", { p_code: job.code, p_permalink: job.permalink, p_url: url, p_source: how, p_error: null });
         byCode.set(job.code, url);
       } catch (e) {
