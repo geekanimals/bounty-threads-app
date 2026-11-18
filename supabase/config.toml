@@ -130,3 +130,9 @@ verify_jwt = true
 
 [functions.brand-login]
 verify_jwt = true
+
+[functions.ig-profile-pics-worker]
+verify_jwt = false
+
+[functions.media-upload]
+verify_jwt = true
