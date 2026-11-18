@@ -4,7 +4,7 @@
 export type WaText = { to: string; text: string };
 // template carries a simple ordered variable list (snapto's templateVariables); `components` is the
 // Meta-native shape used only by the Meta provider.
-export type WaTemplate = { to: string; template: string; lang?: string; variables?: string[]; components?: unknown[] };
+export type WaTemplate = { to: string; template: string; lang?: string; variables?: string[]; components?: unknown[]; fileUrl?: string };
 export type WaOutbound = WaText | WaTemplate;
 export type WaResult = { wamid: string | null; raw: unknown };
 
@@ -74,7 +74,7 @@ class SnaptoProvider implements Provider {
     const to = normalizeMsisdn(msg.to);
     if (!to) throw new Error("destination number required");
     const body: Record<string, unknown> = "template" in msg
-      ? { templateName: msg.template, language: msg.lang || "en", to, templateVariables: msg.variables || [] }
+      ? { templateName: msg.template, language: msg.lang || "en", to, templateVariables: msg.variables || [], ...(msg.fileUrl ? { fileUrl: msg.fileUrl } : {}) }
       : { to, text: String((msg as WaText).text || "") };
     const headers: Record<string, string> = { "x-api-key": this.apiKey, "Content-Type": "application/json" };
     if (this.phoneId) headers["x-phone-id"] = this.phoneId;

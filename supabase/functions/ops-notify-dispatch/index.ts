@@ -49,6 +49,31 @@ function unsubLink(token: string | undefined, channel: "email" | "whatsapp"): st
 //   done:  hooks["done_<task>"]       body {receiverNumber, at}  → sets done_<task> = the drip's stop condition
 // Each queue row is one event (unique dedupe key), so a creator never gets the same drip twice.
 // SNAPTO_DRIP_CONFIG secret: {"hooks":{"02":"<webhook id>",…,"done_profile":"<webhook id>",…}}
+// the NEW Snapto Utility templates (made on / after 16 Nov 2026) → private.wa_utility_templates, for "One template for everyone"
+async function syncUtilityTemplates(api: any): Promise<void> {
+  const key = Deno.env.get("SNAPTO_API_KEY") || "";
+  if (!key) return;
+  const { data: due } = await api.rpc("ops_wa_tpl_sync_due");
+  if (!due) return;
+  const headers: Record<string, string> = { "x-api-key": key, "Content-Type": "application/json" };
+  const ph = Deno.env.get("SNAPTO_PHONE_ID") || "";
+  if (ph) headers["x-phone-id"] = ph;
+  const r = await fetch("https://app.snapto.ai/api/v1/messageTemplate/getTemplates", { method: "POST", headers,
+    body: JSON.stringify({ pagination: { current: 1, pageSize: 500 }, order: [{ fieldName: "creationTime", dir: "desc" }], search: [] }) });
+  if (!r.ok) return;
+  const j: any = await r.json();
+  const since = Date.parse("2026-11-16T00:00:00Z");
+  const rows = ((j?.results || []) as any[]).filter((x) => x?.template?.category === "UTILITY" && x?.template?.status === "APPROVED" && Number(x?.creationTime || 0) >= since)
+    .map((x) => {
+      const t = x.template, c = (t.components || []) as any[];
+      const h = c.find((k) => k.type === "HEADER"), b = c.find((k) => k.type === "BODY"), bt = (c.find((k) => k.type === "BUTTONS")?.buttons || []) as any[];
+      const u = bt.find((k) => k.type === "URL");
+      return { name: t.name, lang: t.language || "en", header: h?.format || null, body: b?.text || "", url: u?.url || null, url_button: u?.text || null,
+        quick: bt.filter((k) => k.type === "QUICK_REPLY").map((k) => k.text), made_ms: x.creationTime };
+    });
+  if (rows.length) await api.rpc("ops_wa_tpl_upsert", { p_rows: rows });
+}
+
 async function runSnaptoDrips(api: any): Promise<{ sent: number; failed: number }> {
   let cfg: any = null;
   try { cfg = JSON.parse(Deno.env.get("SNAPTO_DRIP_CONFIG") || "null"); } catch (_e) { cfg = null; }
@@ -61,6 +86,15 @@ async function runSnaptoDrips(api: any): Promise<{ sent: number; failed: number 
     try {
       const digits = String(r.phone || "").replace(/\D/g, "");
       if (!digits) throw new Error("no phone");
+      // 📋 one template (campaign → WhatsApp to selected): straight through the Snapto API, no chatbot
+      if (r.kind === "tpl") {
+        const a = r.attrs || {};
+        const vars = [...((a.vars || []) as unknown[]), ...(a.button ? [a.button] : [])].map((v) => String(v ?? "").replace(/[\n\t]+/g, " ").slice(0, 500));
+        await getProvider().send({ to: digits, template: r.drip, lang: a.lang || "en", variables: vars, ...(a.image ? { fileUrl: String(a.image) } : {}) });
+        await api.rpc("ops_snapto_result", { p_id: r.id, p_ok: true });
+        sent++;
+        continue;
+      }
       const key = r.kind === "done" ? "done_" + r.drip : r.drip;
       // image drip not set up in Snapto yet → the normal invite drip (no photo)
       const hook = cfg.hooks[key] || (key === "01i" ? cfg.hooks["01"] : undefined);
@@ -91,6 +125,7 @@ Deno.serve(async (req) => {
   try { await api.rpc("ops_outbox_requeue_waiting"); } catch (_e) { /* ignore */ }
   let drips = { sent: 0, failed: 0 };
   try { drips = await runSnaptoDrips(api); } catch (_e) { /* drips never block the outbox */ }
+  try { await syncUtilityTemplates(api); } catch (_e) { /* template list only */ }
   const { data: rows, error } = await api.rpc("ops_outbox_claim", { p_limit: 50 });
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
 
