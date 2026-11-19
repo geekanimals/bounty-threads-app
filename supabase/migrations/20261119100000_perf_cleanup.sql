@@ -28,3 +28,17 @@ do $x$ begin
     perform cron.alter_job(40, command := $c$delete from cron.job_run_details where end_time < now() - interval '2 days'$c$);
   end if;
 end $x$;
+
+-- Campaign list counts = same rows as the campaign Creators tab (api.campaign_people uses claimed_at is null).
+-- "__reg" = invites whose person already has a Geek OS account (shown under Applied · screening).
+create or replace function api.admin_campaign_invite_counts()
+ returns jsonb language sql stable security definer set search_path to '' as $function$
+  select case when not public.is_platform_admin() then '{}'::jsonb else coalesce((
+    select jsonb_object_agg(k, v) from (
+      select coalesce(c.legacy_campaign_id, c.campaign_id)::text k,
+             jsonb_object_agg(s.st, s.n) || jsonb_build_object('__reg', sum(s.reg)) v
+        from (select i.campaign_id, coalesce(nullif(i.status, ''), case when i.approved then 'approved' else 'registered' end) st, count(*) n,
+                     count(*) filter (where coalesce(i.claimed_by, i.reserved_by, intel.ci_find_creator(i.phone_e164, lower(i.email), lower(i.handle))) is not null) reg
+                from intel.ci_campaign_invite i where i.claimed_at is null group by 1, 2) s
+        join intel.ci_campaign c on c.campaign_id = s.campaign_id
+       group by 1) x), '{}'::jsonb) end $function$;
