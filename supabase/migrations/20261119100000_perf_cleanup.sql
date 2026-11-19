@@ -42,3 +42,6 @@ create or replace function api.admin_campaign_invite_counts()
                 from intel.ci_campaign_invite i where i.claimed_at is null group by 1, 2) s
         join intel.ci_campaign c on c.campaign_id = s.campaign_id
        group by 1) x), '{}'::jsonb) end $function$;
+
+-- ci_find_creator runs once per invite row: keep its 8 lookups on cached plans (no re-planning every call)
+alter function intel.ci_find_creator(text, text, text) set plan_cache_mode = force_generic_plan;
